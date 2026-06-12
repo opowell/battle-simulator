@@ -1,0 +1,191 @@
+import { isKingInCheck, renderBoard } from './board.js';
+import { getAllLegalMoves } from './moves.js';
+
+// ---------------------------------------------------------------------------
+// Initial board setup
+// ---------------------------------------------------------------------------
+
+function makeUnit(id, ownerId, type, position) {
+  return { id, ownerId, type, position, alive: true };
+}
+
+function initialBoard() {
+  const board = {};
+  const backRank = (color) => color === 'white' ? 1 : 8;
+  const pawnRank = (color) => color === 'white' ? 2 : 7;
+  const prefix = (color) => color === 'white' ? 'w' : 'b';
+
+  for (const color of ['white', 'black']) {
+    const br = backRank(color);
+    const pr = pawnRank(color);
+    const p = prefix(color);
+
+    const backPieces = [
+      ['R', 'rook',   'a'],
+      ['N', 'knight', 'b'],
+      ['B', 'bishop', 'c'],
+      ['Q', 'queen',  'd'],
+      ['K', 'king',   'e'],
+      ['B', 'bishop', 'f', '2'],
+      ['N', 'knight', 'g', '2'],
+      ['R', 'rook',   'h', '2'],
+    ];
+    for (const [sym, type, file, suffix = ''] of backPieces) {
+      const sq = file + br;
+      board[sq] = makeUnit(p + sym + suffix, color, type, sq);
+    }
+
+    for (const file of 'abcdefgh') {
+      const sq = file + pr;
+      board[sq] = makeUnit(p + 'P' + file, color, 'pawn', sq);
+    }
+  }
+  return board;
+}
+
+function boardToUnits(board) {
+  return Object.values(board).filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// applyActions helpers
+// ---------------------------------------------------------------------------
+
+function updateCastlingRights(rights, unit, square) {
+  let { white, black } = rights;
+  if (unit.type === 'king') {
+    if (unit.ownerId === 'white') white = { kingSide: false, queenSide: false };
+    else black = { kingSide: false, queenSide: false };
+  }
+  if (unit.type === 'rook') {
+    if (square === 'a1') white = { ...white, queenSide: false };
+    if (square === 'h1') white = { ...white, kingSide: false };
+    if (square === 'a8') black = { ...black, queenSide: false };
+    if (square === 'h8') black = { ...black, kingSide: false };
+  }
+  return { white, black };
+}
+
+// ---------------------------------------------------------------------------
+// GameDefinition
+// ---------------------------------------------------------------------------
+
+export const ChessGame = {
+  name: 'Chess',
+
+  createInitialState(players) {
+    const board = initialBoard();
+    return {
+      gameName: 'Chess',
+      turnNumber: 1,
+      activePlayers: ['white'],
+      currentPhase: 'action',
+      players,
+      board,
+      units: boardToUnits(board),
+      lastActions: null,
+      gameSpecific: {
+        enPassantTarget: null,
+        castlingRights: {
+          white: { kingSide: true, queenSide: true },
+          black: { kingSide: true, queenSide: true },
+        },
+        halfMoveClock: 0,
+        inCheck: false,
+      },
+    };
+  },
+
+  getLegalActions(state, playerId) {
+    return getAllLegalMoves(state.board, playerId, state.gameSpecific);
+  },
+
+  applyActions(state, playerActions) {
+    const { playerId, action } = playerActions[0]; // chess: always 1 active player
+    const opponent = playerId === 'white' ? 'black' : 'white';
+    let board = { ...state.board };
+    let { castlingRights, halfMoveClock } = state.gameSpecific;
+    let enPassantTarget = null; // cleared by default
+
+    if (action.type === 'castle') {
+      const king = board[action.from];
+      const rook = board[action.rookFrom];
+      board[action.from] = undefined;
+      board[action.to] = { ...king, position: action.to };
+      board[action.rookFrom] = undefined;
+      board[action.rookTo] = { ...rook, position: action.rookTo };
+      castlingRights = updateCastlingRights(castlingRights, king, action.from);
+      halfMoveClock++;
+    } else {
+      // Regular move / capture / en passant / promotion
+      const piece = board[action.from];
+      board[action.from] = undefined;
+      const newType = action.payload?.promote ?? piece.type;
+      board[action.to] = { ...piece, position: action.to, type: newType };
+
+      if (action.isEnPassant && action.capturedSquare) {
+        board[action.capturedSquare] = undefined;
+      }
+
+      // Update half-move clock
+      halfMoveClock = (piece.type === 'pawn' || action.isCapture) ? 0 : halfMoveClock + 1;
+
+      // Track en passant target for next move
+      if (action.isDoublePush) {
+        const fi = action.from.charCodeAt(0) - 'a'.charCodeAt(0);
+        const fromRank = parseInt(action.from[1], 10);
+        const dir = playerId === 'white' ? 1 : -1;
+        enPassantTarget = String.fromCharCode('a'.charCodeAt(0) + fi) + (fromRank + dir);
+      }
+
+      // Update castling rights if king or rook moved
+      castlingRights = updateCastlingRights(castlingRights, piece, action.from);
+      // Also revoke if a rook is captured on its starting square
+      if (action.isCapture && action.to) {
+        const captured = state.board[action.to];
+        if (captured?.type === 'rook') {
+          castlingRights = updateCastlingRights(castlingRights, captured, action.to);
+        }
+      }
+    }
+
+    const inCheck = isKingInCheck(board, opponent);
+    const newTurn = playerId === 'black' ? state.turnNumber + 1 : state.turnNumber;
+
+    return {
+      ...state,
+      board,
+      units: boardToUnits(board),
+      activePlayers: [opponent],
+      turnNumber: newTurn,
+      lastActions: playerActions,
+      gameSpecific: { enPassantTarget, castlingRights, halfMoveClock, inCheck },
+    };
+  },
+
+  getResult(state) {
+    const [activePlayer] = state.activePlayers;
+    const legal = getAllLegalMoves(state.board, activePlayer, state.gameSpecific);
+    if (legal.length > 0) {
+      if (state.gameSpecific.halfMoveClock >= 100) {
+        return { outcome: 'draw', winnerId: null, reason: 'fifty-move-rule' };
+      }
+      return null;
+    }
+    // No legal moves
+    if (state.gameSpecific.inCheck) {
+      const winner = activePlayer === 'white' ? 'black' : 'white';
+      return { outcome: 'win', winnerId: winner, reason: 'checkmate' };
+    }
+    return { outcome: 'draw', winnerId: null, reason: 'stalemate' };
+  },
+
+  renderState(state) {
+    const { turnNumber, activePlayers, gameSpecific } = state;
+    const check = gameSpecific.inCheck ? ' (CHECK)' : '';
+    return [
+      `Turn ${turnNumber} — ${activePlayers[0]} to move${check}`,
+      renderBoard(state.board),
+    ].join('\n');
+  },
+};

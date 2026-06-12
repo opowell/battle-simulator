@@ -1,0 +1,14 @@
+{
+  "name": "battle-simulator",
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "demo:chess": "node demo/chess-demo.js",
+    "demo:tactical": "node demo/tactical-demo.js",
+    "demo:cardbattle": "node demo/cardbattle-demo.js",
+    "demo:chess:auto": "node demo/chess-demo.js --auto",
+    "demo:tactical:auto": "node demo/tactical-demo.js --auto",
+    "demo:cardbattle:auto": "node demo/cardbattle-demo.js --auto",
+    "test": "node --test test/*.test.js"
+  }
+}
