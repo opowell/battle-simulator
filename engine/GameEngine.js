@@ -61,7 +61,10 @@ export class GameEngine {
         return { done: true, result: this._result };
       }
       const player = this._playerById(playerId);
-      const action = await player.agent.chooseAction(this._state, legalActions);
+      const visibleState = (this.config.fogOfWar && this.game.getVisibleState)
+        ? this.game.getVisibleState(this._state, playerId)
+        : this._state;
+      const action = await player.agent.chooseAction(visibleState, legalActions);
       validate(action, legalActions);
       playerActions.push({ playerId, action });
     }

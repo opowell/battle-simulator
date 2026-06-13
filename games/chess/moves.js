@@ -125,7 +125,7 @@ function knightMoves(board, unit) {
   return actions;
 }
 
-function kingMoves(board, unit, castlingRights) {
+function kingMoves(board, unit, castlingRights, fogOfWar = false) {
   const { id, ownerId, position } = unit;
   const fi = fileIndex(position);
   const r = rankOf(position);
@@ -145,18 +145,18 @@ function kingMoves(board, unit, castlingRights) {
     }
   }
 
-  // Castling — only if king is not currently in check
+  // Castling — in fog mode skip all attack checks (you can't see threats)
   const rights = castlingRights[ownerId];
   const backRank = ownerId === 'white' ? 1 : 8;
   const kingSq = 'e' + backRank;
-  if (position === kingSq && !isAttackedBy(board, kingSq, opponent)) {
+  const canCastle = fogOfWar ? true : !isAttackedBy(board, kingSq, opponent);
+  if (position === kingSq && canCastle) {
     // Kingside
     if (rights.kingSide) {
       const f1 = 'f' + backRank, g1 = 'g' + backRank, h1 = 'h' + backRank;
       const rookId = board[h1]?.id;
-      if (!board[f1] && !board[g1] && rookId &&
-          !isAttackedBy(board, f1, opponent) &&
-          !isAttackedBy(board, g1, opponent)) {
+      const pathSafe = fogOfWar || (!isAttackedBy(board, f1, opponent) && !isAttackedBy(board, g1, opponent));
+      if (!board[f1] && !board[g1] && rookId && pathSafe) {
         actions.push({ type: 'castle', unitId: id, side: 'kingside',
           from: kingSq, to: g1, rookId, rookFrom: h1, rookTo: f1 });
       }
@@ -165,9 +165,8 @@ function kingMoves(board, unit, castlingRights) {
     if (rights.queenSide) {
       const d1 = 'd' + backRank, c1 = 'c' + backRank, b1 = 'b' + backRank, a1 = 'a' + backRank;
       const rookId = board[a1]?.id;
-      if (!board[d1] && !board[c1] && !board[b1] && rookId &&
-          !isAttackedBy(board, d1, opponent) &&
-          !isAttackedBy(board, c1, opponent)) {
+      const pathSafe = fogOfWar || (!isAttackedBy(board, d1, opponent) && !isAttackedBy(board, c1, opponent));
+      if (!board[d1] && !board[c1] && !board[b1] && rookId && pathSafe) {
         actions.push({ type: 'castle', unitId: id, side: 'queenside',
           from: kingSq, to: c1, rookId, rookFrom: a1, rookTo: d1 });
       }
@@ -181,14 +180,14 @@ function kingMoves(board, unit, castlingRights) {
 // Pseudo-legal → legal (filter moves that leave king in check)
 // ---------------------------------------------------------------------------
 
-function pseudoLegalForUnit(board, unit, gameSpecific) {
+function pseudoLegalForUnit(board, unit, gameSpecific, fogOfWar = false) {
   switch (unit.type) {
     case 'pawn':   return pawnMoves(board, unit, gameSpecific.enPassantTarget);
     case 'rook':   return rookMoves(board, unit);
     case 'knight': return knightMoves(board, unit);
     case 'bishop': return bishopMoves(board, unit);
     case 'queen':  return queenMoves(board, unit);
-    case 'king':   return kingMoves(board, unit, gameSpecific.castlingRights);
+    case 'king':   return kingMoves(board, unit, gameSpecific.castlingRights, fogOfWar);
     default:       return [];
   }
 }
@@ -212,6 +211,25 @@ export function getAllLegalMoves(board, color, gameSpecific) {
         actions.push(action);
       }
     }
+  }
+  return actions;
+}
+
+/**
+ * All pseudo-legal moves for `color` under fog-of-war rules.
+ * Moves are not filtered for check — players can move into check since they
+ * can't see threats. Castling skips the transit-square attack checks.
+ * @param {object} board
+ * @param {string} color  'white' | 'black'
+ * @param {object} gameSpecific
+ * @returns {import('../../interfaces/types.js').Action[]}
+ */
+export function getAllFogMoves(board, color, gameSpecific) {
+  const actions = [];
+  for (const sq of Object.keys(board)) {
+    const unit = board[sq];
+    if (!unit || unit.ownerId !== color) continue;
+    actions.push(...pseudoLegalForUnit(board, unit, gameSpecific, true));
   }
   return actions;
 }
