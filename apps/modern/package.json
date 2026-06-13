@@ -1,0 +1,16 @@
+{
+  "name": "@battle-sim/modern",
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite --port 5174",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@battle-sim/api-client": "*"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

@@ -191,4 +191,16 @@ export const CardBattleGame = {
     });
     return `Turn ${state.turnNumber}\n` + heroes.join('\n');
   },
+
+  getVisibleState(state, playerId) {
+    const hands = {};
+    const decks  = {};
+    for (const [pid, hand] of Object.entries(state.gameSpecific.hands)) {
+      hands[pid] = pid === playerId ? hand : hand.map(() => '?');
+    }
+    for (const [pid, deck] of Object.entries(state.gameSpecific.decks)) {
+      decks[pid]  = pid === playerId ? deck : deck.map(() => '?');
+    }
+    return { ...state, gameSpecific: { ...state.gameSpecific, hands, decks } };
+  },
 };

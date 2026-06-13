@@ -209,4 +209,16 @@ export const TacticalGame = {
       unitSummary,
     ].join('\n');
   },
+
+  getVisibleState(state, playerId) {
+    const VISION = 2;
+    const myUnits = state.units.filter(u => u.alive && u.ownerId === playerId);
+    return {
+      ...state,
+      units: state.units.filter(u =>
+        u.ownerId === playerId ||
+        myUnits.some(m => Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= VISION)
+      ),
+    };
+  },
 };

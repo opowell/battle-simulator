@@ -1,5 +1,5 @@
-import { isKingInCheck, renderBoard } from './board.js';
-import { getAllLegalMoves } from './moves.js';
+import { isKingInCheck, renderBoard, getVisibleSquares } from './board.js';
+import { getAllLegalMoves, getAllFogMoves } from './moves.js';
 
 // ---------------------------------------------------------------------------
 // Initial board setup
@@ -73,7 +73,7 @@ function updateCastlingRights(rights, unit, square) {
 export const ChessGame = {
   name: 'Chess',
 
-  createInitialState(players) {
+  createInitialState(players, config = {}) {
     const board = initialBoard();
     return {
       gameName: 'Chess',
@@ -92,11 +92,15 @@ export const ChessGame = {
         },
         halfMoveClock: 0,
         inCheck: false,
+        fogOfWar: config.fogOfWar ?? false,
       },
     };
   },
 
   getLegalActions(state, playerId) {
+    if (state.gameSpecific.fogOfWar) {
+      return getAllFogMoves(state.board, playerId, state.gameSpecific);
+    }
     return getAllLegalMoves(state.board, playerId, state.gameSpecific);
   },
 
@@ -159,11 +163,22 @@ export const ChessGame = {
       activePlayers: [opponent],
       turnNumber: newTurn,
       lastActions: playerActions,
-      gameSpecific: { enPassantTarget, castlingRights, halfMoveClock, inCheck },
+      gameSpecific: { enPassantTarget, castlingRights, halfMoveClock, inCheck, fogOfWar: state.gameSpecific.fogOfWar },
     };
   },
 
   getResult(state) {
+    if (state.gameSpecific.fogOfWar) {
+      // Win by capturing the king; no checkmate or stalemate
+      const hasWhiteKing = state.units.some(u => u.ownerId === 'white' && u.type === 'king');
+      const hasBlackKing = state.units.some(u => u.ownerId === 'black' && u.type === 'king');
+      if (!hasWhiteKing) return { outcome: 'win', winnerId: 'black', reason: 'king-captured' };
+      if (!hasBlackKing) return { outcome: 'win', winnerId: 'white', reason: 'king-captured' };
+      if (state.gameSpecific.halfMoveClock >= 100) {
+        return { outcome: 'draw', winnerId: null, reason: 'fifty-move-rule' };
+      }
+      return null;
+    }
     const [activePlayer] = state.activePlayers;
     const legal = getAllLegalMoves(state.board, activePlayer, state.gameSpecific);
     if (legal.length > 0) {
@@ -182,10 +197,28 @@ export const ChessGame = {
 
   renderState(state) {
     const { turnNumber, activePlayers, gameSpecific } = state;
-    const check = gameSpecific.inCheck ? ' (CHECK)' : '';
+    const fogNote = gameSpecific.fogOfWar ? ' [Fog of War]' : '';
+    const check = (!gameSpecific.fogOfWar && gameSpecific.inCheck) ? ' (CHECK)' : '';
     return [
-      `Turn ${turnNumber} — ${activePlayers[0]} to move${check}`,
+      `Turn ${turnNumber} — ${activePlayers[0]} to move${check}${fogNote}`,
       renderBoard(state.board),
     ].join('\n');
+  },
+
+  getVisibleState(state, playerId) {
+    if (!state.gameSpecific.fogOfWar) return state;
+    const visible = getVisibleSquares(state.board, playerId);
+    const filteredBoard = { ...state.board };
+    for (const sq of Object.keys(filteredBoard)) {
+      const piece = filteredBoard[sq];
+      if (piece && piece.ownerId !== playerId && !visible.has(sq)) {
+        filteredBoard[sq] = undefined;
+      }
+    }
+    return {
+      ...state,
+      board: filteredBoard,
+      units: boardToUnits(filteredBoard),
+    };
   },
 };

@@ -60,6 +60,7 @@ function formatAction(a) {
   if (a.type === 'build-road') return `${a.unitId}: Build road`;
   if (a.type === 'skip-unit')  return `${a.unitId}: Skip (no action)`;
   if (a.type === 'play-card')  return `Play ${a.payload?.card} (hand[${a.payload?.handIndex}])`;
+  if (a.type === 'ability')    return `${a.unitId}: ${a.abilityName} → ${a.targetId}`;
   if (a.type === 'end-turn')   return 'End turn';
   return JSON.stringify(a);
 }

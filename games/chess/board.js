@@ -134,6 +134,69 @@ export function applyMoveToBoard(board, action) {
 }
 
 /**
+ * Compute the set of squares visible to `color` under fog-of-war rules.
+ * A square is visible if a friendly piece occupies it, can move to it, or attacks it.
+ * Sliding pieces see along rays up to and including the first blocking piece.
+ * Pawns reveal both push squares and diagonal attack squares even when empty.
+ */
+export function getVisibleSquares(board, color) {
+  const visible = new Set();
+  const ROOK_DIRS   = [[0,1],[0,-1],[1,0],[-1,0]];
+  const BISHOP_DIRS = [[1,1],[1,-1],[-1,1],[-1,-1]];
+
+  for (const sq of Object.keys(board)) {
+    const piece = board[sq];
+    if (!piece || piece.ownerId !== color) continue;
+
+    visible.add(sq);
+    const fi = fileIndex(sq);
+    const r  = rankOf(sq);
+
+    if (piece.type === 'pawn') {
+      const dir = color === 'white' ? 1 : -1;
+      const pushSq = squareAt(fi, r + dir);
+      if (pushSq) {
+        visible.add(pushSq);
+        if (!board[pushSq] && r === (color === 'white' ? 2 : 7)) {
+          const push2 = squareAt(fi, r + dir * 2);
+          if (push2) visible.add(push2);
+        }
+      }
+      for (const dfi of [-1, 1]) {
+        const capSq = squareAt(fi + dfi, r + dir);
+        if (capSq) visible.add(capSq);
+      }
+    } else if (piece.type === 'knight') {
+      for (const [dfi, dr] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
+        const dest = squareAt(fi + dfi, r + dr);
+        if (dest) visible.add(dest);
+      }
+    } else if (piece.type === 'king') {
+      for (const [dfi, dr] of [[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]]) {
+        const dest = squareAt(fi + dfi, r + dr);
+        if (dest) visible.add(dest);
+      }
+    } else {
+      // Sliding pieces: rook, bishop, queen
+      const dirs = piece.type === 'rook' ? ROOK_DIRS
+        : piece.type === 'bishop' ? BISHOP_DIRS
+        : [...ROOK_DIRS, ...BISHOP_DIRS];
+      for (const [dfi, dr] of dirs) {
+        let cfi = fi, cr = r;
+        while (true) {
+          cfi += dfi; cr += dr;
+          const dest = squareAt(cfi, cr);
+          if (!dest) break;
+          visible.add(dest);
+          if (board[dest]) break; // can see blocker but not beyond
+        }
+      }
+    }
+  }
+  return visible;
+}
+
+/**
  * Render the board as an ASCII diagram.
  * @param {object} board
  * @returns {string}

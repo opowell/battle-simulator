@@ -21,6 +21,10 @@
  *
  * @property {(state: GameState) => string} renderState
  *   Returns a human-readable string representation.
+ *
+ * @property {(state: GameState, playerId: string) => GameState} [getVisibleState]
+ *   Optional. Returns a filtered view of state for the given player's perspective.
+ *   Called instead of full state when config.fogOfWar is true.
  */
 
 /**
