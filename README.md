@@ -50,6 +50,74 @@ npm start
 
 Set `PORT` to use a different port.
 
+## Web UIs
+
+Three browser UIs ship in `apps/`. Each can load and play every game; they differ only in visual style.
+
+| App | Port | Aesthetic |
+|---|---|---|
+| `apps/classic` | 5173 | CRT terminal — green-on-black, monospace, sidebar action list |
+| `apps/modern` | 5174 | Card-based — clean sans-serif, hover effects, spinner for AI turns |
+| `apps/minimal` | 5175 | Text only — type a number and press Enter to act |
+
+### Running
+
+The UIs talk to the HTTP API server, so start that first:
+
+```sh
+npm start   # API on localhost:3000
+```
+
+Then in a separate terminal, run whichever UI you want:
+
+```sh
+cd apps/classic && npm run dev   # → localhost:5173
+cd apps/modern  && npm run dev   # → localhost:5174
+cd apps/minimal && npm run dev   # → localhost:5175
+```
+
+All three can run simultaneously against the same server.
+
+### How they work
+
+Each UI follows the same flow:
+1. `GET /games` — show a game picker
+2. `POST /sessions` — create a session (you play player 1, random AI plays the rest)
+3. Poll `GET /sessions/:id` every 800 ms while the AI is thinking
+4. When `pendingPlayer` is set, display `legalActions` and wait for your pick
+5. `POST /sessions/:id/action` — submit your chosen action, re-render
+
+They're vanilla JS with no framework. [Vite](https://vitejs.dev) is the only build tool, used for the dev server and ES module bundling.
+
+### Shared API client
+
+All three apps import from `packages/api-client`, a workspace package symlinked by npm workspaces. It's a thin `fetch` wrapper:
+
+```js
+import { BattleSimClient } from '@battle-sim/api-client';
+
+const client = new BattleSimClient();          // defaults to localhost:3000
+await client.listGames();
+await client.createSession('chess', players);
+await client.getSession(id);
+await client.submitAction(id, playerId, action);
+await client.deleteSession(id);
+```
+
+### Adding a new UI
+
+1. Copy any `apps/*` directory, give it a new name and port in `package.json`
+2. Run `npm install` at the monorepo root to wire up the workspace symlink
+3. Import `BattleSimClient` from `@battle-sim/api-client` and build whatever DOM structure you want
+
+### Building for production
+
+```sh
+cd apps/classic && npm run build   # outputs to apps/classic/dist/
+```
+
+Serve the `dist/` directory from any static host. Point it at your deployed API server by instantiating `new BattleSimClient('https://your-api-host')`.
+
 ## Engine API
 
 ### Running a full game
