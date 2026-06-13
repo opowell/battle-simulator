@@ -370,6 +370,13 @@ function hungerBar(hunger) {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
+function getActionDuration(_state, action) {
+  // Hero moves one tile at a time; attack-moves take longer (combat)
+  if (action.type === 'move') return action.isAttack ? 1.5 : 1;
+  if (action.type === 'use-item') return 0.5;
+  return 1;
+}
+
 export const RogueGame = {
   name: 'Rogue: Dungeons of Doom',
   createInitialState,
@@ -377,4 +384,5 @@ export const RogueGame = {
   applyActions,
   getResult,
   renderState,
+  getActionDuration,
 };

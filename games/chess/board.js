@@ -4,6 +4,11 @@ export function fileOf(sq) { return sq[0]; }
 export function rankOf(sq) { return parseInt(sq[1], 10); }
 export function fileIndex(sq) { return FILES.indexOf(sq[0]); }
 
+/** Convert algebraic square → {x, y} with x in [0,7] and y in [0,7]. */
+export function squareToXY(sq) {
+  return { x: fileIndex(sq), y: rankOf(sq) - 1 };
+}
+
 /** Convert 0-based file index + rank (1–8) → algebraic square, or null if off-board. */
 export function squareAt(fi, rank) {
   if (fi < 0 || fi > 7 || rank < 1 || rank > 8) return null;

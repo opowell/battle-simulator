@@ -1,2 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Native npm package binaries
+node_modules/@esbuild/*/esbuild     binary
+node_modules/@esbuild/*/esbuild.exe binary
+node_modules/@rollup/**/*.node      binary
+node_modules/esbuild/bin/esbuild    binary
+node_modules/fsevents/**/*.node     binary

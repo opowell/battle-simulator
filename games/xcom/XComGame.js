@@ -171,6 +171,18 @@ export const XComGame = {
     ].filter(Boolean).join('\n');
   },
 
+  getActionDuration(state, action) {
+    if (action.type === 'move') {
+      const unit = state.units.find(u => u.id === action.unitId);
+      if (!unit) return 1;
+      const from = action.from ?? unit.position;
+      const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+      return dist / (unit.attrs?.moveRange ?? 3);
+    }
+    if (action.type === 'shoot') return 0.5;  // aim + fire
+    return 1;
+  },
+
   getVisibleState(state, playerId) {
     const VISION = 5;
     const myUnits = state.units.filter(u => u.alive && u.ownerId === playerId);

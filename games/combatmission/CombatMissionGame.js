@@ -214,6 +214,26 @@ function getVisibleState(state, playerId) {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
+function getActionDuration(state, action) {
+  if (action.type === 'move') {
+    const unit = state.units.find(u => u.id === action.unitId);
+    if (!unit) return 1;
+    const from = unit.position;
+    const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+    return dist / (UNIT_DEFS[unit.type]?.moveRange ?? 2);
+  }
+  if (action.type === 'fire') {
+    const unit   = state.units.find(u => u.id === action.unitId);
+    const target = state.units.find(u => u.id === action.targetId);
+    if (!unit || !target) return 1;
+    const dx = target.position.x - unit.position.x;
+    const dy = target.position.y - unit.position.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    return dist / 15;  // bullet travel at 15 tiles/sec
+  }
+  return 1;
+}
+
 export const CombatMissionGame = {
   name: 'CombatMission',
   createInitialState,
@@ -222,4 +242,5 @@ export const CombatMissionGame = {
   getResult,
   renderState,
   getVisibleState,
+  getActionDuration,
 };

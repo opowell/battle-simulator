@@ -981,6 +981,25 @@ function getVisibleState(state, playerId) {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
+function getActionDuration(state, action) {
+  if (action.type === 'move') {
+    const unit = state.units.find(u => u.id === action.unitId);
+    if (!unit) return 1;
+    const from = action.from ?? unit.position;
+    const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+    return dist / (UNITS[unit.type]?.moves ?? 2);
+  }
+  if (action.type === 'attack') {
+    const unit = state.units.find(u => u.id === action.unitId);
+    if (!unit) return 1;
+    const range = UNITS[unit.type]?.range ?? 1;
+    return 1 / (range <= 1 ? 1.5 : 1);
+  }
+  if (action.type === 'build')  return 2;
+  if (action.type === 'warp-in') return 1;
+  return 1;
+}
+
 export const Sc2Game = {
   name: 'SC2',
   createInitialState,
@@ -989,4 +1008,5 @@ export const Sc2Game = {
   getResult,
   renderState,
   getVisibleState,
+  getActionDuration,
 };

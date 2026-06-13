@@ -279,6 +279,25 @@ function getVisibleState(state, playerId) {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
+function getActionDuration(state, action) {
+  if (action.type === 'move') {
+    const unit = state.units.find(u => u.id === action.unitId);
+    if (!unit) return 1;
+    const from = unit.position;
+    const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+    // Faster units (higher spd) move more quickly
+    const speed = (unit.stats?.spd ?? 5) / 5;
+    return dist / (speed * (JOB_DEFS[unit.job]?.moveRange ?? 3));
+  }
+  if (action.type === 'ability') {
+    const unit = state.units.find(u => u.id === action.unitId);
+    if (!unit) return 1;
+    const speed = (unit.stats?.spd ?? 5) / 5;
+    return 1 / speed;
+  }
+  return 1;
+}
+
 export const FFTAGame = {
   name: 'Final Fantasy Tactics Advance',
   createInitialState,
@@ -287,4 +306,5 @@ export const FFTAGame = {
   getResult,
   renderState,
   getVisibleState,
+  getActionDuration,
 };

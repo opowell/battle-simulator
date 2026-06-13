@@ -192,6 +192,17 @@ export const CardBattleGame = {
     return `Turn ${state.turnNumber}\n` + heroes.join('\n');
   },
 
+  getActionDuration(_state, action) {
+    if (action.type === 'play-card') {
+      const card = action.payload?.card;
+      if (card === 'heavy-attack') return 2;
+      if (card === 'heal')         return 1.5;
+      if (card === 'block')        return 0.5;
+      if (card === 'attack')       return 1;
+    }
+    return 1;
+  },
+
   getVisibleState(state, playerId) {
     const hands = {};
     const decks  = {};

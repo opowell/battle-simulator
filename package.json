@@ -2,6 +2,7 @@
   "name": "battle-simulator",
   "type": "module",
   "version": "0.1.0",
+  "engines": { "node": ">=18" },
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "start": "node api-server.js",

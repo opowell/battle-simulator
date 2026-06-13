@@ -24,27 +24,24 @@ A turn-based game engine for running and building strategy games in JavaScript (
 
 ## Quick start
 
+Requires Node.js ≥ 18. No install step — `node_modules` is committed.
+
 ### Run a demo
 
 Each game has an interactive demo (you vs random AI) and an `--auto` mode (random vs random):
 
 ```sh
-# Interactive — you play White
-npm run demo:chess
-
-# Auto — watch random agents play
-npm run demo:chess:auto
-
-# Some games also have a --greedy flag for a smarter AI
-npm run demo:xcom:greedy
+node demo/chess-demo.js
+node demo/chess-demo.js --auto
+node demo/xcom-demo.js --auto --greedy
 ```
 
-All demo scripts: `demo:tactical`, `demo:cardbattle`, `demo:civ1`, `demo:civ2`, `demo:risk`, `demo:axisallies`, `demo:combatmission`, `demo:xcom`, `demo:aow`, `demo:cs`, `demo:ffta`, `demo:sc2`, `demo:doom` (append `:auto` or `:greedy` where available).
+All demos are in `demo/`: `chess`, `tactical`, `cardbattle`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `ffta`, `sc2`, `doom`, `rogue`.
 
 ### Start the HTTP API server
 
 ```sh
-npm start
+node api-server.js
 # → Battle Simulator API running on http://localhost:3000
 ```
 
@@ -65,16 +62,18 @@ Three browser UIs ship in `apps/`. Each can load and play every game; they diffe
 The UIs talk to the HTTP API server, so start that first:
 
 ```sh
-npm start   # API on localhost:3000
+node api-server.js    # API on localhost:3000
 ```
 
-Then in a separate terminal, run whichever UI you want:
+Then in a separate terminal, start whichever UI you want:
 
 ```sh
-cd apps/classic && npm run dev   # → localhost:5173
-cd apps/modern  && npm run dev   # → localhost:5174
-cd apps/minimal && npm run dev   # → localhost:5175
+node apps/classic/vite.js   # → localhost:5173
+node apps/modern/vite.js    # → localhost:5174
+node apps/minimal/vite.js   # → localhost:5175
 ```
+
+No `cd` needed — run everything from the repo root.
 
 All three can run simultaneously against the same server.
 
@@ -106,14 +105,14 @@ await client.deleteSession(id);
 
 ### Adding a new UI
 
-1. Copy any `apps/*` directory, give it a new name and port in `package.json`
-2. Run `npm install` at the monorepo root to wire up the workspace symlink
-3. Import `BattleSimClient` from `@battle-sim/api-client` and build whatever DOM structure you want
+1. Copy any `apps/*` directory and add a `vite.js` with the new port
+2. Import `BattleSimClient` from `@battle-sim/api-client` and build whatever DOM structure you want
 
 ### Building for production
 
 ```sh
-cd apps/classic && npm run build   # outputs to apps/classic/dist/
+node node_modules/vite/bin/vite.js build --root apps/classic
+# outputs to apps/classic/dist/
 ```
 
 Serve the `dist/` directory from any static host. Point it at your deployed API server by instantiating `new BattleSimClient('https://your-api-host')`.
@@ -330,7 +329,7 @@ Always include an `end-turn` action when the player may pass.
 ## Tests
 
 ```sh
-npm test
+node --test test/*.test.js
 ```
 
-Runs engine, chess, and tactical test suites.
+Runs all game test suites.

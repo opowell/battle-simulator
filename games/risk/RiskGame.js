@@ -451,6 +451,13 @@ function getVisibleState(state, playerId) {
   return { ...state, gameSpecific: { ...state.gameSpecific, cards } };
 }
 
+function getActionDuration(_state, action) {
+  // Abstract game — all phases take time proportional to their complexity
+  if (action.type === 'attack')   return 0.5;
+  if (action.type === 'fortify')  return 2;
+  return 1;
+}
+
 export const RiskGame = {
   name: 'Risk',
   createInitialState,
@@ -459,4 +466,5 @@ export const RiskGame = {
   getResult,
   renderState,
   getVisibleState,
+  getActionDuration,
 };

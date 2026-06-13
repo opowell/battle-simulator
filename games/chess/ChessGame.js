@@ -1,4 +1,4 @@
-import { isKingInCheck, renderBoard, getVisibleSquares } from './board.js';
+import { isKingInCheck, renderBoard, getVisibleSquares, squareToXY } from './board.js';
 import { getAllLegalMoves, getAllFogMoves } from './moves.js';
 
 // ---------------------------------------------------------------------------
@@ -203,6 +203,21 @@ export const ChessGame = {
       `Turn ${turnNumber} — ${activePlayers[0]} to move${check}${fogNote}`,
       renderBoard(state.board),
     ].join('\n');
+  },
+
+  getActionDuration(_state, action) {
+    // Speed in squares per second: faster pieces complete moves sooner.
+    const PIECE_SPEED = { queen: 5, rook: 4, bishop: 4, knight: 3, king: 2, pawn: 1 };
+    const from = action.from ?? action.rookFrom;
+    const to   = action.to   ?? action.rookTo;
+    if (!from || !to) return 1;
+    const a = squareToXY(from), b = squareToXY(to);
+    const dist = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    // Look up the piece type from the action's unitId prefix (e.g. 'wQ' → queen)
+    const pieceSymbol = action.unitId?.slice(1, 2)?.toLowerCase() ?? '';
+    const typeMap = { r: 'rook', n: 'knight', b: 'bishop', q: 'queen', k: 'king', p: 'pawn' };
+    const speed = PIECE_SPEED[typeMap[pieceSymbol]] ?? 2;
+    return dist / speed;
   },
 
   getVisibleState(state, playerId) {
