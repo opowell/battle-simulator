@@ -209,7 +209,7 @@ test('simcity: renderState returns a non-empty string with year', () => {
 // ---------------------------------------------------------------------------
 
 test('simcity: self-play runs without errors for 20 years', async () => {
-  const engine = new GameEngine(SimCityGame, players(), { maxTurns: 20 });
+  const engine = new GameEngine(SimCityGame, players(), { maxTurns: 20, stepLimit: 10000 });
   const { result } = await engine.run();
   assert.equal(result.outcome, 'draw');
   assert.equal(result.reason, 'max-turns');

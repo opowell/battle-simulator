@@ -356,6 +356,18 @@ function getVisibleState(state, playerId) {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
+function getActionDuration(state, action) {
+  if (action.type === 'move') {
+    const unit = state.units.find(u => u.id === action.unitId);
+    if (!unit) return 1;
+    const from = action.from ?? unit.position;
+    const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+    return dist / (UNITS[unit.type]?.moves ?? 1);
+  }
+  if (action.type === 'attack') return 1;
+  return 1;
+}
+
 export const Civ1Game = {
   name: 'Civ1',
   createInitialState,
@@ -364,4 +376,5 @@ export const Civ1Game = {
   getResult,
   renderState,
   getVisibleState,
+  getActionDuration,
 };

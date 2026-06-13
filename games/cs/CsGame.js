@@ -408,6 +408,30 @@ function getVisibleState(state, teamId) {
   };
 }
 
+const PLAYER_SPEED  = MOVE_RANGE;       // tiles per second
+const BULLET_SPEED  = 20;               // tiles per second
+
+function getActionDuration(state, action) {
+  if (action.type === 'move') {
+    const unit = state.units.find(u => u.id === action.unitId);
+    if (!unit) return 1;
+    const from = action.from ?? unit.position;
+    const dx = action.to.x - from.x, dy = action.to.y - from.y;
+    return Math.sqrt(dx * dx + dy * dy) / PLAYER_SPEED;
+  }
+  if (action.type === 'shoot') {
+    const shooter = state.units.find(u => u.id === action.unitId);
+    const target  = state.units.find(u => u.id === action.targetId);
+    if (!shooter || !target) return 1;
+    const dx = target.position.x - shooter.position.x;
+    const dy = target.position.y - shooter.position.y;
+    return Math.sqrt(dx * dx + dy * dy) / BULLET_SPEED;
+  }
+  if (action.type === 'plant')  return 2;
+  if (action.type === 'defuse') return 5;
+  return 1;
+}
+
 export const CsGame = {
   name: 'CS',
   createInitialState,
@@ -416,4 +440,5 @@ export const CsGame = {
   getResult,
   renderState,
   getVisibleState:   withTeam(getVisibleState),
+  getActionDuration,
 };

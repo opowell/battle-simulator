@@ -25,12 +25,17 @@
  * @property {(state: GameState, playerId: string) => GameState} [getVisibleState]
  *   Optional. Returns a filtered view of state for the given player's perspective.
  *   Called instead of full state when config.fogOfWar is true.
+ *
+ * @property {(state: GameState, action: Action) => number} [getActionDuration]
+ *   Optional. Continuous-time mode only. Returns the sim-time (in seconds) for
+ *   this action to complete — e.g. travelTime for a move, reloadTime for an attack.
+ *   Games that omit this default to duration 1 for every action (uniform spacing).
  */
 
 /**
  * @typedef {Object} GameState
  * @property {string}          gameName
- * @property {number}          turnNumber      Incremented when a full round of all players completes.
+ * @property {number}          turnNumber      Incremented once per turn window (discrete: per round, continuous: per window).
  * @property {string[]}        activePlayers   IDs of players who act in this step (≥1).
  * @property {string}          currentPhase
  * @property {Player[]}        players
@@ -38,6 +43,8 @@
  * @property {object}          board           Game-specific board (opaque to engine).
  * @property {PlayerAction[] | null} lastActions  Actions that produced this state.
  * @property {object}          gameSpecific    Catch-all for game data (e.g. castlingRights).
+ * @property {number}          [clock]         Current simulation time (continuous-time mode only).
+ * @property {number}          [turnEndTime]   Sim-time when the current turn window closes (continuous-time mode only).
  */
 
 /**

@@ -210,6 +210,22 @@ export const TacticalGame = {
     ].join('\n');
   },
 
+  getActionDuration(state, action) {
+    if (action.type === 'move') {
+      const unit = state.units.find(u => u.id === action.unitId);
+      if (!unit) return 1;
+      const from = action.from ?? unit.position;
+      const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+      return dist / UNIT_STATS[unit.type].speed;
+    }
+    if (action.type === 'attack') {
+      const unit = state.units.find(u => u.id === action.unitId);
+      if (!unit) return 1;
+      return 1 / UNIT_STATS[unit.type].attackSpeed;
+    }
+    return 1;
+  },
+
   getVisibleState(state, playerId) {
     const VISION = 2;
     const myUnits = state.units.filter(u => u.alive && u.ownerId === playerId);
