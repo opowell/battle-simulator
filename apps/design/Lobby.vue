@@ -68,7 +68,8 @@ function applyScenario(g, sc) {
 }
 
 function addSlot() {
-  if (slots.value.length >= 8) return;
+  const max = game.value?.maxPlayers ?? 8;
+  if (slots.value.length >= max) return;
   slots.value = [...slots.value, {
     id:    'slot' + slots.value.length,
     name:  'CPU ' + slots.value.length,
@@ -78,7 +79,8 @@ function addSlot() {
 }
 
 function rmSlot(i) {
-  if (slots.value.length <= 2) return;
+  const min = game.value?.minPlayers ?? 2;
+  if (slots.value.length <= min) return;
   slots.value = slots.value.filter((_, k) => k !== i);
 }
 
@@ -146,7 +148,7 @@ function sessionStatusColor(s) {
         <!-- Session rows -->
         <div v-for="s in sessions" :key="s.id" class="sessionrow">
           <div class="gicon">
-            <BsIcon name="grid" :size="20" color="var(--accent)"/>
+            <BsIcon :name="(apiGames.find(g => g.name === s.game) || {}).icon || 'grid'" :size="20" color="var(--accent)"/>
           </div>
           <div style="min-width:0">
             <div style="display:flex;align-items:center;gap:9px;min-width:0">
@@ -200,14 +202,14 @@ function sessionStatusColor(s) {
                class="gamecard" :class="{sel: g.name === selGame}"
                @click="pick(g)">
             <div style="display:flex;justify-content:space-between;align-items:flex-start">
-              <BsIcon name="grid" :size="20" :color="g.name === selGame ? 'var(--accent)' : 'var(--txt)'"/>
+              <BsIcon :name="g.icon || 'grid'" :size="20" :color="g.name === selGame ? 'var(--accent)' : 'var(--txt)'"/>
               <span class="mono" style="font-size:9px;color:var(--faint)">{{g.name}}</span>
             </div>
             <div>
               <div style="font-weight:600;font-size:13px">{{g.name}}</div>
             </div>
             <div style="display:flex;gap:4px;flex-wrap:wrap">
-              <span class="tag">{{g.defaultPlayers.length}}P</span>
+              <span class="tag">{{g.minPlayers === g.maxPlayers ? g.minPlayers : g.minPlayers + '–' + g.maxPlayers}}P</span>
             </div>
           </div>
         </div>
@@ -237,7 +239,7 @@ function sessionStatusColor(s) {
               {{scens.length ? '3' : '2'}} · Configure
             </span>
             <span style="display:flex;align-items:center;gap:8px">
-              <BsIcon name="grid" :size="15" color="var(--accent)"/>
+              <BsIcon :name="game?.icon || 'grid'" :size="15" color="var(--accent)"/>
               <b style="font-size:13px">{{game?.name ?? ''}}</b>
             </span>
           </div>
@@ -250,7 +252,8 @@ function sessionStatusColor(s) {
           <!-- Player slots -->
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
             <label style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)">Players</label>
-            <button class="btn btn-sm btn-ghost" @click="addSlot" :disabled="slots.length >= 8">
+            <button v-if="game && game.minPlayers !== game.maxPlayers"
+                    class="btn btn-sm btn-ghost" @click="addSlot" :disabled="slots.length >= (game.maxPlayers ?? 8)">
               + Add slot
             </button>
           </div>
@@ -266,8 +269,9 @@ function sessionStatusColor(s) {
               <option value="human">Human</option>
               <option v-for="a in (game?.agents ?? [])" :key="a.id" :value="a.id">{{a.name}}</option>
             </select>
-            <button class="iconbtn" style="width:30px;height:30px" @click="rmSlot(i)"
-                    :disabled="slots.length <= 2">
+            <button v-if="game && game.minPlayers !== game.maxPlayers"
+                    class="iconbtn" style="width:30px;height:30px" @click="rmSlot(i)"
+                    :disabled="slots.length <= (game.minPlayers ?? 2)">
               <BsIcon name="trash" :size="14" color="var(--dim)"/>
             </button>
           </div>
