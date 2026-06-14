@@ -21,15 +21,15 @@ export const ABILITIES = {
   },
   fire: {
     name: 'Fire', type: 'magic', range: 3, target: 'enemy',
-    power: 1.3, mpCost: 8, effect: 'damage',
+    power: 1.3, mpCost: 8, effect: 'damage', element: 'fire',
   },
   thunder: {
     name: 'Thunder', type: 'magic', range: 3, target: 'enemy',
-    power: 1.3, mpCost: 8, effect: 'damage',
+    power: 1.3, mpCost: 8, effect: 'damage', element: 'thunder',
   },
   blizzard: {
     name: 'Blizzard', type: 'magic', range: 3, target: 'enemy',
-    power: 1.3, mpCost: 8, effect: 'damage',
+    power: 1.3, mpCost: 8, effect: 'damage', element: 'blizzard',
   },
   aim: {
     name: 'Aim', type: 'physical', range: 4, target: 'enemy',
@@ -74,10 +74,12 @@ export const ABILITIES = {
   flood: {
     name: 'Flood', type: 'magic', range: 3, target: 'enemy',
     power: 1.3, mpCost: 8, effect: 'damage',
+    aoe: 'diamond', aoeRadius: 1,
   },
   gust: {
-    name: 'Gust', type: 'magic', range: 3, target: 'enemy',
+    name: 'Gust', type: 'magic', range: 4, target: 'enemy',
     power: 0.9, mpCost: 8, effect: 'damage+status', status: 'blind',
+    aoe: 'line',
   },
   slow: {
     name: 'Slow', type: 'magic', range: 3, target: 'enemy',
@@ -90,10 +92,12 @@ export const ABILITIES = {
   eidolon: {
     name: 'Eidolon', type: 'magic', range: 4, target: 'enemy',
     power: 2.0, mpCost: 24, effect: 'damage',
+    aoe: 'diamond', aoeRadius: 1,
   },
   phantasm: {
     name: 'Phantasm', type: 'magic', range: 4, target: 'enemy',
     power: 1.1, mpCost: 12, effect: 'damage+status', status: 'blind',
+    aoe: 'diamond', aoeRadius: 1,
   },
   rockseal: {
     name: 'Rockseal', type: 'physical', range: 1, target: 'enemy',
@@ -103,7 +107,7 @@ export const ABILITIES = {
   // ── Warrior (bangaa) ──────────────────────────────────────────────────────
   bash: {
     name: 'Bash', type: 'physical', range: 1, target: 'enemy',
-    power: 1.0, mpCost: 0, effect: 'damage+status', status: 'stop',
+    power: 1.0, mpCost: 0, effect: 'damage+status', status: 'stop', knockback: true,
   },
   'battle-cry': {
     name: 'Battle Cry', type: 'support', range: 0, target: 'self',
@@ -140,15 +144,54 @@ export const ABILITIES = {
     power: 0.3, mpCost: 8, effect: 'damage+steal-mp',
   },
   'saint-cross': {
-    name: 'Saint Cross', type: 'magic', range: 1, target: 'enemy',
+    name: 'Saint Cross', type: 'magic', range: 2, target: 'enemy',
     power: 1.3, mpCost: 12, effect: 'damage',
+    aoe: 'diamond', aoeRadius: 1,
+  },
+
+  // ── Items (Alchemist / Juggler) ───────────────────────────────────────────
+  potion: {
+    name: 'Potion', type: 'item', range: 2, target: 'ally',
+    mpCost: 0, effect: 'heal-fixed', healAmount: 50,
+  },
+  'hi-potion': {
+    name: 'Hi-Potion', type: 'item', range: 2, target: 'ally',
+    mpCost: 0, effect: 'heal-fixed', healAmount: 150,
+  },
+  'x-potion': {
+    name: 'X-Potion', type: 'item', range: 2, target: 'ally',
+    mpCost: 0, effect: 'heal-full',
+  },
+  ether: {
+    name: 'Ether', type: 'item', range: 2, target: 'ally',
+    mpCost: 0, effect: 'restore-mp', mpAmount: 30,
+  },
+  'hi-ether': {
+    name: 'Hi-Ether', type: 'item', range: 2, target: 'ally',
+    mpCost: 0, effect: 'restore-mp', mpAmount: 60,
+  },
+  elixir: {
+    name: 'Elixir', type: 'item', range: 2, target: 'ally',
+    mpCost: 0, effect: 'elixir',
+  },
+  'phoenix-down': {
+    name: 'Phoenix Down', type: 'item', range: 2, target: 'dead-ally',
+    mpCost: 0, effect: 'revive', reviveHpPct: 0.25,
+  },
+  antidote: {
+    name: 'Antidote', type: 'item', range: 2, target: 'ally',
+    mpCost: 0, effect: 'cleanse-one', status: 'poison',
+  },
+  'eye-drops': {
+    name: 'Eye Drops', type: 'item', range: 2, target: 'ally',
+    mpCost: 0, effect: 'cleanse-one', status: 'blind',
+  },
+  "maiden's-kiss": {
+    name: "Maiden's Kiss", type: 'item', range: 2, target: 'ally',
+    mpCost: 0, effect: 'cleanse-one', status: 'sleep',
   },
 
   // ── Alchemist (nu-mou) ────────────────────────────────────────────────────
-  'hi-potion': {
-    name: 'Hi-Potion', type: 'magic', range: 2, target: 'ally',
-    power: 1.8, mpCost: 12, effect: 'heal',
-  },
 
   // ── Morpher (nu-mou) ──────────────────────────────────────────────────────
   'call-beast': {
@@ -163,7 +206,7 @@ export const ABILITIES = {
   // ── Fencer (viera) ────────────────────────────────────────────────────────
   lunge: {
     name: 'Lunge', type: 'physical', range: 1, target: 'enemy',
-    power: 1.4, mpCost: 0, effect: 'damage',
+    power: 1.4, mpCost: 0, effect: 'damage', knockback: true,
   },
   'feather-blow': {
     name: 'Feather Blow', type: 'physical', range: 1, target: 'enemy',
@@ -177,17 +220,19 @@ export const ABILITIES = {
   },
   'last-breath': {
     name: 'Last Breath', type: 'physical', range: 4, target: 'enemy',
-    power: 0.6, mpCost: 0, effect: 'damage+status', status: 'stop',
+    power: 0.6, mpCost: 0, effect: 'damage+status', status: 'doom',
   },
 
   // ── Blue Mage (human) ─────────────────────────────────────────────────────
   'bad-breath': {
     name: 'Bad Breath', type: 'magic', range: 3, target: 'enemy',
-    power: 0, mpCost: 8, effect: 'status', status: 'blind',
+    power: 0, mpCost: 8, effect: 'status', status: 'poison',
+    aoe: 'diamond', aoeRadius: 1,
   },
   'aqua-breath': {
     name: 'Aqua Breath', type: 'magic', range: 3, target: 'enemy',
     power: 1.2, mpCost: 10, effect: 'damage',
+    aoe: 'diamond', aoeRadius: 1,
   },
 
   // ── Hunter (human) ────────────────────────────────────────────────────────
@@ -211,7 +256,7 @@ export const ABILITIES = {
   },
   'mog-rush': {
     name: 'Mog Rush', type: 'physical', range: 2, target: 'enemy',
-    power: 1.0, mpCost: 0, effect: 'damage',
+    power: 1.0, mpCost: 0, effect: 'damage', knockback: true,
   },
 
   // ── Juggler (moogle) ──────────────────────────────────────────────────────
@@ -227,7 +272,7 @@ export const ABILITIES = {
   // ── Animist (moogle) ──────────────────────────────────────────────────────
   'chocobo-rush': {
     name: 'Chocobo Rush', type: 'physical', range: 2, target: 'enemy',
-    power: 1.4, mpCost: 0, effect: 'damage',
+    power: 1.4, mpCost: 0, effect: 'damage', knockback: true,
   },
   'moogle-eye': {
     name: 'Moogle Eye', type: 'magic', range: 3, target: 'enemy',
@@ -235,7 +280,7 @@ export const ABILITIES = {
   },
   'sheep-count': {
     name: 'Sheep Count', type: 'magic', range: 3, target: 'enemy',
-    power: 0, mpCost: 8, effect: 'status', status: 'slow',
+    power: 0, mpCost: 8, effect: 'status', status: 'sleep',
   },
 
   // ── Gunner (moogle) ───────────────────────────────────────────────────────
@@ -250,5 +295,53 @@ export const ABILITIES = {
   sootshot: {
     name: 'Sootshot', type: 'physical', range: 3, target: 'enemy',
     power: 0.4, mpCost: 0, effect: 'damage+status', status: 'slow',
+  },
+
+  // ── Reaction abilities (passive, trigger on being hit) ────────────────────
+  counter: {
+    name: 'Counter', category: 'reaction',
+    description: 'Counterattack with a basic strike after taking melee physical damage',
+  },
+  'weapon-guard': {
+    name: 'Weapon Guard', category: 'reaction',
+    description: '50% chance to evade physical attacks',
+  },
+  reflex: {
+    name: 'Reflex', category: 'reaction',
+    description: '50% chance to evade magic attacks',
+  },
+  'mp-shield': {
+    name: 'MP Shield', category: 'reaction',
+    description: 'Half of HP damage taken is absorbed by MP instead',
+  },
+  'absorb-hp': {
+    name: 'Absorb HP', category: 'reaction',
+    description: 'Recover 25% of HP damage taken',
+  },
+
+  // ── Support abilities (passive, always active) ────────────────────────────
+  'defense-boost': {
+    name: 'Defense Boost', category: 'support',
+    description: '+20% DEF',
+  },
+  'attack-boost': {
+    name: 'Attack Boost', category: 'support',
+    description: '+20% ATK',
+  },
+  'magic-boost': {
+    name: 'Magic Boost', category: 'support',
+    description: '+20% MAG',
+  },
+  resilience: {
+    name: 'Resilience', category: 'support',
+    description: '+20% RES',
+  },
+  'move-plus': {
+    name: 'Move+', category: 'support',
+    description: '+1 movement range',
+  },
+  awareness: {
+    name: 'Awareness', category: 'support',
+    description: 'Immune to Blind',
   },
 };

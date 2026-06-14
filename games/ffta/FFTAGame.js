@@ -1,7 +1,7 @@
 import { ABILITIES } from './abilities.js';
 import { JOB_DEFS, createUnit } from './units.js';
 import { createMap, renderMap, getTile } from './map.js';
-import { getReachable, getInRange, manhattan } from './grid.js';
+import { getReachable, getInRange, getAoeTiles, manhattan } from './grid.js';
 
 // ── Scenario definitions ──────────────────────────────────────────────────────
 
@@ -136,7 +136,7 @@ const SCENARIOS = {
   },
 };
 
-// ── Turn queue ────────────────────────────────────────────────────────────────
+// ── Turn queue (Charge Time system) ──────────────────────────────────────────
 
 function effectiveSpd(u) {
   let spd = u.stats.spd;
@@ -145,14 +145,33 @@ function effectiveSpd(u) {
   return spd;
 }
 
-function buildTurnQueue(units) {
+// Advance every alive unit's CT by their Speed each tick until ≥1 unit hits 100.
+function tickToNextActor(units) {
+  let updated = units.map(u => ({ ...u }));
+  while (!updated.some(u => u.alive && u.ct >= 100)) {
+    updated = updated.map(u => u.alive ? { ...u, ct: u.ct + effectiveSpd(u) } : u);
+  }
+  return updated;
+}
+
+// All units that have reached CT ≥ 100, sorted by CT desc (ties: speed desc, id asc).
+function buildReadyQueue(units) {
   return units
-    .filter(u => u.alive)
-    .sort((a, b) => effectiveSpd(b) - effectiveSpd(a) || a.id.localeCompare(b.id))
+    .filter(u => u.alive && u.ct >= 100)
+    .sort((a, b) => b.ct - a.ct || effectiveSpd(b) - effectiveSpd(a) || a.id.localeCompare(b.id))
     .map(u => u.id);
 }
 
 // ── Damage/heal ───────────────────────────────────────────────────────────────
+
+function effectiveStat(unit, stat) {
+  let v = unit.stats[stat];
+  if (stat === 'atk' && unit.support === 'attack-boost')  v = Math.floor(v * 1.2);
+  if (stat === 'def' && unit.support === 'defense-boost') v = Math.floor(v * 1.2);
+  if (stat === 'mag' && unit.support === 'magic-boost')   v = Math.floor(v * 1.2);
+  if (stat === 'res' && unit.support === 'resilience')    v = Math.floor(v * 1.2);
+  return v;
+}
 
 function calcDamage(attacker, defender, ability, board, rng) {
   const atkH = getTile(board, attacker.position.x, attacker.position.y).height;
@@ -161,18 +180,19 @@ function calcDamage(attacker, defender, ability, board, rng) {
 
   let atk, def;
   if (ability.type === 'magic') {
-    atk = attacker.stats.mag;
-    def = defender.stats.res;
+    atk = effectiveStat(attacker, 'mag');
+    def = effectiveStat(defender, 'res');
   } else {
-    atk = attacker.stats.atk;
-    def = defender.stats.def;
+    atk = effectiveStat(attacker, 'atk');
+    def = effectiveStat(defender, 'def');
     if (attacker.statusEffects.includes('atk-break')) atk = Math.floor(atk * 0.75);
     if (defender.statusEffects.includes('armor-break')) def = Math.floor(def * 0.75);
     if (defender.statusEffects.includes('protect')) def = Math.floor(def * 1.25);
   }
   if (attacker.statusEffects.includes('blind')) atk = Math.floor(atk * 0.7);
 
-  const base = Math.max(1, Math.floor(atk * ability.power * heightMult - def * 0.5));
+  const elemMult = ability.element ? (defender.elemResist?.[ability.element] ?? 1) : 1;
+  const base = Math.max(1, Math.floor(atk * ability.power * heightMult * elemMult - def * 0.5));
   return Math.max(1, Math.floor(base * (0.85 + rng() * 0.3)));
 }
 
@@ -181,26 +201,56 @@ function calcHeal(caster, ability, rng) {
   return Math.max(1, Math.floor(base * (0.9 + rng() * 0.2)));
 }
 
+// ── Knockback ─────────────────────────────────────────────────────────────────
+
+// Push target 1 tile away from caster along the dominant axis.
+// If the destination is blocked or impassable, deal crash damage instead.
+function applyKnockback(units, board, caster, target, rng) {
+  const dx = target.position.x - caster.position.x;
+  const dy = target.position.y - caster.position.y;
+  if (dx === 0 && dy === 0) return;
+
+  const kx = Math.abs(dx) >= Math.abs(dy) ? Math.sign(dx) : 0;
+  const ky = Math.abs(dx) >= Math.abs(dy) ? 0 : Math.sign(dy);
+  const nx = target.position.x + kx;
+  const ny = target.position.y + ky;
+
+  const destTile = getTile(board, nx, ny);
+  const blocker = units.find(u => u.alive && u.id !== target.id && u.position.x === nx && u.position.y === ny);
+
+  if (destTile.passable && !blocker) {
+    target.position = { x: nx, y: ny };
+  } else {
+    const crashDmg = Math.max(1, Math.floor(caster.stats.atk * 0.5 * (0.85 + rng() * 0.3)));
+    target.hp = Math.max(0, target.hp - crashDmg);
+    target.alive = target.hp > 0;
+    if (blocker) {
+      blocker.hp = Math.max(0, blocker.hp - crashDmg);
+      blocker.alive = blocker.hp > 0;
+    }
+  }
+}
+
 // ── Apply ability ─────────────────────────────────────────────────────────────
 
-function applyAbility(state, casterId, targetId, abilityName, rng) {
-  const units = state.units.map(u => ({ ...u, statusEffects: [...u.statusEffects] }));
-  const caster = units.find(u => u.id === casterId);
-  const target = units.find(u => u.id === targetId);
-  const ability = ABILITIES[abilityName];
+function applyStatus(target, status) {
+  const blocked = status === 'blind' && target.support === 'awareness';
+  if (blocked || target.statusEffects.includes(status)) return;
+  target.statusEffects.push(status);
+  if (status === 'doom') target.doomCountdown = 3;
+}
 
-  caster.mp -= ability.mpCost;
-  caster.acted = true;
-
+// Apply ability effect without reaction triggers (used for AoE hits).
+function applyEffectNoReaction(caster, target, ability, board, rng) {
   const { effect } = ability;
-
   if (effect === 'damage' || effect === 'damage+status' || effect === 'damage+steal-mp') {
-    const dmg = calcDamage(caster, target, ability, state.board, rng);
+    const dmg = calcDamage(caster, target, ability, board, rng);
     target.hp = Math.max(0, target.hp - dmg);
     target.alive = target.hp > 0;
-
+    // hitting a sleeping unit wakes it
+    target.statusEffects = target.statusEffects.filter(s => s !== 'sleep');
     if (effect === 'damage+status' && ability.status && target.alive) {
-      if (!target.statusEffects.includes(ability.status)) target.statusEffects.push(ability.status);
+      applyStatus(target, ability.status);
     }
     if (effect === 'damage+steal-mp') {
       const stolen = Math.min(target.mp, 8);
@@ -210,14 +260,150 @@ function applyAbility(state, casterId, targetId, abilityName, rng) {
   } else if (effect === 'heal') {
     const healAmt = calcHeal(caster, ability, rng);
     target.hp = Math.min(target.maxHp, target.hp + healAmt);
+  } else if (effect === 'heal-fixed') {
+    target.hp = Math.min(target.maxHp, target.hp + ability.healAmount);
+  } else if (effect === 'heal-full') {
+    target.hp = target.maxHp;
+  } else if (effect === 'restore-mp') {
+    target.mp = Math.min(target.maxMp, target.mp + ability.mpAmount);
+  } else if (effect === 'elixir') {
+    target.hp = target.maxHp;
+    target.mp = target.maxMp;
+  } else if (effect === 'revive') {
+    target.hp = Math.max(1, Math.floor(target.maxHp * ability.reviveHpPct));
+    target.alive = true;
+    target.ct = 0;
+    target.statusEffects = [];
+    target.doomCountdown = null;
+  } else if (effect === 'cleanse-one') {
+    target.statusEffects = target.statusEffects.filter(s => s !== ability.status);
+    if (ability.status === 'doom') target.doomCountdown = null;
   } else if (effect === 'status' && ability.status) {
-    if (!target.statusEffects.includes(ability.status)) target.statusEffects.push(ability.status);
+    applyStatus(target, ability.status);
   } else if (effect === 'steal-mp') {
     const stolen = Math.min(target.mp, 8);
     target.mp -= stolen;
     caster.mp = Math.min(caster.maxMp, caster.mp + stolen);
   } else if (effect === 'cleanse') {
     target.statusEffects = [];
+    target.doomCountdown = null;
+  }
+}
+
+function applyAbility(state, casterId, targetId, abilityName, rng, targetPos) {
+  const units = state.units.map(u => ({ ...u, statusEffects: [...u.statusEffects] }));
+  const caster = units.find(u => u.id === casterId);
+  const ability = ABILITIES[abilityName];
+
+  caster.mp -= ability.mpCost;
+  caster.acted = true;
+
+  if (ability.aoe && targetPos) {
+    const lineRadius = ability.aoe === 'line' ? ability.range : (ability.aoeRadius ?? 1);
+    const aoeTiles = getAoeTiles(ability.aoe, targetPos, caster.position, lineRadius);
+    units.filter(u => {
+      if (!u.alive) return false;
+      if (ability.target === 'enemy') return u.ownerId !== caster.ownerId;
+      if (ability.target === 'ally') return u.ownerId === caster.ownerId;
+      return false;
+    }).filter(u => aoeTiles.some(t => t.x === u.position.x && t.y === u.position.y))
+      .forEach(t => applyEffectNoReaction(caster, t, ability, state.board, rng));
+    return units;
+  }
+
+  const target = units.find(u => u.id === targetId);
+
+  const { effect } = ability;
+  const isSelf = casterId === targetId;
+
+  if (effect === 'damage' || effect === 'damage+status' || effect === 'damage+steal-mp') {
+    // ── Reaction: evasion ────────────────────────────────────────────────────
+    let evaded = false;
+    if (!isSelf) {
+      if (ability.type === 'physical' && target.reaction === 'weapon-guard' && rng() < 0.5) evaded = true;
+      if (ability.type === 'magic'    && target.reaction === 'reflex'        && rng() < 0.5) evaded = true;
+    }
+
+    if (!evaded) {
+      let dmg = calcDamage(caster, target, ability, state.board, rng);
+
+      // ── Reaction: MP Shield — half damage absorbed by MP ─────────────────
+      if (!isSelf && target.reaction === 'mp-shield' && target.mp > 0) {
+        const mpAbsorb = Math.min(target.mp, Math.floor(dmg / 2));
+        target.mp -= mpAbsorb;
+        dmg = Math.max(1, dmg - mpAbsorb);
+      }
+
+      const preHp = target.hp;
+      target.hp = Math.max(0, target.hp - dmg);
+      target.alive = target.hp > 0;
+
+      // ── Reaction: Absorb HP — recover 25% of damage taken ────────────────
+      if (!isSelf && target.reaction === 'absorb-hp') {
+        const absorbed = Math.floor((preHp - target.hp) * 0.25);
+        if (absorbed > 0) {
+          target.hp = Math.min(target.maxHp, target.hp + absorbed);
+          target.alive = target.hp > 0;
+        }
+      }
+
+      // hitting a sleeping unit wakes it
+      target.statusEffects = target.statusEffects.filter(s => s !== 'sleep');
+
+      // ── Secondary effects ─────────────────────────────────────────────────
+      if (effect === 'damage+status' && ability.status && target.alive) {
+        applyStatus(target, ability.status);
+      }
+      if (effect === 'damage+steal-mp') {
+        const stolen = Math.min(target.mp, 8);
+        target.mp -= stolen;
+        caster.mp = Math.min(caster.maxMp, caster.mp + stolen);
+      }
+
+      // ── Reaction: Counter — counterattack with basic attack ───────────────
+      if (!isSelf && target.alive && caster.alive &&
+          target.reaction === 'counter' && ability.type === 'physical' &&
+          manhattan(target.position, caster.position) <= 1) {
+        const counterDmg = calcDamage(target, caster, ABILITIES['attack'], state.board, rng);
+        caster.hp = Math.max(0, caster.hp - counterDmg);
+        caster.alive = caster.hp > 0;
+      }
+
+      // ── Knockback ─────────────────────────────────────────────────────────
+      if (!isSelf && ability.knockback && target.alive) {
+        applyKnockback(units, state.board, caster, target, rng);
+      }
+    }
+  } else if (effect === 'heal') {
+    const healAmt = calcHeal(caster, ability, rng);
+    target.hp = Math.min(target.maxHp, target.hp + healAmt);
+  } else if (effect === 'heal-fixed') {
+    target.hp = Math.min(target.maxHp, target.hp + ability.healAmount);
+  } else if (effect === 'heal-full') {
+    target.hp = target.maxHp;
+  } else if (effect === 'restore-mp') {
+    target.mp = Math.min(target.maxMp, target.mp + ability.mpAmount);
+  } else if (effect === 'elixir') {
+    target.hp = target.maxHp;
+    target.mp = target.maxMp;
+  } else if (effect === 'revive') {
+    target.hp = Math.max(1, Math.floor(target.maxHp * ability.reviveHpPct));
+    target.alive = true;
+    target.ct = 0;
+    target.statusEffects = [];
+    target.doomCountdown = null;
+  } else if (effect === 'cleanse-one') {
+    target.statusEffects = target.statusEffects.filter(s => s !== ability.status);
+    if (ability.status === 'doom') target.doomCountdown = null;
+  } else if (effect === 'status' && ability.status) {
+    applyStatus(target, ability.status);
+  } else if (effect === 'steal-mp') {
+    const stolen = Math.min(target.mp, 8);
+    target.mp -= stolen;
+    caster.mp = Math.min(caster.maxMp, caster.mp + stolen);
+  } else if (effect === 'cleanse') {
+    target.statusEffects = [];
+    target.doomCountdown = null;
   }
 
   return units;
@@ -226,11 +412,32 @@ function applyAbility(state, casterId, targetId, abilityName, rng) {
 // ── Advance to next unit's turn ───────────────────────────────────────────────
 
 function advanceTurn(state) {
-  let units = state.units.map(u => ({ ...u }));
-  let { activeUnitId, turnQueue, roundNumber } = state.gameSpecific;
+  let units = state.units.map(u => ({ ...u, statusEffects: [...u.statusEffects] }));
+  let { activeUnitId, turnQueue } = state.gameSpecific;
   let { turnNumber } = state;
 
-  units = units.map(u => u.id === activeUnitId ? { ...u, moved: true, acted: true, preMovedPosition: null } : u);
+  // End-of-turn effects for the active unit
+  const activeUnit = units.find(u => u.id === activeUnitId);
+  if (activeUnit?.alive) {
+    if (activeUnit.statusEffects.includes('poison')) {
+      activeUnit.hp = Math.max(0, activeUnit.hp - Math.max(1, Math.floor(activeUnit.maxHp * 0.1)));
+      if (activeUnit.hp === 0) activeUnit.alive = false;
+    }
+    if (activeUnit.statusEffects.includes('doom') && activeUnit.doomCountdown !== null) {
+      activeUnit.doomCountdown -= 1;
+      if (activeUnit.doomCountdown <= 0) {
+        activeUnit.hp = 0;
+        activeUnit.alive = false;
+      }
+    }
+  }
+
+  // End current unit's turn: lock flags, drain 100 CT (keep overflow for next cycle)
+  units = units.map(u =>
+    u.id === activeUnitId
+      ? { ...u, moved: true, acted: true, preMovedPosition: null, ct: Math.max(0, u.ct - 100) }
+      : u
+  );
 
   let remaining = turnQueue.filter(id => units.find(u => u.id === id)?.alive);
 
@@ -238,12 +445,17 @@ function advanceTurn(state) {
   if (remaining.length > 0) {
     [nextId, ...remaining] = remaining;
   } else {
-    roundNumber += 1;
-    turnNumber += 1;
-    const order = buildTurnQueue(units);
-    units = units.map(u => u.alive ? { ...u, moved: false, acted: false, preMovedPosition: null } : u);
-    [nextId, ...remaining] = order;
+    units = tickToNextActor(units);
+    const readyQueue = buildReadyQueue(units);
+    [nextId, ...remaining] = readyQueue;
   }
+
+  turnNumber += 1;
+
+  // Give the incoming unit a fresh turn
+  units = units.map(u =>
+    u.id === nextId ? { ...u, moved: false, acted: false } : u
+  );
 
   const nextOwner = units.find(u => u.id === nextId)?.ownerId ?? state.players[0].id;
 
@@ -251,7 +463,7 @@ function advanceTurn(state) {
     units,
     turnNumber,
     activePlayers: [nextOwner],
-    gameSpecific: { activeUnitId: nextId, turnQueue: remaining, roundNumber },
+    gameSpecific: { activeUnitId: nextId, turnQueue: remaining },
   };
 }
 
@@ -267,23 +479,28 @@ function abilityPreview(caster, target, ability, board) {
 
     let atk, def;
     if (ability.type === 'magic') {
-      atk = caster.stats.mag;
-      def = target.stats.res;
+      atk = effectiveStat(caster, 'mag');
+      def = effectiveStat(target, 'res');
     } else {
-      atk = caster.stats.atk;
-      def = target.stats.def;
+      atk = effectiveStat(caster, 'atk');
+      def = effectiveStat(target, 'def');
       if (caster.statusEffects.includes('atk-break')) atk = Math.floor(atk * 0.75);
       if (target.statusEffects.includes('armor-break')) def = Math.floor(def * 0.75);
       if (target.statusEffects.includes('protect')) def = Math.floor(def * 1.25);
     }
     if (caster.statusEffects.includes('blind')) atk = Math.floor(atk * 0.7);
 
-    const base = Math.max(1, Math.floor(atk * ability.power * heightMult - def * 0.5));
+    const elemMult = ability.element ? (target.elemResist?.[ability.element] ?? 1) : 1;
+    const base = Math.max(1, Math.floor(atk * ability.power * heightMult * elemMult - def * 0.5));
     const lo = Math.max(1, Math.floor(base * 0.85));
     const hi = Math.max(1, Math.floor(base * 1.15));
     let p = lo === hi ? `~${lo} dmg` : `${lo}-${hi} dmg`;
+    if (elemMult !== 1) p += elemMult > 1 ? ' (WEAK)' : ' (RESIST)';
+    if (ability.type === 'physical' && target.reaction === 'weapon-guard') p += ' (50% evade)';
+    if (ability.type === 'magic'    && target.reaction === 'reflex')        p += ' (50% evade)';
     if (effect === 'damage+status' && ability.status) p += ` + ${ability.status}`;
     if (effect === 'damage+steal-mp') p += ` + steal MP`;
+    if (ability.knockback) p += ` + knockback`;
     return p;
   }
 
@@ -294,6 +511,12 @@ function abilityPreview(caster, target, ability, board) {
     return lo === hi ? `~${lo} heal` : `${lo}-${hi} heal`;
   }
 
+  if (effect === 'heal-fixed')  return `+${ability.healAmount} HP`;
+  if (effect === 'heal-full')   return `full HP`;
+  if (effect === 'restore-mp')  return `+${ability.mpAmount} MP`;
+  if (effect === 'elixir')      return `full HP+MP`;
+  if (effect === 'revive')      return `revive (${Math.round(ability.reviveHpPct * 100)}% HP)`;
+  if (effect === 'cleanse-one') return `cure ${ability.status}`;
   if (effect === 'status' && ability.status) return `→ ${ability.status}`;
   if (effect === 'steal-mp') return `steal ≤8 MP`;
   if (effect === 'cleanse') return `remove status effects`;
@@ -311,11 +534,17 @@ function getLegalActions(state, playerId) {
     return [{ type: 'end-turn', unitId: '__player__' }];
   }
 
+  // stop/sleep: unit cannot act this turn
+  if (unit.statusEffects.includes('stop') || unit.statusEffects.includes('sleep')) {
+    return [{ type: 'end-turn', unitId: unit.id }];
+  }
+
   const actions = [];
 
   if (!unit.moved) {
     const { moveRange } = JOB_DEFS[unit.job];
-    for (const to of getReachable(state.board, unit.position, moveRange, state.units)) {
+    const effectiveMoveRange = moveRange + (unit.support === 'move-plus' ? 1 : 0);
+    for (const to of getReachable(state.board, unit.position, effectiveMoveRange, state.units)) {
       actions.push({ type: 'move', unitId: unit.id, to });
     }
   } else if (!unit.acted && unit.preMovedPosition) {
@@ -327,7 +556,38 @@ function getLegalActions(state, playerId) {
       const ability = ABILITIES[abilityName];
       if (!ability || ability.mpCost > unit.mp) continue;
 
-      if (ability.target === 'self') {
+      if (ability.aoe) {
+        // AoE: target a tile; blast hits all valid units within the pattern
+        if (ability.aoe === 'line') {
+          for (const [sx, sy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+            const lineTiles = [];
+            for (let i = 1; i <= ability.range; i++)
+              lineTiles.push({ x: unit.position.x + sx * i, y: unit.position.y + sy * i });
+            const hits = state.units.filter(u => {
+              if (!u.alive) return false;
+              return ability.target === 'enemy' ? u.ownerId !== playerId : u.ownerId === playerId;
+            }).filter(u => lineTiles.some(t => t.x === u.position.x && t.y === u.position.y));
+            if (!hits.length) continue;
+            const targetPos = { x: unit.position.x + sx, y: unit.position.y + sy };
+            actions.push({ type: 'ability', unitId: unit.id, abilityName, targetPos, preview: `AoE line ×${hits.length}` });
+          }
+        } else {
+          const radius = ability.aoeRadius ?? 1;
+          for (let cx = 0; cx < state.board.width; cx++) {
+            for (let cy = 0; cy < state.board.height; cy++) {
+              const dist = Math.abs(cx - unit.position.x) + Math.abs(cy - unit.position.y);
+              if (dist === 0 || dist > ability.range) continue;
+              const aoeTiles = getAoeTiles(ability.aoe, { x: cx, y: cy }, null, radius);
+              const hits = state.units.filter(u => {
+                if (!u.alive) return false;
+                return ability.target === 'enemy' ? u.ownerId !== playerId : u.ownerId === playerId;
+              }).filter(u => aoeTiles.some(t => t.x === u.position.x && t.y === u.position.y));
+              if (!hits.length) continue;
+              actions.push({ type: 'ability', unitId: unit.id, abilityName, targetPos: { x: cx, y: cy }, preview: `AoE ×${hits.length}` });
+            }
+          }
+        }
+      } else if (ability.target === 'self') {
         const prev = abilityPreview(unit, unit, ability, state.board);
         actions.push({ type: 'ability', unitId: unit.id, abilityName, targetId: unit.id, ...(prev ? { preview: prev } : {}) });
       } else {
@@ -380,12 +640,13 @@ function applyActions(state, playerActions, rng = Math.random) {
 
   if (action.type === 'ability') {
     const caster = state.units.find(u => u.id === action.unitId);
-    const target = state.units.find(u => u.id === action.targetId);
-    const units = applyAbility(state, action.unitId, action.targetId, action.abilityName, rng)
+    const aimPos = action.targetPos ?? state.units.find(u => u.id === action.targetId)?.position;
+    const units = applyAbility(state, action.unitId, action.targetId, action.abilityName, rng, action.targetPos)
       .map(u => {
         if (u.id !== action.unitId) return u;
-        const facing = (caster && target && action.unitId !== action.targetId)
-          ? Math.atan2(target.position.y - caster.position.y, target.position.x - caster.position.x)
+        const shouldFace = caster && aimPos && (action.targetPos || action.unitId !== action.targetId);
+        const facing = shouldFace
+          ? Math.atan2(aimPos.y - caster.position.y, aimPos.x - caster.position.x)
           : u.facing;
         return { ...u, facing, preMovedPosition: null };
       });
@@ -411,18 +672,21 @@ function getResult(state) {
 
 function renderState(state) {
   const { turnNumber, activePlayers, units, players, gameSpecific, board } = state;
-  const { activeUnitId, roundNumber } = gameSpecific ?? {};
+  const { activeUnitId } = gameSpecific ?? {};
   const activeUnit = units.find(u => u.id === activeUnitId);
 
   const fmtUnit = u => {
     if (!u.alive) return null;
-    const st = u.statusEffects.length ? `[${u.statusEffects.join(',')}]` : '';
+    const statusList = u.statusEffects.map(s =>
+      s === 'doom' && u.doomCountdown != null ? `doom:${u.doomCountdown}` : s
+    );
+    const st = statusList.length ? `[${statusList.join(',')}]` : '';
     const flags = `${u.moved ? 'M' : '.'}${u.acted ? 'A' : '.'}`;
-    return `${u.symbol}(${u.hp}/${u.maxHp}hp ${u.mp}mp ${flags})${st}`;
+    return `${u.symbol}(${u.hp}/${u.maxHp}hp ${u.mp}mp CT:${Math.floor(u.ct)} ${flags})${st}`;
   };
 
   const lines = [
-    `═══ Round ${roundNumber}  Turn ${turnNumber}  ―  Active: ${activeUnit ? `${activeUnit.id}(${activeUnit.job}) → ${activePlayers[0]}` : 'none'} ═══`,
+    `═══ Turn ${turnNumber}  ―  Active: ${activeUnit ? `${activeUnit.id}(${activeUnit.job}) CT:${Math.floor(activeUnit.ct)} → ${activePlayers[0]}` : 'none'} ═══`,
     renderMap(board, units),
     `Map: #=wall .=grass 1=elevated(+1atk) 2=high(+2atk) | Uppercase=P1 Lowercase=P2`,
     '',
@@ -437,6 +701,7 @@ function renderState(state) {
     lines.push('');
     lines.push(`Active: ${activeUnit.id}  ${activeUnit.job} (${activeUnit.race})  pos(${activeUnit.position.x},${activeUnit.position.y})  HP:${activeUnit.hp}/${activeUnit.maxHp}  MP:${activeUnit.mp}/${activeUnit.maxMp}`);
     lines.push(`  Abilities: ${activeUnit.abilities.map(a => ABILITIES[a]?.name ?? a).join(' · ')}`);
+    lines.push(`  Reaction: ${ABILITIES[activeUnit.reaction]?.name ?? '—'}  |  Support: ${ABILITIES[activeUnit.support]?.name ?? '—'}`);
     lines.push(`  Flags: ${activeUnit.moved ? 'MOVED' : 'can-move'}  ${activeUnit.acted ? 'ACTED' : 'can-act'}`);
   }
 
@@ -458,9 +723,10 @@ function createInitialState(players, config = {}) {
     ...scen.p2.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p2.id, pos, Math.PI)),
   ];
 
-  const order = buildTurnQueue(units);
-  const [activeUnitId, ...turnQueue] = order;
-  const activeOwner = units.find(u => u.id === activeUnitId)?.ownerId ?? p1.id;
+  const tickedUnits = tickToNextActor(units);
+  const readyQueue = buildReadyQueue(tickedUnits);
+  const [activeUnitId, ...turnQueue] = readyQueue;
+  const activeOwner = tickedUnits.find(u => u.id === activeUnitId)?.ownerId ?? p1.id;
 
   return {
     gameName: 'FFTA',
@@ -468,10 +734,10 @@ function createInitialState(players, config = {}) {
     activePlayers: [activeOwner],
     currentPhase: 'action',
     players,
-    units,
+    units: tickedUnits,
     board,
     lastActions: null,
-    gameSpecific: { activeUnitId, turnQueue, roundNumber: 1 },
+    gameSpecific: { activeUnitId, turnQueue },
   };
 }
 
@@ -570,7 +836,11 @@ export const FFTAGame = {
           mp:            u?.mp,    maxMp: u?.maxMp,
           stats:         u?.stats  ? { ...u.stats } : null,
           abilities:     u?.abilities ? u.abilities.map(k => ({ key: k, name: ABILITIES[k]?.name ?? k })) : null,
+          reaction:      u?.reaction ? { key: u.reaction, name: ABILITIES[u.reaction]?.name ?? u.reaction } : null,
+          support:       u?.support  ? { key: u.support,  name: ABILITIES[u.support]?.name  ?? u.support  } : null,
           statusEffects: u?.statusEffects ? [...u.statusEffects] : null,
+          doomCountdown: u?.doomCountdown ?? null,
+          ct:            u?.ct,
           moved:         u?.moved,
           acted:         u?.acted,
           isActive:      u ? u.id === activeUnitId : false,
