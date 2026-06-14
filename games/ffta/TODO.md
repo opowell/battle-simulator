@@ -1,5 +1,4 @@
 - units facing direction: does not work.
-- [x] show ability info (how much damage it does, etc.) — `preview` field on ability actions shows estimated dmg/heal range and status.
 - hard to see what computer player did -> pause between actions; add some kind of indicator for an attack / damage.
 - is there terrain? right now board looks empty.
 - damage calculations: are they correct? compare to original game.
