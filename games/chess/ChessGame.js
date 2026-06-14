@@ -1,5 +1,6 @@
 import { isKingInCheck, renderBoard, getVisibleSquares, squareToXY } from './board.js';
 import { getAllLegalMoves, getAllFogMoves } from './moves.js';
+import { ChessAgent } from './ChessAgent.js';
 
 // ---------------------------------------------------------------------------
 // Initial board setup
@@ -73,6 +74,9 @@ function updateCastlingRights(rights, unit, square) {
 export const ChessGame = {
   name: 'Chess',
   colors: { light: '#f0d9b5', dark: '#b58863' },
+  agents: [
+    { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent },
+  ],
   scenarios: [
     { id: 'standard',    name: 'Standard',    description: 'Classic starting position',                                    config: {} },
     { id: 'fog-of-war',  name: 'Fog of War',  description: 'Each side sees only squares their pieces can reach',           config: { fogOfWar: true } },

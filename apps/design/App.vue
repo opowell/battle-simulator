@@ -27,7 +27,7 @@ const activeField = computed(() => {
   const s = liveState.value;
   if (!s) return null;
   const g = s.grid;
-  if (!g) return fieldFor(s.game);
+  if (!g) return null;
 
   const apiGame = apiGames.value.find(x => x.name === s.game);
   const defs    = apiGame?.defaultPlayers ?? [];
@@ -142,7 +142,7 @@ async function createSession(cfg) {
   const players = cfg.players.map((p, i) => ({
     id:    defs[i]?.id ?? ('p' + (i + 1)),
     name:  p.name || defs[i]?.name || ('Player ' + (i + 1)),
-    agent: p.agent === 'human' ? 'human' : 'random',
+    agent: p.agent === 'human' ? 'human' : (p.agent ?? 'random'),
   }));
   try {
     const state = await api.create({ game: cfg.game, players, config: { maxTurns: cfg.maxTurns ?? 500 } });
@@ -199,7 +199,7 @@ function exitBattle() {
         </button>
       </div>
       <span class="mono" style="font-size:11px;color:var(--faint)">
-        {{apiGames.length || GAMES.length}} games
+        {{apiGames.length}} games
       </span>
     </div>
 

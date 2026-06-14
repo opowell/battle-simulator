@@ -88,17 +88,12 @@ function App(){
 
   const openSession=(s)=>{ setActive(s); setView('battle'); };
   const createSession=(cfg)=>{
-    const f=fieldFor(cfg.game);
-    const players=cfg.players.map((p,i)=>({ ...p, team:(f.teams[i%f.teams.length]||{}).id }));
+    const players=cfg.players.map((p,i)=>({ ...p, team:'p'+(i+1) }));
     setActive({ id:randId(), game:cfg.game, name:cfg.name, time:cfg.time, fog:cfg.fog, max:cfg.maxTurns, turn:0, players });
     setView('battle');
   };
 
-  const themedField = useMemoA(()=>{
-    if(!active) return null;
-    const f=fieldFor(active.game);
-    return { ...f, teams: f.teams.map((tm,i)=> i<2 ? { ...tm, raw:t.teams[i], color:i===0?'var(--teamA)':'var(--teamB)' } : tm) };
-  }, [active, t.teams]);
+  const themedField = useMemoA(()=>null, [active, t.teams]);
 
   return (
     <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
@@ -114,7 +109,7 @@ function App(){
           <Segmented value={theme} onChange={pickTheme} size="sm"
             options={THEMES.map(th=>({ value:th.id, label:th.label }))}/>
         </div>
-        <span className="mono" style={{fontSize:11,color:'var(--faint)'}}>{GAMES.length} game defs</span>
+        <span className="mono" style={{fontSize:11,color:'var(--faint)'}}>battle simulator</span>
       </div>
 
       <div style={{flex:1,minHeight:0}}>

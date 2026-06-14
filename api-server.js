@@ -425,11 +425,16 @@ function route(req) {
 // Handlers
 // ---------------------------------------------------------------------------
 
+const BUILTIN_AGENTS = [
+  { id: 'random', name: 'AI (random)' },
+];
+
 async function handleGames(res) {
   send(res, 200, Object.entries(GAMES).map(([name, { game, defaultPlayers }]) => ({
     name,
     defaultPlayers,
     scenarios: game.scenarios ?? [],
+    agents: [...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n }) => ({ id, name: n }))],
   })));
 }
 
@@ -450,9 +455,15 @@ async function handleCreateSession(req, res) {
   const apiAgents = new Map();
   const players = defs.map(({ id, name, agent: agentType = 'human' }) => {
     let agent;
-    if (agentType === 'random') {
+    if (agentType === 'random' || agentType === 'ai') {
       agent = RandomAgent;
     } else {
+      const gameAgent = entry.game.agents?.find(a => a.id === agentType);
+      if (gameAgent) {
+        agent = gameAgent.agent;
+      }
+    }
+    if (!agent) {
       const a = new ApiAgent(id);
       apiAgents.set(id, a);
       agent = a;

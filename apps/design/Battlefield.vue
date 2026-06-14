@@ -142,8 +142,6 @@ const rosterTeams = computed(() =>
   }))
 );
 
-// ── game metadata ──────────────────────────────────────────────
-const gameObj = computed(() => GAMES.find(g => g.key === props.field?.game) || {});
 
 // ── live session helpers ───────────────────────────────────────
 const isLive          = computed(() => !!props.liveState);
@@ -237,8 +235,8 @@ onUnmounted(() => {
         Lobby
       </button>
       <div style="margin-left:10px;display:flex;align-items:center;gap:8px">
-        <BsIcon :name="gameObj.icon || 'crosshair'" :size="14" color="var(--accent)"/>
-        <span style="font-weight:600;font-size:13px">{{gameObj.name || field.game}}</span>
+        <BsIcon name="crosshair" :size="14" color="var(--accent)"/>
+        <span style="font-weight:600;font-size:13px">{{field.game}}</span>
         <span class="mono" style="font-size:11px;color:var(--faint)">{{field.label}}</span>
       </div>
 
