@@ -51,65 +51,11 @@ const isDone          = computed(() => isLive.value && props.liveState.status !=
 const legalActions    = computed(() => props.liveState?.legalActions ?? []);
 const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
 
-// ── chess interactive board ──────────────────────────────────
-const isChess = computed(() => props.field?.game === 'chess');
+// ── move highlights ────────────────────────────────────────────
+const displayUnits = units;
 
-const chessBoard = ref({});
-
-watch(() => props.field, (f) => {
-  if (!f || f.game !== 'chess') return;
-  const b = {};
-  for (const u of f.units) {
-    const col = Math.floor(u.path[0][0]);
-    const row = Math.floor(u.path[0][1]);
-    b[`${col},${row}`] = { id: u.id, team: u.team, type: u.type, name: u.name, hp: u.hp };
-  }
-  chessBoard.value = b;
-  selectedId.value = null;
-}, { immediate: true });
-
-const chessDisplayUnits = computed(() => {
-  if (!isChess.value) return [];
-  const teams = props.field?.teams || [];
-  return Object.entries(chessBoard.value).map(([key, piece]) => {
-    const [col, row] = key.split(',').map(Number);
-    const teamObj = teams.find(t => t.id === piece.team) || { raw: '#fff', name: '', id: '' };
-    return {
-      ...piece,
-      x: col + 0.5, y: row + 0.5,
-      ang: 0,
-      next: { x: col + 0.5, y: row + 0.5, ang: 0 },
-      dead: false,
-      hpNow: piece.hp, hpMax: piece.hp,
-      teamObj,
-      friendly: piece.team === (teams[0] || {}).id,
-      visible: true,
-    };
-  });
-});
-
-const displayUnits = computed(() => isChess.value ? chessDisplayUnits.value : units.value);
-
-// ── chess helpers ─────────────────────────────────────────────
-function squareLabel(col, row) { return String.fromCharCode(97 + col) + (8 - row); }
-function parseSquare(sq) { return [sq.charCodeAt(0) - 97, 8 - parseInt(sq[1])]; }
-
-const selectedSquare = computed(() => {
-  if (!isChess.value || !selectedId.value) return null;
-  const sel = chessDisplayUnits.value.find(u => u.id === selectedId.value);
-  return sel ? squareLabel(Math.floor(sel.x), Math.floor(sel.y)) : null;
-});
-
-const chessMoves = computed(() => {
-  if (!isChess.value || !selectedSquare.value || !isPending.value) return [];
-  return legalActions.value
-    .filter(a => a.type === 'move' && a.from === selectedSquare.value)
-    .map(a => parseSquare(a.to));
-});
-
-// Move destinations for the currently selected unit (non-chess games with unitId actions)
 const unitMoves = computed(() => {
-  if (isChess.value || !isPending.value || !selectedId.value) return [];
+  if (!isPending.value || !selectedId.value) return [];
   return legalActions.value
     .filter(a => a.type === 'move' && a.unitId === selectedId.value)
     .map(a => [a.to.x, a.to.y]);
@@ -125,48 +71,14 @@ watch(activeUnitId, (id) => {
   if (id) selectedId.value = id;
 }, { immediate: true });
 
-function applyChessMove(fromSq, toCol, toRow) {
-  const [fromCol, fromRow] = parseSquare(fromSq);
-  const b = { ...chessBoard.value };
-  b[`${toCol},${toRow}`] = b[`${fromCol},${fromRow}`];
-  delete b[`${fromCol},${fromRow}`];
-  chessBoard.value = b;
-  selectedId.value = null;
-}
-
 function handleSqClick(col, row) {
-  if (isChess.value) {
-    const toSq = squareLabel(col, row);
-    if (selectedSquare.value && isPending.value) {
-      const isLegal = chessMoves.value.some(([c, r]) => c === col && r === row);
-      if (isLegal) {
-        const action = legalActions.value.find(
-          a => a.type === 'move' && a.from === selectedSquare.value && a.to === toSq
-        );
-        if (action) {
-          applyChessMove(selectedSquare.value, col, row);
-          submitAction(action);
-          return;
-        }
-      }
-    }
-    const here = chessDisplayUnits.value.find(u => Math.floor(u.x) === col && Math.floor(u.y) === row);
-    selectedId.value = here ? here.id : null;
-    return;
-  }
-
   if (isPending.value && selectedId.value) {
     const action = legalActions.value.find(
       a => a.type === 'move' && a.unitId === selectedId.value && a.to?.x === col && a.to?.y === row
     );
     if (action) { submitAction(action); return; }
   }
-
   selectedId.value = null;
-}
-
-function chessSquareLabel(u) {
-  return squareLabel(Math.floor(u.x), Math.floor(u.y));
 }
 
 // ── selected unit ──────────────────────────────────────────────
@@ -182,7 +94,7 @@ const rosterTeams = computed(() =>
 
 
 const displayedActions = computed(() => {
-  if (fftaMoves.value.length > 0)
+  if (unitMoves.value.length > 0)
     return legalActions.value.filter(a => a.type !== 'move');
   return legalActions.value;
 });
@@ -201,6 +113,14 @@ function fmtAction(action) {
   if (t === 'end-turn')  return 'End Turn';
   if (t === 'end-phase') return 'End Phase';
   if (t === 'pass')      return 'Pass';
+  if (t === 'ability') {
+    const name = action.abilityName ?? action.ability ?? 'Ability';
+    if (action.targetId != null) {
+      const target = displayUnits.value.find(u => u.id === action.targetId);
+      return target ? `${name} → ${target.name} (${action.targetId})` : `${name} → ${action.targetId}`;
+    }
+    return name;
+  }
   return t + (action.unitId ? ' ' + action.unitId : '');
 }
 
@@ -315,7 +235,7 @@ onUnmounted(() => {
                         :field="field" :fit="fit" :units="displayUnits"
                         :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
                         :showRuler="showRuler" :rdr="rdr"
-                        :legalSquares="isChess ? chessMoves : unitMoves"
+                        :legalSquares="unitMoves"
                         @select="id => selectedId = id"
                         @sq-click="handleSqClick"/>
         <AssetLayer v-else
@@ -352,7 +272,7 @@ onUnmounted(() => {
               Choose action for
               <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
             </div>
-            <div v-if="fftaMoves.length" class="mono"
+            <div v-if="unitMoves.length" class="mono"
                  style="font-size:10px;color:var(--faint);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">
               Tap a highlighted square to move
             </div>
@@ -381,6 +301,7 @@ onUnmounted(() => {
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <BsDot :color="selectedUnit.teamObj.raw" :size="9"/>
             <span style="font-weight:700;font-size:13px">{{selectedUnit.name}}</span>
+            <span class="mono" style="font-size:10px;color:var(--faint)">({{selectedUnit.id}})</span>
             <span v-if="selectedUnit.isActive"
                   class="mono" style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(70,211,154,.15);color:var(--ok)">
               ACTIVE
@@ -388,18 +309,15 @@ onUnmounted(() => {
           </div>
 
           <!-- Location -->
-          <div class="mono" style="font-size:10px;color:var(--faint);margin-bottom:8px">
-            <template v-if="isChess">{{chessSquareLabel(selectedUnit)}}</template>
-            <template v-else-if="selectedUnit.x != null">
-              ({{Math.floor(selectedUnit.x)}}, {{Math.floor(selectedUnit.y)}})
-            </template>
+          <div v-if="selectedUnit.x != null" class="mono" style="font-size:10px;color:var(--faint);margin-bottom:8px">
+            ({{Math.floor(selectedUnit.x)}}, {{Math.floor(selectedUnit.y)}})
           </div>
 
           <div v-if="selectedUnit.dead" class="mono" style="font-size:11px;color:#ff5f56">KIA</div>
           <template v-else>
 
             <!-- HP bar -->
-            <template v-if="!isChess">
+            <template v-if="selectedUnit.hpMax != null">
               <div style="display:flex;justify-content:space-between;margin-bottom:3px">
                 <span style="font-size:10px;color:var(--dim)">HP</span>
                 <span class="mono" style="font-size:10px">
@@ -502,7 +420,8 @@ onUnmounted(() => {
                     :style="{textDecoration: u.dead ? 'line-through' : 'none', color: u.dead ? 'var(--faint)' : ''}">
                 {{u.name}}
               </span>
-              <div v-if="!u.dead && !isChess"
+              <span class="mono" style="font-size:9px;color:var(--faint)">{{u.id}}</span>
+              <div v-if="!u.dead && u.hpMax != null"
                    style="width:32px;height:3px;border-radius:2px;overflow:hidden;flex:none"
                    :style="{background: rdr.hpTrack}">
                 <div style="height:100%;border-radius:2px"

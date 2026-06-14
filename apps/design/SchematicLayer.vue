@@ -80,8 +80,7 @@ const CHESS_SHAPE = { king:'circle', queen:'circle', rook:'square', bishop:'tria
 
 function unitShape(u) {
   if (chess.value) return CHESS_SHAPE[u.type] || 'circle';
-  const i = teamIdx(u.team);
-  return i === 0 ? 'circle' : i === 1 ? 'triangle' : 'square';
+  return 'circle';
 }
 
 function handleBoardClick(e) {
@@ -212,13 +211,12 @@ function hasMoveIntent(u) {
                 :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)-unitR(u)"
                 :width="unitR(u)*2" :height="unitR(u)*2"
                 :fill="rdr.unitFill" :stroke="u.teamObj.raw" stroke-width="2"/>
-          <!-- Symbol letter inside shape (single-char type = FFTA/chess) -->
-          <text v-if="u.type.length === 1"
-                :x="fit.x(u.x)" :y="fit.y(u.y)"
+          <!-- First letter of unit name -->
+          <text :x="fit.x(u.x)" :y="fit.y(u.y)"
                 :fill="u.teamObj.raw" :font-family="rdr.font"
                 :font-size="unitR(u)" font-weight="800"
                 text-anchor="middle" dominant-baseline="central"
-                style="user-select:none;pointer-events:none">{{u.type.toUpperCase()}}</text>
+                style="user-select:none;pointer-events:none">{{u.name[0].toUpperCase()}}</text>
           <!-- HP bar (skip for chess) -->
           <template v-if="!chess">
             <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
@@ -226,12 +224,6 @@ function hasMoveIntent(u) {
                   :width="unitR(u)*2*((u.currentHp ?? u.hpNow)/u.hpMax)" height="3"
                   :fill="hpColor((u.currentHp ?? u.hpNow)/u.hpMax, u.teamObj.raw)"/>
           </template>
-          <!-- Name label below HP bar (not for chess — symbol inside already identifies pieces) -->
-          <text v-if="!chess"
-                :x="fit.x(u.x)" :y="fit.y(u.y)+unitR(u)+13"
-                :fill="u.id === selectedId ? u.teamObj.raw : rdr.label"
-                font-size="9" :font-family="rdr.font" text-anchor="middle"
-                style="user-select:none;pointer-events:none">{{u.name}}</text>
         </g>
       </g>
       </template>

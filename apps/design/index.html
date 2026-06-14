@@ -170,6 +170,7 @@ input[type=range]{padding:0;width:100%}
 
 <script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader@0.9.5/dist/vue3-sfc-loader.js"></script>
+<script src="./vue-router.global.js"></script>
 <script src="./data.js"></script>
 <script src="./api.js"></script>
 <script>
@@ -177,7 +178,7 @@ input[type=range]{padding:0;width:100%}
   const { loadModule } = window['vue3-sfc-loader'];
 
   const sfcOptions = {
-    moduleCache: { vue: Vue },
+    moduleCache: { vue: Vue, 'vue-router': VueRouter },
     async getFile(url) {
       const r = await fetch(url);
       if (!r.ok) throw new Error(r.status + ' ' + url);
@@ -217,12 +218,23 @@ input[type=range]{padding:0;width:100%}
       <span v-else class="badge badge-ai">AI</span>`,
   };
 
+  const { createRouter, createWebHashHistory } = VueRouter;
+  const router = createRouter({
+    history: createWebHashHistory(),
+    routes: [
+      { path: '/',             component: { template: '' } },
+      { path: '/session/:id',  component: { template: '' } },
+    ],
+  });
+
   const app = Vue.createApp({
     components: {
       App: Vue.defineAsyncComponent(() => loadModule('./App.vue', sfcOptions)),
     },
     template: '<App/>',
   });
+
+  app.use(router);
 
   // Expose data.js window globals to all component templates.
   // Vue 3 templates resolve bare identifiers through _ctx (the component proxy),
