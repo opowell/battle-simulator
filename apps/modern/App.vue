@@ -50,6 +50,7 @@ const isMyTurn = computed(() => {
 const isWaitingForHuman = computed(() =>
   !isDone.value && !isMyTurn.value && session.value?.pendingPlayer !== null
 );
+const sessionLog = computed(() => session.value?.log ?? []);
 const sessionActions = computed(() => session.value?.legalActions ?? []);
 const filteredActions = computed(() => {
   const term = actionSearch.value.trim().toLowerCase();
@@ -109,6 +110,10 @@ function hpPct(c) { return Math.max(0, Math.min(1, c.hp / c.maxHp)); }
 function hpColor(c) {
   const p = hpPct(c);
   return p > 0.5 ? '#4ade80' : p > 0.25 ? '#facc15' : '#f87171';
+}
+
+function playerName(id) {
+  return players.value.find(p => p.id === id)?.name ?? id;
 }
 
 function shareUrl(pid) {
@@ -414,45 +419,61 @@ onUnmounted(() => clearInterval(pollTimer));
       </div>
 
       <div class="actions-card">
-        <template v-if="isDone">
-          <div class="card-title">Result</div>
-          <div class="result-body">
-            <div class="result-outcome">
-              {{ session.result?.outcome === 'win' ? '🏆' : session.result?.outcome === 'draw' ? '🤝' : '❌' }}
+        <div class="actions-main">
+          <template v-if="isDone">
+            <div class="card-title">Result</div>
+            <div class="result-body">
+              <div class="result-outcome">
+                {{ session.result?.outcome === 'win' ? '🏆' : session.result?.outcome === 'draw' ? '🤝' : '❌' }}
+              </div>
+              <h3>
+                {{ session.result?.outcome === 'win'
+                  ? `${players.find(p => p.id === session.result.winnerId)?.name ?? session.result.winnerId} wins!`
+                  : session.result?.outcome === 'draw' ? 'Draw' : session.status }}
+              </h3>
+              <p v-if="session.result?.reason" class="result-reason">{{ session.result.reason.replace(/-/g, ' ') }}</p>
+              <button class="btn-primary result-btn" @click="exitSession">New Game</button>
             </div>
-            <h3>
-              {{ session.result?.outcome === 'win'
-                ? `${players.find(p => p.id === session.result.winnerId)?.name ?? session.result.winnerId} wins!`
-                : session.result?.outcome === 'draw' ? 'Draw' : session.status }}
-            </h3>
-            <p v-if="session.result?.reason" class="result-reason">{{ session.result.reason.replace(/-/g, ' ') }}</p>
-            <button class="btn-primary result-btn" @click="exitSession">New Game</button>
+          </template>
+          <template v-else-if="isMyTurn">
+            <div class="card-title">Actions — {{ session.pendingPlayer }}</div>
+            <div class="search-wrap">
+              <input class="search-input" type="text" v-model="actionSearch"
+                :placeholder="`Filter ${sessionActions.length} actions...`" />
+            </div>
+            <div class="action-grid">
+              <button v-for="(a, i) in filteredActions.slice(0, 50)" :key="i" class="action-btn" @click="submitAction(a)">
+                <span class="action-num">{{ i + 1 }}</span>
+                <span class="action-text">{{ formatAction(a) }}</span>
+              </button>
+              <p v-if="filteredActions.length > 50" class="more">+{{ filteredActions.length - 50 }} more</p>
+              <p v-else-if="!filteredActions.length && actionSearch.trim()" class="no-results">No actions match "{{ actionSearch }}"</p>
+            </div>
+          </template>
+          <template v-else>
+            <div class="card-title">Status</div>
+            <div class="waiting">
+              <div class="spinner"/>
+              <p>{{ isWaitingForHuman
+                ? `Waiting for ${players.find(p => p.id === session.pendingPlayer)?.name ?? session.pendingPlayer}...`
+                : 'AI is thinking...' }}</p>
+            </div>
+          </template>
+        </div>
+
+        <div v-if="sessionLog.length" class="log-panel">
+          <div class="card-title">Log</div>
+          <div class="log-entries">
+            <div v-for="entry in [...sessionLog].reverse()" :key="entry.turnNumber" class="log-entry">
+              <span class="log-turn">T{{ entry.turnNumber }}</span>
+              <span class="log-actions">
+                <span v-for="(pa, i) in entry.playerActions" :key="i" class="log-action">
+                  <span class="log-player">{{ playerName(pa.playerId) }}</span>{{ formatAction(pa.action) }}
+                </span>
+              </span>
+            </div>
           </div>
-        </template>
-        <template v-else-if="isMyTurn">
-          <div class="card-title">Actions — {{ session.pendingPlayer }}</div>
-          <div class="search-wrap">
-            <input class="search-input" type="text" v-model="actionSearch"
-              :placeholder="`Filter ${sessionActions.length} actions...`" />
-          </div>
-          <div class="action-grid">
-            <button v-for="(a, i) in filteredActions.slice(0, 50)" :key="i" class="action-btn" @click="submitAction(a)">
-              <span class="action-num">{{ i + 1 }}</span>
-              <span class="action-text">{{ formatAction(a) }}</span>
-            </button>
-            <p v-if="filteredActions.length > 50" class="more">+{{ filteredActions.length - 50 }} more</p>
-            <p v-else-if="!filteredActions.length && actionSearch.trim()" class="no-results">No actions match "{{ actionSearch }}"</p>
-          </div>
-        </template>
-        <template v-else>
-          <div class="card-title">Status</div>
-          <div class="waiting">
-            <div class="spinner"/>
-            <p>{{ isWaitingForHuman
-              ? `Waiting for ${players.find(p => p.id === session.pendingPlayer)?.name ?? session.pendingPlayer}...`
-              : 'AI is thinking...' }}</p>
-          </div>
-        </template>
+        </div>
       </div>
     </main>
   </template>
