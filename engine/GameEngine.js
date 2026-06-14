@@ -21,8 +21,8 @@ import { EventQueue } from './EventQueue.js';
  */
 export class GameEngine {
   /**
-   * @param {import('../interfaces/types.js').GameDefinition} game
-   * @param {import('../interfaces/types.js').Player[]} players
+   * @param {import('../games/types.js').GameDefinition} game
+   * @param {import('../games/types.js').Player[]} players
    * @param {object} [config]
    * @param {number} [config.maxTurns]
    * @param {() => number} [config.rng]

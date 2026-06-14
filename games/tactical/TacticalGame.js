@@ -89,6 +89,12 @@ function renderGrid(state) {
 
 export const TacticalGame = {
   name: 'Tactical',
+  scenarios: [
+    { id: 'skirmish',     name: 'Skirmish',     description: '8×8 grid — fast 2v2 squad',               config: {} },
+    { id: 'assault',      name: 'Assault',      description: '12×10 grid — mid-size engagement',         config: { width: 12, height: 10 } },
+    { id: 'grand-battle', name: 'Grand Battle', description: '16×12 grid — full company strength',       config: { width: 16, height: 12 } },
+  ],
+  colors: { plains: '#c8b87a', water: '#4a8fd4', forest: '#3a7a3a' },
 
   createInitialState(players, config = {}) {
     const boardConfig = { ...DEFAULT_CONFIG, ...config };

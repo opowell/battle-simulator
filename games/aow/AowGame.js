@@ -287,6 +287,11 @@ function getActionDuration(state, action) {
 
 export const AowGame = {
   name: 'AncientArtOfWar',
+  scenarios: [
+    { id: 'conquest',     name: 'Conquest',      description: 'Default 22×12 fantasy map',        config: {} },
+    { id: 'epic',         name: 'Epic Campaign',  description: '30×18 expanded world to conquer',  config: { width: 30, height: 18 } },
+  ],
+  colors: { plains: '#b8a860', forest: '#2a6830', hills: '#9a8050', mountains: '#706050' },
   createInitialState,
   getLegalActions,
   applyActions,

@@ -1002,6 +1002,12 @@ function getActionDuration(state, action) {
 
 export const Sc2Game = {
   name: 'SC2',
+  scenarios: [
+    { id: 'tvz', name: 'Terran vs Zerg',    description: 'Marines & siege tanks vs the Swarm',    config: { race1: 'terran',  race2: 'zerg' } },
+    { id: 'pvt', name: 'Protoss vs Terran', description: 'High Templar vs Marauder bio ball',      config: { race1: 'protoss', race2: 'terran' } },
+    { id: 'zvp', name: 'Zerg vs Protoss',   description: 'Roach-ravager vs stalker blink',         config: { race1: 'zerg',    race2: 'protoss' } },
+  ],
+  colors: { open: '#6a7a50', elevated: '#8a7060', ramp: '#9a8868', minerals: '#2060a0', vespene: '#20884a', obstacle: '#3a2818' },
   createInitialState,
   getLegalActions,
   applyActions,

@@ -1,18 +1,111 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Battle Simulator — Minimal</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Battle Simulator — Minimal</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #fff;
+  color: #111;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 40px 48px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#app {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1;
+}
+
+#output {
+  white-space: pre;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid #ddd;
+  padding-top: 16px;
+}
+
+#prompt { user-select: none; }
+
+#input {
+  background: none;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: #111;
+  flex: 1;
+  caret-color: #111;
+}
+</style>
 </head>
 <body>
-  <div id="app">
-    <div id="output"></div>
-    <div class="input-row">
-      <span id="prompt">&gt; </span>
-      <input id="input" type="text" autocomplete="off" autofocus>
-    </div>
-  </div>
-  <script type="module" src="src/main.js"></script>
+<div id="app"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader@0.9.5/dist/vue3-sfc-loader.js"></script>
+<script>
+(function () {
+  const { loadModule } = window['vue3-sfc-loader'];
+
+  class BattleSimClient {
+    constructor(base = 'http://localhost:3000') { this.base = base; }
+    async _req(method, path, body) {
+      const res = await fetch(`${this.base}${path}`, {
+        method,
+        headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? res.statusText);
+      return data;
+    }
+    listGames()                          { return this._req('GET', '/games'); }
+    createSession(game, players, config) { return this._req('POST', '/sessions', { game, players, config }); }
+    listSessions()                       { return this._req('GET', '/sessions'); }
+    getSession(id)                       { return this._req('GET', `/sessions/${id}`); }
+    submitAction(id, playerId, action)   { return this._req('POST', `/sessions/${id}/action`, { playerId, action }); }
+    deleteSession(id)                    { return this._req('DELETE', `/sessions/${id}`); }
+  }
+
+  const sfcOptions = {
+    moduleCache: {
+      vue: Vue,
+      '@battle-sim/api-client': { BattleSimClient },
+    },
+    async getFile(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.status + ' ' + url);
+      return r.text();
+    },
+    addStyle(css) {
+      const s = document.createElement('style');
+      s.textContent = css;
+      document.head.appendChild(s);
+    },
+  };
+
+  Vue.createApp({
+    components: { App: Vue.defineAsyncComponent(() => loadModule('./App.vue', sfcOptions)) },
+    template: '<App/>',
+  }).mount('#app');
+})();
+</script>
 </body>
 </html>

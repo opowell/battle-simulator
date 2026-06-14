@@ -703,6 +703,12 @@ function getActionDuration(state, action) {
 
 export const Sc1Game = {
   name: 'SC1',
+  scenarios: [
+    { id: 'tvz', name: 'Terran vs Zerg',    description: 'Biomech forces vs the Swarm',          config: { race1: 'terran',   race2: 'zerg' } },
+    { id: 'pvt', name: 'Protoss vs Terran', description: 'Psionic warriors vs human marines',    config: { race1: 'protoss',  race2: 'terran' } },
+    { id: 'zvp', name: 'Zerg vs Protoss',   description: 'Hive swarm vs shielded Templar',       config: { race1: 'zerg',     race2: 'protoss' } },
+  ],
+  colors: { open: '#6a7a50', elevated: '#8a7060', ramp: '#9a8868', minerals: '#2060a0', vespene: '#20884a', obstacle: '#3a2818' },
   createInitialState,
   getLegalActions,
   applyActions,

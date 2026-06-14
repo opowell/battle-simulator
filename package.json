@@ -44,6 +44,11 @@
     "demo:rogue": "node demo/rogue-demo.js",
     "demo:rogue:auto": "node demo/rogue-demo.js --auto",
     "demo:rogue:greedy": "node demo/rogue-demo.js --auto --greedy",
-    "test": "node --test test/*.test.js"
+    "demo:kdice": "node demo/kdice-demo.js",
+    "demo:kdice:auto": "node demo/kdice-demo.js --auto",
+    "demo:kdice:3p": "node demo/kdice-demo.js --auto --players=3",
+    "demo:kdice:4p": "node demo/kdice-demo.js --auto --players=4",
+    "test": "node --test test/*.test.js",
+    "kill:port:3000": "lsof -i tcp:3000 | awk 'NR!=1 {print $2}' | xargs kill -9"
   }
 }

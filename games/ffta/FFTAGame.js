@@ -300,6 +300,10 @@ function getActionDuration(state, action) {
 
 export const FFTAGame = {
   name: 'Final Fantasy Tactics Advance',
+  scenarios: [
+    { id: 'standard', name: 'Standard Battle', description: '6v6 job-class tactical combat on a height-based grid', config: {} },
+  ],
+  colors: { floor: '#8a9c70', elevated: '#a07858', 'elevated-high': '#b89060', wall: '#2a2018' },
   createInitialState,
   getLegalActions,
   applyActions,

@@ -2,6 +2,7 @@ import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
+import { assets } from './assets/index.js';
 
 // ── City name pools ───────────────────────────────────────────────────────────
 
@@ -380,6 +381,12 @@ function getActionDuration(state, action) {
 
 export const Civ2Game = {
   name: 'Civ2',
+  assets,
+  scenarios: [
+    { id: 'standard', name: 'Standard',   description: 'Default 22×12 world map',         config: {} },
+    { id: 'large',    name: 'Large World', description: '32×18 world — longer campaign',    config: { width: 32, height: 18 } },
+  ],
+  colors: { ocean: '#1a5a8a', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
   createInitialState,
   getLegalActions,
   applyActions,
