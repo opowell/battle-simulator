@@ -45,6 +45,7 @@ const units = computed(() => computeUnits(props.field, tFloat.value));
 
 // ── chess interactive board ──────────────────────────────────
 const isChess = computed(() => props.field?.game === 'chess');
+const isFFTA  = computed(() => props.field?.game === 'ffta');
 
 const chessBoard = ref({});
 
@@ -99,6 +100,13 @@ const chessMoves = computed(() => {
     .map(a => parseSquare(a.to));
 });
 
+const fftaMoves = computed(() => {
+  if (!isFFTA.value || !isPending.value) return [];
+  return legalActions.value
+    .filter(a => a.type === 'move')
+    .map(a => [a.to.x, a.to.y]);
+});
+
 function applyChessMove(fromSq, toCol, toRow) {
   const [fromCol, fromRow] = parseSquare(fromSq);
   const b = { ...chessBoard.value };
@@ -109,22 +117,32 @@ function applyChessMove(fromSq, toCol, toRow) {
 }
 
 function handleSqClick(col, row) {
-  const toSq = squareLabel(col, row);
-  if (selectedSquare.value && isPending.value) {
-    const isLegal = chessMoves.value.some(([c, r]) => c === col && r === row);
-    if (isLegal) {
-      const action = legalActions.value.find(
-        a => a.type === 'move' && a.from === selectedSquare.value && a.to === toSq
-      );
-      if (action) {
-        applyChessMove(selectedSquare.value, col, row);
-        submitAction(action);
-        return;
+  if (isChess.value) {
+    const toSq = squareLabel(col, row);
+    if (selectedSquare.value && isPending.value) {
+      const isLegal = chessMoves.value.some(([c, r]) => c === col && r === row);
+      if (isLegal) {
+        const action = legalActions.value.find(
+          a => a.type === 'move' && a.from === selectedSquare.value && a.to === toSq
+        );
+        if (action) {
+          applyChessMove(selectedSquare.value, col, row);
+          submitAction(action);
+          return;
+        }
       }
     }
+    const here = chessDisplayUnits.value.find(u => Math.floor(u.x) === col && Math.floor(u.y) === row);
+    selectedId.value = here ? here.id : null;
+    return;
   }
-  const here = chessDisplayUnits.value.find(u => Math.floor(u.x) === col && Math.floor(u.y) === row);
-  selectedId.value = here ? here.id : null;
+
+  if (isFFTA.value && isPending.value) {
+    const action = legalActions.value.find(a => a.type === 'move' && a.to?.x === col && a.to?.y === row);
+    if (action) { submitAction(action); return; }
+  }
+
+  selectedId.value = null;
 }
 
 function chessSquareLabel(u) {
@@ -283,7 +301,7 @@ onUnmounted(() => {
                         :field="field" :fit="fit" :units="displayUnits"
                         :selectedId="selectedId" :fog="fogOn"
                         :showRuler="showRuler" :rdr="rdr"
-                        :legalSquares="chessMoves"
+                        :legalSquares="isChess ? chessMoves : fftaMoves"
                         @select="id => selectedId = id"
                         @sq-click="handleSqClick"/>
         <AssetLayer v-else

@@ -84,7 +84,7 @@ function unitShape(u) {
 }
 
 function handleBoardClick(e) {
-  if (!chess.value) { emit('select', null); return; }
+  if (props.field.grid !== 'square') { emit('select', null); return; }
   const rect = e.currentTarget.getBoundingClientRect();
   const col = Math.floor((e.clientX - rect.left - props.fit.x(0)) / props.fit.s);
   const row = Math.floor((e.clientY - rect.top  - props.fit.y(0)) / props.fit.s);
