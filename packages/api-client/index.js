@@ -17,8 +17,8 @@ export class BattleSimClient {
   listGames()                          { return this._req('GET', '/games'); }
   createSession(game, players, config) { return this._req('POST', '/sessions', { game, players, config }); }
   listSessions()                       { return this._req('GET', '/sessions'); }
-  getSession(id)                       { return this._req('GET', `/sessions/${id}`); }
-  getState(id)                         { return this._req('GET', `/sessions/${id}/state`); }
+  getSession(id, playerId)             { return this._req('GET', `/sessions/${id}${playerId ? `?player=${encodeURIComponent(playerId)}` : ''}`); }
+  getState(id, playerId)               { return this._req('GET', `/sessions/${id}/state${playerId ? `?player=${encodeURIComponent(playerId)}` : ''}`); }
   submitAction(id, playerId, action)   { return this._req('POST', `/sessions/${id}/action`, { playerId, action }); }
   deleteSession(id)                    { return this._req('DELETE', `/sessions/${id}`); }
 }

@@ -330,6 +330,9 @@ function getVisibleState(state, teamId) {
 
 export const DoomGame = {
   name: 'Doom',
+  scenarios: [
+    { id: 'e1m1', name: 'Hangar (E1M1)', description: 'The UAC hangar — survive waves of hell-spawned demons', config: {} },
+  ],
   createInitialState,
   getLegalActions:  withTeam(getLegalActions),
   applyActions:     withTeam(applyActions),

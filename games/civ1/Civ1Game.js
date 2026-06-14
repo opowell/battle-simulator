@@ -370,6 +370,11 @@ function getActionDuration(state, action) {
 
 export const Civ1Game = {
   name: 'Civ1',
+  scenarios: [
+    { id: 'standard', name: 'Standard',   description: 'Default 20×14 world map',         config: {} },
+    { id: 'large',    name: 'Large World', description: '30×20 world — longer campaign',    config: { width: 30, height: 20 } },
+  ],
+  colors: { ocean: '#1a5a8a', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
   createInitialState,
   getLegalActions,
   applyActions,

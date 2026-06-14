@@ -25,6 +25,10 @@ function fmtUnit(u) {
 
 export const XComGame = {
   name: 'X-Com Tactical',
+  scenarios: [
+    { id: 'ufo-crash', name: 'UFO Crash Site', description: 'Secure a downed UFO against alien survivors', config: {} },
+  ],
+  colors: { floor: '#9a8c7a', wall: '#2a2018', 'cover-low': '#c8943a', 'cover-high': '#8a5a18' },
 
   createInitialState(players, _config = {}) {
     return {

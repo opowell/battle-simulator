@@ -581,6 +581,9 @@ export function createInitialState(players, config = {}) {
 
 export const AxisAlliesGame = {
   name: 'AxisAllies',
+  scenarios: [
+    { id: 'wwii-1942', name: 'WWII 1942', description: 'Classic Axis & Allies global setup — Allies vs Axis powers', config: {} },
+  ],
   createInitialState,
   getLegalActions,
   applyActions,

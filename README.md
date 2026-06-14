@@ -49,13 +49,14 @@ Set `PORT` to use a different port.
 
 ## Web UIs
 
-Three browser UIs ship in `apps/`. Each can load and play every game; they differ only in visual style.
+Four browser UIs ship in `apps/`. The first three connect to the live API server and can play every game; they differ only in visual style. The fourth is a standalone design prototype.
 
 | App | Port | Aesthetic |
 |---|---|---|
 | `apps/classic` | 5173 | CRT terminal — green-on-black, monospace, sidebar action list |
 | `apps/modern` | 5174 | Card-based — clean sans-serif, hover effects, spinner for AI turns |
 | `apps/minimal` | 5175 | Text only — type a number and press Enter to act |
+| `apps/design` | any | Vue 3 UI prototype — hardcoded data, no API, no build step |
 
 ### Running
 
@@ -75,16 +76,64 @@ node apps/minimal/vite.js   # → localhost:5175
 
 No `cd` needed — run everything from the repo root.
 
+Override the port with `--port`:
+
+```sh
+node apps/modern/vite.js --port 5200
+```
+
+Or use npm workspaces if you prefer:
+
+```sh
+npm run dev -w @battle-sim/classic
+npm run dev -w @battle-sim/modern
+npm run dev -w @battle-sim/minimal
+```
+
 All three can run simultaneously against the same server.
+
+### Design app
+
+`apps/design` is a UI prototype built with Vue 3 and has no build step. It loads Vue from a CDN and uses `vue3-sfc-loader` to compile `.vue` Single File Components directly in the browser at runtime. It contains hardcoded static data (`data.js`) and makes no API calls — it's a standalone sandbox for visual design, not a playable client.
+
+To run it, serve the directory with any static file server:
+
+```sh
+npx serve apps/design          # or:
+python3 -m http.server -d apps/design 5176
+```
 
 ### How they work
 
 Each UI follows the same flow:
 1. `GET /games` — show a game picker
 2. `POST /sessions` — create a session (you play player 1, random AI plays the rest)
-3. Poll `GET /sessions/:id` every 800 ms while the AI is thinking
-4. When `pendingPlayer` is set, display `legalActions` and wait for your pick
+3. Poll `GET /sessions/:id` every 800 ms until it's your turn
+4. When `pendingPlayer` matches your player ID, display `legalActions` and wait for your pick
 5. `POST /sessions/:id/action` — submit your chosen action, re-render
+
+### Multiplayer (two humans, separate browsers)
+
+Set both players to **Human** on the configure screen. After the session is created you'll see a share banner under the topbar with a unique link for each other human player — send each player their own link.
+
+When Player B opens their link (`?session=<id>&player=<pid>`), the app joins the existing session as that player. Each browser shows only that player's actions when it's their turn, and "Waiting for…" otherwise. The board stays in sync via polling.
+
+**Flow at a glance:**
+
+```
+Player A opens app → configures Chess (both Human) → Start Game
+  → sees White's actions
+  → share banner shows: Black → http://localhost:5174/?session=abc&player=black
+
+Player B opens the Black link
+  → joins session abc as Black
+  → sees "Waiting for White..." until White moves
+  → once it's Black's turn, sees Black's actions
+
+Both browsers poll every 800 ms and re-render automatically.
+```
+
+There is no lobby or authentication — the share link is the full credential. Anyone who opens a player's link can act as that player.
 
 They're vanilla JS with no framework. [Vite](https://vitejs.dev) is the only build tool, used for the dev server and ES module bundling.
 
@@ -222,13 +271,13 @@ Create a new game session.
 - `agent`: `"human"` (waits for API input) or `"random"` (auto-plays)
 - `players` defaults to both players as `"human"` if omitted
 
-Returns the full session object (201).
+Returns the full session object (201). The response includes `humanPlayers: string[]` — the IDs of all human-controlled players in this session.
 
 #### `GET /sessions`
 List all active sessions (id, game, status, turn, pendingPlayer).
 
 #### `GET /sessions/:id`
-Get full session state including `rendered` board, `legalActions`, and `pendingPlayer`.
+Get full session state including `rendered` board, `legalActions`, `pendingPlayer`, and `humanPlayers`.
 
 #### `GET /sessions/:id/state`
 Get the raw `GameState` object.
@@ -248,7 +297,7 @@ Close and remove a session.
 ### Example: play a chess game via curl
 
 ```sh
-# Create session
+# Create session (one human vs random AI)
 SESSION=$(curl -s -X POST localhost:3000/sessions \
   -H 'Content-Type: application/json' \
   -d '{"game":"chess","players":[{"id":"white","agent":"human"},{"id":"black","agent":"random"}]}' \
@@ -260,8 +309,36 @@ curl -s localhost:3000/sessions/$SESSION | jq '{rendered, legalActions}'
 # Submit an action
 curl -s -X POST localhost:3000/sessions/$SESSION/action \
   -H 'Content-Type: application/json' \
-  -d '{"playerId":"white","action":{"type":"move","unitId":"e2","from":"e2","to":"e4"}}'
+  -d '{"playerId":"white","action":{"type":"move","unitId":"wN","from":"b1","to":"c3"}}'
 ```
+
+### Example: two-human chess game via curl
+
+Both players post actions to the same session; each waits until `pendingPlayer` matches their own ID.
+
+```sh
+# Create session — both players are human
+SESSION=$(curl -s -X POST localhost:3000/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{"game":"chess","players":[{"id":"white","agent":"human"},{"id":"black","agent":"human"}]}' \
+  | jq -r '.id')
+
+# White moves (pendingPlayer is "white")
+curl -s -X POST localhost:3000/sessions/$SESSION/action \
+  -H 'Content-Type: application/json' \
+  -d '{"playerId":"white","action":{"type":"move","unitId":"wN","from":"b1","to":"c3"}}' \
+  | jq '{pendingPlayer, turn}'
+# → pendingPlayer: "black"
+
+# Black responds
+curl -s -X POST localhost:3000/sessions/$SESSION/action \
+  -H 'Content-Type: application/json' \
+  -d '{"playerId":"black","action":{"type":"move","unitId":"bN","from":"b8","to":"c6"}}' \
+  | jq '{pendingPlayer, turn}'
+# → pendingPlayer: "white"
+```
+
+Submitting an action out of turn returns a 409 error.
 
 ## Implementing a custom game
 

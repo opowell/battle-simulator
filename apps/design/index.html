@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Battle Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg0:#0a0d10; --bg1:#10151a; --bg2:#161c23; --bg3:#1c242c;
+  --line:#232c35; --line2:#2f3a45; --line3:#3a4754;
+  --txt:#d6dde3; --dim:#8a96a1; --faint:#5a656f;
+  --accent:#42c6e6; --accent-d:#1d8aa6;
+  --teamA:#4f9dff; --teamB:#ff5f56; --teamC:#46d39a; --teamD:#f2b441;
+  --ok:#46d39a; --warn:#f2b441; --danger:#ff5f56;
+  --r:6px; --r2:10px;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --ui:'Chakra Petch',system-ui,sans-serif;
+}
+:root[data-theme="minimal"]{
+  --bg0:#eef1f4; --bg1:#ffffff; --bg2:#f7f9fb; --bg3:#eef2f6;
+  --line:#e4e8ed; --line2:#d4dae1; --line3:#bcc4cd;
+  --txt:#1b222a; --dim:#6b7480; --faint:#9aa3ad;
+  --accent:#2f6bff; --accent-d:#1f4fd0;
+  --ok:#1f9d57; --warn:#cc8400; --danger:#e5484d;
+  --r:8px; --r2:12px;
+  --ui:'Hanken Grotesk',system-ui,sans-serif;
+}
+:root[data-theme="retro"]{
+  --bg0:#020803; --bg1:#04140a; --bg2:#06190d; --bg3:#0a2413;
+  --line:#10331c; --line2:#1c5230; --line3:#2a7a45;
+  --txt:#7dffb0; --dim:#36b86a; --faint:#1f7a45;
+  --accent:#39ff88; --accent-d:#1ba85a;
+  --ok:#39ff88; --warn:#ffd54a; --danger:#ff5f6e;
+  --r:0px; --r2:0px;
+  --ui:'VT323',ui-monospace,monospace; --mono:'Share Tech Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg0);color:var(--txt);font-family:var(--ui);font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased;overflow:hidden}
+#app{height:100vh;width:100vw}
+.mono{font-family:var(--mono)}
+.up{text-transform:uppercase;letter-spacing:.08em}
+button{font-family:inherit;color:inherit;cursor:pointer}
+::selection{background:var(--accent-d);color:#fff}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:var(--line3)}
+::-webkit-scrollbar-track{background:transparent}
+
+/* topbar */
+.topbar{height:52px;display:flex;align-items:center;gap:18px;padding:0 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--bg2),var(--bg1))}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.14em;font-size:13px;white-space:nowrap;flex-shrink:0}
+.brand .mark{width:24px;height:24px;display:grid;place-items:center;border:1px solid var(--accent);color:var(--accent);border-radius:5px;box-shadow:0 0 14px -4px var(--accent)}
+.statuschip{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--dim);border:1px solid var(--line);background:var(--bg1);padding:4px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--ok);animation:pulse 2.4s infinite;display:inline-block}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(70,211,154,.5)}70%{box-shadow:0 0 0 6px rgba(70,211,154,0)}100%{box-shadow:0 0 0 0 rgba(70,211,154,0)}}
+
+/* panels */
+.panel{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r2);display:flex;flex-direction:column;min-height:0}
+.panel-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.panel-t{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.panel-b{padding:14px;overflow:auto;min-height:0}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);padding:8px 13px;border-radius:var(--r);font-size:13px;font-weight:500;transition:.12s;white-space:nowrap}
+.btn:hover{border-color:var(--line3);background:var(--bg3)}
+.btn:active{transform:translateY(1px)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#04222b;font-weight:600}
+.btn-primary:hover{background:#5cd4f0;border-color:#5cd4f0}
+.btn-ghost{background:transparent;border-color:transparent}
+.btn-ghost:hover{background:var(--bg2);border-color:var(--line)}
+.btn[disabled]{opacity:.4;pointer-events:none}
+
+/* segmented control */
+.seg{display:inline-flex;background:var(--bg0);border:1px solid var(--line);border-radius:var(--r);padding:2px;gap:2px}
+.seg button{border:none;background:transparent;color:var(--dim);padding:6px 11px;border-radius:4px;font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;letter-spacing:.03em}
+.seg button:hover{color:var(--txt)}
+.seg button.on{background:var(--bg3);color:var(--accent);box-shadow:inset 0 0 0 1px var(--line2)}
+
+/* badges / dots */
+.badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;font-weight:500;padding:2px 7px;border-radius:4px;letter-spacing:.05em;text-transform:uppercase}
+.badge-human{background:rgba(66,198,230,.12);color:var(--accent)}
+.badge-ai{background:rgba(138,150,161,.12);color:var(--dim)}
+.badge-open{background:rgba(242,180,65,.12);color:var(--warn)}
+.dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+
+/* inputs */
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+input,select{font-family:var(--ui);font-size:13px;background:var(--bg0);color:var(--txt);border:1px solid var(--line2);border-radius:var(--r);padding:8px 10px;outline:none;width:100%}
+input:focus,select:focus{border-color:var(--accent)}
+input[type=range]{padding:0;width:100%}
+
+/* lobby */
+.lobby{height:100%;display:grid;grid-template-columns:1.5fr 1fr;gap:16px;padding:16px;overflow:hidden}
+.sessionrow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:var(--r2);background:var(--bg2);transition:.12s}
+.sessionrow:hover{border-color:var(--line3);background:var(--bg3)}
+.sessionrow+.sessionrow{margin-top:10px}
+.gicon{width:42px;height:42px;border-radius:8px;display:grid;place-items:center;border:1px solid var(--line2);background:var(--bg0);flex:none}
+.gamegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px}
+.gamecard{border:1px solid var(--line);border-radius:var(--r2);background:var(--bg2);padding:12px;cursor:pointer;transition:.12s;display:flex;flex-direction:column;gap:9px}
+.gamecard:hover{border-color:var(--line3);background:var(--bg3);transform:translateY(-1px)}
+.gamecard.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 8px 24px -12px var(--accent)}
+.tag{font-family:var(--mono);font-size:9.5px;padding:1px 5px;border-radius:3px;border:1px solid var(--line2);color:var(--dim);letter-spacing:.04em}
+.scenrow{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:center;text-align:left;width:100%;border:1px solid var(--line);border-radius:var(--r2);background:var(--bg2);padding:10px 12px;transition:.12s;cursor:pointer}
+.scenrow:hover{border-color:var(--line3);background:var(--bg3)}
+.scenrow.sel{border-color:var(--accent);background:var(--bg3);box-shadow:0 0 0 1px var(--accent)}
+.scenrow+.scenrow{margin-top:8px}
+.scenmark{width:30px;height:30px;border-radius:7px;display:grid;place-items:center;border:1px solid var(--line2);background:var(--bg0);flex:none;color:var(--dim)}
+.scenrow.sel .scenmark{border-color:var(--accent);color:var(--accent)}
+.slot{display:grid;grid-template-columns:auto 1fr auto auto;gap:9px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg2)}
+.slot+.slot{margin-top:8px}
+.slot input,.slot select{width:auto}
+
+/* battlefield */
+.bf{height:100%;display:grid;grid-template-rows:auto 1fr auto;grid-template-columns:1fr 296px;grid-template-areas:"bar bar" "stage side" "time side";overflow:hidden}
+.bf-bar{grid-area:bar;display:flex;align-items:center;gap:14px;padding:9px 14px;border-bottom:1px solid var(--line);background:var(--bg1);flex-wrap:wrap}
+.bf-stage{grid-area:stage;position:relative;overflow:hidden}
+.bf-side{grid-area:side;border-left:1px solid var(--line);background:var(--bg1);display:flex;flex-direction:column;min-height:0;overflow:auto}
+.bf-time{grid-area:time;border-top:1px solid var(--line);background:var(--bg1);padding:10px 16px;display:flex;align-items:center;gap:14px}
+.bf-layer{position:absolute;inset:0}
+.bf-tag{position:absolute;top:10px;left:10px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:4px 9px;border-radius:5px;background:var(--bg2);border:1px solid var(--line2);backdrop-filter:blur(4px);z-index:5;white-space:nowrap;opacity:.95;color:var(--dim)}
+
+/* unit sidebar */
+.unitcard{padding:12px 14px;border-bottom:1px solid var(--line)}
+.statline{display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:3px 0}
+.hpbar{height:6px;border-radius:3px;background:var(--bg0);overflow:hidden;border:1px solid var(--line)}
+.hpbar>i{display:block;height:100%;border-radius:3px}
+.action-btn{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1px solid var(--line);background:var(--bg2);padding:8px 11px;border-radius:var(--r);font-size:13px;transition:.12s}
+.action-btn:hover{border-color:var(--accent);background:var(--bg3)}
+.action-btn+.action-btn{margin-top:7px}
+.logline{font-family:var(--mono);font-size:11px;padding:4px 0;color:var(--dim);display:flex;gap:8px;border-bottom:1px solid rgba(35,44,53,.5)}
+
+/* timeline */
+.scrub{flex:1;position:relative;height:34px;display:flex;align-items:center}
+.scrub-track{position:relative;width:100%;height:6px;border-radius:3px;background:var(--bg0);border:1px solid var(--line);cursor:pointer}
+.scrub-fill{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,var(--accent-d),var(--accent))}
+.scrub-tick{position:absolute;top:-5px;width:1px;height:16px;background:var(--line2);transform:translateX(-.5px)}
+.scrub-head{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:var(--accent);transform:translate(-50%,-50%);box-shadow:0 0 10px -1px var(--accent);cursor:grab;border:2px solid var(--bg0)}
+.iconbtn{width:34px;height:34px;display:grid;place-items:center;border-radius:var(--r);border:1px solid var(--line2);background:var(--bg2)}
+.iconbtn:hover{border-color:var(--line3);background:var(--bg3)}
+.scanline{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 1px,transparent 1px 3px);z-index:7;mix-blend-mode:overlay}
+
+/* theme: minimal */
+[data-theme="minimal"] .panel{box-shadow:0 1px 2px rgba(30,41,59,.04),0 1px 3px rgba(30,41,59,.05)}
+[data-theme="minimal"] .topbar{background:#ffffff}
+[data-theme="minimal"] .brand .mark{box-shadow:none}
+[data-theme="minimal"] ::-webkit-scrollbar-thumb{background:#d2d8df}
+
+/* theme: retro */
+[data-theme="retro"] body{font-size:15px}
+[data-theme="retro"] .panel,[data-theme="retro"] .btn,[data-theme="retro"] .gamecard,
+[data-theme="retro"] .sessionrow,[data-theme="retro"] .seg,[data-theme="retro"] .seg button,
+[data-theme="retro"] input,[data-theme="retro"] select,[data-theme="retro"] .slot,
+[data-theme="retro"] .iconbtn,[data-theme="retro"] .statuschip,[data-theme="retro"] .badge,
+[data-theme="retro"] .gicon,[data-theme="retro"] .action-btn,[data-theme="retro"] .hpbar,
+[data-theme="retro"] .tag,[data-theme="retro"] .scenrow,[data-theme="retro"] .scenmark{border-radius:0!important}
+[data-theme="retro"] .brand,[data-theme="retro"] .btn-primary,[data-theme="retro"] .panel-t{text-shadow:0 0 6px rgba(57,255,136,.45)}
+[data-theme="retro"] .topbar{background:#04140a}
+[data-theme="retro"] .scanline{background:repeating-linear-gradient(0deg,rgba(0,0,0,.20) 0 1px,transparent 1px 3px);mix-blend-mode:normal}
+[data-theme="retro"] .brand{letter-spacing:.18em}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader@0.9.5/dist/vue3-sfc-loader.js"></script>
+<script src="./data.js"></script>
+<script src="./api.js"></script>
+<script>
+(function () {
+  const { loadModule } = window['vue3-sfc-loader'];
+
+  const sfcOptions = {
+    moduleCache: { vue: Vue },
+    async getFile(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.status + ' ' + url);
+      return r.text();
+    },
+    addStyle(css) {
+      const s = document.createElement('style');
+      s.textContent = css;
+      document.head.appendChild(s);
+    },
+  };
+
+  // Expose so SFCs can reference it
+  window.__sfcOptions = sfcOptions;
+
+  // Small reusable atoms registered globally so all SFCs can use them
+  const BsIcon = {
+    props: { name: String, size: { default: 18 }, color: { default: 'currentColor' }, stroke: { default: 1.7 } },
+    template: `
+      <svg :width="size" :height="size" viewBox="0 0 24 24" fill="none"
+           :stroke="color" :stroke-width="stroke" stroke-linecap="round" stroke-linejoin="round">
+        <path :d="paths[name] || paths.grid"/>
+      </svg>`,
+    data() { return { paths: window.ICON_PATHS }; },
+  };
+
+  const BsDot = {
+    props: { color: String, size: { default: 9 } },
+    template: `<span class="dot" :style="{background:color,width:size+'px',height:size+'px',boxShadow:'0 0 8px -1px '+color}"></span>`,
+  };
+
+  const BsBadge = {
+    props: ['agent'],
+    template: `
+      <span v-if="agent==='human'" class="badge badge-human">human</span>
+      <span v-else-if="agent==='open'"  class="badge badge-open">open</span>
+      <span v-else class="badge badge-ai">AI</span>`,
+  };
+
+  const app = Vue.createApp({
+    components: {
+      App: Vue.defineAsyncComponent(() => loadModule('./App.vue', sfcOptions)),
+    },
+    template: '<App/>',
+  });
+
+  // Expose data.js window globals to all component templates.
+  // Vue 3 templates resolve bare identifiers through _ctx (the component proxy),
+  // not window — so globals must be registered here to be visible in templates.
+  Object.assign(app.config.globalProperties, {
+    GAMES, SCENARIOS, ICON_PATHS, RDR,
+    scenariosFor, fieldFor, computeUnits, makeFitter, samplePath, lerp,
+  });
+
+  app.component('BsIcon', BsIcon);
+  app.component('BsDot', BsDot);
+  app.component('BsBadge', BsBadge);
+
+  app.mount('#app');
+})();
+</script>
+</body>
+</html>

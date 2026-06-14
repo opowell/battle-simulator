@@ -7,8 +7,8 @@ function canonicalKey(action) {
 /**
  * Verify that `action` is structurally equal to one entry in `legalActions`.
  * Throws if not found.
- * @param {import('../interfaces/types.js').Action} action
- * @param {import('../interfaces/types.js').Action[]} legalActions
+ * @param {import('../games/types.js').Action} action
+ * @param {import('../games/types.js').Action[]} legalActions
  */
 export function validate(action, legalActions) {
   const key = canonicalKey(action);

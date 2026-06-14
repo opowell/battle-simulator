@@ -434,6 +434,9 @@ function getActionDuration(state, action) {
 
 export const CsGame = {
   name: 'CS',
+  scenarios: [
+    { id: 'dust2', name: 'Dust II',  description: 'Classic defuse map — plant or defuse the bomb', config: {} },
+  ],
   createInitialState,
   getLegalActions:   withTeam(getLegalActions),
   applyActions:      withTeam(applyActions),

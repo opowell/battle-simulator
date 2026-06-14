@@ -2,7 +2,7 @@ import { BattleSimClient } from '@battle-sim/api-client';
 import './style.css';
 
 const client = new BattleSimClient();
-let state = { screen: 'games', games: [], session: null, error: null };
+let state = { screen: 'games', games: [], session: null, myPlayerId: null, error: null };
 let pollTimer = null;
 
 function formatAction(a) {
@@ -92,6 +92,7 @@ async function startGame(name) {
     const game = state.games.find(g => g.name === name);
     const players = game.defaultPlayers.map((p, i) => ({ ...p, agent: i === 0 ? 'human' : 'random' }));
     state.session = await client.createSession(name, players);
+    state.myPlayerId = state.session.humanPlayers?.[0] ?? null;
     state.screen = 'session';
     render();
     startPolling();
@@ -110,7 +111,7 @@ function startPolling() {
   pollTimer = setInterval(async () => {
     if (!state.session || state.session.status !== 'active') return clearInterval(pollTimer);
     if (state.session.pendingPlayer) return;
-    try { state.session = await client.getSession(state.session.id); render(); } catch {}
+    try { state.session = await client.getSession(state.session.id, state.myPlayerId); render(); } catch {}
   }, 800);
 }
 

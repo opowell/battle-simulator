@@ -72,6 +72,11 @@ function updateCastlingRights(rights, unit, square) {
 
 export const ChessGame = {
   name: 'Chess',
+  colors: { light: '#f0d9b5', dark: '#b58863' },
+  scenarios: [
+    { id: 'standard',    name: 'Standard',    description: 'Classic starting position',                                    config: {} },
+    { id: 'fog-of-war',  name: 'Fog of War',  description: 'Each side sees only squares their pieces can reach',           config: { fogOfWar: true } },
+  ],
 
   createInitialState(players, config = {}) {
     const board = initialBoard();

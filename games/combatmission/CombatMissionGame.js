@@ -236,6 +236,9 @@ function getActionDuration(state, action) {
 
 export const CombatMissionGame = {
   name: 'CombatMission',
+  scenarios: [
+    { id: 'standard', name: 'Ambush', description: 'Platoon-level infantry ambush on mixed terrain', config: {} },
+  ],
   createInitialState,
   getLegalActions,
   applyActions,

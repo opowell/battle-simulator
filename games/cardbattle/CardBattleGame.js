@@ -50,6 +50,9 @@ function heroOf(state, playerId) {
 
 export const CardBattleGame = {
   name: 'CardBattle',
+  scenarios: [
+    { id: 'standard', name: 'Standard Duel', description: '30HP each, draw and play cards to win', config: {} },
+  ],
 
   createInitialState(players, _config, rng = Math.random) {
     const units = players.map(p => ({

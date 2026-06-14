@@ -197,7 +197,7 @@ function pseudoLegalForUnit(board, unit, gameSpecific, fogOfWar = false) {
  * @param {object} board
  * @param {string} color  'white' | 'black'
  * @param {object} gameSpecific
- * @returns {import('../../interfaces/types.js').Action[]}
+ * @returns {import('../types.js').Action[]}
  */
 export function getAllLegalMoves(board, color, gameSpecific) {
   const actions = [];
@@ -222,7 +222,7 @@ export function getAllLegalMoves(board, color, gameSpecific) {
  * @param {object} board
  * @param {string} color  'white' | 'black'
  * @param {object} gameSpecific
- * @returns {import('../../interfaces/types.js').Action[]}
+ * @returns {import('../types.js').Action[]}
  */
 export function getAllFogMoves(board, color, gameSpecific) {
   const actions = [];
