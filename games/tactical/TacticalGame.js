@@ -243,4 +243,28 @@ export const TacticalGame = {
       ),
     };
   },
+
+  toGrid(state) {
+    const { board, units } = state;
+    const { width, height, terrain: tmap = {} } = board;
+    const pidIdx = {};
+    (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+    const umap = {};
+    for (const u of units ?? []) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+    const cells = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const u = umap[`${x},${y}`];
+        const t = tmap[`${x},${y}`] ?? 'plains';
+        cells.push({
+          x, y: height - 1 - y,
+          glyph: u ? u.type[0].toUpperCase() : '',
+          owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
+          color: this.colors[t] ?? this.colors.plains ?? '#808070',
+          hp: u?.hp, maxHp: u?.maxHp,
+        });
+      }
+    }
+    return { width, height, cells };
+  },
 };

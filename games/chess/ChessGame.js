@@ -245,4 +245,25 @@ export const ChessGame = {
       units: boardToUnits(filteredBoard),
     };
   },
+
+  toGrid(state) {
+    const FILES = 'abcdefgh';
+    const SYMS = { king: 'K', queen: 'Q', rook: 'R', bishop: 'B', knight: 'N', pawn: 'P' };
+    const pidIdx = {};
+    (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+    const cells = [];
+    for (let rank = 1; rank <= 8; rank++) {
+      for (let fi = 0; fi < 8; fi++) {
+        const piece = state.board?.[FILES[fi] + rank];
+        const sq = (fi + rank) % 2 === 0 ? 'light' : 'dark';
+        cells.push({
+          x: fi, y: 8 - rank,
+          glyph: piece ? (SYMS[piece.type] ?? piece.type[0].toUpperCase()) : '',
+          owner: piece ? (pidIdx[piece.ownerId] ?? 0) : 0,
+          color: this.colors[sq] ?? '#808070',
+        });
+      }
+    }
+    return { width: 8, height: 8, cells, xLabels: FILES.split(''), yLabels: '87654321'.split('') };
+  },
 };

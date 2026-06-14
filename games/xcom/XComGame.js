@@ -201,4 +201,30 @@ export const XComGame = {
       ),
     };
   },
+
+  toGrid(state) {
+    const { board, units } = state;
+    const { width, height, tiles } = board;
+    const pidIdx = {};
+    (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+    const umap = {};
+    for (const u of units ?? []) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+    const CH = { '.': 'floor', '#': 'wall', c: 'cover-low', C: 'cover-high' };
+    const cells = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const ch = tiles[y]?.[x] ?? '#';
+        const u = umap[`${x},${y}`];
+        const t = CH[ch] ?? 'floor';
+        cells.push({
+          x, y,
+          glyph: u ? (u.attrs?.symbol ?? u.type?.[0]?.toUpperCase() ?? '?') : '',
+          owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
+          color: this.colors[t] ?? '#808070',
+          hp: u?.hp, maxHp: u?.maxHp,
+        });
+      }
+    }
+    return { width, height, cells };
+  },
 };
