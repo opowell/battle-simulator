@@ -228,8 +228,8 @@ input[type=range]{padding:0;width:100%}
   // Vue 3 templates resolve bare identifiers through _ctx (the component proxy),
   // not window — so globals must be registered here to be visible in templates.
   Object.assign(app.config.globalProperties, {
-    GAMES, SCENARIOS, ICON_PATHS, RDR,
-    scenariosFor, fieldFor, computeUnits, makeFitter, samplePath, lerp,
+    ICON_PATHS, RDR,
+    computeUnits, makeFitter, samplePath, lerp,
   });
 
   app.component('BsIcon', BsIcon);

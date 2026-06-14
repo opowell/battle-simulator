@@ -16,38 +16,12 @@ const error = ref(null);
 const actionSearch = ref('');
 let pollTimer = null;
 
-const GAME_META = {
-  chess:         { emoji: '♟️',  title: 'Chess',           genre: 'Strategy',  desc: 'Classic — checkmate the king' },
-  tactical:      { emoji: '⚔️',  title: 'Tactical',        genre: 'Tactical',  desc: 'Turn-based squad combat on a grid' },
-  cardbattle:    { emoji: '🃏',  title: 'Card Battle',     genre: 'Card',      desc: 'Draw, play, and duel to zero HP' },
-  civ1:          { emoji: '🏛️',  title: 'Civilization',    genre: 'Strategy',  desc: 'Build an empire from a single settler' },
-  civ2:          { emoji: '🌍',  title: 'Civilization II', genre: 'Strategy',  desc: 'Expanded civs, diplomacy & tech tree' },
-  risk:          { emoji: '🗺️',  title: 'Risk',            genre: 'Strategy',  desc: 'Conquer territories for global domination' },
-  axisallies:    { emoji: '✈️',  title: 'Axis & Allies',   genre: 'Wargame',   desc: 'WWII grand strategy board game' },
-  combatmission: { emoji: '🪖',  title: 'Combat Mission',  genre: 'Wargame',   desc: 'Realistic platoon-level tactical combat' },
-  xcom:          { emoji: '👽',  title: 'XCOM',            genre: 'Tactical',  desc: 'Defend Earth from alien invasion' },
-  aow:           { emoji: '🧙',  title: 'Age of Wonders',  genre: 'Fantasy',   desc: 'Fantasy empire building & conquest' },
-  cs:            { emoji: '🔫',  title: 'Counter-Strike',  genre: 'Shooter',   desc: 'CTs vs Terrorists — defuse or detonate' },
-  ffta:          { emoji: '⚡',  title: 'FF Tactics',      genre: 'RPG',       desc: 'Job-class tactical RPG on a grid' },
-  sc1:           { emoji: '🚀',  title: 'StarCraft',       genre: 'RTS',       desc: 'Three-faction real-time strategy' },
-  sc2:           { emoji: '🛸',  title: 'StarCraft II',    genre: 'RTS',       desc: 'Refined RTS with new units & mechanics' },
-  doom:          { emoji: '👹',  title: 'DOOM',            genre: 'Shooter',   desc: 'Survive waves of hell-spawned demons' },
-  rogue:         { emoji: '🏚️',  title: 'Rogue',           genre: 'Roguelike', desc: 'Procedural ASCII dungeon crawler' },
-  simcity:       { emoji: '🏙️',  title: 'SimCity',         genre: 'Builder',   desc: 'Zone, build, and manage a thriving city' },
-};
-
-const GENRE_COLOR = {
-  Strategy: '#4f46e5', Tactical: '#0891b2', Card:      '#7c3aed',
-  Wargame:  '#b45309', Fantasy:  '#059669', Shooter:   '#dc2626',
-  RPG:      '#db2777', RTS:      '#0369a1', Roguelike: '#57534e',
-  Builder:  '#16a34a',
-};
 
 const OWNER_COLOR = ['#9a8878', '#3b82f6', '#ef4444'];
 const OWNER_SHADOW = ['none', '0 0 6px rgba(59,130,246,0.8)', '0 0 6px rgba(239,68,68,0.8)'];
 
 function gameMeta(name) {
-  return GAME_META[name] ?? {
+  return {
     emoji: '🎮',
     title: name ? name.charAt(0).toUpperCase() + name.slice(1) : 'Game',
     genre: 'Game', desc: '',
@@ -148,7 +122,7 @@ function copyUrl(pid, btn) {
   });
 }
 
-function genreColor(meta) { return GENRE_COLOR[meta.genre] ?? '#64748b'; }
+function genreColor(_meta) { return '#64748b'; }
 
 async function init() {
   const params = new URLSearchParams(location.search);

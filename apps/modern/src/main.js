@@ -17,32 +17,6 @@ let state = {
 };
 let pollTimer = null;
 
-const GAME_META = {
-  chess:         { emoji: '♟️',  title: 'Chess',           genre: 'Strategy',  desc: 'Classic — checkmate the king' },
-  tactical:      { emoji: '⚔️',  title: 'Tactical',        genre: 'Tactical',  desc: 'Turn-based squad combat on a grid' },
-  cardbattle:    { emoji: '🃏',  title: 'Card Battle',     genre: 'Card',      desc: 'Draw, play, and duel to zero HP' },
-  civ1:          { emoji: '🏛️',  title: 'Civilization',    genre: 'Strategy',  desc: 'Build an empire from a single settler' },
-  civ2:          { emoji: '🌍',  title: 'Civilization II', genre: 'Strategy',  desc: 'Expanded civs, diplomacy & tech tree' },
-  risk:          { emoji: '🗺️',  title: 'Risk',            genre: 'Strategy',  desc: 'Conquer territories for global domination' },
-  axisallies:    { emoji: '✈️',  title: 'Axis & Allies',   genre: 'Wargame',   desc: 'WWII grand strategy board game' },
-  combatmission: { emoji: '🪖',  title: 'Combat Mission',  genre: 'Wargame',   desc: 'Realistic platoon-level tactical combat' },
-  xcom:          { emoji: '👽',  title: 'XCOM',            genre: 'Tactical',  desc: 'Defend Earth from alien invasion' },
-  aow:           { emoji: '🧙',  title: 'Age of Wonders',  genre: 'Fantasy',   desc: 'Fantasy empire building & conquest' },
-  cs:            { emoji: '🔫',  title: 'Counter-Strike',  genre: 'Shooter',   desc: 'CTs vs Terrorists — defuse or detonate' },
-  ffta:          { emoji: '⚡',  title: 'FF Tactics',      genre: 'RPG',       desc: 'Job-class tactical RPG on a grid' },
-  sc1:           { emoji: '🚀',  title: 'StarCraft',       genre: 'RTS',       desc: 'Three-faction real-time strategy' },
-  sc2:           { emoji: '🛸',  title: 'StarCraft II',    genre: 'RTS',       desc: 'Refined RTS with new units & mechanics' },
-  doom:          { emoji: '👹',  title: 'DOOM',            genre: 'Shooter',   desc: 'Survive waves of hell-spawned demons' },
-  rogue:         { emoji: '🏚️',  title: 'Rogue',           genre: 'Roguelike', desc: 'Procedural ASCII dungeon crawler' },
-  simcity:       { emoji: '🏙️',  title: 'SimCity',         genre: 'Builder',   desc: 'Zone, build, and manage a thriving city' },
-};
-
-const GENRE_COLOR = {
-  Strategy: '#4f46e5', Tactical: '#0891b2', Card:      '#7c3aed',
-  Wargame:  '#b45309', Fantasy:  '#059669', Shooter:   '#dc2626',
-  RPG:      '#db2777', RTS:      '#0369a1', Roguelike: '#57534e',
-  Builder:  '#16a34a',
-};
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -59,7 +33,7 @@ function el(tag, props = {}, ...children) {
 }
 
 function gameMeta(name) {
-  return GAME_META[name] ?? {
+  return {
     emoji: '🎮',
     title: name ? name.charAt(0).toUpperCase() + name.slice(1) : 'Game',
     genre: 'Game',
@@ -269,7 +243,7 @@ function renderMain(app) {
 function renderConfigure(app) {
   const g = state.pendingGame;
   const meta = gameMeta(g.name);
-  const gc = GENRE_COLOR[meta.genre] ?? '#64748b';
+  const gc = '#64748b';
   const humanCount = state.pendingPlayers.filter(p => p.agent === 'human').length;
 
   app.append(
@@ -355,7 +329,7 @@ function renderGames(app) {
     el('main', { class: 'grid' },
       ...state.games.map(g => {
         const meta = gameMeta(g.name);
-        const gc = GENRE_COLOR[meta.genre] ?? '#64748b';
+        const gc = '#64748b';
         return el('div', { class: 'game-card', onclick: () => selectGame(g.name) },
           el('div', { class: 'game-card-top' },
             el('span', { class: 'game-emoji' }, meta.emoji),
