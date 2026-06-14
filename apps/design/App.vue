@@ -59,13 +59,21 @@ const activeField = computed(() => {
   const units = g.cells
     .filter(c => c.glyph)
     .map(c => ({
-      id:        `u_${c.x}_${c.y}`,
+      id:        c.unitId ?? `u_${c.x}_${c.y}`,
       team:      ownerTeam[c.owner] ?? (teams[0]?.id ?? 'p1'),
       type:      c.glyph.toLowerCase(),
-      name:      c.glyph,
-      hp:        c.maxHp ?? 1,
+      name:      c.unitName ?? c.glyph,
+      hp:        c.hp ?? c.maxHp ?? 1,
       path:      [[c.x + 0.5, c.y + 0.5]],
       deathTurn: null,
+      mp:            c.mp,
+      maxMp:         c.maxMp,
+      stats:         c.stats,
+      abilities:     c.abilities,
+      statusEffects: c.statusEffects,
+      moved:         c.moved,
+      acted:         c.acted,
+      isActive:      c.isActive,
     }));
 
   return {
@@ -216,6 +224,7 @@ function exitBattle() {
                    :live-state="liveState"
                    :field="activeField"
                    :theme="theme"
+                   :fog="liveState?.fog ?? false"
                    @exit="exitBattle"
                    @submit-action="submitAction"/>
       <div v-else

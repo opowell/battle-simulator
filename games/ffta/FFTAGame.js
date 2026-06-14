@@ -277,6 +277,11 @@ function getVisibleState(state, playerId) {
   };
 }
 
+const JOB_LABELS = {
+  soldier: 'Soldier', whiteMage: 'White Mage', blackMage: 'Black Mage',
+  archer: 'Archer', thief: 'Thief', fighter: 'Fighter',
+};
+
 // ── Export ────────────────────────────────────────────────────────────────────
 
 function getActionDuration(state, action) {
@@ -319,6 +324,7 @@ export const FFTAGame = {
     (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
     const umap = {};
     for (const u of units) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+    const activeUnitId = state.gameSpecific?.activeUnitId;
     const cells = [];
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -327,10 +333,19 @@ export const FFTAGame = {
         const u = umap[`${x},${y}`];
         cells.push({
           x, y,
-          glyph: u ? (u.symbol ?? u.job?.[0]?.toUpperCase() ?? '?') : '',
-          owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
-          color: this.colors[t] ?? '#808070',
+          glyph:    u ? (u.symbol ?? u.job?.[0]?.toUpperCase() ?? '?') : '',
+          owner:    u ? (pidIdx[u.ownerId] ?? 0) : 0,
+          color:    this.colors[t] ?? '#808070',
           hp: u?.hp, maxHp: u?.maxHp,
+          unitId:        u?.id,
+          unitName:      u ? JOB_LABELS[u.job] ?? u.job : null,
+          mp:            u?.mp,    maxMp: u?.maxMp,
+          stats:         u?.stats  ? { ...u.stats } : null,
+          abilities:     u?.abilities ? [...u.abilities] : null,
+          statusEffects: u?.statusEffects ? [...u.statusEffects] : null,
+          moved:         u?.moved,
+          acted:         u?.acted,
+          isActive:      u ? u.id === activeUnitId : false,
         });
       }
     }

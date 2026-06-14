@@ -7,6 +7,7 @@ const props = defineProps({
   liveState: Object,  // raw API session JSON
   field:     Object,
   theme:     String,
+  fog:       { type: Boolean, default: false },
 });
 const emit = defineEmits(['exit', 'submit-action']);
 
@@ -16,7 +17,6 @@ const playing  = ref(false);
 
 // ── view toggles ─────────────────────────────────────────────
 const renderer  = ref('schematic');
-const fogOn     = ref(false);
 const showRuler = ref(false);
 
 // ── selection ─────────────────────────────────────────────────
@@ -276,10 +276,6 @@ onUnmounted(() => {
 
       <div style="flex:1"/>
 
-      <button class="iconbtn" :style="{color: fogOn ? 'var(--accent)' : 'var(--dim)'}"
-              title="Fog of war" style="width:32px;height:32px" @click="fogOn = !fogOn">
-        <BsIcon name="fog" :size="15"/>
-      </button>
       <button class="iconbtn" :style="{color: showRuler ? 'var(--accent)' : 'var(--dim)'}"
               title="Show ruler" style="width:32px;height:32px" @click="showRuler = !showRuler">
         <BsIcon name="move" :size="15"/>
@@ -299,14 +295,14 @@ onUnmounted(() => {
       <div ref="stageEl" style="flex:1;position:relative;overflow:hidden">
         <SchematicLayer v-if="renderer === 'schematic'"
                         :field="field" :fit="fit" :units="displayUnits"
-                        :selectedId="selectedId" :fog="fogOn"
+                        :selectedId="selectedId" :fog="fog"
                         :showRuler="showRuler" :rdr="rdr"
                         :legalSquares="isChess ? chessMoves : fftaMoves"
                         @select="id => selectedId = id"
                         @sq-click="handleSqClick"/>
         <AssetLayer v-else
                     :field="field" :fit="fit" :units="displayUnits"
-                    :selectedId="selectedId" :fog="fogOn"
+                    :selectedId="selectedId" :fog="fog"
                     :showRuler="showRuler" :rdr="rdr"
                     @select="id => selectedId = id"/>
       </div>

@@ -162,6 +162,7 @@ class Session {
     return {
       id: this.id,
       game: this.gameName,
+      fog: this.fog,
       status: this.status,
       result: this.result,
       error: this.error,
