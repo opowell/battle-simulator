@@ -193,6 +193,7 @@ class Session {
       legalActions: pending?.legalActions ?? null,
       rendered: rawState ? game.renderState(viewState) : null,
       grid: viewState && game.toGrid ? game.toGrid(viewState) : null,
+      lastActions: rawState?.lastActions ?? null,
       log: this.engine.log,
     };
   }
