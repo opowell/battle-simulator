@@ -89,8 +89,6 @@ Fixed 12×10 grid. `#` = wall, `.` = grass (height 0), `1` = elevated (height 1)
 |---|---|
 | **Law system** | FFTA's signature mechanic — a Judge enforces per-battle laws (no bladed weapons, no fire magic, etc.); violations give yellow/red cards and can eject units |
 | **CT turn queue** | The original uses a Charge Time system where every unit's CT ticks up by Speed each step and acts at CT=100; this implementation speed-sorts at round start instead |
-| **Reaction/Support abilities** | Units can have up to 3 ability slots: Action (active), Reaction (triggers on being hit, e.g. Counter/Reflex), Support (passive, e.g. Defense Boost); only Action abilities exist here |
-| **More jobs & races** | Original has ~34 jobs across 5 races (Human, Bangaa, Nu Mou, Viera, **Moogle**); only 6 jobs across 3 races are implemented |
 | **Equipment** | Abilities are learned from equipped weapons/armor in the original; no equipment system here |
 | **AoE abilities** | Many spells hit multiple tiles (cross, diamond, line patterns); everything here targets a single unit |
 | **Elemental weaknesses** | Fire/Ice/Thunder should interact with per-unit elemental resistances; all three Black Mage spells are identical here |

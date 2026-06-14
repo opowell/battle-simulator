@@ -1,5 +1,3 @@
-- add a game log -> what happened in the game.
-- move theme to a new settings page.
 - how do multiple human players play a game together?
 - scenario editor
 - allow resizing of side panel.
