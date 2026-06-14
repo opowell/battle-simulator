@@ -64,7 +64,7 @@ const activeField = computed(() => {
       type:      c.glyph.toLowerCase(),
       name:      c.glyph,
       hp:        c.maxHp ?? 1,
-      path:      [[c.x, c.y]],
+      path:      [[c.x + 0.5, c.y + 0.5]],
       deathTurn: null,
     }));
 
@@ -145,7 +145,7 @@ async function createSession(cfg) {
     agent: p.agent === 'human' ? 'human' : (p.agent ?? 'random'),
   }));
   try {
-    const state = await api.create({ game: cfg.game, players, config: { maxTurns: cfg.maxTurns ?? 500 } });
+    const state = await api.create({ game: cfg.game, players, config: { maxTurns: cfg.maxTurns ?? 500, fog: cfg.fog ?? false } });
     sessionMeta.value = { ...sessionMeta.value, [state.id]: players };
     liveState.value = state;
     view.value = 'battle';

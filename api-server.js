@@ -13,7 +13,7 @@
 import { createServer }          from 'node:http';
 import { randomUUID }            from 'node:crypto';
 import { readFile }              from 'node:fs/promises';
-import { extname, resolve }      from 'node:path';
+import { extname, resolve, sep }  from 'node:path';
 import { fileURLToPath }         from 'node:url';
 
 import { GameEngine } from './engine/index.js';
@@ -62,7 +62,7 @@ async function serveApp(appName, req, res) {
   const appDir   = resolve(APPS_DIR, appName);
   const abs      = resolve(appDir, rel);
 
-  if (!abs.startsWith(appDir + '/') && abs !== appDir) {
+  if (!abs.startsWith(appDir + sep) && abs !== appDir) {
     res.writeHead(403); return res.end('Forbidden');
   }
 
@@ -155,7 +155,7 @@ class Session {
   toJSON(playerId = null) {
     const { game } = GAMES[this.gameName];
     const rawState = this.engine.state;
-    const viewState = (playerId && game.getVisibleState)
+    const viewState = (this.fog && playerId && game.getVisibleState)
       ? game.getVisibleState(rawState, playerId)
       : rawState;
     const pending = this.pendingAction();
@@ -179,7 +179,7 @@ class Session {
   stateJSON(playerId = null) {
     const { game } = GAMES[this.gameName];
     const rawState = this.engine.state;
-    if (playerId && game.getVisibleState) return game.getVisibleState(rawState, playerId);
+    if (this.fog && playerId && game.getVisibleState) return game.getVisibleState(rawState, playerId);
     return rawState;
   }
 }
@@ -271,7 +271,7 @@ async function handleCreateSession(req, res) {
 
   const engine = new GameEngine(entry.game, players, { maxTurns: config.maxTurns ?? 500, ...config });
   const id = randomUUID();
-  const session = new Session(id, gameName, engine, apiAgents);
+  const session = new Session(id, gameName, engine, apiAgents, config.fog ?? false);
   sessions.set(id, session);
 
   const firstHumanId = [...apiAgents.keys()][0] ?? null;
