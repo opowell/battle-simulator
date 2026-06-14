@@ -12,8 +12,8 @@
 
 import { createServer }          from 'node:http';
 import { randomUUID }            from 'node:crypto';
-import { readFile }              from 'node:fs/promises';
-import { extname, resolve, sep }  from 'node:path';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { extname, resolve, sep, dirname } from 'node:path';
 import { fileURLToPath }         from 'node:url';
 
 import { GameEngine } from './engine/index.js';
@@ -42,7 +42,9 @@ import { KDiceGame }        from './games/kdice/index.js';
 // Static file serving — /ui/<name>/* → apps/<name>/
 // ---------------------------------------------------------------------------
 
-const APPS_DIR = resolve(fileURLToPath(new URL('.', import.meta.url)), 'apps');
+const ROOT_DIR = resolve(fileURLToPath(new URL('.', import.meta.url)));
+const APPS_DIR = resolve(ROOT_DIR, 'apps');
+const SESSIONS_DIR = resolve(ROOT_DIR, 'sessions');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -125,7 +127,15 @@ class Session {
     this.status = 'active';
     this.result = null;
     this.error = null;
+    this._logPath = resolve(SESSIONS_DIR, id, 'log.json');
     this._run();
+  }
+
+  async _persistLog() {
+    try {
+      await mkdir(dirname(this._logPath), { recursive: true });
+      await writeFile(this._logPath, JSON.stringify(this.engine.log, null, 2));
+    } catch {}
   }
 
   async _run() {
@@ -133,6 +143,7 @@ class Session {
       this.engine._init();
       while (this.status === 'active') {
         const { done } = await this.engine.step();
+        await this._persistLog();
         if (done) {
           this.status = 'done';
           this.result = this.engine.result;
@@ -182,6 +193,7 @@ class Session {
       legalActions: pending?.legalActions ?? null,
       rendered: rawState ? game.renderState(viewState) : null,
       grid: viewState && game.toGrid ? game.toGrid(viewState) : null,
+      log: this.engine.log,
     };
   }
 
@@ -340,6 +352,12 @@ async function handleSubmitAction(req, res, id) {
   send(res, 200, session.toJSON(playerId));
 }
 
+async function handleGetLog(res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+  send(res, 200, session.engine.log);
+}
+
 async function handleDeleteSession(res, id) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
@@ -401,6 +419,10 @@ const server = createServer(async (req, res) => {
     // GET /sessions/:id/state
     if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'state')
       return await handleGetState(res, parts[1], url);
+
+    // GET /sessions/:id/log
+    if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'log')
+      return await handleGetLog(res, parts[1]);
 
     // POST /sessions/:id/action
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'action')

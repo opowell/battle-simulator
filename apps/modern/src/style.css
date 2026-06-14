@@ -847,6 +847,69 @@ body {
 
 .btn-copy:hover { background: var(--accent-hover); }
 
+/* ── Actions card inner layout ──────────────────────────── */
+.actions-main {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Game Log ────────────────────────────────────────────── */
+.log-panel {
+  flex-shrink: 0;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.log-entries {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.log-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.log-entry:last-child { border-bottom: none; }
+
+.log-turn {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  flex-shrink: 0;
+  min-width: 26px;
+}
+
+.log-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.log-action {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.log-player {
+  font-weight: 600;
+  color: var(--accent);
+  margin-right: 4px;
+}
+
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 720px) {
   .session-layout { flex-direction: column; overflow: auto; padding: 12px; }
