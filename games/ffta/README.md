@@ -54,9 +54,9 @@ Ability range uses **Manhattan distance**.
 | `rend-armor` | soldier | physical | 1 | 0 | `ATK × 0.7` damage + apply `armor-break` |
 | `cure` | whiteMage | magic | 2 | 6 | Restore `MAG × 1.2` HP to ally |
 | `protect` | whiteMage | magic | 2 | 8 | Apply `protect` status to ally |
-| `fire` | blackMage | magic | 3 | 8 | `MAG × 1.3` damage |
-| `thunder` | blackMage | magic | 3 | 8 | `MAG × 1.3` damage |
-| `blizzard` | blackMage | magic | 3 | 8 | `MAG × 1.3` damage |
+| `fire` | blackMage | magic | 3 | 8 | `MAG × 1.3` fire damage |
+| `thunder` | blackMage | magic | 3 | 8 | `MAG × 1.3` thunder damage |
+| `blizzard` | blackMage | magic | 3 | 8 | `MAG × 1.3` blizzard damage |
 | `aim` | archer | physical | 4 | 0 | `ATK × 0.9` damage (ranged) |
 | `blind` | archer | magic | 3 | 6 | Apply `blind` status to enemy |
 | `steal` | thief | physical | 1 | 0 | Steal up to 8 MP from target |
@@ -64,12 +64,40 @@ Ability range uses **Manhattan distance**.
 | `powerbreak` | fighter | physical | 1 | 0 | `ATK × 0.6` damage + apply `atk-break` |
 | `shatter` | fighter | physical | 1 | 0 | `ATK × 1.5` damage |
 
+## Items
+
+Items are used as abilities — no MP cost, fixed effect, range 2. Alchemist carries the full kit; Juggler carries Eye Drops.
+
+| Item | Effect | User |
+|---|---|---|
+| `potion` | Restore 50 HP to ally | alchemist |
+| `hi-potion` | Restore 150 HP to ally | alchemist |
+| `x-potion` | Fully restore HP to ally | — |
+| `ether` | Restore 30 MP to ally | alchemist |
+| `hi-ether` | Restore 60 MP to ally | — |
+| `elixir` | Fully restore HP + MP to ally | — |
+| `phoenix-down` | Revive KO'd ally at 25% HP | alchemist |
+| `antidote` | Cure `poison` | alchemist |
+| `eye-drops` | Cure `blind` | juggler |
+| `maiden's-kiss` | Cure `sleep` | — |
+
 ## Special mechanics
 
 - **Turn queue** — at the start of each round, units are sorted by SPD (highest first) and activate in that order. When the queue empties a new round begins and the queue is rebuilt.
 - **Height bonus** — +20% damage per tile of elevation above target (terrain height: grass=0 `.`, elevated=1 `1`, high=2 `2`)
 - **Uphill movement cost** — moving to a higher tile costs +1 extra movement per height level gained
-- **Status effects** — `protect` (+25% DEF), `atk-break` (ATK ×0.75), `armor-break` (DEF ×0.75), `blind` (ATK ×0.70)
+- **Elemental weaknesses** — Fire/Thunder/Blizzard spells are resisted or amplified by race. The preview shows `(WEAK)` or `(RESIST)` when applicable.
+
+| Race | Fire | Thunder | Blizzard |
+|---|---|---|---|
+| Human | ×1.0 | ×1.0 | ×1.0 |
+| Bangaa | ×0.5 | ×1.0 | ×1.5 |
+| Nu Mou | ×1.0 | ×1.5 | ×1.0 |
+| Viera | ×1.5 | ×0.5 | ×1.0 |
+| Moogle | ×1.0 | ×1.5 | ×0.5 |
+
+- **Status effects** — `protect` (+25% DEF), `atk-break` (ATK ×0.75), `armor-break` (DEF ×0.75), `blind` (ATK ×0.70), `slow` (SPD ×0.5), `haste` (SPD ×1.5), `stop` (cannot act), `sleep` (cannot act; wakes when hit), `poison` (−10% max HP at end of each turn), `doom` (KO after 3 turns; counter shown as `doom:N`)
+- **Knockback** — abilities marked with knockback (`bash`, `lunge`, `mog-rush`, `chocobo-rush`) push the target 1 tile away from the attacker (dominant axis). If the destination tile is a wall, out of bounds, or occupied by another unit, the target instead takes crash damage (ATK × 0.5). If a unit occupies the landing tile, it takes the same crash damage.
 - **Fog of war** — vision radius 2 (Chebyshev/square distance)
 
 ## Map
@@ -88,14 +116,8 @@ Fixed 12×10 grid. `#` = wall, `.` = grass (height 0), `1` = elevated (height 1)
 | Feature | Notes |
 |---|---|
 | **Law system** | FFTA's signature mechanic — a Judge enforces per-battle laws (no bladed weapons, no fire magic, etc.); violations give yellow/red cards and can eject units |
-| **CT turn queue** | The original uses a Charge Time system where every unit's CT ticks up by Speed each step and acts at CT=100; this implementation speed-sorts at round start instead |
 | **Equipment** | Abilities are learned from equipped weapons/armor in the original; no equipment system here |
-| **AoE abilities** | Many spells hit multiple tiles (cross, diamond, line patterns); everything here targets a single unit |
-| **Elemental weaknesses** | Fire/Ice/Thunder should interact with per-unit elemental resistances; all three Black Mage spells are identical here |
-| **KO vs death** | Units go KO in the original and can be revived (Raise, Phoenix Down); `alive: false` is permanent here |
-| **Items** | No Potions, Ethers, or Phoenix Down — no item actions at all |
-| **Statuses: Slow/Haste/Stop/Doom/Poison/Sleep** | Only a small subset of FFTA's status effects is implemented |
-| **Knockback** | Some abilities push units into adjacent tiles; not implemented |
+| **KO vs death** | Partial: Phoenix Down revives a KO'd ally at 25% HP; White Magic `Raise` and full-HP revival are not implemented |
 
 ## Run
 

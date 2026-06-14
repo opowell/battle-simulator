@@ -1,9 +1,21 @@
+const RACE_ELEM_RESIST = {
+  human:    { fire: 1.0, thunder: 1.0, blizzard: 1.0 },
+  bangaa:   { fire: 0.5, thunder: 1.0, blizzard: 1.5 },
+  'nu-mou': { fire: 1.0, thunder: 1.5, blizzard: 1.0 },
+  viera:    { fire: 1.5, thunder: 0.5, blizzard: 1.0 },
+  moogle:   { fire: 1.0, thunder: 1.5, blizzard: 0.5 },
+};
+
+export const ELEM_RESIST = RACE_ELEM_RESIST;
+
 export const JOB_DEFS = {
   soldier: {
     race: 'human',
     stats: { hp: 28, mp: 10, atk: 10, def: 8, mag: 4, res: 4, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'shieldbearer', 'rend-armor'],
+    reaction: 'counter',
+    support: 'defense-boost',
     symbol: 'S',
   },
   whiteMage: {
@@ -11,6 +23,8 @@ export const JOB_DEFS = {
     stats: { hp: 20, mp: 30, atk: 5, def: 5, mag: 9, res: 10, spd: 6 },
     moveRange: 3,
     abilities: ['attack', 'cure', 'protect'],
+    reaction: 'mp-shield',
+    support: 'resilience',
     symbol: 'W',
   },
   blackMage: {
@@ -18,6 +32,8 @@ export const JOB_DEFS = {
     stats: { hp: 16, mp: 40, atk: 4, def: 4, mag: 12, res: 8, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'fire', 'thunder', 'blizzard'],
+    reaction: 'mp-shield',
+    support: 'magic-boost',
     symbol: 'B',
   },
   archer: {
@@ -25,6 +41,8 @@ export const JOB_DEFS = {
     stats: { hp: 22, mp: 12, atk: 9, def: 5, mag: 6, res: 6, spd: 9 },
     moveRange: 4,
     abilities: ['attack', 'aim', 'blind'],
+    reaction: 'weapon-guard',
+    support: 'awareness',
     symbol: 'A',
   },
   thief: {
@@ -32,6 +50,8 @@ export const JOB_DEFS = {
     stats: { hp: 20, mp: 16, atk: 8, def: 5, mag: 5, res: 5, spd: 11 },
     moveRange: 4,
     abilities: ['attack', 'steal', 'mug'],
+    reaction: 'counter',
+    support: 'move-plus',
     symbol: 'T',
   },
   fighter: {
@@ -39,6 +59,8 @@ export const JOB_DEFS = {
     stats: { hp: 32, mp: 8, atk: 13, def: 9, mag: 3, res: 3, spd: 6 },
     moveRange: 3,
     abilities: ['attack', 'powerbreak', 'shatter'],
+    reaction: 'weapon-guard',
+    support: 'attack-boost',
     symbol: 'F',
   },
   paladin: {
@@ -46,6 +68,8 @@ export const JOB_DEFS = {
     stats: { hp: 30, mp: 16, atk: 10, def: 11, mag: 7, res: 8, spd: 6 },
     moveRange: 3,
     abilities: ['attack', 'holy-blade', 'shieldbearer'],
+    reaction: 'absorb-hp',
+    support: 'defense-boost',
     symbol: 'P',
   },
   ninja: {
@@ -53,6 +77,8 @@ export const JOB_DEFS = {
     stats: { hp: 18, mp: 16, atk: 12, def: 4, mag: 5, res: 4, spd: 13 },
     moveRange: 4,
     abilities: ['attack', 'throw', 'shadowstitch'],
+    reaction: 'reflex',
+    support: 'move-plus',
     symbol: 'N',
   },
   dragoon: {
@@ -60,6 +86,8 @@ export const JOB_DEFS = {
     stats: { hp: 34, mp: 8, atk: 14, def: 8, mag: 3, res: 3, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'jump'],
+    reaction: 'counter',
+    support: 'attack-boost',
     symbol: 'D',
   },
   elementalist: {
@@ -67,6 +95,8 @@ export const JOB_DEFS = {
     stats: { hp: 18, mp: 36, atk: 4, def: 4, mag: 10, res: 9, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'flood', 'gust'],
+    reaction: 'mp-shield',
+    support: 'magic-boost',
     symbol: 'L',
   },
   redMage: {
@@ -74,6 +104,8 @@ export const JOB_DEFS = {
     stats: { hp: 22, mp: 28, atk: 8, def: 5, mag: 8, res: 7, spd: 8 },
     moveRange: 3,
     abilities: ['attack', 'fire', 'cure'],
+    reaction: 'mp-shield',
+    support: 'magic-boost',
     symbol: 'R',
   },
   timeMage: {
@@ -81,6 +113,8 @@ export const JOB_DEFS = {
     stats: { hp: 14, mp: 38, atk: 3, def: 3, mag: 11, res: 9, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'slow', 'haste'],
+    reaction: 'mp-shield',
+    support: 'resilience',
     symbol: 'M',
   },
   summoner: {
@@ -88,6 +122,8 @@ export const JOB_DEFS = {
     stats: { hp: 14, mp: 44, atk: 3, def: 3, mag: 13, res: 8, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'eidolon'],
+    reaction: 'mp-shield',
+    support: 'magic-boost',
     symbol: 'U',
   },
   illusionist: {
@@ -95,6 +131,8 @@ export const JOB_DEFS = {
     stats: { hp: 16, mp: 40, atk: 4, def: 4, mag: 12, res: 7, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'phantasm'],
+    reaction: 'reflex',
+    support: 'magic-boost',
     symbol: 'I',
   },
   assassin: {
@@ -102,6 +140,8 @@ export const JOB_DEFS = {
     stats: { hp: 20, mp: 14, atk: 11, def: 5, mag: 6, res: 5, spd: 12 },
     moveRange: 4,
     abilities: ['attack', 'rockseal'],
+    reaction: 'reflex',
+    support: 'move-plus',
     symbol: 'X',
   },
 
@@ -111,6 +151,8 @@ export const JOB_DEFS = {
     stats: { hp: 38, mp: 6, atk: 15, def: 11, mag: 2, res: 2, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'bash', 'battle-cry'],
+    reaction: 'counter',
+    support: 'attack-boost',
     symbol: 'V',
   },
   whiteMonk: {
@@ -118,6 +160,8 @@ export const JOB_DEFS = {
     stats: { hp: 32, mp: 16, atk: 13, def: 8, mag: 5, res: 7, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'chakra', 'air-render'],
+    reaction: 'counter',
+    support: 'defense-boost',
     symbol: 'K',
   },
   bishop: {
@@ -125,6 +169,8 @@ export const JOB_DEFS = {
     stats: { hp: 22, mp: 32, atk: 5, def: 5, mag: 9, res: 11, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'holy', 'cura', 'esuna'],
+    reaction: 'absorb-hp',
+    support: 'resilience',
     symbol: 'G',
   },
   templar: {
@@ -132,6 +178,8 @@ export const JOB_DEFS = {
     stats: { hp: 40, mp: 14, atk: 12, def: 13, mag: 6, res: 9, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'magic-hammer', 'saint-cross'],
+    reaction: 'absorb-hp',
+    support: 'defense-boost',
     symbol: 'Q',
   },
 
@@ -140,7 +188,9 @@ export const JOB_DEFS = {
     race: 'nu-mou',
     stats: { hp: 16, mp: 36, atk: 3, def: 4, mag: 10, res: 10, spd: 6 },
     moveRange: 3,
-    abilities: ['attack', 'hi-potion', 'esuna'],
+    abilities: ['attack', 'potion', 'hi-potion', 'ether', 'phoenix-down', 'antidote'],
+    reaction: 'mp-shield',
+    support: 'resilience',
     symbol: 'C',
   },
   morpher: {
@@ -148,6 +198,8 @@ export const JOB_DEFS = {
     stats: { hp: 20, mp: 28, atk: 7, def: 6, mag: 8, res: 7, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'call-beast', 'wild-boar'],
+    reaction: 'counter',
+    support: 'resilience',
     symbol: 'H',
   },
 
@@ -157,6 +209,8 @@ export const JOB_DEFS = {
     stats: { hp: 20, mp: 20, atk: 10, def: 5, mag: 7, res: 6, spd: 10 },
     moveRange: 4,
     abilities: ['attack', 'lunge', 'feather-blow'],
+    reaction: 'reflex',
+    support: 'move-plus',
     symbol: 'E',
   },
   sniper: {
@@ -164,6 +218,8 @@ export const JOB_DEFS = {
     stats: { hp: 22, mp: 10, atk: 12, def: 5, mag: 5, res: 5, spd: 9 },
     moveRange: 3,
     abilities: ['attack', 'long-range', 'last-breath'],
+    reaction: 'weapon-guard',
+    support: 'awareness',
     symbol: 'Z',
   },
 
@@ -173,6 +229,8 @@ export const JOB_DEFS = {
     stats: { hp: 20, mp: 32, atk: 6, def: 5, mag: 9, res: 7, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'bad-breath', 'aqua-breath', 'magic-hammer'],
+    reaction: 'mp-shield',
+    support: 'magic-boost',
     symbol: 'Y',
   },
   hunter: {
@@ -180,6 +238,8 @@ export const JOB_DEFS = {
     stats: { hp: 24, mp: 12, atk: 11, def: 7, mag: 5, res: 5, spd: 9 },
     moveRange: 4,
     abilities: ['attack', 'aim-plus', 'net', 'hunt'],
+    reaction: 'counter',
+    support: 'awareness',
     symbol: 'J',
   },
 
@@ -189,13 +249,17 @@ export const JOB_DEFS = {
     stats: { hp: 28, mp: 14, atk: 12, def: 8, mag: 5, res: 5, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'mog-attack', 'mog-rush'],
+    reaction: 'counter',
+    support: 'attack-boost',
     symbol: 'O',
   },
   juggler: {
     race: 'moogle',
     stats: { hp: 18, mp: 20, atk: 9, def: 4, mag: 6, res: 5, spd: 10 },
     moveRange: 4,
-    abilities: ['attack', 'toss-item', 'smile'],
+    abilities: ['attack', 'toss-item', 'smile', 'eye-drops'],
+    reaction: 'reflex',
+    support: 'move-plus',
     symbol: '@',
   },
   animist: {
@@ -203,6 +267,8 @@ export const JOB_DEFS = {
     stats: { hp: 20, mp: 24, atk: 6, def: 5, mag: 8, res: 7, spd: 8 },
     moveRange: 3,
     abilities: ['attack', 'chocobo-rush', 'moogle-eye', 'sheep-count'],
+    reaction: 'absorb-hp',
+    support: 'resilience',
     symbol: '$',
   },
   gunner: {
@@ -210,6 +276,8 @@ export const JOB_DEFS = {
     stats: { hp: 20, mp: 12, atk: 10, def: 4, mag: 5, res: 4, spd: 9 },
     moveRange: 3,
     abilities: ['attack', 'burst-shot', 'fireshot', 'sootshot'],
+    reaction: 'weapon-guard',
+    support: 'awareness',
     symbol: '&',
   },
 };
@@ -230,10 +298,15 @@ export function createUnit(id, job, ownerId, position, facing = 0) {
     maxMp: def.stats.mp,
     stats: { ...def.stats },
     abilities: [...def.abilities],
+    elemResist: { ...(RACE_ELEM_RESIST[def.race] ?? { fire: 1.0, thunder: 1.0, blizzard: 1.0 }) },
+    reaction: def.reaction ?? null,
+    support: def.support ?? null,
     symbol: def.symbol,
+    ct: 0,
     moved: false,
     acted: false,
     statusEffects: [],
+    doomCountdown: null,
     preMovedPosition: null,
   };
 }

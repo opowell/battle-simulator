@@ -266,8 +266,8 @@ onUnmounted(() => {
               : 'Game over'}}
           </div>
 
-          <!-- Human's turn -->
-          <template v-else-if="isPending">
+          <!-- Human's turn, active unit selected -->
+          <template v-else-if="isPending && selectedId === activeUnitId">
             <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
               Choose action for
               <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
@@ -286,6 +286,12 @@ onUnmounted(() => {
               <div v-if="!displayedActions.length" style="font-size:11px;color:var(--faint)">
                 No actions.
               </div>
+            </div>
+          </template>
+          <!-- Human's turn, non-active unit selected -->
+          <template v-else-if="isPending">
+            <div style="font-size:11px;color:var(--dim)">
+              Click the <b style="color:var(--accent)">active unit</b> on the board to see actions.
             </div>
           </template>
 

@@ -38,15 +38,45 @@ export function getReachable(board, from, moveRange, units) {
 
 export function getInRange(from, range, units, targetType, ownerId) {
   return units.filter(u => {
-    if (!u.alive) return false;
     const d = Math.abs(u.position.x - from.x) + Math.abs(u.position.y - from.y);
     if (d === 0 || d > range) return false;
-    if (targetType === 'enemy') return u.ownerId !== ownerId;
-    if (targetType === 'ally')  return u.ownerId === ownerId;
+    if (targetType === 'enemy')     return u.alive  && u.ownerId !== ownerId;
+    if (targetType === 'ally')      return u.alive  && u.ownerId === ownerId;
+    if (targetType === 'dead-ally') return !u.alive && u.ownerId === ownerId;
     return false;
   });
 }
 
 export function manhattan(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+}
+
+// Returns all tiles hit by an AoE ability.
+// diamond: all tiles within Manhattan distance `radius` of `center`
+// line: all tiles from casterPos in direction of `center`, up to `radius` steps
+export function getAoeTiles(pattern, center, casterPos, radius = 1) {
+  if (pattern === 'diamond') {
+    const tiles = [];
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        if (Math.abs(dx) + Math.abs(dy) <= radius) {
+          tiles.push({ x: center.x + dx, y: center.y + dy });
+        }
+      }
+    }
+    return tiles;
+  }
+  if (pattern === 'line' && casterPos) {
+    const dx = center.x - casterPos.x;
+    const dy = center.y - casterPos.y;
+    if (dx === 0 && dy === 0) return [];
+    const stepX = Math.abs(dx) >= Math.abs(dy) ? Math.sign(dx) : 0;
+    const stepY = Math.abs(dx) >= Math.abs(dy) ? 0 : Math.sign(dy);
+    const tiles = [];
+    for (let i = 1; i <= radius; i++) {
+      tiles.push({ x: casterPos.x + stepX * i, y: casterPos.y + stepY * i });
+    }
+    return tiles;
+  }
+  return [center];
 }

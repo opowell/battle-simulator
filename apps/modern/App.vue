@@ -600,6 +600,10 @@ onUnmounted(() => clearInterval(pollTimer));
               <div v-if="selectedCell.abilities?.length" class="unit-ability-list">
                 <span v-for="ab in selectedCell.abilities" :key="ab.key" class="unit-ability-chip">{{ ab.name }}</span>
               </div>
+              <div v-if="selectedCell.reaction || selectedCell.support" class="unit-passive-row">
+                <span v-if="selectedCell.reaction" class="unit-passive-chip reaction-chip" :title="'Reaction: triggers automatically when hit'">↩ {{ selectedCell.reaction.name }}</span>
+                <span v-if="selectedCell.support"  class="unit-passive-chip support-chip"  :title="'Support: always active passive bonus'">✦ {{ selectedCell.support.name }}</span>
+              </div>
               <div v-if="selectedCell.statusEffects?.length" class="unit-status-row">{{ selectedCell.statusEffects.join(' · ') }}</div>
               <div class="unit-flag-row">
                 <span :class="['unit-flag', selectedCell.moved ? 'flag-spent' : 'flag-ready']">Move</span>
@@ -710,6 +714,11 @@ onUnmounted(() => clearInterval(pollTimer));
 
 .unit-ability-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
 .unit-ability-chip { font-size: 0.68em; color: #93c5fd; background: rgba(59,130,246,0.1); border-radius: 3px; padding: 1px 5px; }
+
+.unit-passive-row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.unit-passive-chip { font-size: 0.68em; border-radius: 3px; padding: 1px 5px; cursor: default; }
+.reaction-chip { color: #f9a8d4; background: rgba(236,72,153,0.1); }
+.support-chip  { color: #86efac; background: rgba(34,197,94,0.1); }
 
 .unit-status-row { font-size: 0.68em; color: #f97316; margin-bottom: 4px; }
 

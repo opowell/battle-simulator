@@ -76,6 +76,60 @@ function unitR(u) {
 
 const chess = computed(() => props.field.game === 'chess');
 
+// Chess fog of war: compute per-square visibility from friendly pieces.
+// Piece types in the design app are lowercase glyph letters: k/q/r/b/n/p.
+// White (friendly) moves up the board — decreasing y (y = 8 - rank).
+const chessVisibleSet = computed(() => {
+  if (!props.fog || !chess.value) return null;
+  const W = props.field.world.w, H = props.field.world.h;
+  const visible = new Set();
+  const occ = new Set();
+  for (const u of props.units)
+    if (!u.dead) occ.add(`${Math.floor(u.x)},${Math.floor(u.y)}`);
+  const inB = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
+  const add  = (x, y) => { if (inB(x, y)) visible.add(`${x},${y}`); };
+  for (const u of props.units) {
+    if (!u.friendly || u.dead) continue;
+    const gx = Math.floor(u.x), gy = Math.floor(u.y);
+    const t = u.type; // 'k','q','r','b','n','p'
+    add(gx, gy);
+    if (t === 'p') {
+      add(gx, gy - 1);          // push forward (white moves up = y--)
+      if (gy === 6) add(gx, gy - 2); // double push from starting rank
+      add(gx - 1, gy - 1); add(gx + 1, gy - 1); // diagonal attacks
+    } else if (t === 'n') {
+      for (const [dx, dy] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])
+        add(gx + dx, gy + dy);
+    } else if (t === 'k') {
+      for (const [dx, dy] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])
+        add(gx + dx, gy + dy);
+    } else {
+      const rDirs = [[0,1],[0,-1],[1,0],[-1,0]];
+      const bDirs = [[1,1],[1,-1],[-1,1],[-1,-1]];
+      const dirs = t === 'r' ? rDirs : t === 'b' ? bDirs : [...rDirs, ...bDirs];
+      for (const [dx, dy] of dirs) {
+        let cx = gx + dx, cy = gy + dy;
+        while (inB(cx, cy)) {
+          add(cx, cy);
+          if (occ.has(`${cx},${cy}`)) break; // see blocker but not beyond
+          cx += dx; cy += dy;
+        }
+      }
+    }
+  }
+  return visible;
+});
+
+const fogSquares = computed(() => {
+  if (!chessVisibleSet.value) return [];
+  const W = props.field.world.w, H = props.field.world.h;
+  const out = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (!chessVisibleSet.value.has(`${x},${y}`)) out.push({ x, y });
+  return out;
+});
+
 const CHESS_SHAPE = { king:'circle', queen:'circle', rook:'square', bishop:'triangle', knight:'triangle', pawn:'circle' };
 
 function unitShape(u) {
@@ -105,7 +159,12 @@ function hpColor(frac, raw) {
   return frac > 0.5 ? raw : frac > 0.25 ? '#f2b441' : '#ff5f56';
 }
 
-function isVisible(u) { return !props.fog || u.visible; }
+function isVisible(u) {
+  if (!props.fog) return true;
+  if (u.friendly) return true;
+  if (chessVisibleSet.value) return chessVisibleSet.value.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
+  return u.visible;
+}
 
 function hasMoveIntent(u) {
   if (u.dead || !isVisible(u)) return false;
@@ -131,6 +190,13 @@ function hasMoveIntent(u) {
             :x="fit.x(sq.x)" :y="fit.y(sq.y)"
             :width="fit.len(1)" :height="fit.len(1)"
             fill="rgba(0,0,0,0.22)"/>
+
+      <!-- Fog of war squares (chess: straight-line grid-aligned fog) -->
+      <rect v-for="(fs, i) in fogSquares" :key="'fs'+i"
+            :x="fit.x(fs.x)" :y="fit.y(fs.y)"
+            :width="fit.len(1)" :height="fit.len(1)"
+            :fill="rdr.fogA"
+            style="pointer-events:none"/>
 
       <!-- Legal move highlights (chess) -->
       <rect v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
@@ -196,10 +262,10 @@ function hasMoveIntent(u) {
           <circle v-if="u.id === activeUnitId"
                   :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+9"
                   fill="none" :stroke="u.teamObj.raw" stroke-width="2" class="active-ring"/>
-          <!-- Selected unit ring: dashed inner ring for stat inspection -->
-          <circle v-if="u.id === selectedId"
+          <!-- Selected unit ring: dashed ring — white for non-active, team color for active -->
+          <circle v-if="u.id === selectedId && u.id !== activeUnitId"
                   :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+6"
-                  fill="none" :stroke="u.teamObj.raw" stroke-width="1" stroke-dasharray="2 3"/>
+                  fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.5" stroke-dasharray="3 3"/>
           <!-- Facing line (hidden for chess) -->
           <line v-if="!chess"
                 :x1="fit.x(u.x)" :y1="fit.y(u.y)"
@@ -245,8 +311,8 @@ function hasMoveIntent(u) {
       </template>
     </svg>
 
-    <!-- Fog mask -->
-    <div v-if="fog" class="bf-layer" style="pointer-events:none;z-index:3"
+    <!-- Fog mask (non-chess: radial gradient blobs) -->
+    <div v-if="fog && !chess" class="bf-layer" style="pointer-events:none;z-index:3"
          :style="{
            background: rdr.fogS,
            WebkitMaskImage: fogMask,
