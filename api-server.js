@@ -241,6 +241,7 @@ async function handleGames(res) {
     minPlayers,
     maxPlayers,
     scenarios: game.scenarios ?? [],
+    gameOptions: game.gameOptions ?? [],
     agents: [...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n }) => ({ id, name: n }))],
   })));
 }
@@ -280,7 +281,7 @@ async function handleCreateSession(req, res) {
 
   const engine = new GameEngine(entry.game, players, { maxTurns: config.maxTurns ?? 500, ...config });
   const id = randomUUID();
-  const session = new Session(id, gameName, engine, apiAgents, config.fog ?? false);
+  const session = new Session(id, gameName, engine, apiAgents, config.fog ?? config.fogOfWar ?? false);
   sessions.set(id, session);
 
   const firstHumanId = [...apiAgents.keys()][0] ?? null;

@@ -104,6 +104,114 @@ export const JOB_DEFS = {
     abilities: ['attack', 'rockseal'],
     symbol: 'X',
   },
+
+  // ── Bangaa ────────────────────────────────────────────────────────────────
+  warrior: {
+    race: 'bangaa',
+    stats: { hp: 38, mp: 6, atk: 15, def: 11, mag: 2, res: 2, spd: 5 },
+    moveRange: 3,
+    abilities: ['attack', 'bash', 'battle-cry'],
+    symbol: 'V',
+  },
+  whiteMonk: {
+    race: 'bangaa',
+    stats: { hp: 32, mp: 16, atk: 13, def: 8, mag: 5, res: 7, spd: 7 },
+    moveRange: 3,
+    abilities: ['attack', 'chakra', 'air-render'],
+    symbol: 'K',
+  },
+  bishop: {
+    race: 'bangaa',
+    stats: { hp: 22, mp: 32, atk: 5, def: 5, mag: 9, res: 11, spd: 5 },
+    moveRange: 3,
+    abilities: ['attack', 'holy', 'cura', 'esuna'],
+    symbol: 'G',
+  },
+  templar: {
+    race: 'bangaa',
+    stats: { hp: 40, mp: 14, atk: 12, def: 13, mag: 6, res: 9, spd: 5 },
+    moveRange: 3,
+    abilities: ['attack', 'magic-hammer', 'saint-cross'],
+    symbol: 'Q',
+  },
+
+  // ── Nu Mou ────────────────────────────────────────────────────────────────
+  alchemist: {
+    race: 'nu-mou',
+    stats: { hp: 16, mp: 36, atk: 3, def: 4, mag: 10, res: 10, spd: 6 },
+    moveRange: 3,
+    abilities: ['attack', 'hi-potion', 'esuna'],
+    symbol: 'C',
+  },
+  morpher: {
+    race: 'nu-mou',
+    stats: { hp: 20, mp: 28, atk: 7, def: 6, mag: 8, res: 7, spd: 7 },
+    moveRange: 3,
+    abilities: ['attack', 'call-beast', 'wild-boar'],
+    symbol: 'H',
+  },
+
+  // ── Viera ─────────────────────────────────────────────────────────────────
+  fencer: {
+    race: 'viera',
+    stats: { hp: 20, mp: 20, atk: 10, def: 5, mag: 7, res: 6, spd: 10 },
+    moveRange: 4,
+    abilities: ['attack', 'lunge', 'feather-blow'],
+    symbol: 'E',
+  },
+  sniper: {
+    race: 'viera',
+    stats: { hp: 22, mp: 10, atk: 12, def: 5, mag: 5, res: 5, spd: 9 },
+    moveRange: 3,
+    abilities: ['attack', 'long-range', 'last-breath'],
+    symbol: 'Z',
+  },
+
+  // ── Human ─────────────────────────────────────────────────────────────────
+  blueMage: {
+    race: 'human',
+    stats: { hp: 20, mp: 32, atk: 6, def: 5, mag: 9, res: 7, spd: 7 },
+    moveRange: 3,
+    abilities: ['attack', 'bad-breath', 'aqua-breath', 'magic-hammer'],
+    symbol: 'Y',
+  },
+  hunter: {
+    race: 'human',
+    stats: { hp: 24, mp: 12, atk: 11, def: 7, mag: 5, res: 5, spd: 9 },
+    moveRange: 4,
+    abilities: ['attack', 'aim-plus', 'net', 'hunt'],
+    symbol: 'J',
+  },
+
+  // ── Moogle ────────────────────────────────────────────────────────────────
+  mogKnight: {
+    race: 'moogle',
+    stats: { hp: 28, mp: 14, atk: 12, def: 8, mag: 5, res: 5, spd: 7 },
+    moveRange: 3,
+    abilities: ['attack', 'mog-attack', 'mog-rush'],
+    symbol: 'O',
+  },
+  juggler: {
+    race: 'moogle',
+    stats: { hp: 18, mp: 20, atk: 9, def: 4, mag: 6, res: 5, spd: 10 },
+    moveRange: 4,
+    abilities: ['attack', 'toss-item', 'smile'],
+    symbol: '@',
+  },
+  animist: {
+    race: 'moogle',
+    stats: { hp: 20, mp: 24, atk: 6, def: 5, mag: 8, res: 7, spd: 8 },
+    moveRange: 3,
+    abilities: ['attack', 'chocobo-rush', 'moogle-eye', 'sheep-count'],
+    symbol: '$',
+  },
+  gunner: {
+    race: 'moogle',
+    stats: { hp: 20, mp: 12, atk: 10, def: 4, mag: 5, res: 4, spd: 9 },
+    moveRange: 3,
+    abilities: ['attack', 'burst-shot', 'fireshot', 'sootshot'],
+    symbol: '&',
+  },
 };
 
 export function createUnit(id, job, ownerId, position) {
@@ -125,5 +233,6 @@ export function createUnit(id, job, ownerId, position) {
     moved: false,
     acted: false,
     statusEffects: [],
+    preMovedPosition: null,
   };
 }

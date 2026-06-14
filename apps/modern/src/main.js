@@ -9,6 +9,7 @@ let state = {
   pendingGame: null,
   pendingPlayers: [],
   pendingScenario: null,
+  pendingOptions: {},
   session: null,
   players: [],
   myPlayerId: null,
@@ -515,6 +516,9 @@ function selectGame(name) {
   state.pendingGame = game;
   state.pendingPlayers = game.defaultPlayers.map((p, i) => ({ ...p, agent: i === 0 ? 'human' : 'random' }));
   state.pendingScenario = game.scenarios?.[0] ?? null;
+  const defaults = {};
+  for (const opt of (game.gameOptions ?? [])) defaults[opt.id] = opt.default;
+  state.pendingOptions = defaults;
   state.screen = 'configure';
   render();
 }
