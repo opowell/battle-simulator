@@ -704,6 +704,74 @@ body {
   line-height: 1.4;
 }
 
+/* ── Game options (configure screen) ────────────────────── */
+.config-options {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.config-option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.config-option-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.config-option-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.config-option-desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.option-toggle {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: #f1f5f9;
+  color: var(--muted);
+}
+
+.option-toggle.on {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
+
+.option-toggle:hover { filter: brightness(0.94); }
+
 /* ── Multiplayer notice (configure screen) ───────────────── */
 .mp-notice {
   background: color-mix(in srgb, var(--accent) 8%, transparent);

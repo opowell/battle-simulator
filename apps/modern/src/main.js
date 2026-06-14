@@ -281,6 +281,26 @@ function renderConfigure(app) {
               )
             )
           : null,
+        g.gameOptions?.length > 0
+          ? el('div', { class: 'config-options' },
+              el('h3', { class: 'config-section-label' }, 'Options'),
+              el('div', { class: 'option-list' },
+                ...g.gameOptions.map(opt => {
+                  const val = state.pendingOptions[opt.id] ?? opt.default;
+                  return el('div', { class: 'config-option-row' },
+                    el('div', { class: 'config-option-info' },
+                      el('span', { class: 'config-option-label' }, opt.label),
+                      el('span', { class: 'config-option-desc' }, opt.description)
+                    ),
+                    el('button', {
+                      class: `option-toggle${val ? ' on' : ''}`,
+                      onclick: () => { state.pendingOptions = { ...state.pendingOptions, [opt.id]: !val }; render(); },
+                    }, val ? 'On' : 'Off')
+                  );
+                })
+              )
+            )
+          : null,
         el('div', { class: 'config-players' },
           el('h3', { class: 'config-section-label' }, 'Players'),
           ...state.pendingPlayers.map((p, i) => {
@@ -528,7 +548,7 @@ async function launchGame() {
     const { name } = state.pendingGame;
     const players = state.pendingPlayers;
     state.players = players;
-    const config = state.pendingScenario?.config ?? {};
+    const config = { ...(state.pendingScenario?.config ?? {}), ...state.pendingOptions };
     state.session = await client.createSession(name, players, config);
     const firstHuman = players.find(p => p.agent === 'human');
     state.myPlayerId = firstHuman?.id ?? null;
@@ -538,6 +558,7 @@ async function launchGame() {
     state.pendingGame = null;
     state.pendingPlayers = [];
     state.pendingScenario = null;
+    state.pendingOptions = {};
     state.screen = 'session';
     state.actionSearch = '';
     render();

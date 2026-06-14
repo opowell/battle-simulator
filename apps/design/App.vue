@@ -70,6 +70,7 @@ const activeField = computed(() => {
       hp:        c.maxHp ?? c.hp ?? 1,
       currentHp: c.hp,
       path:      [[c.x + 0.5, c.y + 0.5]],
+      facing:    c.facing,
       deathTurn: null,
       mp:            c.mp,
       maxMp:         c.maxMp,
@@ -81,6 +82,10 @@ const activeField = computed(() => {
       isActive:      c.isActive,
     }));
 
+  const tiles = g.cells
+    .filter(c => c.color)
+    .map(c => ({ x: c.x, y: c.y, color: c.color }));
+
   return {
     game:  s.game,
     label: `${s.game} · Turn ${s.turn ?? 0}`,
@@ -90,6 +95,7 @@ const activeField = computed(() => {
     teams,
     walls: [],
     zones: [],
+    tiles,
     units,
   };
 });
