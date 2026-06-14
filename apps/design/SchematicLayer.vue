@@ -189,8 +189,8 @@ function hasMoveIntent(u) {
           <circle v-if="u.id === selectedId"
                   :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+6"
                   fill="none" :stroke="u.teamObj.raw" stroke-width="1" stroke-dasharray="2 3"/>
-          <!-- Facing line (hidden for piece-letter units) -->
-          <line v-if="u.name.length > 2"
+          <!-- Facing line (hidden for chess) -->
+          <line v-if="!chess"
                 :x1="fit.x(u.x)" :y1="fit.y(u.y)"
                 :x2="fit.x(u.x)+Math.cos(u.ang)*(unitR(u)+5)"
                 :y2="fit.y(u.y)+Math.sin(u.ang)*(unitR(u)+5)"
@@ -206,24 +206,22 @@ function hasMoveIntent(u) {
                 :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)-unitR(u)"
                 :width="unitR(u)*2" :height="unitR(u)*2"
                 :fill="rdr.unitFill" :stroke="u.teamObj.raw" stroke-width="2"/>
-          <!-- Piece letter (chess / short-name units) -->
-          <text v-if="u.name.length <= 2"
-                :x="fit.x(u.x)" :y="fit.y(u.y)"
+          <!-- Symbol letter inside shape (single-char type = FFTA/chess) -->
+          <text :x="fit.x(u.x)" :y="fit.y(u.y)"
                 :fill="u.teamObj.raw" :font-family="rdr.font"
                 :font-size="unitR(u)" font-weight="800"
                 text-anchor="middle" dominant-baseline="central"
+                style="user-select:none;pointer-events:none">{{u.type.toUpperCase()}}</text>
+          <!-- HP bar -->
+          <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
+          <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3"
+                :width="unitR(u)*2*(u.hpNow/u.hpMax)" height="3"
+                :fill="hpColor(u.hpNow/u.hpMax, u.teamObj.raw)"/>
+          <!-- Name label below HP bar -->
+          <text :x="fit.x(u.x)" :y="fit.y(u.y)+unitR(u)+13"
+                :fill="u.id === selectedId ? u.teamObj.raw : rdr.label"
+                font-size="9" :font-family="rdr.font" text-anchor="middle"
                 style="user-select:none;pointer-events:none">{{u.name}}</text>
-          <!-- HP bar (hidden for piece-letter units) -->
-          <template v-if="u.name.length > 2">
-            <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
-            <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3"
-                  :width="unitR(u)*2*(u.hpNow/u.hpMax)" height="3"
-                  :fill="hpColor(u.hpNow/u.hpMax, u.teamObj.raw)"/>
-          </template>
-          <!-- Name (hidden for piece-letter units) -->
-          <text v-if="u.name.length > 2"
-                :x="fit.x(u.x)" :y="fit.y(u.y)-unitR(u)-5"
-                :fill="rdr.label" font-size="9" :font-family="rdr.font" text-anchor="middle">{{u.name}}</text>
         </g>
       </g>
       </template>

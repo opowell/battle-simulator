@@ -16,7 +16,7 @@ const game     = computed(() => props.apiGames.find(g => g.name === selGame.valu
 const scens    = computed(() => game.value?.scenarios ?? []);
 const scenKey  = ref('');
 const name     = ref('');
-const fog      = ref(true);
+const fog      = ref(false);
 const maxTurns = ref(300);
 const slots    = ref([]);
 
