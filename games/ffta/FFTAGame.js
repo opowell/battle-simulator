@@ -209,6 +209,51 @@ function advanceTurn(state) {
   };
 }
 
+// ── Ability preview (damage/heal range estimate) ──────────────────────────────
+
+function abilityPreview(caster, target, ability, board) {
+  const { effect } = ability;
+
+  if (effect === 'damage' || effect === 'damage+status' || effect === 'damage+steal-mp') {
+    const atkH = getTile(board, caster.position.x, caster.position.y).height;
+    const defH = getTile(board, target.position.x, target.position.y).height;
+    const heightMult = 1 + 0.2 * Math.max(0, atkH - defH);
+
+    let atk, def;
+    if (ability.type === 'magic') {
+      atk = caster.stats.mag;
+      def = target.stats.res;
+    } else {
+      atk = caster.stats.atk;
+      def = target.stats.def;
+      if (caster.statusEffects.includes('atk-break')) atk = Math.floor(atk * 0.75);
+      if (target.statusEffects.includes('armor-break')) def = Math.floor(def * 0.75);
+      if (target.statusEffects.includes('protect')) def = Math.floor(def * 1.25);
+    }
+    if (caster.statusEffects.includes('blind')) atk = Math.floor(atk * 0.7);
+
+    const base = Math.max(1, Math.floor(atk * ability.power * heightMult - def * 0.5));
+    const lo = Math.max(1, Math.floor(base * 0.85));
+    const hi = Math.max(1, Math.floor(base * 1.15));
+    let p = lo === hi ? `~${lo} dmg` : `${lo}-${hi} dmg`;
+    if (effect === 'damage+status' && ability.status) p += ` + ${ability.status}`;
+    if (effect === 'damage+steal-mp') p += ` + steal MP`;
+    return p;
+  }
+
+  if (effect === 'heal') {
+    const base = Math.floor(caster.stats.mag * ability.power);
+    const lo = Math.max(1, Math.floor(base * 0.9));
+    const hi = Math.max(1, Math.floor(base * 1.1));
+    return lo === hi ? `~${lo} heal` : `${lo}-${hi} heal`;
+  }
+
+  if (effect === 'status' && ability.status) return `→ ${ability.status}`;
+  if (effect === 'steal-mp') return `steal ≤8 MP`;
+
+  return null;
+}
+
 // ── Legal actions ─────────────────────────────────────────────────────────────
 
 function getLegalActions(state, playerId) {
@@ -234,14 +279,17 @@ function getLegalActions(state, playerId) {
       if (!ability || ability.mpCost > unit.mp) continue;
 
       if (ability.target === 'self') {
-        actions.push({ type: 'ability', unitId: unit.id, abilityName, targetId: unit.id });
+        const prev = abilityPreview(unit, unit, ability, state.board);
+        actions.push({ type: 'ability', unitId: unit.id, abilityName, targetId: unit.id, ...(prev ? { preview: prev } : {}) });
       } else {
         const targets = getInRange(unit.position, ability.range, state.units, ability.target, playerId);
         for (const t of targets) {
-          actions.push({ type: 'ability', unitId: unit.id, abilityName, targetId: t.id });
+          const prev = abilityPreview(unit, t, ability, state.board);
+          actions.push({ type: 'ability', unitId: unit.id, abilityName, targetId: t.id, ...(prev ? { preview: prev } : {}) });
         }
         if (ability.target === 'ally') {
-          actions.push({ type: 'ability', unitId: unit.id, abilityName, targetId: unit.id });
+          const prev = abilityPreview(unit, unit, ability, state.board);
+          actions.push({ type: 'ability', unitId: unit.id, abilityName, targetId: unit.id, ...(prev ? { preview: prev } : {}) });
         }
       }
     }

@@ -1,6 +1,6 @@
 # Final Fantasy Tactics Advance
 
-Tactical RPG with a job system, MP-limited abilities, status effects, and a speed-based turn queue.
+Clone of Final Fantasy Tactics: Advance. RPG with a job system, MP-limited abilities, status effects, and a speed-based turn queue.
 
 ## Players
 
