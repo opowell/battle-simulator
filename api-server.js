@@ -82,23 +82,23 @@ async function serveApp(appName, req, res) {
 // ---------------------------------------------------------------------------
 
 const GAMES = {
-  chess:         { game: ChessGame,         defaultPlayers: [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }] },
-  tactical:      { game: TacticalGame,      defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  cardbattle:    { game: CardBattleGame,    defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  civ1:          { game: Civ1Game,          defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  civ2:          { game: Civ2Game,          defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  risk:          { game: RiskGame,          defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  axisallies:    { game: AxisAlliesGame,    defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
-  combatmission: { game: CombatMissionGame, defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  xcom:          { game: XComGame,          defaultPlayers: [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }] },
-  aow:           { game: AowGame,           defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  cs:            { game: CsGame,            defaultPlayers: [{ id: 'ct', name: 'CT' }, { id: 't', name: 'T' }] },
-  ffta:          { game: FFTAGame,          defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  sc1:           { game: Sc1Game,           defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  sc2:           { game: Sc2Game,           defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  doom:          { game: DoomGame,          defaultPlayers: [{ id: 'marine', name: 'Marine' }, { id: 'demons', name: 'Demons' }] },
-  mudandblood:   { game: MudAndBloodGame,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
-  kdice:         { game: KDiceGame,        defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }] },
+  chess:         { game: ChessGame,         icon: 'crown',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }] },
+  tactical:      { game: TacticalGame,      icon: 'grid',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  cardbattle:    { game: CardBattleGame,    icon: 'cards',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  civ1:          { game: Civ1Game,          icon: 'flag',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  civ2:          { game: Civ2Game,          icon: 'flag',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  risk:          { game: RiskGame,          icon: 'globe',     minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  axisallies:    { game: AxisAlliesGame,    icon: 'globe',     minPlayers: 2, maxPlayers: 5,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
+  combatmission: { game: CombatMissionGame, icon: 'tank',      minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  xcom:          { game: XComGame,          icon: 'shield',    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }] },
+  aow:           { game: AowGame,           icon: 'wand',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  cs:            { game: CsGame,            icon: 'crosshair', minPlayers: 2, maxPlayers: 10, defaultPlayers: [{ id: 'ct', name: 'CT' }, { id: 't', name: 'T' }] },
+  ffta:          { game: FFTAGame,          icon: 'sword',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  sc1:           { game: Sc1Game,           icon: 'zap',       minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  sc2:           { game: Sc2Game,           icon: 'zap',       minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  doom:          { game: DoomGame,          icon: 'flame',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'marine', name: 'Marine' }, { id: 'demons', name: 'Demons' }] },
+  mudandblood:   { game: MudAndBloodGame,   icon: 'shield',    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
+  kdice:         { game: KDiceGame,         icon: 'globe',     minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }] },
 };
 
 // ---------------------------------------------------------------------------
@@ -108,11 +108,12 @@ const GAMES = {
 const sessions = new Map();
 
 class Session {
-  constructor(id, gameName, engine, apiAgents) {
+  constructor(id, gameName, engine, apiAgents, fog = false) {
     this.id = id;
     this.gameName = gameName;
     this.engine = engine;
     this.apiAgents = apiAgents; // Map<playerId, ApiAgent>
+    this.fog = fog;
     this.status = 'active';
     this.result = null;
     this.error = null;
@@ -224,9 +225,12 @@ const BUILTIN_AGENTS = [
 ];
 
 async function handleGames(res) {
-  send(res, 200, Object.entries(GAMES).map(([name, { game, defaultPlayers }]) => ({
+  send(res, 200, Object.entries(GAMES).map(([name, { game, icon, defaultPlayers, minPlayers, maxPlayers }]) => ({
     name,
+    icon,
     defaultPlayers,
+    minPlayers,
+    maxPlayers,
     scenarios: game.scenarios ?? [],
     agents: [...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n }) => ({ id, name: n }))],
   })));
