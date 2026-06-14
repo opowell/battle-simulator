@@ -3,4 +3,4 @@
 - is there terrain? right now board looks empty.
 - damage calculations: are they correct? compare to original game.
 - preview success rate / expected damage from an attack, before confirming. -> same way it is done in original game.
-- all undo moves, but not actions.
+- differentiate between "active" units, and "selected" units. Active units have their potential actions shown on the battlefield and in the side panel; selected units only have their info shown in the side panel.

@@ -107,6 +107,44 @@ test('ffta: move updates unit position and marks as moved', () => {
   assert.equal(moved.moved, true);
 });
 
+test('ffta: undo-move restores position and clears moved flag', () => {
+  const state  = FFTAGame.createInitialState(players());
+  const owner  = state.activePlayers[0];
+  const move   = FFTAGame.getLegalActions(state, owner).find(a => a.type === 'move');
+  if (!move) return;
+  const originalPos = state.units.find(u => u.id === move.unitId).position;
+  const afterMove = FFTAGame.applyActions(state, [{ playerId: owner, action: move }]);
+  const undo = FFTAGame.getLegalActions(afterMove, owner).find(a => a.type === 'undo-move');
+  assert.ok(undo, 'undo-move should be available after moving but before acting');
+  const afterUndo = FFTAGame.applyActions(afterMove, [{ playerId: owner, action: undo }]);
+  const u = afterUndo.units.find(u => u.id === move.unitId);
+  assert.deepEqual(u.position, originalPos, 'position should be restored');
+  assert.equal(u.moved, false, 'moved flag should be cleared');
+  assert.equal(u.preMovedPosition, null, 'preMovedPosition should be cleared');
+});
+
+test('ffta: undo-move not available after ability is used', () => {
+  const state  = FFTAGame.createInitialState(players());
+  const owner  = state.activePlayers[0];
+  const { activeUnitId } = state.gameSpecific;
+  const activeUnit = state.units.find(u => u.id === activeUnitId);
+  const adjacent = { x: activeUnit.position.x + 1, y: activeUnit.position.y };
+  const withEnemy = {
+    ...state,
+    units: state.units.map(u =>
+      u.ownerId !== activeUnit.ownerId ? { ...u, position: adjacent } : u
+    ),
+  };
+  const move = FFTAGame.getLegalActions(withEnemy, owner).find(a => a.type === 'move');
+  if (!move) return;
+  const afterMove = FFTAGame.applyActions(withEnemy, [{ playerId: owner, action: move }]);
+  const ability = FFTAGame.getLegalActions(afterMove, owner).find(a => a.type === 'ability');
+  if (!ability) return;
+  const afterAbility = FFTAGame.applyActions(afterMove, [{ playerId: owner, action: ability }], () => 0.5);
+  const actions = FFTAGame.getLegalActions(afterAbility, owner);
+  assert.ok(!actions.some(a => a.type === 'undo-move'), 'undo-move should not be available after acting');
+});
+
 test('ffta: ability action reduces target HP (damage ability)', () => {
   const state  = FFTAGame.createInitialState(players());
   const owner  = state.activePlayers[0];

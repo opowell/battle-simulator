@@ -77,9 +77,8 @@ export const ChessGame = {
   agents: [
     { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent },
   ],
-  scenarios: [
-    { id: 'standard',    name: 'Standard',    description: 'Classic starting position',                                    config: {} },
-    { id: 'fog-of-war',  name: 'Fog of War',  description: 'Each side sees only squares their pieces can reach',           config: { fogOfWar: true } },
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
   ],
 
   createInitialState(players, config = {}) {

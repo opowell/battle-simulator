@@ -90,6 +90,50 @@ const SCENARIOS = {
       { job: 'dragoon',  pos: { x: 10, y: 8 } },
     ],
   },
+  bangaaWarband: {
+    p1: [
+      { job: 'warrior',   pos: { x: 1, y: 1 } },
+      { job: 'whiteMonk', pos: { x: 2, y: 1 } },
+      { job: 'bishop',    pos: { x: 1, y: 2 } },
+      { job: 'templar',   pos: { x: 2, y: 2 } },
+    ],
+    p2: [
+      { job: 'fencer',      pos: { x: 9,  y: 7 } },
+      { job: 'sniper',      pos: { x: 10, y: 7 } },
+      { job: 'elementalist', pos: { x: 9, y: 8 } },
+      { job: 'assassin',    pos: { x: 10, y: 8 } },
+    ],
+  },
+  moogleRaiders: {
+    p1: [
+      { job: 'mogKnight', pos: { x: 2, y: 1 } },
+      { job: 'juggler',   pos: { x: 3, y: 1 } },
+      { job: 'animist',   pos: { x: 2, y: 2 } },
+      { job: 'gunner',    pos: { x: 3, y: 2 } },
+    ],
+    p2: [
+      { job: 'blueMage',  pos: { x: 8,  y: 7 } },
+      { job: 'alchemist', pos: { x: 9,  y: 7 } },
+      { job: 'morpher',   pos: { x: 8,  y: 8 } },
+      { job: 'hunter',    pos: { x: 9,  y: 8 } },
+    ],
+  },
+  grandMelee: {
+    p1: [
+      { job: 'warrior',   pos: { x: 1, y: 1 } },
+      { job: 'hunter',    pos: { x: 2, y: 1 } },
+      { job: 'alchemist', pos: { x: 1, y: 2 } },
+      { job: 'mogKnight', pos: { x: 2, y: 2 } },
+      { job: 'gunner',    pos: { x: 3, y: 1 } },
+    ],
+    p2: [
+      { job: 'templar',  pos: { x: 10, y: 8 } },
+      { job: 'blueMage', pos: { x: 9,  y: 8 } },
+      { job: 'morpher',  pos: { x: 10, y: 7 } },
+      { job: 'fencer',   pos: { x: 9,  y: 7 } },
+      { job: 'animist',  pos: { x: 8,  y: 8 } },
+    ],
+  },
 };
 
 // ── Turn queue ────────────────────────────────────────────────────────────────
@@ -172,6 +216,8 @@ function applyAbility(state, casterId, targetId, abilityName, rng) {
     const stolen = Math.min(target.mp, 8);
     target.mp -= stolen;
     caster.mp = Math.min(caster.maxMp, caster.mp + stolen);
+  } else if (effect === 'cleanse') {
+    target.statusEffects = [];
   }
 
   return units;
@@ -184,7 +230,7 @@ function advanceTurn(state) {
   let { activeUnitId, turnQueue, roundNumber } = state.gameSpecific;
   let { turnNumber } = state;
 
-  units = units.map(u => u.id === activeUnitId ? { ...u, moved: true, acted: true } : u);
+  units = units.map(u => u.id === activeUnitId ? { ...u, moved: true, acted: true, preMovedPosition: null } : u);
 
   let remaining = turnQueue.filter(id => units.find(u => u.id === id)?.alive);
 
@@ -195,7 +241,7 @@ function advanceTurn(state) {
     roundNumber += 1;
     turnNumber += 1;
     const order = buildTurnQueue(units);
-    units = units.map(u => u.alive ? { ...u, moved: false, acted: false } : u);
+    units = units.map(u => u.alive ? { ...u, moved: false, acted: false, preMovedPosition: null } : u);
     [nextId, ...remaining] = order;
   }
 
@@ -250,6 +296,7 @@ function abilityPreview(caster, target, ability, board) {
 
   if (effect === 'status' && ability.status) return `→ ${ability.status}`;
   if (effect === 'steal-mp') return `steal ≤8 MP`;
+  if (effect === 'cleanse') return `remove status effects`;
 
   return null;
 }
@@ -271,6 +318,8 @@ function getLegalActions(state, playerId) {
     for (const to of getReachable(state.board, unit.position, moveRange, state.units)) {
       actions.push({ type: 'move', unitId: unit.id, to });
     }
+  } else if (!unit.acted && unit.preMovedPosition) {
+    actions.push({ type: 'undo-move', unitId: unit.id });
   }
 
   if (!unit.acted) {
@@ -311,13 +360,23 @@ function applyActions(state, playerActions, rng = Math.random) {
 
   if (action.type === 'move') {
     const units = state.units.map(u =>
-      u.id === action.unitId ? { ...u, position: action.to, moved: true } : u
+      u.id === action.unitId ? { ...u, position: action.to, moved: true, preMovedPosition: u.position } : u
+    );
+    return { ...state, units, lastActions: playerActions };
+  }
+
+  if (action.type === 'undo-move') {
+    const units = state.units.map(u =>
+      u.id === action.unitId && u.preMovedPosition
+        ? { ...u, position: u.preMovedPosition, moved: false, preMovedPosition: null }
+        : u
     );
     return { ...state, units, lastActions: playerActions };
   }
 
   if (action.type === 'ability') {
-    const units = applyAbility(state, action.unitId, action.targetId, action.abilityName, rng);
+    const units = applyAbility(state, action.unitId, action.targetId, action.abilityName, rng)
+      .map(u => u.id === action.unitId ? { ...u, preMovedPosition: null } : u);
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -424,6 +483,11 @@ const JOB_LABELS = {
   paladin: 'Paladin', ninja: 'Ninja', dragoon: 'Dragoon',
   elementalist: 'Elementalist', redMage: 'Red Mage', timeMage: 'Time Mage',
   summoner: 'Summoner', illusionist: 'Illusionist', assassin: 'Assassin',
+  warrior: 'Warrior', whiteMonk: 'White Monk', bishop: 'Bishop', templar: 'Templar',
+  alchemist: 'Alchemist', morpher: 'Morpher',
+  fencer: 'Fencer', sniper: 'Sniper',
+  blueMage: 'Blue Mage', hunter: 'Hunter',
+  mogKnight: 'Mog Knight', juggler: 'Juggler', animist: 'Animist', gunner: 'Gunner',
 };
 
 // ── Export ────────────────────────────────────────────────────────────────────
@@ -456,6 +520,9 @@ export const FFTAGame = {
     { id: 'magicCouncil',    name: 'Magic Council Dispute', description: 'Nu Mou scholars clash — Time Mage and Summoner face off', config: { scenario: 'magicCouncil' } },
     { id: 'honorGuard',      name: 'Honor Guard',           description: '4-unit disciplined guard holds against a 6-unit clan assault', config: { scenario: 'honorGuard' } },
     { id: 'desertReckoning', name: 'Desert Reckoning',      description: 'Viera agility and magic vs Bangaa brute strength — 4v4', config: { scenario: 'desertReckoning' } },
+    { id: 'bangaaWarband',   name: 'Bangaa Warband',        description: 'Bangaa warrior-monk-bishop-templar quad vs Viera agility — all-new jobs', config: { scenario: 'bangaaWarband' } },
+    { id: 'moogleRaiders',   name: 'Moogle Raiders',        description: 'Four Moogle specialists raid a camp of Blue Mage, Alchemist, Morpher and Hunter', config: { scenario: 'moogleRaiders' } },
+    { id: 'grandMelee',      name: 'Grand Melee',           description: '5v5 clash featuring all-new job classes across the full tactical map', config: { scenario: 'grandMelee' } },
   ],
   colors: { floor: '#8a9c70', elevated: '#a07858', 'elevated-high': '#b89060', wall: '#2a2018' },
   createInitialState,
