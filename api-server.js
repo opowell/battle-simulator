@@ -72,6 +72,14 @@ async function serveApp(appName, req, res) {
     res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*' });
     res.end(data);
   } catch {
+    // SPA fallback: unknown paths without a file extension serve index.html
+    if (!MIME_TYPES[extname(abs)]) {
+      try {
+        const html = await readFile(resolve(APPS_DIR, appName, 'index.html'));
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+        return res.end(html);
+      } catch {}
+    }
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not found');
   }
@@ -83,22 +91,22 @@ async function serveApp(appName, req, res) {
 
 const GAMES = {
   chess:         { game: ChessGame,         icon: 'crown',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }] },
-  tactical:      { game: TacticalGame,      icon: 'grid',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  tactical:      { game: TacticalGame,      icon: 'target',    minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   cardbattle:    { game: CardBattleGame,    icon: 'cards',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   civ1:          { game: Civ1Game,          icon: 'flag',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  civ2:          { game: Civ2Game,          icon: 'flag',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  civ2:          { game: Civ2Game,          icon: 'city',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   risk:          { game: RiskGame,          icon: 'globe',     minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  axisallies:    { game: AxisAlliesGame,    icon: 'globe',     minPlayers: 2, maxPlayers: 5,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
+  axisallies:    { game: AxisAlliesGame,    icon: 'plane',     minPlayers: 2, maxPlayers: 5,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
   combatmission: { game: CombatMissionGame, icon: 'tank',      minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  xcom:          { game: XComGame,          icon: 'shield',    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }] },
+  xcom:          { game: XComGame,          icon: 'ufo',       minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }] },
   aow:           { game: AowGame,           icon: 'wand',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   cs:            { game: CsGame,            icon: 'crosshair', minPlayers: 2, maxPlayers: 10, defaultPlayers: [{ id: 'ct', name: 'CT' }, { id: 't', name: 'T' }] },
   ffta:          { game: FFTAGame,          icon: 'sword',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   sc1:           { game: Sc1Game,           icon: 'zap',       minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  sc2:           { game: Sc2Game,           icon: 'zap',       minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  sc2:           { game: Sc2Game,           icon: 'star',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   doom:          { game: DoomGame,          icon: 'flame',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'marine', name: 'Marine' }, { id: 'demons', name: 'Demons' }] },
-  mudandblood:   { game: MudAndBloodGame,   icon: 'shield',    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
-  kdice:         { game: KDiceGame,         icon: 'globe',     minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }] },
+  mudandblood:   { game: MudAndBloodGame,   icon: 'skull',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
+  kdice:         { game: KDiceGame,         icon: 'dice',      minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }] },
 };
 
 // ---------------------------------------------------------------------------

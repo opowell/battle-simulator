@@ -1,7 +1,11 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import Lobby       from './Lobby.vue';
 import Battlefield from './Battlefield.vue';
+
+const router = useRouter();
+const route  = useRoute();
 
 const THEMES = [
   { id: 'military', label: 'Military', accent: '#42c6e6', teams: ['#4f9dff', '#ff5f56'] },
@@ -132,17 +136,37 @@ async function refresh() {
   }
 }
 
-onMounted(refresh);
+// Sync view when navigating via browser back/forward
+watch(() => route.params.id, async (id, prevId) => {
+  if (id && liveState.value?.id !== id) {
+    await enterSession(id, { push: false });
+  } else if (!id && prevId) {
+    stopPoll();
+    liveState.value = null;
+    view.value = 'lobby';
+  }
+});
+
+onMounted(async () => {
+  await refresh();
+  if (route.params.id) await enterSession(route.params.id, { push: false });
+});
+
 onUnmounted(stopPoll);
 
 // ── session flow ─────────────────────────────────────────────
-async function openSession(s) {
+async function enterSession(id, { push = true } = {}) {
   try {
-    const state = await api.session(s.id);
+    const state = await api.session(id);
     liveState.value = state;
     view.value = 'battle';
+    if (push) router.push('/session/' + id);
     maybeStartPoll(state);
   } catch (e) { serverErr.value = e.message; }
+}
+
+async function openSession(s) {
+  await enterSession(s.id);
 }
 
 async function createSession(cfg) {
@@ -156,11 +180,8 @@ async function createSession(cfg) {
   try {
     const created = await api.create({ game: cfg.game, players, config: { maxTurns: cfg.maxTurns ?? 500, fog: cfg.fog ?? false } });
     sessionMeta.value = { ...sessionMeta.value, [created.id]: players };
-    const state = await api.session(created.id);
-    liveState.value = state;
-    view.value = 'battle';
+    await enterSession(created.id);
     refresh();
-    maybeStartPoll(state);
   } catch (e) { serverErr.value = e.message; }
 }
 
@@ -181,6 +202,7 @@ function exitBattle() {
   stopPoll();
   liveState.value = null;
   view.value = 'lobby';
+  router.push('/');
   refresh();
 }
 </script>
