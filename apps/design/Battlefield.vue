@@ -43,6 +43,14 @@ const fit = computed(() => makeFitter(props.field.world, { w: stageW.value, h: s
 // ── live units at current time ─────────────────────────────────
 const units = computed(() => computeUnits(props.field, tFloat.value));
 
+// ── live session helpers ───────────────────────────────────────
+const isLive          = computed(() => !!props.liveState);
+const isPending       = computed(() => isLive.value && props.liveState.pendingPlayer &&
+                                       props.liveState.humanPlayers?.includes(props.liveState.pendingPlayer));
+const isDone          = computed(() => isLive.value && props.liveState.status !== 'active');
+const legalActions    = computed(() => props.liveState?.legalActions ?? []);
+const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
+
 // ── chess interactive board ──────────────────────────────────
 const isChess = computed(() => props.field?.game === 'chess');
 const isFFTA  = computed(() => props.field?.game === 'ffta');
@@ -169,14 +177,6 @@ const rosterTeams = computed(() =>
   }))
 );
 
-
-// ── live session helpers ───────────────────────────────────────
-const isLive          = computed(() => !!props.liveState);
-const isPending       = computed(() => isLive.value && props.liveState.pendingPlayer &&
-                                       props.liveState.humanPlayers?.includes(props.liveState.pendingPlayer));
-const isDone          = computed(() => isLive.value && props.liveState.status !== 'active');
-const legalActions    = computed(() => props.liveState?.legalActions ?? []);
-const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
 
 function fmtAction(action) {
   const t = action.type ?? '';

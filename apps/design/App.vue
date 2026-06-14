@@ -154,8 +154,9 @@ async function createSession(cfg) {
     agent: p.agent === 'human' ? 'human' : (p.agent ?? 'random'),
   }));
   try {
-    const state = await api.create({ game: cfg.game, players, config: { maxTurns: cfg.maxTurns ?? 500, fog: cfg.fog ?? false } });
-    sessionMeta.value = { ...sessionMeta.value, [state.id]: players };
+    const created = await api.create({ game: cfg.game, players, config: { maxTurns: cfg.maxTurns ?? 500, fog: cfg.fog ?? false } });
+    sessionMeta.value = { ...sessionMeta.value, [created.id]: players };
+    const state = await api.session(created.id);
     liveState.value = state;
     view.value = 'battle';
     refresh();
