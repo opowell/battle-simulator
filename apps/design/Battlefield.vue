@@ -107,6 +107,15 @@ const fftaMoves = computed(() => {
     .map(a => [a.to.x, a.to.y]);
 });
 
+const fftaActiveUnitId = computed(() => {
+  if (!isFFTA.value || !isPending.value) return null;
+  return legalActions.value.find(a => a.unitId)?.unitId ?? null;
+});
+
+watch(fftaActiveUnitId, (id) => {
+  if (id) selectedId.value = id;
+}, { immediate: true });
+
 function applyChessMove(fromSq, toCol, toRow) {
   const [fromCol, fromRow] = parseSquare(fromSq);
   const b = { ...chessBoard.value };
@@ -295,7 +304,7 @@ onUnmounted(() => {
       <div ref="stageEl" style="flex:1;position:relative;overflow:hidden">
         <SchematicLayer v-if="renderer === 'schematic'"
                         :field="field" :fit="fit" :units="displayUnits"
-                        :selectedId="selectedId" :fog="fog"
+                        :selectedId="selectedId" :activeUnitId="fftaActiveUnitId" :fog="fog"
                         :showRuler="showRuler" :rdr="rdr"
                         :legalSquares="isChess ? chessMoves : fftaMoves"
                         @select="id => selectedId = id"
@@ -355,33 +364,101 @@ onUnmounted(() => {
 
         <!-- Selected unit detail -->
         <div v-if="selectedUnit" style="padding:12px 14px;border-bottom:1px solid var(--line)">
+          <!-- Header -->
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <BsDot :color="selectedUnit.teamObj.raw" :size="9"/>
             <span style="font-weight:700;font-size:13px">{{selectedUnit.name}}</span>
-            <span class="mono" style="font-size:10px;color:var(--faint)">{{selectedUnit.type || ''}}</span>
+            <span v-if="selectedUnit.isActive"
+                  class="mono" style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(70,211,154,.15);color:var(--ok)">
+              ACTIVE
+            </span>
           </div>
+
           <div v-if="selectedUnit.dead" class="mono" style="font-size:11px;color:#ff5f56">KIA</div>
           <template v-else>
+            <!-- Chess square -->
+            <div v-if="isChess" style="font-size:11px;color:var(--dim);margin-bottom:8px">
+              {{chessSquareLabel(selectedUnit)}}
+            </div>
+
+            <!-- HP bar -->
             <template v-if="!isChess">
-              <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-                <span style="font-size:11px;color:var(--dim)">HP</span>
-                <span class="mono" style="font-size:11px">{{Math.round(selectedUnit.hpNow)}} / {{selectedUnit.hpMax}}</span>
+              <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+                <span style="font-size:10px;color:var(--dim)">HP</span>
+                <span class="mono" style="font-size:10px">
+                  {{Math.round(selectedUnit.currentHp ?? selectedUnit.hpNow)}} / {{selectedUnit.hpMax}}
+                </span>
               </div>
-              <div style="height:5px;border-radius:3px;overflow:hidden;margin-bottom:8px"
+              <div style="height:4px;border-radius:2px;overflow:hidden;margin-bottom:6px"
                    :style="{background: rdr.hpTrack}">
-                <div style="height:100%;border-radius:3px;transition:width .3s"
+                <div style="height:100%;border-radius:2px;transition:width .3s"
                      :style="{
-                       width: (selectedUnit.hpNow/selectedUnit.hpMax*100)+'%',
-                       background: selectedUnit.hpNow/selectedUnit.hpMax > 0.5 ? selectedUnit.teamObj.raw
-                                 : selectedUnit.hpNow/selectedUnit.hpMax > 0.25 ? '#f2b441' : '#ff5f56',
+                       width: ((selectedUnit.currentHp ?? selectedUnit.hpNow)/selectedUnit.hpMax*100)+'%',
+                       background: (selectedUnit.currentHp ?? selectedUnit.hpNow)/selectedUnit.hpMax > 0.5 ? selectedUnit.teamObj.raw
+                                 : (selectedUnit.currentHp ?? selectedUnit.hpNow)/selectedUnit.hpMax > 0.25 ? '#f2b441' : '#ff5f56',
                      }"/>
               </div>
             </template>
-            <div v-else style="font-size:11px;color:var(--dim);margin-bottom:8px">
-              {{chessSquareLabel(selectedUnit)}}
+
+            <!-- MP bar -->
+            <template v-if="selectedUnit.maxMp != null">
+              <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+                <span style="font-size:10px;color:var(--dim)">MP</span>
+                <span class="mono" style="font-size:10px">{{selectedUnit.mp ?? 0}} / {{selectedUnit.maxMp}}</span>
+              </div>
+              <div style="height:4px;border-radius:2px;overflow:hidden;margin-bottom:8px;background:rgba(100,80,200,.2)">
+                <div style="height:100%;border-radius:2px;background:#9b6fff;transition:width .3s"
+                     :style="{width: ((selectedUnit.mp ?? 0)/selectedUnit.maxMp*100)+'%'}"/>
+              </div>
+            </template>
+
+            <!-- Stats grid -->
+            <template v-if="selectedUnit.stats">
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:8px">
+                <div v-for="(val, key) in selectedUnit.stats" :key="key"
+                     style="display:flex;flex-direction:column;align-items:center;background:var(--bg3);border-radius:3px;padding:3px 0">
+                  <span class="mono" style="font-size:12px;font-weight:700;color:var(--txt)">{{val}}</span>
+                  <span class="up" style="font-size:8px;color:var(--faint)">{{key}}</span>
+                </div>
+              </div>
+            </template>
+
+            <!-- Moved/Acted flags -->
+            <div v-if="selectedUnit.moved != null" style="display:flex;gap:5px;margin-bottom:8px">
+              <span class="mono" style="font-size:9px;padding:2px 5px;border-radius:3px"
+                    :style="{background: selectedUnit.moved ? 'rgba(255,95,86,.12)' : 'rgba(70,211,154,.12)',
+                             color:      selectedUnit.moved ? '#ff5f56' : 'var(--ok)'}">
+                {{selectedUnit.moved ? 'MOVED' : 'CAN MOVE'}}
+              </span>
+              <span class="mono" style="font-size:9px;padding:2px 5px;border-radius:3px"
+                    :style="{background: selectedUnit.acted ? 'rgba(255,95,86,.12)' : 'rgba(70,211,154,.12)',
+                             color:      selectedUnit.acted ? '#ff5f56' : 'var(--ok)'}">
+                {{selectedUnit.acted ? 'ACTED' : 'CAN ACT'}}
+              </span>
+            </div>
+
+            <!-- Status effects -->
+            <div v-if="selectedUnit.statusEffects?.length" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+              <span v-for="fx in selectedUnit.statusEffects" :key="fx"
+                    class="mono" style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(242,180,65,.15);color:#f2b441">
+                {{fx}}
+              </span>
+            </div>
+
+            <!-- Abilities -->
+            <div v-if="selectedUnit.abilities?.length">
+              <div style="font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Abilities</div>
+              <div style="display:flex;flex-wrap:wrap;gap:3px">
+                <span v-for="ab in selectedUnit.abilities" :key="ab.key ?? ab"
+                      style="font-size:10px;padding:2px 6px;border-radius:3px;background:var(--bg3)"
+                      :style="{color: selectedUnit.teamObj.raw}">
+                  {{ab.name ?? ab}}
+                </span>
+              </div>
             </div>
           </template>
-          <div style="margin-top:6px;font-size:10px" :style="{color: selectedUnit.teamObj.raw + 'cc'}">
+
+          <div style="margin-top:8px;font-size:10px" :style="{color: selectedUnit.teamObj.raw + 'cc'}">
             {{selectedUnit.teamObj.name}}
           </div>
         </div>

@@ -6,6 +6,7 @@ const props = defineProps({
   fit:          Object,
   units:        Array,
   selectedId:   String,
+  activeUnitId: { type: String, default: null },
   fog:          Boolean,
   showRuler:    Boolean,
   rdr:          Object,
@@ -186,6 +187,11 @@ function hasMoveIntent(u) {
 
         <!-- Live unit -->
         <g v-else>
+          <!-- Active unit ring: solid pulsing outer ring for the unit whose turn it is -->
+          <circle v-if="u.id === activeUnitId"
+                  :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+9"
+                  fill="none" :stroke="u.teamObj.raw" stroke-width="2" class="active-ring"/>
+          <!-- Selected unit ring: dashed inner ring for stat inspection -->
           <circle v-if="u.id === selectedId"
                   :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+6"
                   fill="none" :stroke="u.teamObj.raw" stroke-width="1" stroke-dasharray="2 3"/>
@@ -207,18 +213,22 @@ function hasMoveIntent(u) {
                 :width="unitR(u)*2" :height="unitR(u)*2"
                 :fill="rdr.unitFill" :stroke="u.teamObj.raw" stroke-width="2"/>
           <!-- Symbol letter inside shape (single-char type = FFTA/chess) -->
-          <text :x="fit.x(u.x)" :y="fit.y(u.y)"
+          <text v-if="u.type.length === 1"
+                :x="fit.x(u.x)" :y="fit.y(u.y)"
                 :fill="u.teamObj.raw" :font-family="rdr.font"
                 :font-size="unitR(u)" font-weight="800"
                 text-anchor="middle" dominant-baseline="central"
                 style="user-select:none;pointer-events:none">{{u.type.toUpperCase()}}</text>
-          <!-- HP bar -->
-          <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
-          <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3"
-                :width="unitR(u)*2*(u.hpNow/u.hpMax)" height="3"
-                :fill="hpColor(u.hpNow/u.hpMax, u.teamObj.raw)"/>
-          <!-- Name label below HP bar -->
-          <text :x="fit.x(u.x)" :y="fit.y(u.y)+unitR(u)+13"
+          <!-- HP bar (skip for chess) -->
+          <template v-if="!chess">
+            <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
+            <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3"
+                  :width="unitR(u)*2*((u.currentHp ?? u.hpNow)/u.hpMax)" height="3"
+                  :fill="hpColor((u.currentHp ?? u.hpNow)/u.hpMax, u.teamObj.raw)"/>
+          </template>
+          <!-- Name label below HP bar (not for chess — symbol inside already identifies pieces) -->
+          <text v-if="!chess"
+                :x="fit.x(u.x)" :y="fit.y(u.y)+unitR(u)+13"
                 :fill="u.id === selectedId ? u.teamObj.raw : rdr.label"
                 font-size="9" :font-family="rdr.font" text-anchor="middle"
                 style="user-select:none;pointer-events:none">{{u.name}}</text>
@@ -248,3 +258,13 @@ function hasMoveIntent(u) {
          }"/>
   </div>
 </template>
+
+<style scoped>
+@keyframes active-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+.active-ring {
+  animation: active-pulse 1.2s ease-in-out infinite;
+}
+</style>
