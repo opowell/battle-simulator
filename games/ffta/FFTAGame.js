@@ -3,12 +3,108 @@ import { JOB_DEFS, createUnit } from './units.js';
 import { createMap, renderMap, getTile } from './map.js';
 import { getReachable, getInRange, manhattan } from './grid.js';
 
+// ── Scenario definitions ──────────────────────────────────────────────────────
+
+const SCENARIOS = {
+  standard: {
+    p1: [
+      { job: 'soldier',   pos: { x: 1, y: 1 } },
+      { job: 'whiteMage', pos: { x: 2, y: 1 } },
+      { job: 'archer',    pos: { x: 1, y: 2 } },
+      { job: 'thief',     pos: { x: 2, y: 2 } },
+    ],
+    p2: [
+      { job: 'fighter',   pos: { x: 10, y: 8 } },
+      { job: 'blackMage', pos: { x: 9,  y: 8 } },
+      { job: 'archer',    pos: { x: 10, y: 7 } },
+      { job: 'soldier',   pos: { x: 9,  y: 7 } },
+    ],
+  },
+  ambush: {
+    p1: [
+      { job: 'soldier',   pos: { x: 4, y: 1 } },
+      { job: 'whiteMage', pos: { x: 3, y: 1 } },
+      { job: 'archer',    pos: { x: 3, y: 2 } },
+    ],
+    p2: [
+      { job: 'fighter',   pos: { x: 8, y: 7 } },
+      { job: 'fighter',   pos: { x: 9, y: 7 } },
+      { job: 'soldier',   pos: { x: 9, y: 6 } },
+      { job: 'archer',    pos: { x: 8, y: 6 } },
+      { job: 'blackMage', pos: { x: 7, y: 7 } },
+    ],
+  },
+  jagd: {
+    p1: [
+      { job: 'fighter',  pos: { x: 2, y: 1 } },
+      { job: 'ninja',    pos: { x: 2, y: 2 } },
+      { job: 'dragoon',  pos: { x: 1, y: 2 } },
+      { job: 'assassin', pos: { x: 1, y: 1 } },
+    ],
+    p2: [
+      { job: 'fighter',  pos: { x: 9,  y: 7 } },
+      { job: 'fighter',  pos: { x: 10, y: 7 } },
+      { job: 'dragoon',  pos: { x: 10, y: 8 } },
+      { job: 'ninja',    pos: { x: 9,  y: 8 } },
+    ],
+  },
+  magicCouncil: {
+    p1: [
+      { job: 'whiteMage', pos: { x: 2, y: 2 } },
+      { job: 'blackMage', pos: { x: 3, y: 2 } },
+      { job: 'timeMage',  pos: { x: 2, y: 1 } },
+    ],
+    p2: [
+      { job: 'blackMage',   pos: { x: 8, y: 7 } },
+      { job: 'summoner',    pos: { x: 9, y: 7 } },
+      { job: 'illusionist', pos: { x: 8, y: 6 } },
+    ],
+  },
+  honorGuard: {
+    p1: [
+      { job: 'soldier',   pos: { x: 2, y: 1 } },
+      { job: 'paladin',   pos: { x: 3, y: 1 } },
+      { job: 'whiteMage', pos: { x: 2, y: 2 } },
+      { job: 'archer',    pos: { x: 4, y: 1 } },
+    ],
+    p2: [
+      { job: 'soldier',  pos: { x: 8,  y: 7 } },
+      { job: 'soldier',  pos: { x: 9,  y: 7 } },
+      { job: 'soldier',  pos: { x: 8,  y: 6 } },
+      { job: 'fighter',  pos: { x: 9,  y: 6 } },
+      { job: 'fighter',  pos: { x: 10, y: 7 } },
+      { job: 'archer',   pos: { x: 10, y: 6 } },
+    ],
+  },
+  desertReckoning: {
+    p1: [
+      { job: 'archer',       pos: { x: 2, y: 1 } },
+      { job: 'redMage',      pos: { x: 2, y: 2 } },
+      { job: 'elementalist', pos: { x: 1, y: 2 } },
+      { job: 'assassin',     pos: { x: 1, y: 1 } },
+    ],
+    p2: [
+      { job: 'fighter',  pos: { x: 9,  y: 7 } },
+      { job: 'dragoon',  pos: { x: 10, y: 7 } },
+      { job: 'fighter',  pos: { x: 9,  y: 8 } },
+      { job: 'dragoon',  pos: { x: 10, y: 8 } },
+    ],
+  },
+};
+
 // ── Turn queue ────────────────────────────────────────────────────────────────
+
+function effectiveSpd(u) {
+  let spd = u.stats.spd;
+  if (u.statusEffects.includes('slow'))  spd = Math.floor(spd * 0.5);
+  if (u.statusEffects.includes('haste')) spd = Math.floor(spd * 1.5);
+  return spd;
+}
 
 function buildTurnQueue(units) {
   return units
     .filter(u => u.alive)
-    .sort((a, b) => b.stats.spd - a.stats.spd || a.id.localeCompare(b.id))
+    .sort((a, b) => effectiveSpd(b) - effectiveSpd(a) || a.id.localeCompare(b.id))
     .map(u => u.id);
 }
 
@@ -230,20 +326,17 @@ function renderState(state) {
 
 // ── Create initial state ──────────────────────────────────────────────────────
 
-function createInitialState(players, _config = {}) {
+function createInitialState(players, config = {}) {
   const board = createMap();
   const [p1, p2] = players;
   let idCtr = 0;
 
+  const scenId = config.scenario ?? 'standard';
+  const scen = SCENARIOS[scenId] ?? SCENARIOS.standard;
+
   const units = [
-    createUnit(`u${idCtr++}`, 'soldier',   p1.id, { x: 1, y: 1 }),
-    createUnit(`u${idCtr++}`, 'whiteMage', p1.id, { x: 2, y: 1 }),
-    createUnit(`u${idCtr++}`, 'archer',    p1.id, { x: 1, y: 2 }),
-    createUnit(`u${idCtr++}`, 'thief',     p1.id, { x: 2, y: 2 }),
-    createUnit(`u${idCtr++}`, 'fighter',   p2.id, { x: 10, y: 8 }),
-    createUnit(`u${idCtr++}`, 'blackMage', p2.id, { x: 9,  y: 8 }),
-    createUnit(`u${idCtr++}`, 'archer',    p2.id, { x: 10, y: 7 }),
-    createUnit(`u${idCtr++}`, 'soldier',   p2.id, { x: 9,  y: 7 }),
+    ...scen.p1.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p1.id, pos)),
+    ...scen.p2.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p2.id, pos)),
   ];
 
   const order = buildTurnQueue(units);
@@ -280,6 +373,9 @@ function getVisibleState(state, playerId) {
 const JOB_LABELS = {
   soldier: 'Soldier', whiteMage: 'White Mage', blackMage: 'Black Mage',
   archer: 'Archer', thief: 'Thief', fighter: 'Fighter',
+  paladin: 'Paladin', ninja: 'Ninja', dragoon: 'Dragoon',
+  elementalist: 'Elementalist', redMage: 'Red Mage', timeMage: 'Time Mage',
+  summoner: 'Summoner', illusionist: 'Illusionist', assassin: 'Assassin',
 };
 
 // ── Export ────────────────────────────────────────────────────────────────────
@@ -306,7 +402,12 @@ function getActionDuration(state, action) {
 export const FFTAGame = {
   name: 'Final Fantasy Tactics Advance',
   scenarios: [
-    { id: 'standard', name: 'Standard Battle', description: '6v6 job-class tactical combat on a height-based grid', config: {} },
+    { id: 'standard',        name: 'Standard Battle',       description: '4v4 balanced job-class combat on a height-based grid', config: { scenario: 'standard' } },
+    { id: 'ambush',          name: 'Ambush in the Pass',    description: '3 defenders hold elevated ground against 5 attackers', config: { scenario: 'ambush' } },
+    { id: 'jagd',            name: 'Jagd Helje',            description: 'Lawless all-melee skirmish — no Laws, no healers, pure combat', config: { scenario: 'jagd' } },
+    { id: 'magicCouncil',    name: 'Magic Council Dispute', description: 'Nu Mou scholars clash — Time Mage and Summoner face off', config: { scenario: 'magicCouncil' } },
+    { id: 'honorGuard',      name: 'Honor Guard',           description: '4-unit disciplined guard holds against a 6-unit clan assault', config: { scenario: 'honorGuard' } },
+    { id: 'desertReckoning', name: 'Desert Reckoning',      description: 'Viera agility and magic vs Bangaa brute strength — 4v4', config: { scenario: 'desertReckoning' } },
   ],
   colors: { floor: '#8a9c70', elevated: '#a07858', 'elevated-high': '#b89060', wall: '#2a2018' },
   createInitialState,

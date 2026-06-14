@@ -99,6 +99,7 @@ function handleCreate() {
     name:      name.value || selGame.value,
     fog:       fog.value,
     maxTurns:  maxTurns.value,
+    scenario:  scenKey.value,
     players:   slots.value,
   });
 }

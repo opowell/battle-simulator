@@ -55,4 +55,48 @@ export const ABILITIES = {
     name: 'Shatter', type: 'physical', range: 1, target: 'enemy',
     power: 1.5, mpCost: 0, effect: 'damage',
   },
+  'holy-blade': {
+    name: 'Holy Blade', type: 'magic', range: 1, target: 'enemy',
+    power: 1.2, mpCost: 0, effect: 'damage',
+  },
+  throw: {
+    name: 'Throw', type: 'physical', range: 3, target: 'enemy',
+    power: 0.8, mpCost: 0, effect: 'damage',
+  },
+  shadowstitch: {
+    name: 'Shadowstitch', type: 'physical', range: 1, target: 'enemy',
+    power: 0.4, mpCost: 0, effect: 'damage+status', status: 'blind',
+  },
+  jump: {
+    name: 'Jump', type: 'physical', range: 2, target: 'enemy',
+    power: 1.8, mpCost: 0, effect: 'damage',
+  },
+  flood: {
+    name: 'Flood', type: 'magic', range: 3, target: 'enemy',
+    power: 1.3, mpCost: 8, effect: 'damage',
+  },
+  gust: {
+    name: 'Gust', type: 'magic', range: 3, target: 'enemy',
+    power: 0.9, mpCost: 8, effect: 'damage+status', status: 'blind',
+  },
+  slow: {
+    name: 'Slow', type: 'magic', range: 3, target: 'enemy',
+    power: 0, mpCost: 8, effect: 'status', status: 'slow',
+  },
+  haste: {
+    name: 'Haste', type: 'magic', range: 2, target: 'ally',
+    power: 0, mpCost: 8, effect: 'status', status: 'haste',
+  },
+  eidolon: {
+    name: 'Eidolon', type: 'magic', range: 4, target: 'enemy',
+    power: 2.0, mpCost: 24, effect: 'damage',
+  },
+  phantasm: {
+    name: 'Phantasm', type: 'magic', range: 4, target: 'enemy',
+    power: 1.1, mpCost: 12, effect: 'damage+status', status: 'blind',
+  },
+  rockseal: {
+    name: 'Rockseal', type: 'physical', range: 1, target: 'enemy',
+    power: 0.5, mpCost: 6, effect: 'damage+status', status: 'stop',
+  },
 };
