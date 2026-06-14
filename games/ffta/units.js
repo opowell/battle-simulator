@@ -214,7 +214,7 @@ export const JOB_DEFS = {
   },
 };
 
-export function createUnit(id, job, ownerId, position) {
+export function createUnit(id, job, ownerId, position, facing = 0) {
   const def = JOB_DEFS[job];
   return {
     id,
@@ -222,6 +222,7 @@ export function createUnit(id, job, ownerId, position) {
     job,
     race: def.race,
     position,
+    facing,
     alive: true,
     hp: def.stats.hp,
     maxHp: def.stats.hp,

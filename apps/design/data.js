@@ -128,7 +128,8 @@ function computeUnits(field, t) {
     else if (u.deathTurn != null && t > u.deathTurn - 2)
       hpNow = Math.max(4, u.hp * (1 - (t - (u.deathTurn-2)) / 2));
     const team = field.teams.find(tm => tm.id === u.team);
-    return { ...u, x: here.x, y: here.y, ang: here.ang, next, dead, hpNow, hpMax: u.hp, teamObj: team, friendly: u.team === friendly };
+    const ang = u.path.length === 1 && u.facing != null ? u.facing : here.ang;
+    return { ...u, x: here.x, y: here.y, ang, next, dead, hpNow, hpMax: u.hp, teamObj: team, friendly: u.team === friendly };
   });
   const sight = field.world.w * 0.2;
   const friends = arr.filter(u => u.friendly && !u.dead);

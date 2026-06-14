@@ -359,9 +359,13 @@ function applyActions(state, playerActions, rng = Math.random) {
   }
 
   if (action.type === 'move') {
-    const units = state.units.map(u =>
-      u.id === action.unitId ? { ...u, position: action.to, moved: true, preMovedPosition: u.position } : u
-    );
+    const units = state.units.map(u => {
+      if (u.id !== action.unitId) return u;
+      const dx = action.to.x - u.position.x;
+      const dy = action.to.y - u.position.y;
+      const facing = (dx !== 0 || dy !== 0) ? Math.atan2(dy, dx) : u.facing;
+      return { ...u, position: action.to, facing, moved: true, preMovedPosition: u.position };
+    });
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -375,8 +379,16 @@ function applyActions(state, playerActions, rng = Math.random) {
   }
 
   if (action.type === 'ability') {
+    const caster = state.units.find(u => u.id === action.unitId);
+    const target = state.units.find(u => u.id === action.targetId);
     const units = applyAbility(state, action.unitId, action.targetId, action.abilityName, rng)
-      .map(u => u.id === action.unitId ? { ...u, preMovedPosition: null } : u);
+      .map(u => {
+        if (u.id !== action.unitId) return u;
+        const facing = (caster && target && action.unitId !== action.targetId)
+          ? Math.atan2(target.position.y - caster.position.y, target.position.x - caster.position.x)
+          : u.facing;
+        return { ...u, facing, preMovedPosition: null };
+      });
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -442,8 +454,8 @@ function createInitialState(players, config = {}) {
   const scen = SCENARIOS[scenId] ?? SCENARIOS.standard;
 
   const units = [
-    ...scen.p1.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p1.id, pos)),
-    ...scen.p2.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p2.id, pos)),
+    ...scen.p1.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p1.id, pos, 0)),
+    ...scen.p2.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p2.id, pos, Math.PI)),
   ];
 
   const order = buildTurnQueue(units);
@@ -562,6 +574,7 @@ export const FFTAGame = {
           moved:         u?.moved,
           acted:         u?.acted,
           isActive:      u ? u.id === activeUnitId : false,
+          facing:        u?.facing,
         });
       }
     }

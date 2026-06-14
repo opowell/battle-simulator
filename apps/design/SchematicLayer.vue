@@ -120,6 +120,12 @@ function hasMoveIntent(u) {
     <svg width="100%" height="100%" style="display:block;position:absolute;inset:0"
          @click="handleBoardClick">
 
+      <!-- Terrain tiles (per-cell color from game toGrid) -->
+      <rect v-for="(tile, i) in (field.tiles ?? [])" :key="'t'+i"
+            :x="fit.x(tile.x)" :y="fit.y(tile.y)"
+            :width="fit.len(1)" :height="fit.len(1)"
+            :fill="tile.color"/>
+
       <!-- Board squares (chess / small square grids) -->
       <rect v-for="(sq, i) in boardSquares" :key="'bs'+i"
             :x="fit.x(sq.x)" :y="fit.y(sq.y)"
