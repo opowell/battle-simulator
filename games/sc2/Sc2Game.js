@@ -1015,4 +1015,29 @@ export const Sc2Game = {
   renderState,
   getVisibleState,
   getActionDuration,
+
+  toGrid(state) {
+    const { board, units = [], buildings = [] } = state;
+    const { width, height, tiles } = board;
+    const pidIdx = {};
+    (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+    const umap = {}, bmap = {};
+    for (const u of units) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+    for (const b of buildings) if (b.alive) bmap[`${b.position.x},${b.position.y}`] = b;
+    const cells = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const tile = tiles[`${x},${y}`] ?? {};
+        const u = umap[`${x},${y}`];
+        const b = bmap[`${x},${y}`];
+        cells.push({
+          x, y: height - 1 - y,
+          glyph: u ? u.type[0].toUpperCase() : b ? b.type[0].toUpperCase() : '',
+          owner: u ? (pidIdx[u.ownerId] ?? 0) : b ? (pidIdx[b.ownerId] ?? 0) : 0,
+          color: this.colors[tile.terrain] ?? this.colors.open ?? '#808070',
+        });
+      }
+    }
+    return { width, height, cells };
+  },
 };

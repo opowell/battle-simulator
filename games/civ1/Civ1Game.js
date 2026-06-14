@@ -382,4 +382,30 @@ export const Civ1Game = {
   renderState,
   getVisibleState,
   getActionDuration,
+
+  toGrid(state) {
+    const { board, units = [], cities = [] } = state;
+    const { width, height, tiles } = board;
+    const pidIdx = {};
+    (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+    const umap = {}, cmap = {};
+    for (const u of units) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+    for (const c of cities) cmap[`${c.position.x},${c.position.y}`] = c;
+    const cells = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const tile = tiles[`${x},${y}`] ?? {};
+        const u = umap[`${x},${y}`];
+        const city = cmap[`${x},${y}`];
+        cells.push({
+          x, y: height - 1 - y,
+          glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
+          owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,
+          color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
+          hp: u?.hp, maxHp: u?.maxHp,
+        });
+      }
+    }
+    return { width, height, cells };
+  },
 };

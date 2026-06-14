@@ -339,4 +339,32 @@ export const MudAndBloodGame = {
     // Open battlefield — no fog of war
     return state;
   },
+
+  toGrid(state) {
+    const MNB_COLOR = {
+      '.': '#c8b87a', '~': '#5a4530', 'o': '#8a7a6a',
+      's': '#b8a040', 'T': '#4a3828', '#': '#1a1208',
+    };
+    const { board, units = [] } = state;
+    const { width, height, tiles } = board;
+    const pidIdx = {};
+    (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+    const umap = {};
+    for (const u of units) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+    const cells = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const ch = tiles[y]?.[x] ?? '.';
+        const u = umap[`${x},${y}`];
+        cells.push({
+          x, y,
+          glyph: u ? u.attrs.symbol : '',
+          owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
+          color: MNB_COLOR[ch] ?? MNB_COLOR['.'],
+          hp: u?.hp, maxHp: u?.maxHp,
+        });
+      }
+    }
+    return { width, height, cells };
+  },
 };

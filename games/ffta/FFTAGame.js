@@ -311,4 +311,29 @@ export const FFTAGame = {
   renderState,
   getVisibleState,
   getActionDuration,
+
+  toGrid(state) {
+    const { board, units = [] } = state;
+    const { width, height, tiles } = board;
+    const pidIdx = {};
+    (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+    const umap = {};
+    for (const u of units) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+    const cells = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const tile = tiles[`${x},${y}`] ?? {};
+        const t = !tile.passable ? 'wall' : tile.height === 2 ? 'elevated-high' : tile.height === 1 ? 'elevated' : 'floor';
+        const u = umap[`${x},${y}`];
+        cells.push({
+          x, y,
+          glyph: u ? (u.symbol ?? u.job?.[0]?.toUpperCase() ?? '?') : '',
+          owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
+          color: this.colors[t] ?? '#808070',
+          hp: u?.hp, maxHp: u?.maxHp,
+        });
+      }
+    }
+    return { width, height, cells };
+  },
 };
