@@ -53,7 +53,6 @@ const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
 
 // ── chess interactive board ──────────────────────────────────
 const isChess = computed(() => props.field?.game === 'chess');
-const isFFTA  = computed(() => props.field?.game === 'ffta');
 
 const chessBoard = ref({});
 
@@ -108,19 +107,21 @@ const chessMoves = computed(() => {
     .map(a => parseSquare(a.to));
 });
 
-const fftaMoves = computed(() => {
-  if (!isFFTA.value || !isPending.value) return [];
+// Move destinations for the currently selected unit (non-chess games with unitId actions)
+const unitMoves = computed(() => {
+  if (isChess.value || !isPending.value || !selectedId.value) return [];
   return legalActions.value
-    .filter(a => a.type === 'move')
+    .filter(a => a.type === 'move' && a.unitId === selectedId.value)
     .map(a => [a.to.x, a.to.y]);
 });
 
-const fftaActiveUnitId = computed(() => {
-  if (!isFFTA.value || !isPending.value) return null;
+// The unit whose turn it is (first unitId seen in legalActions)
+const activeUnitId = computed(() => {
+  if (!isPending.value) return null;
   return legalActions.value.find(a => a.unitId)?.unitId ?? null;
 });
 
-watch(fftaActiveUnitId, (id) => {
+watch(activeUnitId, (id) => {
   if (id) selectedId.value = id;
 }, { immediate: true });
 
@@ -154,8 +155,10 @@ function handleSqClick(col, row) {
     return;
   }
 
-  if (isFFTA.value && isPending.value) {
-    const action = legalActions.value.find(a => a.type === 'move' && a.to?.x === col && a.to?.y === row);
+  if (isPending.value && selectedId.value) {
+    const action = legalActions.value.find(
+      a => a.type === 'move' && a.unitId === selectedId.value && a.to?.x === col && a.to?.y === row
+    );
     if (action) { submitAction(action); return; }
   }
 
@@ -177,6 +180,12 @@ const rosterTeams = computed(() =>
   }))
 );
 
+
+const displayedActions = computed(() => {
+  if (fftaMoves.value.length > 0)
+    return legalActions.value.filter(a => a.type !== 'move');
+  return legalActions.value;
+});
 
 function fmtAction(action) {
   const t = action.type ?? '';
@@ -304,9 +313,9 @@ onUnmounted(() => {
       <div ref="stageEl" style="flex:1;position:relative;overflow:hidden">
         <SchematicLayer v-if="renderer === 'schematic'"
                         :field="field" :fit="fit" :units="displayUnits"
-                        :selectedId="selectedId" :activeUnitId="fftaActiveUnitId" :fog="fog"
+                        :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
                         :showRuler="showRuler" :rdr="rdr"
-                        :legalSquares="isChess ? chessMoves : fftaMoves"
+                        :legalSquares="isChess ? chessMoves : unitMoves"
                         @select="id => selectedId = id"
                         @sq-click="handleSqClick"/>
         <AssetLayer v-else
@@ -343,15 +352,19 @@ onUnmounted(() => {
               Choose action for
               <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
             </div>
+            <div v-if="fftaMoves.length" class="mono"
+                 style="font-size:10px;color:var(--faint);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">
+              Tap a highlighted square to move
+            </div>
             <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
-              <button v-for="(action, i) in legalActions" :key="i"
+              <button v-for="(action, i) in displayedActions" :key="i"
                       class="action-btn"
                       style="font-size:11px;font-family:var(--mono)"
                       @click="submitAction(action)">
                 {{fmtAction(action)}}
               </button>
-              <div v-if="!legalActions.length" style="font-size:11px;color:var(--faint)">
-                No legal actions.
+              <div v-if="!displayedActions.length" style="font-size:11px;color:var(--faint)">
+                No actions.
               </div>
             </div>
           </template>
@@ -374,12 +387,16 @@ onUnmounted(() => {
             </span>
           </div>
 
+          <!-- Location -->
+          <div class="mono" style="font-size:10px;color:var(--faint);margin-bottom:8px">
+            <template v-if="isChess">{{chessSquareLabel(selectedUnit)}}</template>
+            <template v-else-if="selectedUnit.x != null">
+              ({{Math.floor(selectedUnit.x)}}, {{Math.floor(selectedUnit.y)}})
+            </template>
+          </div>
+
           <div v-if="selectedUnit.dead" class="mono" style="font-size:11px;color:#ff5f56">KIA</div>
           <template v-else>
-            <!-- Chess square -->
-            <div v-if="isChess" style="font-size:11px;color:var(--dim);margin-bottom:8px">
-              {{chessSquareLabel(selectedUnit)}}
-            </div>
 
             <!-- HP bar -->
             <template v-if="!isChess">
