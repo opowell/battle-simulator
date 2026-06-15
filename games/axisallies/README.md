@@ -1,4 +1,5 @@
 # Axis & Allies
+Clone of Axis & Allies board game.
 
 WWII grand-strategy wargame. Allies capture Berlin; Axis capture Moscow.
 

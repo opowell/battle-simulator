@@ -1,5 +1,5 @@
 # Age of Wonders
-
+Clone of Ancient Art of War  (1984).
 Ancient armies battle on a procedurally generated 22×12 map. Capture the opponent's camp to win.
 
 ## Players

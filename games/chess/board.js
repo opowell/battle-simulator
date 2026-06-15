@@ -9,21 +9,15 @@ export function squareToXY(sq) {
   return { x: fileIndex(sq), y: rankOf(sq) - 1 };
 }
 
+/** Convert algebraic square → [col, row] grid display coords (rank 8 → row 0, rank 1 → row 7). */
+export function squareToGrid(sq) {
+  return [fileIndex(sq), 8 - rankOf(sq)];
+}
+
 /** Convert 0-based file index + rank (1–8) → algebraic square, or null if off-board. */
 export function squareAt(fi, rank) {
   if (fi < 0 || fi > 7 || rank < 1 || rank > 8) return null;
   return FILES[fi] + rank;
-}
-
-/** Starting square for a rook given color and side. */
-export function rookStartSquare(color, side) {
-  const rank = color === 'white' ? 1 : 8;
-  return (side === 'queenside' ? 'a' : 'h') + rank;
-}
-
-/** King starting square for a color. */
-export function kingStartSquare(color) {
-  return color === 'white' ? 'e1' : 'e8';
 }
 
 /**

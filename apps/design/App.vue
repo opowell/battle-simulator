@@ -16,8 +16,9 @@ const THEMES = [
 const TEAM_VARS = ['var(--teamA)', 'var(--teamB)', 'var(--teamC)', 'var(--teamD)'];
 const TEAM_RAWS = ['#4f9dff', '#ff5f56', '#46d39a', '#f2b441'];
 
-const theme       = ref('military');
+const theme       = ref(localStorage.getItem('bs_theme') ?? 'military');
 const view        = ref('lobby');
+const prevView    = ref('lobby');
 const liveState   = ref(null);   // raw API session JSON
 const sessions    = ref([]);     // lobby list from GET /sessions
 const apiGames    = ref([]);     // from GET /games
@@ -97,6 +98,7 @@ const activeField = computed(() => {
     zones: [],
     tiles,
     units,
+    ui:    apiGame?.ui ?? {},
   };
 });
 
@@ -108,7 +110,16 @@ watch(theme, id => {
   document.documentElement.style.setProperty('--accent', th.accent);
   document.documentElement.style.setProperty('--teamA',  th.teams[0]);
   document.documentElement.style.setProperty('--teamB',  th.teams[1]);
+  localStorage.setItem('bs_theme', id);
 }, { immediate: true });
+
+function openSettings() {
+  prevView.value = view.value;
+  view.value = 'settings';
+}
+function closeSettings() {
+  view.value = prevView.value;
+}
 
 // ── polling ──────────────────────────────────────────────────
 let _poll = null;
@@ -168,7 +179,13 @@ async function enterSession(id, { push = true } = {}) {
     view.value = 'battle';
     if (push) router.push('/session/' + id);
     maybeStartPoll(state);
-  } catch (e) { serverErr.value = e.message; }
+  } catch (e) {
+    if (/session not found/i.test(e.message)) {
+      router.replace('/');
+    } else {
+      serverErr.value = e.message;
+    }
+  }
 }
 
 async function openSession(s) {
@@ -227,22 +244,49 @@ function exitBattle() {
         {{ serverErr ? 'offline' : 'api · localhost:3000' }}
       </div>
       <div style="flex:1"/>
-      <span class="up" style="font-size:10px;color:var(--faint)">theme</span>
-      <div class="seg">
-        <button v-for="th in THEMES" :key="th.id"
-                :class="{on: theme === th.id}"
-                @click="theme = th.id"
-                style="padding:4px 9px;font-size:11px">
-          {{th.label}}
-        </button>
-      </div>
       <span class="mono" style="font-size:11px;color:var(--faint)">
         {{apiGames.length}} games
       </span>
+      <button class="iconbtn" @click="openSettings" title="Settings" style="color:var(--dim)">
+        <BsIcon name="sliders" :size="15" color="var(--dim)"/>
+      </button>
     </div>
 
     <div style="flex:1;min-height:0">
-      <Lobby v-if="view === 'lobby'"
+      <div v-if="view === 'settings'"
+           style="height:100%;overflow-y:auto;padding:32px 24px;display:flex;align-items:flex-start;justify-content:center">
+        <div style="width:100%;max-width:480px;display:flex;flex-direction:column;gap:20px">
+          <div style="display:flex;align-items:center;gap:14px">
+            <button class="btn btn-ghost btn-sm" @click="closeSettings">
+              <BsIcon name="back" :size="13" color="var(--dim)"/> Back
+            </button>
+            <span class="up" style="font-size:12px;font-weight:700;letter-spacing:.12em">Settings</span>
+          </div>
+          <div class="panel">
+            <div class="panel-h"><span class="panel-t">Theme</span></div>
+            <div class="panel-b" style="display:flex;flex-direction:column;gap:8px">
+              <button v-for="th in THEMES" :key="th.id"
+                      :class="['scenrow', theme === th.id && 'sel']"
+                      style="text-align:left"
+                      @click="theme = th.id">
+                <div class="scenmark" :style="theme === th.id ? 'border-color:var(--accent)' : ''">
+                  <div :style="{width:'14px',height:'14px',borderRadius:'50%',background:th.accent}"/>
+                </div>
+                <div>
+                  <div style="font-size:14px;font-weight:600">{{th.label}}</div>
+                  <div style="font-size:11px;color:var(--dim)" class="mono">{{th.id}}</div>
+                </div>
+                <div style="display:flex;gap:5px;align-items:center">
+                  <div v-for="c in th.teams" :key="c"
+                       :style="{width:'16px',height:'16px',borderRadius:'50%',background:c}"/>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Lobby v-else-if="view === 'lobby'"
              :sessions="sessions"
              :api-games="apiGames"
              :server-err="serverErr"

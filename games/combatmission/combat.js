@@ -23,9 +23,10 @@ export function resolveFire(shooter, target, board, rng) {
 
   let damage = 0;
   if (hit) {
-    const atk = UNIT_DEFS[shooter.type].attack;
+    const atk   = UNIT_DEFS[shooter.type].attack;
+    const armor = UNIT_DEFS[target.type].armor ?? 0;
     const variance = 0.8 + rng() * 0.4;
-    damage = Math.max(1, Math.round(atk * variance));
+    damage = Math.max(1, Math.round(atk * variance) - armor);
   }
 
   // Even a miss adds suppression to the target

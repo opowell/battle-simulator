@@ -115,37 +115,83 @@ Units have a `firepower` value (1, 2, or 3) that sets damage dealt per combat hi
 | `swamp` | 2 | 0% | 1/0/0 | oil, peat |
 | `jungle` | 2 | +50% | 1/0/0 | gems, ivory |
 
-Roads halve movement cost. Railroads remove movement cost entirely.
+Roads reduce movement cost to ⅓. Railroads remove movement cost entirely (cost = 0).
+
+### Special resource bonuses
+
+When a tile has a special resource its base yield is increased:
+
+| Resource | Bonus |
+|---|---|
+| `fish` | +2 food |
+| `whales` | +1 food, +2 trade |
+| `ivory` | +4 trade |
+| `oil` | +3 shields |
+| `game` | +2 food |
+| `furs` | +3 trade |
+| `oasis` | +3 food |
+| `horse` | +2 shields |
+| `wheat` | +2 food |
+| `shield` | +1 shields |
+| `pheasant` | +2 food |
+| `silk` | +3 trade |
+| `coal` | +2 shields |
+| `wine` | +3 trade |
+| `gold` | +4 trade |
+| `iron` | +2 shields |
+| `gems` | +4 trade |
+| `peat` | +2 shields |
+
+## Starting setup
+
+Each player begins with 1 `settlers` + 2 `warriors` placed on opposite halves of a procedurally generated map (grassland/plains preferred).
+
+## Map generation
+
+Maps are procedural: multi-scale value noise produces elevation and moisture grids; latitude determines polar biomes. Tile features generated at init: `hasRoad`, `hasRiver`, `fortress`, `pollution` (all false by default).
+
+## Scenarios
+
+| ID | Name | Size |
+|---|---|---|
+| `standard` | Standard | 20 × 14 |
+| `large` | Large World | 32 × 18 |
 
 ## Actions
 
-| Type | Notes |
-|---|---|
-| `move` | Move unit up to its range |
-| `attack` | Probabilistic combat; veteran units get 1.5× bonus |
-| `found-city` | Settler founds a city |
-| `build-road` | Settler builds road (or railroad) |
-| `skip-unit` | Pass for this unit |
-| `end-turn` | End player turn |
+| Type | Who | Notes |
+|---|---|---|
+| `move` | any | Move unit; costs vary by terrain/road/railroad (see below) |
+| `attack` | combat units | Probabilistic round-by-round combat; attacker must be Chebyshev-adjacent (8-directional) |
+| `found-city` | settlers | Found a city on current tile; settler is consumed |
+| `build-road` | settlers, workers, engineers | Build road on current tile; consumes all remaining movement |
+| `skip-unit` | any | Forfeit remaining moves for this unit |
+| `end-turn` | — | End turn; triggers city production for the current player |
 
 ## Special mechanics
 
-- **Cities** — accumulate shields each turn; produce units when accumulated shields reach unit cost
+- **Cities** — produce `size × 2 + 1` shields per turn; when accumulated shields ≥ unit cost a new unit spawns on an adjacent free tile; default production is `warriors`
+- **City capture** — if the winning attacker's target tile contains a city, that city changes owner
+- **Attacker advance** — the winning attacker automatically moves into the defender's vacated tile
+- **Settlers consumed** — founding a city removes the settler unit
 - **Veteran status** — units that win combat may gain veteran status (+50% ATK and DEF)
 - **City defense** — units in a city tile get +50% DEF
 - **Fortress** — units on a fortress tile get +100% DEF
 - **River crossing** — attacking across a river gives the defender an additional +50% DEF
 - **Anti-mounted** — units with `anti-mounted` (e.g. `pikemen`) get +50% DEF vs mounted attackers
 - **Firepower** — damage per hit varies by unit type: land=1, sea=1–2, air=2, missiles=3; a fight ends when HP reaches 0
-- **Fog of war** — vision radius 2 per unit
 - **Combat** — round-by-round: `P(attacker wins round) = ATK / (ATK + DEF × terrainBonus)`; loser takes `firepower` HP damage per round
+- **Movement** — 8-directional (Chebyshev); road = ⅓ cost, railroad = 0 cost, air units = always 1 per tile
+- **Guaranteed entry** — a unit with movesLeft > 0 can always enter a passable tile even if the terrain cost exceeds remaining moves (remaining clamps to 0)
+- **Domain passability** — land units cannot enter ocean; sea units can only traverse ocean; air units ignore terrain passability
+- **Unit stacking** — only one unit may occupy a tile (friendly blocking enforced)
+- **Fog of war** — Chebyshev vision radius 2 from each unit AND each city; enemy units/cities outside this radius are hidden
 
 ## Win conditions
 
 | Outcome | Reason |
 |---|---|
-| Win | `conquest` — all opponent cities and units destroyed |
-| Draw | `max-turns` |
+| Win | `civilization-destroyed` — opponent has no cities and no living units |
 
 ## Run
 

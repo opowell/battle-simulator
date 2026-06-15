@@ -74,13 +74,11 @@ function unitR(u) {
   return Math.max(5, props.fit.len(mult));
 }
 
-const chess = computed(() => props.field.game === 'chess');
-
-// Chess fog of war: compute per-square visibility from friendly pieces.
-// Piece types in the design app are lowercase glyph letters: k/q/r/b/n/p.
-// White (friendly) moves up the board — decreasing y (y = 8 - rank).
-const chessVisibleSet = computed(() => {
-  if (!props.fog || !chess.value) return null;
+// Grid-based fog of war: compute per-square visibility from friendly pieces.
+// Used when field.ui.gridFog is true. Piece types are lowercase glyph letters: k/q/r/b/n/p.
+// Friendly pieces move up the board — decreasing y (y = 8 - rank).
+const gridFogVisibleSet = computed(() => {
+  if (!props.fog || !props.field.ui?.gridFog) return null;
   const W = props.field.world.w, H = props.field.world.h;
   const visible = new Set();
   const occ = new Set();
@@ -121,19 +119,18 @@ const chessVisibleSet = computed(() => {
 });
 
 const fogSquares = computed(() => {
-  if (!chessVisibleSet.value) return [];
+  if (!gridFogVisibleSet.value) return [];
   const W = props.field.world.w, H = props.field.world.h;
   const out = [];
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++)
-      if (!chessVisibleSet.value.has(`${x},${y}`)) out.push({ x, y });
+      if (!gridFogVisibleSet.value.has(`${x},${y}`)) out.push({ x, y });
   return out;
 });
 
-const CHESS_SHAPE = { king:'circle', queen:'circle', rook:'square', bishop:'triangle', knight:'triangle', pawn:'circle' };
-
 function unitShape(u) {
-  if (chess.value) return CHESS_SHAPE[u.type] || 'circle';
+  const shapes = props.field.ui?.unitShapes;
+  if (shapes) return shapes[u.type] || 'circle';
   return 'circle';
 }
 
@@ -150,7 +147,8 @@ function handleBoardClick(e) {
 }
 
 function handleUnitClick(e, u) {
-  if (chess.value) return; // let click bubble to SVG for board-coord handling
+  const col = Math.floor(u.x), row = Math.floor(u.y);
+  if (props.legalSquares.some(([lc, lr]) => lc === col && lr === row)) return; // legal target: bubble to sq-click
   e.stopPropagation();
   emit('select', u.id);
 }
@@ -162,7 +160,7 @@ function hpColor(frac, raw) {
 function isVisible(u) {
   if (!props.fog) return true;
   if (u.friendly) return true;
-  if (chessVisibleSet.value) return chessVisibleSet.value.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
+  if (gridFogVisibleSet.value) return gridFogVisibleSet.value.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
   return u.visible;
 }
 
@@ -171,6 +169,23 @@ function hasMoveIntent(u) {
   const dx = props.fit.x(u.next.x) - props.fit.x(u.x);
   const dy = props.fit.y(u.next.y) - props.fit.y(u.y);
   return Math.hypot(dx, dy) >= 3;
+}
+
+function facingArrow(u) {
+  const cx = props.fit.x(u.x), cy = props.fit.y(u.y);
+  const r = unitR(u);
+  const ang = u.ang;
+  const len  = Math.max(6, r * 0.55);
+  const half = Math.max(4, r * 0.32);
+  const tx = cx + Math.cos(ang) * (r + len);
+  const ty = cy + Math.sin(ang) * (r + len);
+  const bx = cx + Math.cos(ang) * r;
+  const by = cy + Math.sin(ang) * r;
+  const lx = bx + Math.cos(ang + Math.PI / 2) * half;
+  const ly = by + Math.sin(ang + Math.PI / 2) * half;
+  const rx2 = bx - Math.cos(ang + Math.PI / 2) * half;
+  const ry2 = by - Math.sin(ang + Math.PI / 2) * half;
+  return `${tx},${ty} ${lx},${ly} ${rx2},${ry2}`;
 }
 </script>
 
@@ -185,20 +200,20 @@ function hasMoveIntent(u) {
             :width="fit.len(1)" :height="fit.len(1)"
             :fill="tile.color"/>
 
-      <!-- Board squares (chess / small square grids) -->
+      <!-- Board squares (alternating pattern for small square grids) -->
       <rect v-for="(sq, i) in boardSquares" :key="'bs'+i"
             :x="fit.x(sq.x)" :y="fit.y(sq.y)"
             :width="fit.len(1)" :height="fit.len(1)"
             fill="rgba(0,0,0,0.22)"/>
 
-      <!-- Fog of war squares (chess: straight-line grid-aligned fog) -->
+      <!-- Fog of war squares (grid-aligned, from field.ui.gridFog) -->
       <rect v-for="(fs, i) in fogSquares" :key="'fs'+i"
             :x="fit.x(fs.x)" :y="fit.y(fs.y)"
             :width="fit.len(1)" :height="fit.len(1)"
             :fill="rdr.fogA"
             style="pointer-events:none"/>
 
-      <!-- Legal move highlights (chess) -->
+      <!-- Legal move highlights -->
       <rect v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
             :x="fit.x(lc)" :y="fit.y(lr)"
             :width="fit.len(1)" :height="fit.len(1)"
@@ -258,39 +273,44 @@ function hasMoveIntent(u) {
 
         <!-- Live unit -->
         <g v-else>
-          <!-- Active unit ring: solid pulsing outer ring for the unit whose turn it is -->
-          <circle v-if="u.id === activeUnitId"
-                  :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+9"
-                  fill="none" :stroke="u.teamObj.raw" stroke-width="2" class="active-ring"/>
-          <!-- Selected unit ring: dashed ring — white for non-active, team color for active -->
+          <!-- Active unit ring: white outer ring + inner glow ring -->
+          <template v-if="u.id === activeUnitId">
+            <circle :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+11"
+                    fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="6" class="active-ring"/>
+            <circle :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+7"
+                    fill="none" stroke="white" stroke-width="2" class="active-ring"/>
+          </template>
+          <!-- Selected unit ring: dashed ring -->
           <circle v-if="u.id === selectedId && u.id !== activeUnitId"
                   :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+6"
                   fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.5" stroke-dasharray="3 3"/>
-          <!-- Facing line (hidden for chess) -->
-          <line v-if="!chess"
-                :x1="fit.x(u.x)" :y1="fit.y(u.y)"
-                :x2="fit.x(u.x)+Math.cos(u.ang)*(unitR(u)+5)"
-                :y2="fit.y(u.y)+Math.sin(u.ang)*(unitR(u)+5)"
-                :stroke="u.teamObj.raw" stroke-width="1.5"/>
-          <!-- Body shape -->
+          <!-- Facing indicator: filled arrowhead on unit edge -->
+          <polygon v-if="field.ui?.showFacing !== false"
+                   :points="facingArrow(u)"
+                   :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw"
+                   :stroke="rdr.stage" stroke-width="1"/>
+          <!-- Body shape: active unit gets solid team-color fill -->
           <circle v-if="unitShape(u)==='circle'"
                   :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)"
-                  :fill="rdr.unitFill" :stroke="u.teamObj.raw" stroke-width="2"/>
+                  :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
+                  :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <polygon v-else-if="unitShape(u)==='triangle'"
                    :points="`${fit.x(u.x)},${fit.y(u.y)-unitR(u)} ${fit.x(u.x)+unitR(u)},${fit.y(u.y)+unitR(u)} ${fit.x(u.x)-unitR(u)},${fit.y(u.y)+unitR(u)}`"
-                   :fill="rdr.unitFill" :stroke="u.teamObj.raw" stroke-width="2"/>
+                   :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
+                   :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <rect v-else
                 :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)-unitR(u)"
                 :width="unitR(u)*2" :height="unitR(u)*2"
-                :fill="rdr.unitFill" :stroke="u.teamObj.raw" stroke-width="2"/>
+                :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
+                :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <!-- First letter of unit name -->
           <text :x="fit.x(u.x)" :y="fit.y(u.y)"
-                :fill="u.teamObj.raw" :font-family="rdr.font"
+                :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" :font-family="rdr.font"
                 :font-size="unitR(u)" font-weight="800"
                 text-anchor="middle" dominant-baseline="central"
                 style="user-select:none;pointer-events:none">{{u.name[0].toUpperCase()}}</text>
-          <!-- HP bar (skip for chess) -->
-          <template v-if="!chess">
+          <!-- HP bar -->
+          <template v-if="field.ui?.showHpBars !== false">
             <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
             <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3"
                   :width="unitR(u)*2*((u.currentHp ?? u.hpNow)/u.hpMax)" height="3"
@@ -311,8 +331,8 @@ function hasMoveIntent(u) {
       </template>
     </svg>
 
-    <!-- Fog mask (non-chess: radial gradient blobs) -->
-    <div v-if="fog && !chess" class="bf-layer" style="pointer-events:none;z-index:3"
+    <!-- Fog mask (radial gradient blobs, only when grid-based fog is not used) -->
+    <div v-if="fog && !field.ui?.gridFog" class="bf-layer" style="pointer-events:none;z-index:3"
          :style="{
            background: rdr.fogS,
            WebkitMaskImage: fogMask,

@@ -1,4 +1,5 @@
 # Combat Mission
+Clone of Combat Mission: Beyond Overload.
 
 Squad-level WWII infantry and armor combat on a 20×16 grid with line-of-sight and suppression.
 
@@ -13,21 +14,29 @@ Squad-level WWII infantry and armor combat on a 20×16 grid with line-of-sight a
 
 Each unit has 2 AP per turn. Moving costs 1 AP; attacking costs 1 AP.
 
-| ID | Type | Side | HP | ATK | Move | Range | Notes |
+| Type | Side | HP | ATK | Armor | Move | Range | Notes |
 |---|---|---|---|---|---|---|---|
-| `allies-rifle-1/2` | `rifle-squad` | Allies | 10 | 5 | 2 | 5 | Standard infantry |
-| `allies-mg-1` | `mg-team` | Allies | 5 | 8 | 1 | 7 | High damage, long range |
-| `allies-tank-1` | `sherman` | Allies | 20 | 12 | 3 | 7 | Armored |
-| `axis-rifle-1/2` | `volks-squad` | Axis | 10 | 5 | 2 | 5 | |
-| `axis-mg-1` | `mg42-team` | Axis | 5 | 9 | 1 | 8 | |
-| `axis-tank-1` | `tiger` | Axis | 25 | 15 | 2 | 8 | Heavy armor |
+| `rifle-squad` | Allies | 10 | 5 | 0 | 2 | 5 | Standard infantry |
+| `mg-team` | Allies | 5 | 8 | 0 | 1 | 7 | High damage, long range |
+| `sniper` | Allies | 3 | 12 | 0 | 1 | 12 | Very long range, fragile |
+| `bazooka-team` | Allies | 4 | 20 | 0 | 1 | 3 | Anti-tank; short range |
+| `mortar-team` | Allies | 5 | 8 | 0 | 1 | 10 | Indirect fire |
+| `sherman` | Allies | 20 | 12 | 4 | 3 | 7 | Medium armor |
+| `stuart` | Allies | 12 | 7 | 2 | 4 | 5 | Light fast tank |
+| `volks-squad` | Axis | 10 | 5 | 0 | 2 | 5 | |
+| `mg42-team` | Axis | 5 | 9 | 0 | 1 | 8 | |
+| `german-sniper` | Axis | 3 | 13 | 0 | 1 | 13 | Slightly longer range than Allied sniper |
+| `panzerschreck` | Axis | 4 | 22 | 0 | 1 | 3 | Anti-tank; short range |
+| `mortar-ger` | Axis | 5 | 9 | 0 | 1 | 10 | |
+| `panzer-iv` | Axis | 18 | 11 | 3 | 3 | 7 | Medium tank |
+| `tiger` | Axis | 25 | 15 | 7 | 2 | 8 | Heavy armor |
 
 ## Actions
 
 | Type | Notes |
 |---|---|
 | `move` | Move unit to target `{x, y}`; blocked by walls and other units |
-| `attack` | Fire at `targetId`; requires LOS |
+| `fire` | Fire at `targetId`; requires LOS |
 | `skip-unit` | Pass for this unit this turn |
 | `end-turn` | End player's turn |
 
@@ -53,12 +62,14 @@ Fixed 20×16 map:
 
 ## Special mechanics
 
-- **Action Points (AP)** — each unit has 2 AP per turn; `move` costs 1 AP, `attack` costs 1 AP
+- **Action Points (AP)** — each unit has 2 AP per turn; `move` costs 1 AP, `fire` costs 1 AP
 - **Line of sight** — Bresenham ray cast; blocked by walls (`#`) and trees (`T`); hedges (`w`) do not block LOS
 - **Terrain cover** — hedge: −30% hit chance; trees: −20% hit chance; open ground: 0%
-- **Hit chance** — base 65%, −3% per tile of range, −cover%, −15% per suppression stack
-- **Suppression** — units that take fire accumulate suppression (max 2 stacks); each stack reduces accuracy by 15%; recovers 1 per turn
+- **Hit chance** — base 65%, −5% per tile of range beyond 1, −cover%, −5% per suppression stack on shooter; clamped to [10%, 90%]
+- **Damage** — `round(attack × variance) − armor`, minimum 1; variance is uniform [0.8, 1.2]
+- **Suppression** — any fire suppresses the target: a hit adds 2 stacks, a miss adds 1; each stack reduces shooter accuracy by 5%; recovers 1 stack per turn
 - **Armor** — armor value reduces raw damage by a flat amount; cannot reduce damage below 1
+- **Fog of war** — each player sees only units within 5 tiles (Chebyshev) of one of their own units, and only if LOS exists to that enemy
 
 ## Win conditions
 

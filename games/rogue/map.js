@@ -12,7 +12,6 @@ export function manhattan(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-// BFS reachable floor tiles within `range` steps (excluding occupied tiles)
 export function getReachable(tiles, pos, range, units) {
   const occupied = new Set(
     units.filter(u => u.alive && !(u.position.x === pos.x && u.position.y === pos.y))
@@ -36,7 +35,6 @@ export function getReachable(tiles, pos, range, units) {
   return result;
 }
 
-// BFS first step from `from` toward `to`; ignores the unit at `from` in occupied check
 export function stepToward(tiles, from, to, units) {
   const occupied = new Set(
     units.filter(u => u.alive && !(u.position.x === from.x && u.position.y === from.y))
@@ -58,7 +56,32 @@ export function stepToward(tiles, from, to, units) {
   return null;
 }
 
-// Bresenham LOS through walkable tiles
+// Random walkable adjacent step (for confused/bat movement)
+export function stepRandom(tiles, from, units, rng) {
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+  const shuffled = dirs.sort(() => rng() - 0.5);
+  const occupied = new Set(
+    units.filter(u => u.alive && !(u.position.x === from.x && u.position.y === from.y))
+         .map(u => k(u.position.x, u.position.y))
+  );
+  for (const [dx, dy] of shuffled) {
+    const nx = from.x + dx, ny = from.y + dy;
+    if (isWalkable(tiles, nx, ny) && !occupied.has(k(nx, ny))) return { x: nx, y: ny };
+  }
+  return null;
+}
+
+// Random walkable position in any room
+export function randomFloorPos(tiles, rooms, rng, excluded = new Set()) {
+  for (let attempts = 0; attempts < 200; attempts++) {
+    const room = rooms[Math.floor(rng() * rooms.length)];
+    const x    = room.x + Math.floor(rng() * room.w);
+    const y    = room.y + Math.floor(rng() * room.h);
+    if (isWalkable(tiles, x, y) && !excluded.has(k(x, y))) return { x, y };
+  }
+  return null;
+}
+
 export function hasLOS(tiles, x0, y0, x1, y1) {
   const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1,  sy = y0 < y1 ? 1 : -1;
@@ -74,37 +97,70 @@ export function hasLOS(tiles, x0, y0, x1, y1) {
 }
 
 function itemChar(type) {
-  if (type.startsWith('food'))   return '%';
+  if (type === 'food')           return '%';
   if (type.startsWith('potion')) return '!';
   if (type.startsWith('scroll')) return '?';
   if (type.startsWith('weapon')) return ')';
   if (type.startsWith('armor'))  return ']';
+  if (type.startsWith('ring'))   return '=';
+  if (type.startsWith('wand'))   return '/';
   if (type === 'gold')           return '*';
   return '?';
 }
 
 export function renderMap(state) {
   const { board: { tiles }, units, gameSpecific: gs } = state;
+  const hero = units.find(u => u.type === 'rogue' && u.alive);
+  const seeInvisible = hero && ((hero.attrs.effects?.see_invisible ?? 0) > 0 ||
+                                 hero.attrs.leftRing?.effect  === 'see_invisible' ||
+                                 hero.attrs.rightRing?.effect === 'see_invisible');
+  const blind = hero && (hero.attrs.effects?.blind ?? 0) > 0;
 
-  const posMap  = {};
-  for (const u of units) if (u.alive) posMap[k(u.position.x, u.position.y)] = u;
+  // Build position map; invisible/mimic monsters need special handling
+  const posMap = {};
+  for (const u of units) {
+    if (!u.alive) continue;
+    const ability = u.attrs.specialAbility;
+    const pos     = u.position;
+    const dist    = hero ? manhattan(pos, hero.position) : 999;
+
+    if (ability === 'invisible' && !seeInvisible && dist > 1) continue; // phantoms hidden unless adjacent
+    if (ability === 'mimic' && !u.attrs.revealed) {
+      // Show mimic as the item it's disguising as
+      posMap[k(pos.x, pos.y)] = { ...u, attrs: { ...u.attrs, symbol: u.attrs.mimicChar ?? '?' } };
+      continue;
+    }
+    posMap[k(pos.x, pos.y)] = u;
+  }
 
   const itemMap = {};
-  for (const it of gs.items) if (!it.pickedUp) itemMap[k(it.x, it.y)] = it;
+  for (const it of (gs.items ?? [])) if (!it.pickedUp) itemMap[k(it.x, it.y)] = it;
 
-  const sdK = gs.stairsDown ? k(gs.stairsDown.x, gs.stairsDown.y) : null;
-  const amK = gs.amuletPos && !gs.hasAmulet ? k(gs.amuletPos.x, gs.amuletPos.y) : null;
+  const sdK  = gs.stairsDown ? k(gs.stairsDown.x, gs.stairsDown.y) : null;
+  const suK  = gs.stairsUp   ? k(gs.stairsUp.x,   gs.stairsUp.y)   : null;
+  const amK  = gs.amuletPos && !gs.hasAmulet ? k(gs.amuletPos.x, gs.amuletPos.y) : null;
+
+  // Revealed traps
+  const trapMap = {};
+  for (const tr of (gs.traps ?? [])) {
+    if (!tr.hidden) trapMap[k(tr.x, tr.y)] = tr;
+  }
 
   const rows = [];
   for (let y = 0; y < MAP_H; y++) {
     let row = '';
     for (let x = 0; x < MAP_W; x++) {
       const kk = k(x, y);
-      if (posMap[kk])       row += posMap[kk].attrs.symbol;
-      else if (kk === amK)  row += '"';
-      else if (kk === sdK)  row += '>';
-      else if (itemMap[kk]) row += itemChar(itemMap[kk].type);
-      else                  row += tiles[kk] === '.' ? '.' : '#';
+      if (blind && (!hero || manhattan({ x, y }, hero.position) > 1)) {
+        row += tiles[kk] === '.' ? ' ' : '#';
+      } else if (posMap[kk]) {
+        row += posMap[kk].attrs.symbol;
+      } else if (kk === amK)  { row += '"'; }
+      else if (kk === sdK)    { row += '>'; }
+      else if (kk === suK)    { row += '<'; }
+      else if (itemMap[kk])   { row += itemChar(itemMap[kk].type); }
+      else if (trapMap[kk])   { row += '^'; }
+      else                    { row += tiles[kk] === '.' ? '.' : '#'; }
     }
     rows.push(row);
   }
