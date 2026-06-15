@@ -12,7 +12,7 @@
 
 import { createServer }          from 'node:http';
 import { randomUUID }            from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, readdir, writeFile, mkdir } from 'node:fs/promises';
 import { extname, resolve, sep, dirname } from 'node:path';
 import { fileURLToPath }         from 'node:url';
 
@@ -44,6 +44,7 @@ import { KDiceGame }        from './games/kdice/index.js';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const APPS_DIR = resolve(ROOT_DIR, 'apps');
+const GAMES_DIR = resolve(ROOT_DIR, 'games');
 const SESSIONS_DIR = resolve(ROOT_DIR, 'sessions');
 
 const MIME_TYPES = {
@@ -54,6 +55,10 @@ const MIME_TYPES = {
   '.json': 'application/json',
   '.svg':  'image/svg+xml',
   '.png':  'image/png',
+  '.gif':  'image/gif',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.ico':  'image/x-icon',
 };
 
@@ -85,6 +90,38 @@ async function serveApp(appName, req, res) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not found');
   }
+}
+
+// ---------------------------------------------------------------------------
+// Game image serving — /images/:game/:job → games/:game/images/:job.*
+// ---------------------------------------------------------------------------
+
+function sniffMime(buf) {
+  if (buf[0] === 0x89 && buf[1] === 0x50) return 'image/png';
+  if (buf[0] === 0xFF && buf[1] === 0xD8) return 'image/jpeg';
+  if (buf[0] === 0x47 && buf[1] === 0x49) return 'image/gif';
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[8] === 0x57) return 'image/webp';
+  return null;
+}
+
+async function serveGameImage(gameName, job, res) {
+  const safe = job.replace(/[^a-zA-Z0-9_-]/g, '');
+  const dir = resolve(GAMES_DIR, gameName, 'images');
+  let files;
+  try { files = await readdir(dir); } catch { files = []; }
+  for (const f of files) {
+    const dot = f.lastIndexOf('.');
+    if (dot < 0) continue;
+    if (f.slice(0, dot) === safe) {
+      try {
+        const data = await readFile(resolve(dir, f));
+        const ct = sniffMime(data) ?? MIME_TYPES[f.slice(dot)] ?? 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400' });
+        return res.end(data);
+      } catch {}
+    }
+  }
+  res.writeHead(404); res.end('Not found');
 }
 
 // ---------------------------------------------------------------------------
@@ -293,7 +330,8 @@ async function handleCreateSession(req, res) {
     return { id, name: name ?? id, agent };
   });
 
-  const engine = new GameEngine(entry.game, players, { maxTurns: config.maxTurns ?? 500, ...config });
+  const fogOfWar = config.fog ?? config.fogOfWar ?? false;
+  const engine = new GameEngine(entry.game, players, { maxTurns: config.maxTurns ?? 500, ...config, fogOfWar });
   const id = randomUUID();
   const session = new Session(id, gameName, engine, apiAgents, config.fog ?? config.fogOfWar ?? false);
   sessions.set(id, session);
@@ -401,6 +439,10 @@ const server = createServer(async (req, res) => {
     }
     if (method === 'GET' && parts[0] === 'design')
       return await serveApp('design', req, res);
+
+    // GET /images/:game/:job — serve game images (e.g. /images/ffta/soldier)
+    if (method === 'GET' && parts[0] === 'images' && parts.length === 3)
+      return await serveGameImage(parts[1], parts[2], res);
 
     // GET /games
     if (method === 'GET' && parts[0] === 'games' && parts.length === 1)

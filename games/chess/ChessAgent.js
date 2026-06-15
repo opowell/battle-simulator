@@ -267,17 +267,60 @@ function fogAlphaBeta(board, gs, color, aiColor, depth, alpha, beta) {
   }
 }
 
-function fogSearch(board, gs, color, legalActions) {
-  const opp    = color === 'white' ? 'black' : 'white';
-  const sorted = orderMoves(legalActions, board);
-  let bestScore = -Infinity;
-  let bestMove  = sorted[0];
+// Map a fog move (from the visible board) to the nearest valid full-board legal action.
+// Handles the case where a sliding piece intends to move past a hidden blocking piece.
+function resolveToFullAction(fogMove, fullLegalActions) {
+  if (!fogMove) return fullLegalActions[0];
+  // Direct match by from+to (captures of visible pieces, non-sliding moves, etc.)
+  const exact = fullLegalActions.find(a => a.from === fogMove.from && a.to === fogMove.to);
+  if (exact) return exact;
+
+  // Castling with no exact match — shouldn't happen but fall through to random
+  if (fogMove.type === 'castle') return fullLegalActions[0];
+
+  // Sliding piece overshot a hidden blocker: find farthest reachable square in same direction
+  if (fogMove.from && fogMove.to) {
+    const fromFi = fileIndex(fogMove.from);
+    const fromR  = rankOf(fogMove.from);
+    const dfi    = Math.sign(fileIndex(fogMove.to) - fromFi);
+    const dr     = Math.sign(rankOf(fogMove.to)    - fromR);
+
+    const candidates = fullLegalActions.filter(a => {
+      if (!a.from || !a.to || a.from !== fogMove.from) return false;
+      return Math.sign(fileIndex(a.to) - fromFi) === dfi &&
+             Math.sign(rankOf(a.to)    - fromR)  === dr;
+    });
+
+    if (candidates.length > 0) {
+      return candidates.reduce((best, a) => {
+        const d = Math.max(Math.abs(fileIndex(a.to) - fromFi), Math.abs(rankOf(a.to) - fromR));
+        const bd = Math.max(Math.abs(fileIndex(best.to) - fromFi), Math.abs(rankOf(best.to) - fromR));
+        return d > bd ? a : best;
+      });
+    }
+  }
+
+  return fullLegalActions[0];
+}
+
+function fogSearch(board, gs, color, fullLegalActions) {
+  const opp = color === 'white' ? 'black' : 'white';
+
+  // Generate candidate moves from the VISIBLE board so the AI only considers moves
+  // it can actually see — hidden blocking pieces don't restrict the choice set.
+  const fogMoves  = getAllFogMoves(board, color, gs);
+  const sorted    = orderMoves(fogMoves, board);
+  let bestScore   = -Infinity;
+  let bestFogMove = sorted[0];
 
   for (const m of sorted) {
     const score = fogAlphaBeta(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, color, FOG_DEPTH - 1, -Infinity, Infinity);
-    if (score > bestScore) { bestScore = score; bestMove = m; }
+    if (score > bestScore) { bestScore = score; bestFogMove = m; }
   }
-  return bestMove;
+
+  // The chosen fog move may target a square that a hidden piece is blocking in the real game.
+  // Resolve it to the nearest valid full-board legal action before returning.
+  return resolveToFullAction(bestFogMove, fullLegalActions);
 }
 
 // ---------------------------------------------------------------------------
