@@ -460,6 +460,7 @@ function getActionDuration(_state, action) {
 
 export const RiskGame = {
   name: 'Risk',
+  ui: { showUnitInfo: false },
   scenarios: [
     { id: 'world-domination', name: 'World Domination', description: 'Classic 42-territory world map — conquer all to win', config: {} },
   ],

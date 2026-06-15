@@ -183,8 +183,12 @@ function tokenBorderRadius(u) {
                  border:       '2px solid ' + u.teamObj.raw,
                  boxShadow:    '0 0 0 1px ' + rdr.tokenRing + ', 0 4px 8px -2px ' + rdr.tokenShadow,
                  opacity:      u.dead ? 0.45 : 1,
+                 overflow:     'hidden',
                }">
-            <span v-if="!u.dead"
+            <img v-if="!u.dead && u.imagePath"
+                 :src="u.imagePath" :alt="u.name"
+                 style="width:90%;height:90%;object-fit:contain;image-rendering:pixelated;pointer-events:none"/>
+            <span v-else-if="!u.dead"
                   style="font-size:11px;font-weight:700;line-height:1;user-select:none"
                   :style="{color: u.teamObj.raw, fontFamily: rdr.font}">
               {{unitInitials(u)}}

@@ -11,6 +11,7 @@ export const ELEM_RESIST = RACE_ELEM_RESIST;
 export const JOB_DEFS = {
   soldier: {
     race: 'human',
+    description: 'Front-line Human warrior trained in swords and shields. Counters enemy strikes and can shred enemy armor with Rend Armor.',
     stats: { hp: 28, mp: 10, atk: 10, def: 8, mag: 4, res: 4, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'shieldbearer', 'rend-armor'],
@@ -20,6 +21,7 @@ export const JOB_DEFS = {
   },
   whiteMage: {
     race: 'human',
+    description: 'Devoted Human healer channeling holy magic. Sustains allies with Cure and bolsters their defenses with Protect.',
     stats: { hp: 20, mp: 30, atk: 5, def: 5, mag: 9, res: 10, spd: 6 },
     moveRange: 3,
     abilities: ['attack', 'cure', 'protect'],
@@ -29,6 +31,7 @@ export const JOB_DEFS = {
   },
   blackMage: {
     race: 'nu-mou',
+    description: 'Nu Mou wielder of destructive elemental magic. Annihilates foes with Fire, Thunder, and Blizzard spells at the cost of low defenses.',
     stats: { hp: 16, mp: 40, atk: 4, def: 4, mag: 12, res: 8, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'fire', 'thunder', 'blizzard'],
@@ -38,6 +41,7 @@ export const JOB_DEFS = {
   },
   archer: {
     race: 'viera',
+    description: 'Swift Viera archer who strikes from distance. Can blind targets to reduce their accuracy and uses Aim to guarantee hits.',
     stats: { hp: 22, mp: 12, atk: 9, def: 5, mag: 6, res: 6, spd: 9 },
     moveRange: 4,
     abilities: ['attack', 'aim', 'blind'],
@@ -47,6 +51,7 @@ export const JOB_DEFS = {
   },
   thief: {
     race: 'human',
+    description: 'Nimble Human with lightning-fast hands and exceptional speed. Steals items from enemies and mugs them for both damage and Gil.',
     stats: { hp: 20, mp: 16, atk: 8, def: 5, mag: 5, res: 5, spd: 11 },
     moveRange: 4,
     abilities: ['attack', 'steal', 'mug'],
@@ -56,6 +61,7 @@ export const JOB_DEFS = {
   },
   fighter: {
     race: 'bangaa',
+    description: 'Mighty Bangaa warrior built for raw combat. Powerbreak weakens enemy attacks while Shatter destroys their armor outright.',
     stats: { hp: 32, mp: 8, atk: 13, def: 9, mag: 3, res: 3, spd: 6 },
     moveRange: 3,
     abilities: ['attack', 'powerbreak', 'shatter'],
@@ -65,6 +71,7 @@ export const JOB_DEFS = {
   },
   paladin: {
     race: 'human',
+    description: 'Holy Human knight combining sword and white magic. Strikes with Holy Blade and absorbs HP from attacks received.',
     stats: { hp: 30, mp: 16, atk: 10, def: 11, mag: 7, res: 8, spd: 6 },
     moveRange: 3,
     abilities: ['attack', 'holy-blade', 'shieldbearer'],
@@ -74,6 +81,7 @@ export const JOB_DEFS = {
   },
   ninja: {
     race: 'human',
+    description: 'The fastest unit on the field. This Human speedster dual-wields blades and uses Shadowstitch to pin enemies in place.',
     stats: { hp: 18, mp: 16, atk: 12, def: 4, mag: 5, res: 4, spd: 13 },
     moveRange: 4,
     abilities: ['attack', 'throw', 'shadowstitch'],
@@ -83,6 +91,7 @@ export const JOB_DEFS = {
   },
   dragoon: {
     race: 'bangaa',
+    description: 'Bangaa lancer who leaps across the battlefield to strike from above. Jump attacks bypass terrain and deal devastating aerial damage.',
     stats: { hp: 34, mp: 8, atk: 14, def: 8, mag: 3, res: 3, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'jump'],
@@ -92,6 +101,7 @@ export const JOB_DEFS = {
   },
   elementalist: {
     race: 'viera',
+    description: 'Viera mage attuned to the forces of nature. Controls Flood and Gust to hinder movement and deal magic damage to groups.',
     stats: { hp: 18, mp: 36, atk: 4, def: 4, mag: 10, res: 9, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'flood', 'gust'],
@@ -101,6 +111,7 @@ export const JOB_DEFS = {
   },
   redMage: {
     race: 'viera',
+    description: 'Versatile Viera mage who blends sword and sorcery. Capable of both offensive Fire magic and restorative Cure spells.',
     stats: { hp: 22, mp: 28, atk: 8, def: 5, mag: 8, res: 7, spd: 8 },
     moveRange: 3,
     abilities: ['attack', 'fire', 'cure'],
@@ -110,6 +121,7 @@ export const JOB_DEFS = {
   },
   timeMage: {
     race: 'nu-mou',
+    description: 'Nu Mou master of temporal manipulation. Slows enemies and hastens allies to seize control of the turn order.',
     stats: { hp: 14, mp: 38, atk: 3, def: 3, mag: 11, res: 9, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'slow', 'haste'],
@@ -119,6 +131,7 @@ export const JOB_DEFS = {
   },
   summoner: {
     race: 'nu-mou',
+    description: 'Nu Mou who calls forth powerful Eidolons to devastate entire areas. The highest magical damage output at the cost of poor mobility.',
     stats: { hp: 14, mp: 44, atk: 3, def: 3, mag: 13, res: 8, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'eidolon'],
@@ -128,6 +141,7 @@ export const JOB_DEFS = {
   },
   illusionist: {
     race: 'human',
+    description: 'Human mage who bends light and reality. Phantasm spells strike all enemies simultaneously, ignoring position and range.',
     stats: { hp: 16, mp: 40, atk: 4, def: 4, mag: 12, res: 7, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'phantasm'],
@@ -137,6 +151,7 @@ export const JOB_DEFS = {
   },
   assassin: {
     race: 'viera',
+    description: 'Deadly Viera with secret arts of elimination. Rockseal can petrify a target outright, removing them from battle indefinitely.',
     stats: { hp: 20, mp: 14, atk: 11, def: 5, mag: 6, res: 5, spd: 12 },
     moveRange: 4,
     abilities: ['attack', 'rockseal'],
@@ -148,6 +163,7 @@ export const JOB_DEFS = {
   // ── Bangaa ────────────────────────────────────────────────────────────────
   warrior: {
     race: 'bangaa',
+    description: 'Towering Bangaa with immense raw power. Bashes adjacent foes and unleashes Battle Cry to deal area damage to all nearby enemies.',
     stats: { hp: 38, mp: 6, atk: 15, def: 11, mag: 2, res: 2, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'bash', 'battle-cry'],
@@ -157,6 +173,7 @@ export const JOB_DEFS = {
   },
   whiteMonk: {
     race: 'bangaa',
+    description: 'Martial artist Bangaa who combines unarmed combat with spiritual healing. Restores own HP with Chakra and cleaves entire rows with Air Render.',
     stats: { hp: 32, mp: 16, atk: 13, def: 8, mag: 5, res: 7, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'chakra', 'air-render'],
@@ -166,6 +183,7 @@ export const JOB_DEFS = {
   },
   bishop: {
     race: 'bangaa',
+    description: 'Scholarly Bangaa healer and exorcist. Casts Holy and Cura to restore allies, and Esuna to cleanse status ailments.',
     stats: { hp: 22, mp: 32, atk: 5, def: 5, mag: 9, res: 11, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'holy', 'cura', 'esuna'],
@@ -175,6 +193,7 @@ export const JOB_DEFS = {
   },
   templar: {
     race: 'bangaa',
+    description: 'Armored Bangaa combining sword and holy magic. Magic Hammer drains enemy MP while Saint Cross deals heavy damage to all in a cross pattern.',
     stats: { hp: 40, mp: 14, atk: 12, def: 13, mag: 6, res: 9, spd: 5 },
     moveRange: 3,
     abilities: ['attack', 'magic-hammer', 'saint-cross'],
@@ -186,6 +205,7 @@ export const JOB_DEFS = {
   // ── Nu Mou ────────────────────────────────────────────────────────────────
   alchemist: {
     race: 'nu-mou',
+    description: 'Nu Mou chemist who carries a full medicine cabinet into battle. Uses Potions, Hi-Potions, Ethers, Phoenix Downs, and Antidotes on allies at range.',
     stats: { hp: 16, mp: 36, atk: 3, def: 4, mag: 10, res: 10, spd: 6 },
     moveRange: 3,
     abilities: ['attack', 'potion', 'hi-potion', 'ether', 'phoenix-down', 'antidote'],
@@ -195,6 +215,7 @@ export const JOB_DEFS = {
   },
   morpher: {
     race: 'nu-mou',
+    description: 'Nu Mou shapeshifter who channels the power of beasts. Calls wild animals to aid allies or unleash Wild Boar charges on enemies.',
     stats: { hp: 20, mp: 28, atk: 7, def: 6, mag: 8, res: 7, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'call-beast', 'wild-boar'],
@@ -206,6 +227,7 @@ export const JOB_DEFS = {
   // ── Viera ─────────────────────────────────────────────────────────────────
   fencer: {
     race: 'viera',
+    description: 'Agile Viera duelist with exceptional footwork. Lunge closes gaps across multiple tiles, while Feather Blow strips enemy buffs.',
     stats: { hp: 20, mp: 20, atk: 10, def: 5, mag: 7, res: 6, spd: 10 },
     moveRange: 4,
     abilities: ['attack', 'lunge', 'feather-blow'],
@@ -215,6 +237,7 @@ export const JOB_DEFS = {
   },
   sniper: {
     race: 'viera',
+    description: 'Expert Viera marksman with lethal long-range precision. Long Range ignores distance penalties and Last Breath can instantly KO weakened foes.',
     stats: { hp: 22, mp: 10, atk: 12, def: 5, mag: 5, res: 5, spd: 9 },
     moveRange: 3,
     abilities: ['attack', 'long-range', 'last-breath'],
@@ -226,6 +249,7 @@ export const JOB_DEFS = {
   // ── Human ─────────────────────────────────────────────────────────────────
   blueMage: {
     race: 'human',
+    description: 'Human student of monster arts who copies enemy techniques. Wields Bad Breath, Aqua Breath, and Magic Hammer learned from fallen foes.',
     stats: { hp: 20, mp: 32, atk: 6, def: 5, mag: 9, res: 7, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'bad-breath', 'aqua-breath', 'magic-hammer'],
@@ -235,6 +259,7 @@ export const JOB_DEFS = {
   },
   hunter: {
     race: 'human',
+    description: 'Tracking Human who specializes in beast slaying. Nets enemies in place to prevent movement and hunts for bonus damage against weakened prey.',
     stats: { hp: 24, mp: 12, atk: 11, def: 7, mag: 5, res: 5, spd: 9 },
     moveRange: 4,
     abilities: ['attack', 'aim-plus', 'net', 'hunt'],
@@ -246,6 +271,7 @@ export const JOB_DEFS = {
   // ── Moogle ────────────────────────────────────────────────────────────────
   mogKnight: {
     race: 'moogle',
+    description: 'Brave Moogle warrior with a signature lance. Charges with Mog Attack for single-target damage or unleashes Mog Rush on groups of enemies.',
     stats: { hp: 28, mp: 14, atk: 12, def: 8, mag: 5, res: 5, spd: 7 },
     moveRange: 3,
     abilities: ['attack', 'mog-attack', 'mog-rush'],
@@ -255,6 +281,7 @@ export const JOB_DEFS = {
   },
   juggler: {
     race: 'moogle',
+    description: 'Dexterous Moogle entertainer-turned-fighter. Tosses items at allies or enemies and lifts party morale with Smile to grant free turns.',
     stats: { hp: 18, mp: 20, atk: 9, def: 4, mag: 6, res: 5, spd: 10 },
     moveRange: 4,
     abilities: ['attack', 'toss-item', 'smile', 'eye-drops'],
@@ -264,6 +291,7 @@ export const JOB_DEFS = {
   },
   animist: {
     race: 'moogle',
+    description: 'Moogle friend of all creatures. Summons Chocobos to rush through enemy lines and uses Moogle Eye to confuse or Sheep Count to put foes to sleep.',
     stats: { hp: 20, mp: 24, atk: 6, def: 5, mag: 8, res: 7, spd: 8 },
     moveRange: 3,
     abilities: ['attack', 'chocobo-rush', 'moogle-eye', 'sheep-count'],
@@ -273,6 +301,7 @@ export const JOB_DEFS = {
   },
   gunner: {
     race: 'moogle',
+    description: 'Moogle firearms specialist with mid-range power. Burst Shot hits multiple targets, Fireshot deals fire damage, and Sootshot inflicts stop.',
     stats: { hp: 20, mp: 12, atk: 10, def: 4, mag: 5, res: 4, spd: 9 },
     moveRange: 3,
     abilities: ['attack', 'burst-shot', 'fireshot', 'sootshot'],

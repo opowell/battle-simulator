@@ -93,7 +93,7 @@ async function serveApp(appName, req, res) {
 }
 
 // ---------------------------------------------------------------------------
-// Game image serving — /images/:game/:job → games/:game/images/:job.*
+// Game image serving — /images/:game/:job[/:type] → games/:game/images/…
 // ---------------------------------------------------------------------------
 
 function sniffMime(buf) {
@@ -104,8 +104,37 @@ function sniffMime(buf) {
   return null;
 }
 
-async function serveGameImage(gameName, job, res) {
+// GIF preferred over PNG/JPG for animated sprites.
+const TYPE_EXT_PREF = { gif: 0, png: 1, jpg: 2, jpeg: 2, webp: 3 };
+
+async function serveGameImage(gameName, job, res, type) {
   const safe = job.replace(/[^a-zA-Z0-9_-]/g, '');
+
+  // /images/:game/:job/:type  →  games/:game/images/:job/{type}*
+  if (type) {
+    const safeType = type.replace(/[^a-zA-Z0-9_-]/g, '');
+    const subdir = resolve(GAMES_DIR, gameName, 'images', safe);
+    let files;
+    try { files = await readdir(subdir); } catch { files = []; }
+    // collect candidates whose stem starts with safeType
+    const candidates = files
+      .map(f => { const dot = f.lastIndexOf('.'); return dot < 0 ? null : { f, ext: f.slice(dot + 1).toLowerCase() }; })
+      .filter(x => x && f_stem(x.f).startsWith(safeType))
+      .sort((a, b) => (TYPE_EXT_PREF[a.ext] ?? 99) - (TYPE_EXT_PREF[b.ext] ?? 99));
+    for (const { f } of candidates) {
+      try {
+        const data = await readFile(resolve(subdir, f));
+        const ext = f.slice(f.lastIndexOf('.'));
+        const ct = sniffMime(data) ?? MIME_TYPES[ext] ?? 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400' });
+        return res.end(data);
+      } catch {}
+    }
+    res.writeHead(404); res.end('Not found');
+    return;
+  }
+
+  // /images/:game/:job  →  games/:game/images/:job.*  (flat file)
   const dir = resolve(GAMES_DIR, gameName, 'images');
   let files;
   try { files = await readdir(dir); } catch { files = []; }
@@ -123,6 +152,8 @@ async function serveGameImage(gameName, job, res) {
   }
   res.writeHead(404); res.end('Not found');
 }
+
+function f_stem(f) { const dot = f.lastIndexOf('.'); return dot < 0 ? f : f.slice(0, dot); }
 
 // ---------------------------------------------------------------------------
 // Game registry
@@ -180,7 +211,7 @@ class Session {
       this.engine._init();
       while (this.status === 'active') {
         const { done } = await this.engine.step();
-        await this._persistLog();
+        this._persistLog();
         if (done) {
           this.status = 'done';
           this.result = this.engine.result;
@@ -440,9 +471,9 @@ const server = createServer(async (req, res) => {
     if (method === 'GET' && parts[0] === 'design')
       return await serveApp('design', req, res);
 
-    // GET /images/:game/:job — serve game images (e.g. /images/ffta/soldier)
-    if (method === 'GET' && parts[0] === 'images' && parts.length === 3)
-      return await serveGameImage(parts[1], parts[2], res);
+    // GET /images/:game/:job[/:type] — serve game images (e.g. /images/ffta/soldier/sprite)
+    if (method === 'GET' && parts[0] === 'images' && (parts.length === 3 || parts.length === 4))
+      return await serveGameImage(parts[1], parts[2], res, parts[3]);
 
     // GET /games
     if (method === 'GET' && parts[0] === 'games' && parts.length === 1)
