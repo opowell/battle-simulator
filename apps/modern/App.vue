@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import { BattleSimClient } from '@battle-sim/api-client';
 
 const ACCENT_PRESETS = [
@@ -44,6 +44,7 @@ const sessions = ref([]);
 const pendingGame = ref(null);
 const pendingPlayers = ref([]);
 const pendingScenario = ref(null);
+const pendingOptions = ref({});
 const session = ref(null);
 const players = ref([]);
 const myPlayerId = ref(null);
@@ -54,6 +55,7 @@ let pollTimer = null;
 const selectedUnitId = ref(null);
 const animCells = ref({});   // "x,y" → { flash: 'hit'|'heal' }
 const movingSprite = ref(null); // { unitId, glyph, color, shadow, path, step }
+const failedImages = reactive({}); // imagePath → true when load failed
 let spriteTimer = null;
 
 function buildMovePath(from, to) {
@@ -316,6 +318,9 @@ function selectGame(name) {
   pendingGame.value = game;
   pendingPlayers.value = game.defaultPlayers.map((p, i) => ({ ...p, agent: i === 0 ? 'human' : 'random' }));
   pendingScenario.value = game.scenarios?.[0] ?? null;
+  const opts = {};
+  for (const opt of game.gameOptions ?? []) opts[opt.id] = opt.default ?? false;
+  pendingOptions.value = opts;
   screen.value = 'configure';
 }
 
@@ -329,7 +334,7 @@ async function launchGame() {
     const { name } = pendingGame.value;
     const pls = pendingPlayers.value;
     players.value = pls;
-    const config = pendingScenario.value?.config ?? {};
+    const config = { ...(pendingScenario.value?.config ?? {}), ...pendingOptions.value };
     session.value = await client.createSession(name, pls, config);
     const firstHuman = pls.find(p => p.agent === 'human');
     myPlayerId.value = firstHuman?.id ?? null;
@@ -337,6 +342,7 @@ async function launchGame() {
     pendingGame.value = null;
     pendingPlayers.value = [];
     pendingScenario.value = null;
+    pendingOptions.value = {};
     screen.value = 'session';
     actionSearch.value = '';
     startPolling();
@@ -507,6 +513,33 @@ onUnmounted(() => clearInterval(pollTimer));
             </button>
           </div>
         </div>
+        <div v-if="pendingGame.gameOptions?.length" class="config-options">
+          <h3 class="config-section-label">Options</h3>
+          <div v-for="opt in pendingGame.gameOptions" :key="opt.id" class="config-option-row">
+            <div class="config-option-info">
+              <span class="config-option-label">{{ opt.label }}</span>
+              <span v-if="opt.description" class="config-option-desc">{{ opt.description }}</span>
+            </div>
+            <template v-if="opt.type === 'boolean'">
+              <button :class="['option-toggle', pendingOptions[opt.id] ? 'on' : 'off']"
+                @click="pendingOptions[opt.id] = !pendingOptions[opt.id]">
+                {{ pendingOptions[opt.id] ? 'On' : 'Off' }}
+              </button>
+            </template>
+            <template v-else-if="opt.type === 'integer'">
+              <input class="option-int-input" type="number"
+                :min="opt.min" :max="opt.max" :step="opt.step ?? 1"
+                :value="pendingOptions[opt.id]"
+                @input="pendingOptions[opt.id] = parseInt($event.target.value) || opt.default" />
+            </template>
+            <template v-else-if="opt.type === 'select'">
+              <select class="option-select" :value="pendingOptions[opt.id]"
+                @change="pendingOptions[opt.id] = $event.target.value">
+                <option v-for="choice in opt.choices" :key="choice.value" :value="choice.value">{{ choice.label }}</option>
+              </select>
+            </template>
+          </div>
+        </div>
         <div v-if="humanCount > 1" class="mp-notice">
           Multiplayer mode — you'll get a shareable link for each other player.
         </div>
@@ -594,11 +627,17 @@ onUnmounted(() => clearInterval(pollTimer));
                 <div v-for="c in row" :key="c.x" class="board-cell"
                   :style="cellStyle(c, gridView.cellSize, gridView.fontSize)"
                   :class="{ 'cell-active': c.isActive, 'cell-selected': c.unitId && c.unitId === selectedUnitId && !c.isActive }"
-                  @click="if (c.unitId) selectedUnitId = c.unitId">
+                  @click="c.unitId && (selectedUnitId = c.unitId)">
                   <div v-if="overlayMap[`${c.x},${c.y}`]" class="cell-overlay"
                     :class="overlayMap[`${c.x},${c.y}`] === 'move' ? 'overlay-move' : 'overlay-ability'"/>
-                  <span v-if="(c.emoji ?? c.glyph) && movingSprite?.unitId !== c.unitId"
-                    style="pointer-events:none; position:relative; z-index:1">{{ c.emoji ?? c.glyph }}</span>
+                  <template v-if="movingSprite?.unitId !== c.unitId">
+                    <img v-if="c.imagePath && !failedImages[c.imagePath]"
+                      :src="c.imagePath" :alt="c.glyph ?? ''"
+                      class="cell-unit-img"
+                      @error="failedImages[c.imagePath] = true" />
+                    <span v-else-if="c.emoji ?? c.glyph"
+                      style="pointer-events:none; position:relative; z-index:1">{{ c.emoji ?? c.glyph }}</span>
+                  </template>
                   <div v-if="animCells[`${c.x},${c.y}`]?.flash"
                     class="cell-flash-overlay"
                     :class="`cell-flash-${animCells[`${c.x},${c.y}`].flash}`"/>
@@ -632,6 +671,11 @@ onUnmounted(() => clearInterval(pollTimer));
             <div class="card-title unit-card-title">
               {{ selectedCell.unitName }}
               <span v-if="selectedCell.isActive" class="active-badge">▶ Active</span>
+            </div>
+            <div v-if="selectedCell.imagePath && !failedImages[selectedCell.imagePath]" class="unit-portrait-wrap">
+              <img :src="selectedCell.imagePath" :alt="selectedCell.unitName"
+                class="unit-portrait"
+                @error="failedImages[selectedCell.imagePath] = true" />
             </div>
             <div class="unit-info-panel">
               <div class="unit-resource-row">
@@ -726,10 +770,60 @@ onUnmounted(() => clearInterval(pollTimer));
 </template>
 
 <style scoped>
+/* Game options */
+.config-options { margin-top: 16px; }
+.config-option-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.config-option-row:last-child { border-bottom: none; }
+.config-option-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.config-option-label { font-size: 0.88em; font-weight: 600; color: var(--text); }
+.config-option-desc  { font-size: 0.75em; color: var(--muted); }
+.option-toggle {
+  flex-shrink: 0; min-width: 48px; padding: 3px 10px;
+  border-radius: 12px; border: 1px solid transparent;
+  font-size: 0.8em; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.option-toggle.on  { background: var(--accent); color: #fff; border-color: var(--accent); }
+.option-toggle.off { background: var(--surface-2); color: var(--muted); border-color: var(--border); }
+.option-int-input {
+  width: 80px; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); font-size: 0.85em; text-align: right;
+}
+.option-select {
+  padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text); font-size: 0.85em;
+}
+
 /* Board cell states */
 .board-cell { cursor: pointer; }
 .cell-active   { box-shadow: inset 0 0 0 2px #facc15; }
 .cell-selected { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.7); }
+
+/* Unit images in board cells */
+.cell-unit-img {
+  width: 82%; height: 82%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+  position: relative; z-index: 1;
+}
+
+/* Unit portrait in side panel */
+.unit-portrait-wrap {
+  display: flex; justify-content: center;
+  padding: 6px 0 2px;
+}
+.unit-portrait {
+  width: 80px; height: 80px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border-radius: 4px;
+}
 
 /* Range overlays */
 .cell-overlay {

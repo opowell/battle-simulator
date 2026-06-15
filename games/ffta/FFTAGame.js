@@ -833,6 +833,7 @@ export const FFTAGame = {
           hp: u?.hp, maxHp: u?.maxHp,
           unitId:        u?.id,
           unitName:      u ? JOB_LABELS[u.job] ?? u.job : null,
+          imagePath:     u ? `/images/ffta/${u.job}` : null,
           mp:            u?.mp,    maxMp: u?.maxMp,
           stats:         u?.stats  ? { ...u.stats } : null,
           abilities:     u?.abilities ? u.abilities.map(k => ({ key: k, name: ABILITIES[k]?.name ?? k })) : null,
