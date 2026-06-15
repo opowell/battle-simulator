@@ -1,2 +1,1 @@
-- do not show unit health bars.
 - available moves not shown on board when unit is selected/active.

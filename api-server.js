@@ -255,6 +255,7 @@ async function handleGames(res) {
     maxPlayers,
     scenarios: game.scenarios ?? [],
     gameOptions: game.gameOptions ?? [],
+    ui: game.ui ?? {},
     agents: [...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n }) => ({ id, name: n }))],
   })));
 }

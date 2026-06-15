@@ -12,15 +12,23 @@ function createScenario(players) {
   const id = () => `u${n++}`;
   return [
     // Allies (US) — deploy in northern half (y 1–6)
-    createUnit(id(), 'rifle-squad', allied.id, { x:  1, y:  2 }),
-    createUnit(id(), 'rifle-squad', allied.id, { x:  8, y:  1 }),
-    createUnit(id(), 'mg-team',     allied.id, { x:  1, y:  4 }),
-    createUnit(id(), 'sherman',     allied.id, { x:  9, y:  5 }),
+    createUnit(id(), 'rifle-squad',  allied.id, { x:  1, y:  2 }),
+    createUnit(id(), 'rifle-squad',  allied.id, { x:  8, y:  1 }),
+    createUnit(id(), 'mg-team',      allied.id, { x:  1, y:  4 }),
+    createUnit(id(), 'sniper',       allied.id, { x:  5, y:  1 }),
+    createUnit(id(), 'bazooka-team', allied.id, { x:  3, y:  3 }),
+    createUnit(id(), 'mortar-team',  allied.id, { x:  2, y:  6 }),
+    createUnit(id(), 'sherman',      allied.id, { x:  9, y:  5 }),
+    createUnit(id(), 'stuart',       allied.id, { x: 14, y:  4 }),
     // Axis (German) — deploy in southern half (y 8–14)
-    createUnit(id(), 'volks-squad', axis.id,   { x:  1, y: 14 }),
-    createUnit(id(), 'volks-squad', axis.id,   { x: 11, y: 14 }),
-    createUnit(id(), 'mg42-team',   axis.id,   { x: 18, y: 10 }),
-    createUnit(id(), 'tiger',       axis.id,   { x: 11, y:  9 }),
+    createUnit(id(), 'volks-squad',   axis.id,  { x:  1, y: 14 }),
+    createUnit(id(), 'volks-squad',   axis.id,  { x: 11, y: 14 }),
+    createUnit(id(), 'mg42-team',     axis.id,  { x: 18, y: 10 }),
+    createUnit(id(), 'german-sniper', axis.id,  { x: 14, y: 14 }),
+    createUnit(id(), 'panzerschreck', axis.id,  { x: 16, y: 11 }),
+    createUnit(id(), 'mortar-ger',    axis.id,  { x: 17, y: 13 }),
+    createUnit(id(), 'panzer-iv',     axis.id,  { x:  5, y: 12 }),
+    createUnit(id(), 'tiger',         axis.id,  { x: 11, y:  9 }),
   ];
 }
 
@@ -169,7 +177,7 @@ function renderState(state) {
   return [
     `═══ Turn ${turnNumber} — ${activePlayers[0]} ═══`,
     renderMap(state.board, units),
-    `Legend: R=Rifle G=MG S=Sherman  |  V=Volks M=MG42 K=Tiger  |  w=hedge T=trees r=road #=building`,
+    `Legend: R=Rifle G=MG N=Sniper Z=Bazooka O=Mortar S=Sherman U=Stuart  |  V=Volks M=MG42 X=GSniper P=Pzschreck Q=GMortar F=PanzerIV K=Tiger  |  w=hedge T=trees r=road #=building`,
     '',
     summarize(players[0].id),
     summarize(players[1].id),

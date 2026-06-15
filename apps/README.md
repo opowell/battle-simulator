@@ -1,0 +1,1 @@
+Nothing game-specific belongs in the UI, has to be strictly generic.

@@ -1,4 +1,4 @@
-import { isKingInCheck, renderBoard, getVisibleSquares, squareToXY } from './board.js';
+import { isKingInCheck, renderBoard, getVisibleSquares, squareToXY, squareToGrid } from './board.js';
 import { getAllLegalMoves, getAllFogMoves } from './moves.js';
 import { ChessAgent } from './ChessAgent.js';
 
@@ -80,6 +80,13 @@ export const ChessGame = {
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
   ],
+  ui: {
+    freeSelection: true,    // any piece can be moved; UI should not pre-pick the "active" unit
+    showHpBars:   false,    // pieces don't have HP bars
+    showFacing:   false,    // pieces have no facing direction
+    gridFog:      true,     // fog of war is square-grid based (not radial blob)
+    unitShapes: { king: 'circle', queen: 'circle', rook: 'square', bishop: 'triangle', knight: 'triangle', pawn: 'circle' },
+  },
 
   createInitialState(players, config = {}) {
     const board = initialBoard();
@@ -106,10 +113,15 @@ export const ChessGame = {
   },
 
   getLegalActions(state, playerId) {
-    if (state.gameSpecific.fogOfWar) {
-      return getAllFogMoves(state.board, playerId, state.gameSpecific);
-    }
-    return getAllLegalMoves(state.board, playerId, state.gameSpecific);
+    const moves = state.gameSpecific.fogOfWar
+      ? getAllFogMoves(state.board, playerId, state.gameSpecific)
+      : getAllLegalMoves(state.board, playerId, state.gameSpecific);
+    // Annotate with display-grid coordinates so the UI works generically without parsing algebraic notation.
+    return moves.map(a => ({
+      ...a,
+      gridFrom: a.from ? squareToGrid(a.from) : undefined,
+      gridTo:   a.to   ? squareToGrid(a.to)   : undefined,
+    }));
   },
 
   applyActions(state, playerActions) {
@@ -260,6 +272,7 @@ export const ChessGame = {
           glyph: piece ? (SYMS[piece.type] ?? piece.type[0].toUpperCase()) : '',
           owner: piece ? (pidIdx[piece.ownerId] ?? 0) : 0,
           color: this.colors[sq] ?? '#808070',
+          unitId: piece?.id,
         });
       }
     }

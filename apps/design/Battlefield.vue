@@ -37,6 +37,9 @@ function updateStageSize() {
 // ── renderer palette ──────────────────────────────────────────
 const rdr = computed(() => RDR[props.theme] || RDR.military);
 
+// ── game UI flags (provided by the game definition, generic) ──
+const ui = computed(() => props.field.ui ?? {});
+
 // ── world → screen transform ──────────────────────────────────
 const fit = computed(() => makeFitter(props.field.world, { w: stageW.value, h: stageH.value }, 24));
 
@@ -54,16 +57,25 @@ const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
 // ── move highlights ────────────────────────────────────────────
 const displayUnits = units;
 
+// Actions carry gridTo/gridFrom when the game populates them; otherwise fall back to {x,y}.
+function actionGridCoord(action, field) {
+  if (field === 'to')   return action.gridTo   ?? (action.to?.x   != null ? [action.to.x,   action.to.y]   : null);
+  if (field === 'from') return action.gridFrom ?? (action.from?.x != null ? [action.from.x, action.from.y] : null);
+  return null;
+}
+
 const unitMoves = computed(() => {
   if (!isPending.value || !selectedId.value) return [];
   return legalActions.value
-    .filter(a => a.type === 'move' && a.unitId === selectedId.value)
-    .map(a => [a.to.x, a.to.y]);
+    .filter(a => a.unitId === selectedId.value)
+    .map(a => actionGridCoord(a, 'to'))
+    .filter(Boolean);
 });
 
-// The unit whose turn it is (first unitId seen in legalActions)
+// freeSelection: any unit can move; no pre-determined active unit (e.g. chess).
 const activeUnitId = computed(() => {
   if (!isPending.value) return null;
+  if (ui.value.freeSelection) return null;
   return legalActions.value.find(a => a.unitId)?.unitId ?? null;
 });
 
@@ -73,9 +85,11 @@ watch(activeUnitId, (id) => {
 
 function handleSqClick(col, row) {
   if (isPending.value && selectedId.value) {
-    const action = legalActions.value.find(
-      a => a.type === 'move' && a.unitId === selectedId.value && a.to?.x === col && a.to?.y === row
-    );
+    const action = legalActions.value.find(a => {
+      if (a.unitId !== selectedId.value) return false;
+      const coords = actionGridCoord(a, 'to');
+      return coords && coords[0] === col && coords[1] === row;
+    });
     if (action) { submitAction(action); return; }
   }
   selectedId.value = null;
@@ -94,6 +108,10 @@ const rosterTeams = computed(() =>
 
 
 const displayedActions = computed(() => {
+  if (ui.value.freeSelection) {
+    // Free-selection games: show only non-move actions for the selected unit (moves are shown as highlights).
+    return legalActions.value.filter(a => a.unitId === selectedId.value && !actionGridCoord(a, 'to'));
+  }
   if (unitMoves.value.length > 0)
     return legalActions.value.filter(a => a.type !== 'move');
   return legalActions.value;
@@ -266,8 +284,8 @@ onUnmounted(() => {
               : 'Game over'}}
           </div>
 
-          <!-- Human's turn, active unit selected -->
-          <template v-else-if="isPending && selectedId === activeUnitId">
+          <!-- Human's turn with a unit selected (freeSelection: any piece; otherwise: must be the active unit) -->
+          <template v-else-if="isPending && selectedId && (ui.freeSelection || selectedId === activeUnitId)">
             <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
               Choose action for
               <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
@@ -288,16 +306,35 @@ onUnmounted(() => {
               </div>
             </div>
           </template>
-          <!-- Human's turn, non-active unit selected -->
+          <!-- Human's turn, no unit selected -->
           <template v-else-if="isPending">
             <div style="font-size:11px;color:var(--dim)">
-              Click the <b style="color:var(--accent)">active unit</b> on the board to see actions.
+              Click the <b style="color:var(--accent)">{{ui.freeSelection ? 'a piece' : 'active unit'}}</b> on the board to see actions.
             </div>
           </template>
 
           <!-- AI's turn -->
           <div v-else style="font-size:12px;color:var(--warn)">
             Waiting for AI…
+          </div>
+        </div>
+
+        <!-- Game log -->
+        <div v-if="isLive" style="border-bottom:1px solid var(--line);display:flex;flex-direction:column;max-height:200px">
+          <div class="panel-t" style="padding:7px 14px;flex-shrink:0">Log</div>
+          <div style="overflow-y:auto;flex:1">
+            <div v-if="!liveState.log?.length" style="padding:4px 14px 8px;font-size:11px;color:var(--faint)">
+              No moves yet.
+            </div>
+            <div v-for="entry in [...(liveState.log ?? [])].reverse()" :key="entry.turnNumber"
+                 style="padding:3px 14px;border-bottom:1px solid var(--line);font-size:11px">
+              <span class="mono" style="font-size:9px;color:var(--faint);margin-right:6px">T{{entry.turnNumber}}</span>
+              <span v-for="(pa, i) in entry.playerActions" :key="i"
+                    style="display:inline;margin-right:8px">
+                <b :style="{color:'var(--accent)'}">{{pa.playerId}}</b>
+                {{ fmtAction(pa.action) }}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -323,7 +360,7 @@ onUnmounted(() => {
           <template v-else>
 
             <!-- HP bar -->
-            <template v-if="selectedUnit.hpMax != null">
+            <template v-if="selectedUnit.hpMax != null && field.ui?.showHpBars !== false">
               <div style="display:flex;justify-content:space-between;margin-bottom:3px">
                 <span style="font-size:10px;color:var(--dim)">HP</span>
                 <span class="mono" style="font-size:10px">
@@ -427,7 +464,7 @@ onUnmounted(() => {
                 {{u.name}}
               </span>
               <span class="mono" style="font-size:9px;color:var(--faint)">{{u.id}}</span>
-              <div v-if="!u.dead && u.hpMax != null"
+              <div v-if="!u.dead && u.hpMax != null && field.ui?.showHpBars !== false"
                    style="width:32px;height:3px;border-radius:2px;overflow:hidden;flex:none"
                    :style="{background: rdr.hpTrack}">
                 <div style="height:100%;border-radius:2px"

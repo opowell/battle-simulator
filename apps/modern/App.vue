@@ -52,7 +52,44 @@ const actionSearch = ref('');
 let pollTimer = null;
 
 const selectedUnitId = ref(null);
-const animCells = ref({});
+const animCells = ref({});   // "x,y" → { flash: 'hit'|'heal' }
+const movingSprite = ref(null); // { unitId, glyph, color, shadow, path, step }
+let spriteTimer = null;
+
+function buildMovePath(from, to) {
+  const path = [{ ...from }];
+  let { x, y } = from;
+  while (x !== to.x) { x += to.x > x ? 1 : -1; path.push({ x, y }); }
+  while (y !== to.y) { y += to.y > y ? 1 : -1; path.push({ x, y }); }
+  return path;
+}
+
+function advanceSprite() {
+  if (!movingSprite.value) return;
+  const next = movingSprite.value.step + 1;
+  if (next >= movingSprite.value.path.length) { movingSprite.value = null; return; }
+  movingSprite.value = { ...movingSprite.value, step: next };
+  spriteTimer = setTimeout(advanceSprite, 220);
+}
+
+const spriteStyle = computed(() => {
+  if (!movingSprite.value || !gridView.value) return null;
+  const { x, y } = movingSprite.value.path[movingSprite.value.step];
+  const cs = gridView.value.cellSize;
+  const labelW = gridView.value.yLabels ? Math.ceil(cs * 0.6) + 1 : 0;
+  return {
+    position: 'absolute',
+    left: (1 + labelW + x * (cs + 1)) + 'px',
+    top:  (1 + y * (cs + 1)) + 'px',
+    width: cs + 'px', height: cs + 'px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontWeight: '700', fontFamily: "'Segoe UI', sans-serif", lineHeight: '1',
+    fontSize: gridView.value.fontSize + 'px',
+    color: movingSprite.value.color,
+    textShadow: movingSprite.value.shadow + ', 0 1px 2px rgba(0,0,0,0.7)',
+    pointerEvents: 'none', zIndex: 10, userSelect: 'none',
+  };
+});
 
 watch(session, (newSess, oldSess) => {
   if (!newSess?.grid?.cells || !oldSess?.grid?.cells) return;
@@ -68,10 +105,18 @@ watch(session, (newSess, oldSess) => {
   for (const { action } of lastActions) {
     if (action.type === 'move') {
       const old = oldPos[action.unitId];
-      if (old) {
-        const dx = action.to.x - old.x, dy = action.to.y - old.y;
-        const dir = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-        newAnim[`${action.to.x},${action.to.y}`] = { slide: dir };
+      if (old && (old.x !== action.to.x || old.y !== action.to.y)) {
+        const src = oldSess.grid.cells.find(c => c.unitId === action.unitId);
+        clearTimeout(spriteTimer);
+        movingSprite.value = {
+          unitId: action.unitId,
+          glyph: src?.emoji ?? src?.glyph ?? '?',
+          color: OWNER_COLOR[src?.owner ?? 0],
+          shadow: OWNER_SHADOW[src?.owner ?? 0],
+          path: buildMovePath(old, action.to),
+          step: 0,
+        };
+        spriteTimer = setTimeout(advanceSprite, 220);
       }
     } else if (action.type === 'ability') {
       const targetCell = newSess.grid.cells.find(c => c.unitId === action.targetId);
@@ -534,42 +579,47 @@ onUnmounted(() => clearInterval(pollTimer));
       <div class="board-card">
         <div class="card-title">Board{{ session.phase ? ` — ${session.phase}` : '' }}</div>
         <div v-if="gridView" class="board-grid-wrap">
-          <div :style="{
-            display: 'grid',
-            gridTemplateColumns: (gridView.yLabels ? `${Math.ceil(gridView.cellSize * 0.6)}px ` : '') + `repeat(${gridView.width}, ${gridView.cellSize}px)`,
-            gap: '1px', background: '#111', border: '1px solid #111',
-            borderRadius: '4px', overflow: 'hidden', width: 'fit-content',
-          }">
-            <template v-for="(row, ri) in gridView.rows" :key="ri">
-              <div v-if="gridView.yLabels" class="axis-label"
-                :style="{ fontSize: gridView.labelSize, color: '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1a1a1a' }">
-                {{ gridView.yLabels[ri] ?? '' }}
-              </div>
-              <div v-for="c in row" :key="c.x" class="board-cell"
-                :style="cellStyle(c, gridView.cellSize, gridView.fontSize)"
-                :class="{ 'cell-active': c.isActive, 'cell-selected': c.unitId && c.unitId === selectedUnitId && !c.isActive }"
-                @click="if (c.unitId) selectedUnitId = c.unitId">
-                <div v-if="overlayMap[`${c.x},${c.y}`]" class="cell-overlay"
-                  :class="overlayMap[`${c.x},${c.y}`] === 'move' ? 'overlay-move' : 'overlay-ability'"/>
-                <span v-if="c.emoji ?? c.glyph"
-                  :class="animCells[`${c.x},${c.y}`]?.slide && `anim-from-${animCells[`${c.x},${c.y}`].slide}`"
-                  style="pointer-events:none; position:relative; z-index:1">{{ c.emoji ?? c.glyph }}</span>
-                <div v-if="animCells[`${c.x},${c.y}`]?.flash"
-                  class="cell-flash-overlay"
-                  :class="`cell-flash-${animCells[`${c.x},${c.y}`].flash}`"/>
-                <div v-if="(c.emoji ?? c.glyph) && gridView.hpBarH && c.hp != null && c.maxHp"
-                  :style="{ position:'absolute', bottom:'1px', left:'1px', right:'1px', height: gridView.hpBarH+'px', background:'#2224', borderRadius:'1px', overflow:'hidden', zIndex: 1 }">
-                  <div :style="{ height:'100%', width: Math.round(hpPct(c)*100)+'%', background: hpColor(c) }"/>
+          <div style="position: relative; display: inline-block;">
+            <div :style="{
+              display: 'grid',
+              gridTemplateColumns: (gridView.yLabels ? `${Math.ceil(gridView.cellSize * 0.6)}px ` : '') + `repeat(${gridView.width}, ${gridView.cellSize}px)`,
+              gap: '1px', background: '#111', border: '1px solid #111',
+              borderRadius: '4px', overflow: 'hidden', width: 'fit-content',
+            }">
+              <template v-for="(row, ri) in gridView.rows" :key="ri">
+                <div v-if="gridView.yLabels" class="axis-label"
+                  :style="{ fontSize: gridView.labelSize, color: '#888', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1a1a1a' }">
+                  {{ gridView.yLabels[ri] ?? '' }}
                 </div>
-              </div>
-            </template>
-            <template v-if="gridView.xLabels">
-              <div v-if="gridView.yLabels" style="background:#1a1a1a"/>
-              <div v-for="lbl in gridView.xLabels" :key="lbl" class="axis-label"
-                :style="{ fontSize: gridView.labelSize, color: '#888', display:'flex', alignItems:'center', justifyContent:'center', background:'#1a1a1a' }">
-                {{ lbl }}
-              </div>
-            </template>
+                <div v-for="c in row" :key="c.x" class="board-cell"
+                  :style="cellStyle(c, gridView.cellSize, gridView.fontSize)"
+                  :class="{ 'cell-active': c.isActive, 'cell-selected': c.unitId && c.unitId === selectedUnitId && !c.isActive }"
+                  @click="if (c.unitId) selectedUnitId = c.unitId">
+                  <div v-if="overlayMap[`${c.x},${c.y}`]" class="cell-overlay"
+                    :class="overlayMap[`${c.x},${c.y}`] === 'move' ? 'overlay-move' : 'overlay-ability'"/>
+                  <span v-if="(c.emoji ?? c.glyph) && movingSprite?.unitId !== c.unitId"
+                    style="pointer-events:none; position:relative; z-index:1">{{ c.emoji ?? c.glyph }}</span>
+                  <div v-if="animCells[`${c.x},${c.y}`]?.flash"
+                    class="cell-flash-overlay"
+                    :class="`cell-flash-${animCells[`${c.x},${c.y}`].flash}`"/>
+                  <div v-if="(c.emoji ?? c.glyph) && gridView.hpBarH && c.hp != null && c.maxHp"
+                    :style="{ position:'absolute', bottom:'1px', left:'1px', right:'1px', height: gridView.hpBarH+'px', background:'#2224', borderRadius:'1px', overflow:'hidden', zIndex: 1 }">
+                    <div :style="{ height:'100%', width: Math.round(hpPct(c)*100)+'%', background: hpColor(c) }"/>
+                  </div>
+                </div>
+              </template>
+              <template v-if="gridView.xLabels">
+                <div v-if="gridView.yLabels" style="background:#1a1a1a"/>
+                <div v-for="lbl in gridView.xLabels" :key="lbl" class="axis-label"
+                  :style="{ fontSize: gridView.labelSize, color: '#888', display:'flex', alignItems:'center', justifyContent:'center', background:'#1a1a1a' }">
+                  {{ lbl }}
+                </div>
+              </template>
+            </div>
+            <!-- Hopping unit sprite -->
+            <div v-if="movingSprite && spriteStyle" :key="movingSprite.step" class="unit-sprite" :style="spriteStyle">
+              {{ movingSprite.glyph }}
+            </div>
           </div>
         </div>
         <pre v-else class="board-pre">{{ session.rendered ?? '' }}</pre>
@@ -664,7 +714,7 @@ onUnmounted(() => clearInterval(pollTimer));
               <span class="log-turn">T{{ entry.turnNumber }}</span>
               <span class="log-actions">
                 <span v-for="(pa, i) in entry.playerActions" :key="i" class="log-action">
-                  <span class="log-player">{{ playerName(pa.playerId) }}</span>{{ formatAction(pa.action) }}
+                  <span class="log-player">{{ playerName(pa.playerId) }}</span>{{ session.fog && myPlayerId && pa.playerId !== myPlayerId ? '?' : formatAction(pa.action) }}
                 </span>
               </span>
             </div>
@@ -729,15 +779,9 @@ onUnmounted(() => clearInterval(pollTimer));
 
 .hint-text { padding: 12px; color: #666; font-size: 0.82em; font-style: italic; }
 
-/* Movement slide-in animations */
-@keyframes anim-from-left   { from { transform: translateX(-250%); opacity: 0.2; } to { transform: none; opacity: 1; } }
-@keyframes anim-from-right  { from { transform: translateX(250%);  opacity: 0.2; } to { transform: none; opacity: 1; } }
-@keyframes anim-from-top    { from { transform: translateY(-250%); opacity: 0.2; } to { transform: none; opacity: 1; } }
-@keyframes anim-from-bottom { from { transform: translateY(250%);  opacity: 0.2; } to { transform: none; opacity: 1; } }
-.anim-from-left   { animation: anim-from-left   0.3s cubic-bezier(0.2, 0, 0.3, 1); }
-.anim-from-right  { animation: anim-from-right  0.3s cubic-bezier(0.2, 0, 0.3, 1); }
-.anim-from-top    { animation: anim-from-top    0.3s cubic-bezier(0.2, 0, 0.3, 1); }
-.anim-from-bottom { animation: anim-from-bottom 0.3s cubic-bezier(0.2, 0, 0.3, 1); }
+/* Hopping movement sprite */
+.unit-sprite { animation: sprite-hop 0.18s cubic-bezier(0.2, 0, 0.3, 1); }
+@keyframes sprite-hop { from { transform: scale(1.5); opacity: 0.5; } to { transform: scale(1); opacity: 1; } }
 
 /* Ability flash overlay */
 .cell-flash-overlay { position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: 1px; }
