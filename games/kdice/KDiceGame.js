@@ -262,6 +262,7 @@ function getActionDuration(_state, action) {
 
 export const KDiceGame = {
   name: 'KDice',
+  ui: { showUnitInfo: false },
   createInitialState,
   getLegalActions,
   applyActions,

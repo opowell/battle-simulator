@@ -833,12 +833,35 @@ export const FFTAGame = {
           hp: u?.hp, maxHp: u?.maxHp,
           unitId:        u?.id,
           unitName:      u ? JOB_LABELS[u.job] ?? u.job : null,
-          imagePath:     u ? `/images/ffta/${u.job}` : null,
+          imagePath:     u ? `/images/ffta/${u.job}/sprite` : null,
+          portraitPath:  u ? `/images/ffta/${u.job}/portrait` : null,
+          mainImagePath: u ? `/images/ffta/${u.job}/art` : null,
+          description:   u ? (JOB_DEFS[u.job]?.description ?? null) : null,
+          job:           u?.job ?? null,
+          moveRange:     u?.moveRange ?? null,
           mp:            u?.mp,    maxMp: u?.maxMp,
           stats:         u?.stats  ? { ...u.stats } : null,
-          abilities:     u?.abilities ? u.abilities.map(k => ({ key: k, name: ABILITIES[k]?.name ?? k })) : null,
-          reaction:      u?.reaction ? { key: u.reaction, name: ABILITIES[u.reaction]?.name ?? u.reaction } : null,
-          support:       u?.support  ? { key: u.support,  name: ABILITIES[u.support]?.name  ?? u.support  } : null,
+          abilities:     u?.abilities ? u.abilities.map(k => {
+            const ab = ABILITIES[k];
+            if (!ab) return { key: k, name: k };
+            return {
+              key: k, name: ab.name ?? k, type: ab.type, range: ab.range,
+              target: ab.target, mpCost: ab.mpCost ?? 0, effect: ab.effect,
+              power: ab.power, status: ab.status, aoe: ab.aoe,
+              aoeRadius: ab.aoeRadius, healAmount: ab.healAmount,
+              mpAmount: ab.mpAmount, reviveHpPct: ab.reviveHpPct,
+              knockback: ab.knockback ?? false,
+              description: ab.description ?? null,
+            };
+          }) : null,
+          reaction: u?.reaction ? {
+            key: u.reaction, name: ABILITIES[u.reaction]?.name ?? u.reaction,
+            description: ABILITIES[u.reaction]?.description ?? null,
+          } : null,
+          support: u?.support ? {
+            key: u.support, name: ABILITIES[u.support]?.name ?? u.support,
+            description: ABILITIES[u.support]?.description ?? null,
+          } : null,
           statusEffects: u?.statusEffects ? [...u.statusEffects] : null,
           doomCountdown: u?.doomCountdown ?? null,
           ct:            u?.ct,

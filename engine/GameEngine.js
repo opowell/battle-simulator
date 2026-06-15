@@ -96,10 +96,12 @@ export class GameEngine {
       playerActions.push({ playerId, action });
     }
 
+    const prevState = this._state;
     this._state = freeze(
-      this.game.applyActions(this._state, playerActions, this._rng)
+      this.game.applyActions(prevState, playerActions, this._rng)
     );
-    this._log.push({ turnNumber, phase: currentPhase, playerActions });
+    const events = this._diffEvents(prevState, this._state);
+    this._log.push({ turnNumber, phase: currentPhase, playerActions, events });
 
     this._result = this.game.getResult(this._state);
     if (this._result) return { done: true, result: this._result };
@@ -186,6 +188,21 @@ export class GameEngine {
     }
 
     return { done: false, result: null };
+  }
+
+  _diffEvents(before, after) {
+    const events = [];
+    const prevUnits = before.units ?? [];
+    const nextUnits = after.units ?? [];
+    for (const next of nextUnits) {
+      const prev = prevUnits.find(u => u.id === next.id);
+      if (!prev) continue;
+      const hpDiff = (next.hp ?? 0) - (prev.hp ?? 0);
+      if (hpDiff < 0) events.push({ type: 'damage', targetId: next.id, amount: -hpDiff, died: !!(prev.alive && !next.alive) });
+      else if (hpDiff > 0) events.push({ type: 'heal', targetId: next.id, amount: hpDiff });
+      else if (prev.alive && !next.alive) events.push({ type: 'died', targetId: next.id });
+    }
+    return events;
   }
 
   /**

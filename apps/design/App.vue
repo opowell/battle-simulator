@@ -27,6 +27,43 @@ const serverErr   = ref('');
 // Cached player info for sessions we've created (id → [{id, name, agent}])
 const sessionMeta = ref({});
 
+// ── hop animation ─────────────────────────────────────────────
+const hopAnim = ref(null); // { unitId, steps: [{x,y},...], step }
+let hopTimer = null;
+
+function buildHopPath(from, to) {
+  const path = [{ x: from.x, y: from.y }];
+  let { x, y } = from;
+  while (x !== to.x) { x += to.x > x ? 1 : -1; path.push({ x, y }); }
+  while (y !== to.y) { y += to.y > y ? 1 : -1; path.push({ x, y }); }
+  return path;
+}
+
+function advanceHop() {
+  if (!hopAnim.value) return;
+  const next = hopAnim.value.step + 1;
+  if (next >= hopAnim.value.steps.length) { hopAnim.value = null; return; }
+  hopAnim.value = { ...hopAnim.value, step: next };
+  hopTimer = setTimeout(advanceHop, 220);
+}
+
+watch(liveState, (newState, oldState) => {
+  if (!newState?.grid?.cells || !oldState?.grid?.cells) return;
+  for (const newCell of newState.grid.cells) {
+    if (!newCell.unitId) continue;
+    const oldCell = oldState.grid.cells.find(c => c.unitId === newCell.unitId);
+    if (!oldCell || (oldCell.x === newCell.x && oldCell.y === newCell.y)) continue;
+    clearTimeout(hopTimer);
+    hopAnim.value = {
+      unitId: newCell.unitId,
+      steps: buildHopPath({ x: oldCell.x, y: oldCell.y }, { x: newCell.x, y: newCell.y }),
+      step: 0,
+    };
+    hopTimer = setTimeout(advanceHop, 220);
+    break;
+  }
+});
+
 // ── field for the battlefield ────────────────────────────────
 const activeField = computed(() => {
   const s = liveState.value;
@@ -61,7 +98,7 @@ const activeField = computed(() => {
   const ownerTeam = {};
   teams.forEach((t, i) => { ownerTeam[i + 1] = t.id; });
 
-  const units = g.cells
+  let units = g.cells
     .filter(c => c.glyph)
     .map(c => ({
       id:        c.unitId ?? `u_${c.x}_${c.y}`,
@@ -81,7 +118,19 @@ const activeField = computed(() => {
       moved:         c.moved,
       acted:         c.acted,
       isActive:      c.isActive,
+      imagePath:     c.imagePath,
+      portraitPath:  c.portraitPath,
+      mainImagePath: c.mainImagePath,
+      description:   c.description,
+      job:           c.job,
+      moveRange:     c.moveRange,
     }));
+
+  if (hopAnim.value) {
+    const { unitId, steps, step } = hopAnim.value;
+    const { x, y } = steps[step];
+    units = units.map(u => u.id !== unitId ? u : { ...u, path: [[x + 0.5, y + 0.5]] });
+  }
 
   const tiles = g.cells
     .filter(c => c.color)

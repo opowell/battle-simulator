@@ -71,7 +71,7 @@ function advanceSprite() {
   const next = movingSprite.value.step + 1;
   if (next >= movingSprite.value.path.length) { movingSprite.value = null; return; }
   movingSprite.value = { ...movingSprite.value, step: next };
-  spriteTimer = setTimeout(advanceSprite, 220);
+  spriteTimer = setTimeout(advanceSprite, 210);
 }
 
 const spriteStyle = computed(() => {
@@ -90,6 +90,7 @@ const spriteStyle = computed(() => {
     color: movingSprite.value.color,
     textShadow: movingSprite.value.shadow + ', 0 1px 2px rgba(0,0,0,0.7)',
     pointerEvents: 'none', zIndex: 10, userSelect: 'none',
+    transition: 'left 200ms ease, top 200ms ease',
   };
 });
 
@@ -118,7 +119,7 @@ watch(session, (newSess, oldSess) => {
           path: buildMovePath(old, action.to),
           step: 0,
         };
-        spriteTimer = setTimeout(advanceSprite, 220);
+        spriteTimer = setTimeout(advanceSprite, 210);
       }
     } else if (action.type === 'ability') {
       const targetCell = newSess.grid.cells.find(c => c.unitId === action.targetId);
@@ -656,7 +657,7 @@ onUnmounted(() => clearInterval(pollTimer));
               </template>
             </div>
             <!-- Hopping unit sprite -->
-            <div v-if="movingSprite && spriteStyle" :key="movingSprite.step" class="unit-sprite" :style="spriteStyle">
+            <div v-if="movingSprite && spriteStyle" class="unit-sprite" :style="spriteStyle">
               {{ movingSprite.glyph }}
             </div>
           </div>
@@ -672,10 +673,10 @@ onUnmounted(() => clearInterval(pollTimer));
               {{ selectedCell.unitName }}
               <span v-if="selectedCell.isActive" class="active-badge">▶ Active</span>
             </div>
-            <div v-if="selectedCell.imagePath && !failedImages[selectedCell.imagePath]" class="unit-portrait-wrap">
-              <img :src="selectedCell.imagePath" :alt="selectedCell.unitName"
+            <div v-if="(selectedCell.portraitPath || selectedCell.imagePath) && !failedImages[selectedCell.portraitPath ?? selectedCell.imagePath]" class="unit-portrait-wrap">
+              <img :src="selectedCell.portraitPath ?? selectedCell.imagePath" :alt="selectedCell.unitName"
                 class="unit-portrait"
-                @error="failedImages[selectedCell.imagePath] = true" />
+                @error="failedImages[selectedCell.portraitPath ?? selectedCell.imagePath] = true" />
             </div>
             <div class="unit-info-panel">
               <div class="unit-resource-row">
@@ -874,8 +875,8 @@ onUnmounted(() => clearInterval(pollTimer));
 .hint-text { padding: 12px; color: #666; font-size: 0.82em; font-style: italic; }
 
 /* Hopping movement sprite */
-.unit-sprite { animation: sprite-hop 0.18s cubic-bezier(0.2, 0, 0.3, 1); }
-@keyframes sprite-hop { from { transform: scale(1.5); opacity: 0.5; } to { transform: scale(1); opacity: 1; } }
+.unit-sprite { animation: sprite-hop 0.21s ease-in-out infinite alternate; }
+@keyframes sprite-hop { from { transform: translateY(0) scale(1); } to { transform: translateY(-30%) scale(1.1); } }
 
 /* Ability flash overlay */
 .cell-flash-overlay { position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: 1px; }

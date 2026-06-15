@@ -172,15 +172,14 @@ function hasMoveIntent(u) {
 }
 
 function facingArrow(u) {
-  const cx = props.fit.x(u.x), cy = props.fit.y(u.y);
   const r = unitR(u);
   const ang = u.ang;
   const len  = Math.max(6, r * 0.55);
   const half = Math.max(4, r * 0.32);
-  const tx = cx + Math.cos(ang) * (r + len);
-  const ty = cy + Math.sin(ang) * (r + len);
-  const bx = cx + Math.cos(ang) * r;
-  const by = cy + Math.sin(ang) * r;
+  const tx = Math.cos(ang) * (r + len);
+  const ty = Math.sin(ang) * (r + len);
+  const bx = Math.cos(ang) * r;
+  const by = Math.sin(ang) * r;
   const lx = bx + Math.cos(ang + Math.PI / 2) * half;
   const ly = by + Math.sin(ang + Math.PI / 2) * half;
   const rx2 = bx - Math.cos(ang + Math.PI / 2) * half;
@@ -259,15 +258,16 @@ function facingArrow(u) {
       <!-- Units -->
       <template v-for="u in units" :key="u.id">
       <g v-if="isVisible(u)"
-         style="cursor:pointer" @click="handleUnitClick($event, u)">
+         :style="{ transform: `translate(${fit.x(u.x)}px, ${fit.y(u.y)}px)`, transition: 'transform 0.15s ease', cursor: 'pointer' }"
+         @click="handleUnitClick($event, u)">
 
         <!-- Dead: X marker -->
         <g v-if="u.dead" :opacity="0.4">
-          <line :x1="fit.x(u.x)-unitR(u)*.7" :y1="fit.y(u.y)-unitR(u)*.7"
-                :x2="fit.x(u.x)+unitR(u)*.7" :y2="fit.y(u.y)+unitR(u)*.7"
+          <line :x1="-unitR(u)*.7" :y1="-unitR(u)*.7"
+                :x2="unitR(u)*.7"  :y2="unitR(u)*.7"
                 :stroke="u.teamObj.raw" stroke-width="1.6"/>
-          <line :x1="fit.x(u.x)-unitR(u)*.7" :y1="fit.y(u.y)+unitR(u)*.7"
-                :x2="fit.x(u.x)+unitR(u)*.7" :y2="fit.y(u.y)-unitR(u)*.7"
+          <line :x1="-unitR(u)*.7" :y1="unitR(u)*.7"
+                :x2="unitR(u)*.7"  :y2="-unitR(u)*.7"
                 :stroke="u.teamObj.raw" stroke-width="1.6"/>
         </g>
 
@@ -275,14 +275,14 @@ function facingArrow(u) {
         <g v-else>
           <!-- Active unit ring: white outer ring + inner glow ring -->
           <template v-if="u.id === activeUnitId">
-            <circle :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+11"
+            <circle cx="0" cy="0" :r="unitR(u)+11"
                     fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="6" class="active-ring"/>
-            <circle :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+7"
+            <circle cx="0" cy="0" :r="unitR(u)+7"
                     fill="none" stroke="white" stroke-width="2" class="active-ring"/>
           </template>
           <!-- Selected unit ring: dashed ring -->
           <circle v-if="u.id === selectedId && u.id !== activeUnitId"
-                  :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)+6"
+                  cx="0" cy="0" :r="unitR(u)+6"
                   fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.5" stroke-dasharray="3 3"/>
           <!-- Facing indicator: filled arrowhead on unit edge -->
           <polygon v-if="field.ui?.showFacing !== false"
@@ -291,28 +291,33 @@ function facingArrow(u) {
                    :stroke="rdr.stage" stroke-width="1"/>
           <!-- Body shape: active unit gets solid team-color fill -->
           <circle v-if="unitShape(u)==='circle'"
-                  :cx="fit.x(u.x)" :cy="fit.y(u.y)" :r="unitR(u)"
+                  cx="0" cy="0" :r="unitR(u)"
                   :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
                   :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <polygon v-else-if="unitShape(u)==='triangle'"
-                   :points="`${fit.x(u.x)},${fit.y(u.y)-unitR(u)} ${fit.x(u.x)+unitR(u)},${fit.y(u.y)+unitR(u)} ${fit.x(u.x)-unitR(u)},${fit.y(u.y)+unitR(u)}`"
+                   :points="`0,${-unitR(u)} ${unitR(u)},${unitR(u)} ${-unitR(u)},${unitR(u)}`"
                    :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
                    :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <rect v-else
-                :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)-unitR(u)"
+                :x="-unitR(u)" :y="-unitR(u)"
                 :width="unitR(u)*2" :height="unitR(u)*2"
                 :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
                 :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
-          <!-- First letter of unit name -->
-          <text :x="fit.x(u.x)" :y="fit.y(u.y)"
+          <!-- Sprite image or first letter of unit name -->
+          <image v-if="u.imagePath"
+                 :x="-unitR(u)" :y="-unitR(u)"
+                 :width="unitR(u)*2" :height="unitR(u)*2"
+                 :href="u.imagePath"
+                 style="pointer-events:none;image-rendering:pixelated"/>
+          <text v-else x="0" y="0"
                 :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" :font-family="rdr.font"
                 :font-size="unitR(u)" font-weight="800"
                 text-anchor="middle" dominant-baseline="central"
                 style="user-select:none;pointer-events:none">{{u.name[0].toUpperCase()}}</text>
           <!-- HP bar -->
           <template v-if="field.ui?.showHpBars !== false">
-            <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
-            <rect :x="fit.x(u.x)-unitR(u)" :y="fit.y(u.y)+unitR(u)+3"
+            <rect :x="-unitR(u)" :y="unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
+            <rect :x="-unitR(u)" :y="unitR(u)+3"
                   :width="unitR(u)*2*((u.currentHp ?? u.hpNow)/u.hpMax)" height="3"
                   :fill="hpColor((u.currentHp ?? u.hpNow)/u.hpMax, u.teamObj.raw)"/>
           </template>

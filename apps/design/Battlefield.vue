@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import SchematicLayer from './SchematicLayer.vue';
-import AssetLayer     from './AssetLayer.vue';
 
 const props = defineProps({
   liveState: Object,  // raw API session JSON
@@ -16,11 +15,72 @@ const tFloat   = ref(0);
 const playing  = ref(false);
 
 // ── view toggles ─────────────────────────────────────────────
-const renderer  = ref('schematic');
 const showRuler = ref(false);
 
 // ── selection ─────────────────────────────────────────────────
 const selectedId = ref(null);
+
+// ── unit info overlay ─────────────────────────────────────────
+const infoUnit    = ref(null);
+const infoAbility = ref(null);
+
+function openInfo(u) {
+  if (props.field.ui?.showUnitInfo === false) return;
+  infoUnit.value = u;
+}
+
+function closeInfo() {
+  infoUnit.value = null;
+}
+
+function openAbilityInfo(ab) {
+  infoAbility.value = typeof ab === 'string' ? { name: ab } : ab;
+}
+
+function closeAbilityInfo() {
+  infoAbility.value = null;
+}
+
+function fmtAbilityEffect(ab) {
+  const pct = ab.power ? Math.round(ab.power * 100) + '%' : null;
+  const e = ab.effect ?? '';
+  if (e === 'damage') {
+    let s = pct ? `${pct} ATK` : 'Damage';
+    if (ab.aoe) s += ` · AoE`;
+    if (ab.knockback) s += ' · knockback';
+    return s;
+  }
+  if (e === 'damage+status') {
+    let s = pct ? `${pct} ATK` : 'Damage';
+    if (ab.status) s += ` + ${ab.status}`;
+    if (ab.aoe) s += ' · AoE';
+    if (ab.knockback) s += ' · knockback';
+    return s;
+  }
+  if (e === 'damage+steal-mp') return `${pct ? pct + ' ATK' : 'Damage'} + steal MP`;
+  if (e === 'heal')       return `Heal (${pct ?? ''} MAG)`;
+  if (e === 'heal-fixed') return `+${ab.healAmount} HP`;
+  if (e === 'heal-full')  return 'Full HP restore';
+  if (e === 'status') {
+    let s = ab.status ?? 'Status';
+    if (ab.aoe) s += ' · AoE';
+    return s;
+  }
+  if (e === 'steal-mp')   return 'Steal MP';
+  if (e === 'cleanse')    return 'Remove all status effects';
+  if (e === 'cleanse-one') return `Remove ${ab.status}`;
+  if (e === 'restore-mp') return `+${ab.mpAmount} MP`;
+  if (e === 'revive')     return `Revive at ${Math.round((ab.reviveHpPct ?? 0.25) * 100)}% HP`;
+  if (e === 'elixir')     return 'Full HP + MP restore';
+  return e;
+}
+
+function abilityTypeMeta(type) {
+  if (type === 'physical') return { label: 'PHY', color: 'var(--accent)', bg: 'rgba(66,198,230,.12)' };
+  if (type === 'magic')    return { label: 'MAG', color: '#b48cff',       bg: 'rgba(180,140,255,.12)' };
+  if (type === 'item')     return { label: 'ITM', color: 'var(--ok)',     bg: 'rgba(70,211,154,.12)' };
+  return                          { label: 'SUP', color: 'var(--warn)',   bg: 'rgba(242,180,65,.12)' };
+}
 
 // ── stage sizing ──────────────────────────────────────────────
 const stageEl = ref(null);
@@ -186,16 +246,25 @@ function scrub(e) {
   tFloat.value = parseFloat(e.target.value);
 }
 
+function onKeyDown(e) {
+  if (e.key === 'Escape') {
+    if (infoAbility.value) closeAbilityInfo();
+    else closeInfo();
+  }
+}
+
 onMounted(() => {
   lastTs = performance.now();
   rafId = requestAnimationFrame(raf);
   updateStageSize();
   window.addEventListener('resize', updateStageSize);
+  window.addEventListener('keydown', onKeyDown);
 });
 
 onUnmounted(() => {
   cancelAnimationFrame(rafId);
   window.removeEventListener('resize', updateStageSize);
+  window.removeEventListener('keydown', onKeyDown);
 });
 </script>
 
@@ -236,114 +305,29 @@ onUnmounted(() => {
               title="Show ruler" style="width:32px;height:32px" @click="showRuler = !showRuler">
         <BsIcon name="move" :size="15"/>
       </button>
-      <div class="seg" style="margin-left:8px">
-        <button :class="{on: renderer==='schematic'}" style="padding:4px 10px;font-size:11px"
-                @click="renderer='schematic'">Schematic</button>
-        <button :class="{on: renderer==='asset'}" style="padding:4px 10px;font-size:11px"
-                @click="renderer='asset'">Asset</button>
-      </div>
     </div>
 
-    <!-- ── Main: Stage + Sidebar ─────────────────────────────── -->
+    <!-- ── Main: Left panel + Stage + Sidebar ───────────────── -->
     <div style="flex:1;min-height:0;display:flex;overflow:hidden">
 
-      <!-- Stage -->
-      <div ref="stageEl" style="flex:1;position:relative;overflow:hidden">
-        <SchematicLayer v-if="renderer === 'schematic'"
-                        :field="field" :fit="fit" :units="displayUnits"
-                        :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
-                        :showRuler="showRuler" :rdr="rdr"
-                        :legalSquares="unitMoves"
-                        @select="id => selectedId = id"
-                        @sq-click="handleSqClick"/>
-        <AssetLayer v-else
-                    :field="field" :fit="fit" :units="displayUnits"
-                    :selectedId="selectedId" :fog="fog"
-                    :showRuler="showRuler" :rdr="rdr"
-                    @select="id => selectedId = id"/>
-      </div>
-
-      <!-- Sidebar -->
-      <div style="width:240px;min-height:0;overflow-y:auto;border-left:1px solid var(--line);display:flex;flex-direction:column;background:var(--bg1)">
-
-        <!-- Live: Actions panel -->
-        <div v-if="isLive" style="padding:12px 14px;border-bottom:1px solid var(--line)">
-          <div class="panel-t" style="margin-bottom:8px">
-            Turn {{liveState.turn ?? 0}}
-            <span v-if="liveState.phase" class="mono" style="font-weight:400;color:var(--faint)">
-              · {{liveState.phase}}
-            </span>
-          </div>
-
-          <!-- Game over -->
-          <div v-if="isDone" style="font-size:12px;color:var(--ok)">
-            {{liveState.result?.winner
-              ? 'Winner: ' + liveState.result.winner
-              : liveState.result?.draw ? 'Draw'
-              : liveState.status === 'error' ? ('Error: ' + liveState.error)
-              : 'Game over'}}
-          </div>
-
-          <!-- Human's turn with a unit selected (freeSelection: any piece; otherwise: must be the active unit) -->
-          <template v-else-if="isPending && selectedId && (ui.freeSelection || selectedId === activeUnitId)">
-            <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
-              Choose action for
-              <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
-            </div>
-            <div v-if="unitMoves.length" class="mono"
-                 style="font-size:10px;color:var(--faint);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">
-              Tap a highlighted square to move
-            </div>
-            <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
-              <button v-for="(action, i) in displayedActions" :key="i"
-                      class="action-btn"
-                      style="font-size:11px;font-family:var(--mono)"
-                      @click="submitAction(action)">
-                {{fmtAction(action)}}
-              </button>
-              <div v-if="!displayedActions.length" style="font-size:11px;color:var(--faint)">
-                No actions.
-              </div>
-            </div>
-          </template>
-          <!-- Human's turn, no unit selected -->
-          <template v-else-if="isPending">
-            <div style="font-size:11px;color:var(--dim)">
-              Click the <b style="color:var(--accent)">{{ui.freeSelection ? 'a piece' : 'active unit'}}</b> on the board to see actions.
-            </div>
-          </template>
-
-          <!-- AI's turn -->
-          <div v-else style="font-size:12px;color:var(--warn)">
-            Waiting for AI…
-          </div>
-        </div>
-
-        <!-- Game log -->
-        <div v-if="isLive" style="border-bottom:1px solid var(--line);display:flex;flex-direction:column;max-height:200px">
-          <div class="panel-t" style="padding:7px 14px;flex-shrink:0">Log</div>
-          <div style="overflow-y:auto;flex:1">
-            <div v-if="!liveState.log?.length" style="padding:4px 14px 8px;font-size:11px;color:var(--faint)">
-              No moves yet.
-            </div>
-            <div v-for="entry in [...(liveState.log ?? [])].reverse()" :key="entry.turnNumber"
-                 style="padding:3px 14px;border-bottom:1px solid var(--line);font-size:11px">
-              <span class="mono" style="font-size:9px;color:var(--faint);margin-right:6px">T{{entry.turnNumber}}</span>
-              <span v-for="(pa, i) in entry.playerActions" :key="i"
-                    style="display:inline;margin-right:8px">
-                <b :style="{color:'var(--accent)'}">{{pa.playerId}}</b>
-                {{ fmtAction(pa.action) }}
-              </span>
-            </div>
-          </div>
-        </div>
+      <!-- Left: Selected unit panel -->
+      <div style="width:240px;min-height:0;overflow-y:auto;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--bg1)">
 
         <!-- Selected unit detail -->
         <div v-if="selectedUnit" style="padding:12px 14px;border-bottom:1px solid var(--line)">
+          <!-- Portrait -->
+          <div v-if="selectedUnit.portraitPath || selectedUnit.imagePath"
+               style="display:flex;justify-content:center;margin-bottom:10px">
+            <img :src="selectedUnit.portraitPath ?? selectedUnit.imagePath"
+                 :alt="selectedUnit.name"
+                 style="width:72px;height:72px;object-fit:contain;image-rendering:pixelated;border-radius:4px;border:1px solid var(--line)"/>
+          </div>
           <!-- Header -->
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <BsDot :color="selectedUnit.teamObj.raw" :size="9"/>
-            <span style="font-weight:700;font-size:13px">{{selectedUnit.name}}</span>
+            <span style="font-weight:700;font-size:13px;cursor:pointer;text-decoration:underline;text-underline-offset:2px;text-decoration-color:var(--line3)"
+                  :title="field.ui?.showUnitInfo !== false ? 'View unit info' : ''"
+                  @click="openInfo(selectedUnit)">{{selectedUnit.name}}</span>
             <span class="mono" style="font-size:10px;color:var(--faint)">({{selectedUnit.id}})</span>
             <span v-if="selectedUnit.isActive"
                   class="mono" style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(70,211,154,.15);color:var(--ok)">
@@ -428,8 +412,9 @@ onUnmounted(() => {
               <div style="font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Abilities</div>
               <div style="display:flex;flex-wrap:wrap;gap:3px">
                 <span v-for="ab in selectedUnit.abilities" :key="ab.key ?? ab"
-                      style="font-size:10px;padding:2px 6px;border-radius:3px;background:var(--bg3)"
-                      :style="{color: selectedUnit.teamObj.raw}">
+                      style="font-size:10px;padding:2px 6px;border-radius:3px;background:var(--bg3);cursor:pointer"
+                      :style="{color: selectedUnit.teamObj.raw}"
+                      @click="openAbilityInfo(ab)">
                   {{ab.name ?? ab}}
                 </span>
               </div>
@@ -441,6 +426,78 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- Empty state when no unit selected -->
+        <div v-else style="padding:12px 14px;font-size:11px;color:var(--faint)">
+          Select a unit to view details.
+        </div>
+
+        <!-- Live: Actions panel -->
+        <div v-if="isLive" style="padding:12px 14px;border-top:1px solid var(--line)">
+          <div class="panel-t" style="margin-bottom:8px">
+            Turn {{liveState.turn ?? 0}}
+            <span v-if="liveState.phase" class="mono" style="font-weight:400;color:var(--faint)">
+              · {{liveState.phase}}
+            </span>
+          </div>
+
+          <!-- Game over -->
+          <div v-if="isDone" style="font-size:12px;color:var(--ok)">
+            {{liveState.result?.winner
+              ? 'Winner: ' + liveState.result.winner
+              : liveState.result?.draw ? 'Draw'
+              : liveState.status === 'error' ? ('Error: ' + liveState.error)
+              : 'Game over'}}
+          </div>
+
+          <!-- Human's turn with a unit selected (freeSelection: any piece; otherwise: must be the active unit) -->
+          <template v-else-if="isPending && selectedId && (ui.freeSelection || selectedId === activeUnitId)">
+            <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
+              Choose action for
+              <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
+            </div>
+            <div v-if="unitMoves.length" class="mono"
+                 style="font-size:10px;color:var(--faint);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">
+              Tap a highlighted square to move
+            </div>
+            <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+              <button v-for="(action, i) in displayedActions" :key="i"
+                      class="action-btn"
+                      style="font-size:11px;font-family:var(--mono)"
+                      @click="submitAction(action)">
+                {{fmtAction(action)}}
+              </button>
+              <div v-if="!displayedActions.length" style="font-size:11px;color:var(--faint)">
+                No actions.
+              </div>
+            </div>
+          </template>
+          <!-- Human's turn, no unit selected -->
+          <template v-else-if="isPending">
+            <div style="font-size:11px;color:var(--dim)">
+              Click the <b style="color:var(--accent)">{{ui.freeSelection ? 'a piece' : 'active unit'}}</b> on the board to see actions.
+            </div>
+          </template>
+
+          <!-- AI's turn -->
+          <div v-else style="font-size:12px;color:var(--warn)">
+            Waiting for AI…
+          </div>
+        </div>
+      </div>
+
+      <!-- Stage -->
+      <div ref="stageEl" style="flex:1;position:relative;overflow:hidden">
+        <SchematicLayer :field="field" :fit="fit" :units="displayUnits"
+                        :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
+                        :showRuler="showRuler" :rdr="rdr"
+                        :legalSquares="unitMoves"
+                        @select="id => selectedId = id"
+                        @sq-click="handleSqClick"/>
+      </div>
+
+      <!-- Right Sidebar: Log, Roster -->
+      <div style="width:240px;min-height:0;overflow-y:auto;border-left:1px solid var(--line);display:flex;flex-direction:column;background:var(--bg1)">
+
         <!-- Roster -->
         <div style="flex:1;padding:12px 14px;overflow-y:auto">
           <div v-for="team in rosterTeams" :key="team.id" style="margin-bottom:14px">
@@ -451,26 +508,82 @@ onUnmounted(() => {
                 {{team.units.filter(u => !u.dead).length}}/{{team.units.length}}
               </span>
             </div>
-            <div v-for="u in team.units" :key="u.id"
-                 style="display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:4px;cursor:pointer;margin-bottom:2px"
-                 :style="{
-                   background: u.id === selectedId ? team.raw + '18' : 'transparent',
-                   opacity: u.dead ? 0.38 : 1,
-                 }"
-                 @click="selectedId = u.id === selectedId ? null : u.id">
-              <BsDot :color="u.dead ? 'var(--faint)' : team.raw" :size="7"/>
-              <span style="font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-                    :style="{textDecoration: u.dead ? 'line-through' : 'none', color: u.dead ? 'var(--faint)' : ''}">
-                {{u.name}}
-              </span>
-              <span class="mono" style="font-size:9px;color:var(--faint)">{{u.id}}</span>
-              <div v-if="!u.dead && u.hpMax != null && field.ui?.showHpBars !== false"
-                   style="width:32px;height:3px;border-radius:2px;overflow:hidden;flex:none"
-                   :style="{background: rdr.hpTrack}">
-                <div style="height:100%;border-radius:2px"
-                     :style="{width: (u.hpNow/u.hpMax*100)+'%', background: team.raw}"/>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+              <div v-for="u in team.units" :key="u.id"
+                   style="border-radius:5px;cursor:pointer;overflow:hidden;border:1px solid transparent;transition:border-color .15s"
+                   :style="{
+                     borderColor: u.id === selectedId ? team.raw + '80' : 'var(--line)',
+                     background: u.id === selectedId ? team.raw + '12' : 'var(--bg2)',
+                     opacity: u.dead ? 0.38 : 1,
+                   }"
+                   @click="selectedId = u.id === selectedId ? null : u.id">
+                <!-- Portrait -->
+                <div style="width:100%;aspect-ratio:1;overflow:hidden;background:var(--bg0)">
+                  <img v-if="u.portraitPath || u.imagePath"
+                       :src="u.portraitPath ?? u.imagePath"
+                       :alt="u.name"
+                       style="width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block"/>
+                  <div v-else style="width:100%;height:100%;display:flex;align-items:center;justify-content:center">
+                    <BsDot :color="u.dead ? 'var(--faint)' : team.raw" :size="10"/>
+                  </div>
+                </div>
+                <!-- Name + ID -->
+                <div style="padding:4px 5px 3px">
+                  <div style="font-size:10px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2"
+                       :style="{textDecoration: u.dead ? 'line-through' : 'none', color: u.dead ? 'var(--faint)' : 'var(--txt)'}">
+                    {{u.name}}
+                  </div>
+                  <div class="mono" style="font-size:8px;color:var(--faint);line-height:1.2">{{u.id}}</div>
+                </div>
+                <!-- Bars -->
+                <div style="padding:0 5px 5px;display:flex;flex-direction:column;gap:2px">
+                  <div v-if="!u.dead && u.hpMax != null && field.ui?.showHpBars !== false"
+                       style="height:3px;border-radius:2px;overflow:hidden"
+                       :style="{background: rdr.hpTrack}">
+                    <div style="height:100%;border-radius:2px;transition:width .3s"
+                         :style="{
+                           width: (u.hpNow/u.hpMax*100)+'%',
+                           background: u.hpNow/u.hpMax > 0.5 ? team.raw : u.hpNow/u.hpMax > 0.25 ? '#f2b441' : '#ff5f56',
+                         }"/>
+                  </div>
+                  <div v-if="!u.dead && u.maxMp != null"
+                       style="height:3px;border-radius:2px;overflow:hidden;background:rgba(100,80,200,.2)">
+                    <div style="height:100%;border-radius:2px;background:#9b6fff;transition:width .3s"
+                         :style="{width: ((u.mp ?? 0)/u.maxMp*100)+'%'}"/>
+                  </div>
+                  <div v-if="u.dead" class="mono" style="font-size:8px;color:#ff5f56;text-align:center;padding-top:1px">KIA</div>
+                </div>
               </div>
-              <span v-else class="mono" style="font-size:9px;color:var(--faint)">KIA</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Game log -->
+        <div v-if="isLive" style="border-top:1px solid var(--line);display:flex;flex-direction:column;max-height:200px">
+          <div class="panel-t" style="padding:7px 14px;flex-shrink:0">Log</div>
+          <div style="overflow-y:auto;flex:1">
+            <div v-if="!liveState.log?.length" style="padding:4px 14px 8px;font-size:11px;color:var(--faint)">
+              No moves yet.
+            </div>
+            <div v-for="(entry, ei) in [...(liveState.log ?? [])].reverse()" :key="ei"
+                 style="padding:3px 14px;border-bottom:1px solid var(--line);font-size:11px">
+              <span class="mono" style="font-size:9px;color:var(--faint);margin-right:6px">T{{entry.turnNumber}}</span>
+              <span v-for="(pa, i) in entry.playerActions" :key="i"
+                    style="display:inline;margin-right:8px">
+                <b :style="{color:'var(--accent)'}">{{pa.playerId}}</b>
+                {{ fmtAction(pa.action) }}
+              </span>
+              <span v-for="(ev, evi) in (entry.events ?? [])" :key="'e'+evi"
+                    class="mono"
+                    :style="{
+                      fontSize: '10px',
+                      marginRight: '5px',
+                      color: ev.type === 'damage' ? 'var(--danger)' : ev.type === 'heal' ? 'var(--ok)' : 'var(--dim)',
+                    }">
+                {{ ev.type === 'damage' ? (ev.died ? '†' : '') + '−' + ev.amount
+                 : ev.type === 'heal'   ? '+' + ev.amount
+                 : '†' }}
+              </span>
             </div>
           </div>
         </div>
@@ -525,4 +638,184 @@ onUnmounted(() => {
       <BsIcon name="clock" :size="14" color="var(--faint)"/>
     </div>
   </div>
+
+  <!-- ── Unit Info Overlay ────────────────────────────────────── -->
+  <teleport to="body">
+    <div v-if="infoUnit"
+         style="position:fixed;inset:0;z-index:1000;background:rgba(4,7,10,.8);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)"
+         @click.self="closeInfo">
+
+      <div style="background:var(--bg1);border:1px solid var(--line2);border-radius:var(--r2);width:460px;max-width:92vw;max-height:88vh;overflow-y:auto;display:flex;flex-direction:column;box-shadow:0 24px 64px -12px rgba(0,0,0,.7)">
+
+        <!-- Large art image -->
+        <div v-if="infoUnit.mainImagePath" style="position:relative;flex-shrink:0;background:var(--bg0);border-bottom:1px solid var(--line)">
+          <img :key="infoUnit.mainImagePath"
+               :src="infoUnit.mainImagePath"
+               :alt="infoUnit.name"
+               style="width:100%;display:block;max-height:300px;object-fit:contain"
+               @error="e => e.target.closest('div').style.display='none'"/>
+        </div>
+
+        <!-- Header: name, job key, close button -->
+        <div style="padding:16px 18px 12px;display:flex;align-items:flex-start;gap:10px;border-bottom:1px solid var(--line)">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span style="font-size:22px;font-weight:700;letter-spacing:-.01em">{{infoUnit.name}}</span>
+              <span v-if="infoUnit.job"
+                    class="mono" style="font-size:10px;padding:2px 7px;border-radius:3px;background:var(--bg3);color:var(--dim);letter-spacing:.04em">
+                {{infoUnit.job}}
+              </span>
+              <span v-if="infoUnit.moveRange != null"
+                    class="mono" style="font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(66,198,230,.1);color:var(--accent)">
+                Move {{infoUnit.moveRange}}
+              </span>
+            </div>
+            <p v-if="infoUnit.description"
+               style="margin:0;font-size:12px;color:var(--dim);line-height:1.6">
+              {{infoUnit.description}}
+            </p>
+          </div>
+          <button @click="closeInfo"
+                  style="flex:none;width:28px;height:28px;display:grid;place-items:center;border:1px solid var(--line2);border-radius:var(--r);background:var(--bg2);color:var(--dim);font-size:16px;cursor:pointer;line-height:1">
+            ×
+          </button>
+        </div>
+
+        <!-- Base stats grid -->
+        <div v-if="infoUnit.stats" style="padding:14px 18px;border-bottom:1px solid var(--line)">
+          <div class="panel-t" style="margin-bottom:10px">Base Stats</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+            <div v-for="(val, key) in infoUnit.stats" :key="key"
+                 style="display:flex;flex-direction:column;align-items:center;background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:8px 0">
+              <span class="mono" style="font-size:18px;font-weight:700;color:var(--txt)">{{val}}</span>
+              <span class="up" style="font-size:8px;color:var(--faint);margin-top:3px;letter-spacing:.08em">{{key}}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Abilities -->
+        <div v-if="infoUnit.abilities?.length" style="padding:14px 18px;border-bottom:1px solid var(--line)">
+          <div class="panel-t" style="margin-bottom:10px">Abilities</div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div v-for="ab in infoUnit.abilities" :key="ab.key ?? ab"
+                 style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--r);background:var(--bg2);border:1px solid var(--line);cursor:pointer"
+                 @click="openAbilityInfo(ab)">
+              <span class="mono" style="font-size:9px;padding:1px 5px;border-radius:3px;flex:none;letter-spacing:.04em"
+                    :style="{background: abilityTypeMeta(ab.type).bg, color: abilityTypeMeta(ab.type).color}">
+                {{abilityTypeMeta(ab.type).label}}
+              </span>
+              <span style="font-size:12px;font-weight:600;flex:none;min-width:96px">{{ab.name ?? ab}}</span>
+              <span class="mono" style="font-size:10px;color:var(--faint);flex:none">
+                <template v-if="ab.range != null">Rng&nbsp;{{ab.range}}</template>
+                <template v-if="ab.mpCost"> &middot; {{ab.mpCost}}&thinsp;MP</template>
+              </span>
+              <span style="font-size:11px;color:var(--dim);flex:1;text-align:right">
+                {{fmtAbilityEffect(ab)}}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Passives: reaction + support -->
+        <div v-if="infoUnit.reaction || infoUnit.support" style="padding:14px 18px">
+          <div class="panel-t" style="margin-bottom:10px">Passives</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div v-if="infoUnit.reaction"
+                 style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:var(--r);background:var(--bg2);border:1px solid var(--line)">
+              <span class="mono" style="font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(255,95,86,.12);color:#ff5f56;flex:none;margin-top:1px">REACT</span>
+              <div>
+                <div style="font-size:12px;font-weight:600">{{infoUnit.reaction.name ?? infoUnit.reaction}}</div>
+                <div v-if="infoUnit.reaction.description" style="font-size:11px;color:var(--dim);margin-top:2px">{{infoUnit.reaction.description}}</div>
+              </div>
+            </div>
+            <div v-if="infoUnit.support"
+                 style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:var(--r);background:var(--bg2);border:1px solid var(--line)">
+              <span class="mono" style="font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(70,211,154,.12);color:var(--ok);flex:none;margin-top:1px">SUPP</span>
+              <div>
+                <div style="font-size:12px;font-weight:600">{{infoUnit.support.name ?? infoUnit.support}}</div>
+                <div v-if="infoUnit.support.description" style="font-size:11px;color:var(--dim);margin-top:2px">{{infoUnit.support.description}}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </teleport>
+
+  <!-- ── Ability Info Overlay ───────────────────────────────────── -->
+  <teleport to="body">
+    <div v-if="infoAbility"
+         style="position:fixed;inset:0;z-index:1001;background:rgba(4,7,10,.55);display:flex;align-items:center;justify-content:center"
+         @click.self="closeAbilityInfo">
+
+      <div style="background:var(--bg1);border:1px solid var(--line2);border-radius:var(--r2);width:340px;max-width:88vw;overflow:hidden;box-shadow:0 24px 64px -12px rgba(0,0,0,.8)">
+
+        <!-- Header -->
+        <div style="padding:14px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)">
+          <span class="mono" style="font-size:11px;padding:3px 9px;border-radius:4px;flex:none;letter-spacing:.04em"
+                :style="{background: abilityTypeMeta(infoAbility.type).bg, color: abilityTypeMeta(infoAbility.type).color}">
+            {{abilityTypeMeta(infoAbility.type).label}}
+          </span>
+          <span style="font-size:18px;font-weight:700;flex:1;letter-spacing:-.01em">{{infoAbility.name}}</span>
+          <button @click="closeAbilityInfo"
+                  style="flex:none;width:26px;height:26px;display:grid;place-items:center;border:1px solid var(--line2);border-radius:var(--r);background:var(--bg2);color:var(--dim);font-size:16px;cursor:pointer;line-height:1">
+            ×
+          </button>
+        </div>
+
+        <!-- Details -->
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:12px">
+
+          <!-- Effect -->
+          <div v-if="infoAbility.effect">
+            <div class="up" style="font-size:8px;color:var(--faint);margin-bottom:4px;letter-spacing:.08em">Effect</div>
+            <div style="font-size:13px;color:var(--txt)">{{fmtAbilityEffect(infoAbility)}}</div>
+          </div>
+
+          <!-- Stat pills row -->
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <div v-if="infoAbility.range != null">
+              <div class="up" style="font-size:8px;color:var(--faint);margin-bottom:3px;letter-spacing:.08em">Range</div>
+              <div class="mono" style="font-size:16px;font-weight:700">{{infoAbility.range === 0 ? '—' : infoAbility.range}}</div>
+            </div>
+            <div v-if="infoAbility.mpCost">
+              <div class="up" style="font-size:8px;color:var(--faint);margin-bottom:3px;letter-spacing:.08em">MP Cost</div>
+              <div class="mono" style="font-size:16px;font-weight:700;color:#9b6fff">{{infoAbility.mpCost}}</div>
+            </div>
+            <div v-if="infoAbility.target">
+              <div class="up" style="font-size:8px;color:var(--faint);margin-bottom:3px;letter-spacing:.08em">Target</div>
+              <div class="mono" style="font-size:16px;font-weight:700;text-transform:capitalize">{{infoAbility.target}}</div>
+            </div>
+            <div v-if="infoAbility.power">
+              <div class="up" style="font-size:8px;color:var(--faint);margin-bottom:3px;letter-spacing:.08em">Power</div>
+              <div class="mono" style="font-size:16px;font-weight:700">{{Math.round(infoAbility.power * 100)}}%</div>
+            </div>
+          </div>
+
+          <!-- Tags -->
+          <div v-if="infoAbility.status || infoAbility.aoe || infoAbility.knockback" style="display:flex;gap:5px;flex-wrap:wrap">
+            <span v-if="infoAbility.status" class="mono"
+                  style="font-size:10px;padding:2px 8px;border-radius:3px;background:rgba(242,180,65,.15);color:#f2b441">
+              {{infoAbility.status}}
+            </span>
+            <span v-if="infoAbility.aoe" class="mono"
+                  style="font-size:10px;padding:2px 8px;border-radius:3px;background:rgba(66,198,230,.1);color:var(--accent)">
+              AoE{{infoAbility.aoeRadius ? ' r' + infoAbility.aoeRadius : ''}}
+            </span>
+            <span v-if="infoAbility.knockback" class="mono"
+                  style="font-size:10px;padding:2px 8px;border-radius:3px;background:rgba(255,95,86,.1);color:#ff5f56">
+              knockback
+            </span>
+          </div>
+
+          <!-- Description (if present) -->
+          <p v-if="infoAbility.description"
+             style="margin:0;font-size:12px;color:var(--dim);line-height:1.6;border-top:1px solid var(--line);padding-top:10px">
+            {{infoAbility.description}}
+          </p>
+        </div>
+      </div>
+    </div>
+  </teleport>
 </template>
