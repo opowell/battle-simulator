@@ -811,6 +811,35 @@ export const FFTAGame = {
   getVisibleState,
   getActionDuration,
 
+  getBattleSummary(finalState, log) {
+    const unitOwner = {};
+    for (const u of finalState.units) unitOwner[u.id] = u.ownerId;
+
+    const damageDealt = {};
+    for (const p of finalState.players) damageDealt[p.id] = 0;
+
+    for (const entry of log) {
+      for (const ev of (entry.events ?? [])) {
+        if (ev.type !== 'damage') continue;
+        const targetOwner = unitOwner[ev.targetId];
+        for (const p of finalState.players) {
+          if (p.id !== targetOwner) damageDealt[p.id] += ev.amount;
+        }
+      }
+    }
+
+    return {
+      turns: finalState.turnNumber,
+      teams: finalState.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        unitsLost: finalState.units.filter(u => !u.alive && u.ownerId === p.id).length,
+        unitsTotal: finalState.units.filter(u => u.ownerId === p.id).length,
+        damageDealt: damageDealt[p.id] ?? 0,
+      })),
+    };
+  },
+
   toGrid(state) {
     const { board, units = [] } = state;
     const { width, height, tiles } = board;
