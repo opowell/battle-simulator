@@ -81,10 +81,13 @@ export const ChessGame = {
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
   ],
   ui: {
-    freeSelection: true,    // any piece can be moved; UI should not pre-pick the "active" unit
-    showHpBars:   false,    // pieces don't have HP bars
-    showFacing:   false,    // pieces have no facing direction
-    gridFog:      true,     // fog of war is square-grid based (not radial blob)
+    freeSelection:  true,   // any piece can be moved; UI should not pre-pick the "active" unit
+    showHpBars:    false,   // pieces don't have HP bars
+    showFacing:    false,   // pieces have no facing direction
+    gridFog:        true,   // fog of war is square-grid based (not radial blob)
+    allowDiagonalHopsWhileMoving: true,
+    showRoster:    false,   // hide roster (pieces shown on board)
+    showUnitsLost:  true,   // show captured pieces panel
     unitShapes: { king: 'circle', queen: 'circle', rook: 'square', bishop: 'triangle', knight: 'triangle', pawn: 'circle' },
   },
 
@@ -225,6 +228,22 @@ export const ChessGame = {
     ].join('\n');
   },
 
+  getBattleSummary(finalState, _log) {
+    const STARTING_PIECES = 16;
+    return {
+      turns: finalState.turnNumber,
+      teams: finalState.players.map(p => {
+        const remaining = finalState.units.filter(u => u.ownerId === p.id).length;
+        return {
+          id: p.id,
+          name: p.name,
+          piecesLost: STARTING_PIECES - remaining,
+          piecesRemaining: remaining,
+        };
+      }),
+    };
+  },
+
   getActionDuration(_state, action) {
     // Speed in squares per second: faster pieces complete moves sooner.
     const PIECE_SPEED = { queen: 5, rook: 4, bishop: 4, knight: 3, king: 2, pawn: 1 };
@@ -267,12 +286,14 @@ export const ChessGame = {
       for (let fi = 0; fi < 8; fi++) {
         const piece = state.board?.[FILES[fi] + rank];
         const sq = (fi + rank) % 2 === 0 ? 'light' : 'dark';
+        const sym = piece ? (SYMS[piece.type] ?? piece.type[0].toUpperCase()) : '';
         cells.push({
           x: fi, y: 8 - rank,
-          glyph: piece ? (SYMS[piece.type] ?? piece.type[0].toUpperCase()) : '',
+          glyph: sym,
           owner: piece ? (pidIdx[piece.ownerId] ?? 0) : 0,
           color: this.colors[sq] ?? '#808070',
           unitId: piece?.id,
+          imagePath: piece ? `/images/chess/${piece.ownerId === 'white' ? 'w' : 'b'}${sym}` : null,
         });
       }
     }

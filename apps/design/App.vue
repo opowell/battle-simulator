@@ -31,11 +31,19 @@ const sessionMeta = ref({});
 const hopAnim = ref(null); // { unitId, steps: [{x,y},...], step }
 let hopTimer = null;
 
-function buildHopPath(from, to) {
+function buildHopPath(from, to, diagonal = false) {
   const path = [{ x: from.x, y: from.y }];
   let { x, y } = from;
-  while (x !== to.x) { x += to.x > x ? 1 : -1; path.push({ x, y }); }
-  while (y !== to.y) { y += to.y > y ? 1 : -1; path.push({ x, y }); }
+  if (diagonal) {
+    while (x !== to.x || y !== to.y) {
+      if (x !== to.x) x += to.x > x ? 1 : -1;
+      if (y !== to.y) y += to.y > y ? 1 : -1;
+      path.push({ x, y });
+    }
+  } else {
+    while (x !== to.x) { x += to.x > x ? 1 : -1; path.push({ x, y }); }
+    while (y !== to.y) { y += to.y > y ? 1 : -1; path.push({ x, y }); }
+  }
   return path;
 }
 
@@ -56,7 +64,11 @@ watch(liveState, (newState, oldState) => {
     clearTimeout(hopTimer);
     hopAnim.value = {
       unitId: newCell.unitId,
-      steps: buildHopPath({ x: oldCell.x, y: oldCell.y }, { x: newCell.x, y: newCell.y }),
+      steps: buildHopPath(
+        { x: oldCell.x, y: oldCell.y },
+        { x: newCell.x, y: newCell.y },
+        activeField.value?.ui?.allowDiagonalHopsWhileMoving ?? false,
+      ),
       step: 0,
     };
     hopTimer = setTimeout(advanceHop, 220);

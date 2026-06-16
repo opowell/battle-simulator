@@ -246,12 +246,16 @@ class Session {
       ? game.getVisibleState(rawState, playerId)
       : rawState;
     const pending = this.pendingAction();
+    const summary = (this.status === 'done' && rawState && game.getBattleSummary)
+      ? game.getBattleSummary(rawState, this.engine.log)
+      : null;
     return {
       id: this.id,
       game: this.gameName,
       fog: this.fog,
       status: this.status,
       result: this.result,
+      summary,
       error: this.error,
       turn: rawState?.turnNumber ?? null,
       phase: rawState?.currentPhase ?? null,
