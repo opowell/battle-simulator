@@ -595,6 +595,7 @@ onUnmounted(() => {
                         :showRuler="showRuler" :rdr="rdr"
                         :legalSquares="unitMoves"
                         :lastMoveSquares="lastMoveSquares"
+                        :dragToMove="ui.dragToMove ?? false"
                         @select="id => selectedId = id"
                         @sq-click="handleSqClick"/>
       </div>

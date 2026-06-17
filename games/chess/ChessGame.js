@@ -94,6 +94,7 @@ export const ChessGame = {
     clearSelectedAtEndOfTurn: true,
     moveAnimation: 'none',
     highlightLastMove: true,
+    dragToMove: true,
   },
 
   createInitialState(players, config = {}) {
