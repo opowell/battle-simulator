@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, onUnmounted } from 'vue';
 
 const props = defineProps({
   field:        Object,
@@ -12,6 +12,7 @@ const props = defineProps({
   rdr:          Object,
   legalSquares:    { type: Array, default: () => [] },
   lastMoveSquares: { type: Array, default: () => [] },
+  dragToMove:      { type: Boolean, default: false },
 });
 const emit = defineEmits(['select', 'sq-click']);
 
@@ -149,7 +150,60 @@ function unitShape(u) {
   return 'circle';
 }
 
+// ── drag-to-move ──────────────────────────────────────────────────────────────
+const svgEl       = ref(null);
+const dragUnit    = ref(null);
+const dragSvgPos  = ref(null);   // { x, y } in SVG-local pixels
+const dragHoverSq = ref(null);   // [col, row] under cursor, or null
+
+function _updateDragPos(clientX, clientY) {
+  if (!svgEl.value) return;
+  const rect = svgEl.value.getBoundingClientRect();
+  dragSvgPos.value = { x: clientX - rect.left, y: clientY - rect.top };
+  const col = Math.floor((clientX - rect.left - props.fit.x(0)) / props.fit.s);
+  const row = Math.floor((clientY - rect.top  - props.fit.y(0)) / props.fit.s);
+  dragHoverSq.value =
+    col >= 0 && col < props.field.world.w && row >= 0 && row < props.field.world.h
+      ? [col, row] : null;
+}
+
+function _onDragMove(e)  { _updateDragPos(e.clientX, e.clientY); }
+
+function _onDragEnd(e) {
+  window.removeEventListener('mousemove', _onDragMove);
+  window.removeEventListener('mouseup',   _onDragEnd);
+  if (dragUnit.value && dragHoverSq.value) {
+    const [col, row] = dragHoverSq.value;
+    const unitCol = Math.floor(dragUnit.value.x);
+    const unitRow = Math.floor(dragUnit.value.y);
+    if (col !== unitCol || row !== unitRow) emit('sq-click', col, row);
+  }
+  dragUnit.value   = null;
+  dragSvgPos.value = null;
+  dragHoverSq.value = null;
+}
+
+function handleUnitMousedown(e, u) {
+  if (!props.dragToMove || u.dead) return;
+  // If this unit sits on a legal target square, let the click fall through to sq-click instead.
+  const col = Math.floor(u.x), row = Math.floor(u.y);
+  if (props.legalSquares.some(([lc, lr]) => lc === col && lr === row)) return;
+  e.stopPropagation();
+  emit('select', u.id);
+  dragUnit.value = u;
+  _updateDragPos(e.clientX, e.clientY);
+  window.addEventListener('mousemove', _onDragMove);
+  window.addEventListener('mouseup',   _onDragEnd);
+}
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', _onDragMove);
+  window.removeEventListener('mouseup',   _onDragEnd);
+});
+
+// ── board / unit click ────────────────────────────────────────────────────────
 function handleBoardClick(e) {
+  if (dragUnit.value) return; // drag ended; sq-click already emitted in _onDragEnd
   if (props.field.grid !== 'square') { emit('select', null); return; }
   const rect = e.currentTarget.getBoundingClientRect();
   const col = Math.floor((e.clientX - rect.left - props.fit.x(0)) / props.fit.s);
@@ -163,7 +217,13 @@ function handleBoardClick(e) {
 
 function handleUnitClick(e, u) {
   const col = Math.floor(u.x), row = Math.floor(u.y);
-  if (props.legalSquares.some(([lc, lr]) => lc === col && lr === row)) return; // legal target: bubble to sq-click
+  const isLegalTarget = props.legalSquares.some(([lc, lr]) => lc === col && lr === row);
+  if (props.dragToMove) {
+    // Drag mode: let legal-target clicks bubble to handleBoardClick; block everything else.
+    if (!isLegalTarget) e.stopPropagation();
+    return;
+  }
+  if (isLegalTarget) return; // legal target: bubble to sq-click
   e.stopPropagation();
   emit('select', u.id);
 }
@@ -205,7 +265,8 @@ function facingArrow(u) {
 
 <template>
   <div class="bf-layer" :style="{background: rdr.stage}">
-    <svg width="100%" height="100%" style="display:block;position:absolute;inset:0"
+    <svg ref="svgEl" width="100%" height="100%"
+         :style="{ display:'block', position:'absolute', inset:0, cursor: dragUnit ? 'grabbing' : '' }"
          @click="handleBoardClick">
 
       <!-- Terrain tiles (per-cell color from game toGrid) -->
@@ -280,8 +341,14 @@ function facingArrow(u) {
       <!-- Units -->
       <template v-for="u in units" :key="u.id">
       <g v-if="isVisible(u)"
-         :style="{ transform: `translate(${fit.x(u.x)}px, ${fit.y(u.y)}px)`, transition: hasMoveIntent(u) ? 'transform 0.15s ease' : 'none', cursor: 'pointer' }"
-         @click="handleUnitClick($event, u)">
+         :style="{
+           transform: `translate(${fit.x(u.x)}px, ${fit.y(u.y)}px)`,
+           transition: hasMoveIntent(u) ? 'transform 0.15s ease' : 'none',
+           cursor: dragToMove && !u.dead ? 'grab' : 'pointer',
+           opacity: dragUnit && dragUnit.id === u.id ? 0.25 : 1,
+         }"
+         @click="handleUnitClick($event, u)"
+         @mousedown="handleUnitMousedown($event, u)">
 
         <!-- Dead: X marker -->
         <g v-if="u.dead" :opacity="0.4">
@@ -361,6 +428,39 @@ function facingArrow(u) {
               :x="fit.x(0)-6" :y="fit.y(r.pos)+3"
               :fill="rdr.ruler" font-size="8" :font-family="rdr.font" text-anchor="end">{{r.label}}</text>
       </template>
+
+      <!-- Drag: hover square highlight (only when over a legal target) -->
+      <rect v-if="dragUnit && dragHoverSq && legalSquares.some(([c,r]) => c===dragHoverSq[0] && r===dragHoverSq[1])"
+            :x="fit.x(dragHoverSq[0])" :y="fit.y(dragHoverSq[1])"
+            :width="fit.len(1)" :height="fit.len(1)"
+            fill="rgba(66,198,230,0.55)" stroke="rgba(66,198,230,0.9)" stroke-width="2"
+            style="pointer-events:none"/>
+
+      <!-- Drag: ghost piece following cursor -->
+      <g v-if="dragUnit && dragSvgPos"
+         :style="{ transform: `translate(${dragSvgPos.x}px, ${dragSvgPos.y}px)` }"
+         style="pointer-events:none;opacity:0.75">
+        <circle v-if="!dragUnit.imagePath && unitShape(dragUnit)==='circle'"
+                cx="0" cy="0" :r="unitR(dragUnit)"
+                :fill="dragUnit.teamObj.raw" stroke="white" stroke-width="2"/>
+        <polygon v-else-if="!dragUnit.imagePath && unitShape(dragUnit)==='triangle'"
+                 :points="`0,${-unitR(dragUnit)} ${unitR(dragUnit)},${unitR(dragUnit)} ${-unitR(dragUnit)},${unitR(dragUnit)}`"
+                 :fill="dragUnit.teamObj.raw" stroke="white" stroke-width="2"/>
+        <rect v-else-if="!dragUnit.imagePath"
+              :x="-unitR(dragUnit)" :y="-unitR(dragUnit)"
+              :width="unitR(dragUnit)*2" :height="unitR(dragUnit)*2"
+              :fill="dragUnit.teamObj.raw" stroke="white" stroke-width="2"/>
+        <image v-if="dragUnit.imagePath"
+               :x="-unitR(dragUnit)" :y="-unitR(dragUnit)"
+               :width="unitR(dragUnit)*2" :height="unitR(dragUnit)*2"
+               :href="dragUnit.imagePath"
+               style="image-rendering:pixelated"/>
+        <text v-else x="0" y="0"
+              fill="white" :font-family="rdr.font"
+              :font-size="unitR(dragUnit)" font-weight="800"
+              text-anchor="middle" dominant-baseline="central"
+              style="user-select:none">{{dragUnit.name[0].toUpperCase()}}</text>
+      </g>
     </svg>
 
     <!-- Fog mask (radial gradient blobs, only when grid-based fog is not used) -->

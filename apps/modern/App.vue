@@ -33,6 +33,11 @@ const GENERAL_GAME_OPTIONS = [
       { value: 'slide', label: 'Slide' },
     ],
   },
+  {
+    id: 'dragToMove', label: 'Drag to Move', type: 'boolean',
+    description: 'Drag pieces to their destination instead of click-then-click',
+    default: false,
+  },
 ];
 
 const client = new BattleSimClient();
