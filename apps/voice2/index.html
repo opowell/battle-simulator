@@ -53,12 +53,24 @@ h1 { font-size: 1.5rem; font-weight: 600; color: #94a3b8; letter-spacing: 0.05em
 <body>
 <div id="app">
   <h1>VOICE INPUT</h1>
-  <button id="mic-btn" title="Click to record">🎤</button>
-  <div id="status">Tap to record</div>
+  <button id="mic-btn" title="Click to record" disabled>🎤</button>
+  <div id="status" class="active">Loading model…</div>
   <div id="transcript-box" class="empty">Transcription will appear here…</div>
 </div>
 
 <script type="module">
+// esm.sh builds a browser-compatible ESM bundle, rewriting bare specifiers
+// (onnxruntime-web, @huggingface/jinja, fs, path, etc.) to CDN URLs.
+// jsDelivr/unpkg serve the raw source which has unresolvable bare specifiers.
+let pipeline;
+try {
+  ({ pipeline } = await import('https://esm.sh/@xenova/transformers@2.17.2'));
+} catch (e) {
+  document.getElementById('status').textContent = 'Failed to load library: ' + e.message;
+  document.getElementById('status').className = 'error';
+  throw e;
+}
+
 const micBtn       = document.getElementById('mic-btn');
 const statusEl     = document.getElementById('status');
 const transcriptEl = document.getElementById('transcript-box');
@@ -77,6 +89,17 @@ function startTimer() {
 }
 function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
 
+// whisper-tiny.en is ~40 MB; cached in browser Cache API after first load
+let transcriber;
+try {
+  setStatus('Downloading model (~40 MB, cached after first load)…', 'active');
+  transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en');
+  setStatus('Tap to record');
+  micBtn.disabled = false;
+} catch (e) {
+  setStatus('Model load failed: ' + e.message, 'error');
+}
+
 micBtn.addEventListener('click', async () => {
   if (mediaRecorder?.state === 'recording') {
     mediaRecorder.stop();
@@ -92,10 +115,10 @@ micBtn.addEventListener('click', async () => {
   mediaRecorder.ondataavailable = e => chunks.push(e.data);
   mediaRecorder.onstop = async () => {
     stream.getTracks().forEach(t => t.stop());
+    micBtn.classList.remove('recording');
     micBtn.textContent = '⏳';
     micBtn.disabled = true;
 
-    // Decode audio to 16kHz PCM on the client (AudioContext handles any format)
     const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
     const arrayBuffer = await blob.arrayBuffer();
     const audioCtx = new AudioContext({ sampleRate: 16000 });
@@ -106,18 +129,12 @@ micBtn.addEventListener('click', async () => {
 
     startTimer();
     try {
-      const res = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        body: float32.buffer,
-      });
-      if (!res.ok) throw new Error(`Server error ${res.status}: ${await res.text()}`);
-      const { text } = await res.json();
-      transcriptEl.textContent = text || '(silence)';
+      const result = await transcriber(float32, { language: 'english', task: 'transcribe' });
+      transcriptEl.textContent = result.text?.trim() || '(silence)';
       transcriptEl.classList.remove('empty');
       setStatus('Done — tap to record again');
     } catch (e) {
-      setStatus('Error: ' + e.message, 'error');
+      setStatus('Transcription error: ' + e.message, 'error');
     } finally {
       stopTimer();
       micBtn.textContent = '🎤';

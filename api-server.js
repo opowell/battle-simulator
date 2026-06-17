@@ -16,17 +16,6 @@ import { readFile, readdir, writeFile, mkdir } from 'node:fs/promises';
 import { extname, resolve, sep, dirname } from 'node:path';
 import { fileURLToPath }         from 'node:url';
 
-// Lazy-loaded Whisper transcriber (first call downloads ~40 MB model)
-let _transcriber = null;
-async function getTranscriber() {
-  if (!_transcriber) {
-    const { pipeline } = await import('@xenova/transformers');
-    _transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny');
-  }
-  return _transcriber;
-}
-// Warm up in background so first real request is fast
-getTranscriber().catch(() => {});
 
 import { GameEngine } from './engine/index.js';
 import { RandomAgent } from './agents/index.js';
@@ -320,27 +309,6 @@ function readBody(req) {
   });
 }
 
-function readBinaryBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', chunk => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
-
-async function handleTranscribe(req, res) {
-  const buf = await readBinaryBody(req);
-  if (buf.length === 0 || buf.length % 4 !== 0) return err(res, 400, 'Expected Float32Array binary body');
-  const float32 = new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4);
-  try {
-    const t = await getTranscriber();
-    const result = await t(float32, { language: 'english', task: 'transcribe' });
-    send(res, 200, { text: result.text?.trim() ?? '' });
-  } catch (e) {
-    err(res, 500, e.message);
-  }
-}
 
 function send(res, status, body) {
   const payload = JSON.stringify(body, null, 2);
@@ -522,10 +490,6 @@ const server = createServer(async (req, res) => {
     }
     if (method === 'GET' && parts[0] === 'design')
       return await serveApp('design', req, res);
-
-    // POST /api/transcribe — offline Whisper transcription (Float32Array binary body at 16kHz)
-    if (method === 'POST' && parts[0] === 'api' && parts[1] === 'transcribe')
-      return await handleTranscribe(req, res);
 
     // GET /images/:game/:job[/:type] — serve game images (e.g. /images/ffta/soldier/sprite)
     if (method === 'GET' && parts[0] === 'images' && (parts.length === 3 || parts.length === 4))

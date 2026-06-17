@@ -10,7 +10,8 @@ const props = defineProps({
   fog:          Boolean,
   showRuler:    Boolean,
   rdr:          Object,
-  legalSquares: { type: Array, default: () => [] },
+  legalSquares:    { type: Array, default: () => [] },
+  lastMoveSquares: { type: Array, default: () => [] },
 });
 const emit = defineEmits(['select', 'sq-click']);
 
@@ -224,6 +225,13 @@ function facingArrow(u) {
             :x="fit.x(fs.x)" :y="fit.y(fs.y)"
             :width="fit.len(1)" :height="fit.len(1)"
             :fill="rdr.fogA"
+            style="pointer-events:none"/>
+
+      <!-- Last move highlights -->
+      <rect v-for="([lc, lr], i) in lastMoveSquares" :key="'lmv'+i"
+            :x="fit.x(lc)" :y="fit.y(lr)"
+            :width="fit.len(1)" :height="fit.len(1)"
+            fill="rgba(242,180,65,0.35)"
             style="pointer-events:none"/>
 
       <!-- Legal move highlights -->

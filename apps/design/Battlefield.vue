@@ -153,6 +153,19 @@ const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
 // ── move highlights ────────────────────────────────────────────
 const displayUnits = units;
 
+const lastMoveSquares = computed(() => {
+  if (!ui.value.highlightLastMove) return [];
+  const log = props.liveState?.log;
+  if (!log?.length) return [];
+  const lastEntry = log[log.length - 1];
+  const action = lastEntry?.playerActions?.[0]?.action;
+  if (!action) return [];
+  const squares = [];
+  if (action.gridFrom) squares.push(action.gridFrom);
+  if (action.gridTo)   squares.push(action.gridTo);
+  return squares;
+});
+
 // Actions carry gridTo/gridFrom when the game populates them; otherwise fall back to {x,y}.
 function actionGridCoord(action, field) {
   if (field === 'to')   return action.gridTo   ?? (action.to?.x   != null ? [action.to.x,   action.to.y]   : null);
@@ -270,6 +283,7 @@ function fmtAction(action) {
 }
 
 function submitAction(action) {
+  if (ui.value.clearSelectedAtEndOfTurn) selectedId.value = null;
   emit('submit-action', { playerId: pendingPlayerId.value, action });
 }
 
@@ -551,6 +565,7 @@ onUnmounted(() => {
                         :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
                         :showRuler="showRuler" :rdr="rdr"
                         :legalSquares="unitMoves"
+                        :lastMoveSquares="lastMoveSquares"
                         @select="id => selectedId = id"
                         @sq-click="handleSqClick"/>
       </div>

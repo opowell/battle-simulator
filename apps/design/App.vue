@@ -80,7 +80,7 @@ watch(liveState, (newState, oldState) => {
     if (!oldCell || (oldCell.x === newCell.x && oldCell.y === newCell.y)) continue;
     moved.set(newCell.unitId, { from: { x: oldCell.x, y: oldCell.y }, to: { x: newCell.x, y: newCell.y } });
   }
-  if (moved.size === 0) { seenLogLength = log.length; return; }
+  if (moved.size === 0 || (activeField.value?.ui?.moveAnimation ?? 'hop') === 'none') { seenLogLength = log.length; return; }
 
   // Order queued hops by the turn log so bundled turns play back in the order they happened.
   const order = [];

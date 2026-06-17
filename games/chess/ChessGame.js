@@ -91,6 +91,9 @@ export const ChessGame = {
     showUnitsLost:  true,   // show captured pieces panel
     unitShapes: { king: 'circle', queen: 'circle', rook: 'square', bishop: 'triangle', knight: 'triangle', pawn: 'circle' },
     gridLabelsBottom: true, // file letters read below the board, like algebraic notation
+    clearSelectedAtEndOfTurn: true,
+    moveAnimation: 'none',
+    highlightLastMove: true,
   },
 
   createInitialState(players, config = {}) {
