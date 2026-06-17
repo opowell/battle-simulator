@@ -49,6 +49,15 @@ h1 { font-size: 1.5rem; font-weight: 600; color: #94a3b8; letter-spacing: 0.05em
   color: #e2e8f0; white-space: pre-wrap; word-break: break-word;
 }
 #transcript-box.empty { color: #475569; font-style: italic; }
+
+#speak-btn {
+  padding: 10px 28px; border-radius: 8px; border: none;
+  background: #065f46; color: #d1fae5; font-size: 0.95rem; font-weight: 600;
+  cursor: pointer; transition: background 0.15s, transform 0.1s;
+  letter-spacing: 0.04em;
+}
+#speak-btn:hover { background: #047857; }
+#speak-btn:active { transform: scale(0.96); }
 </style>
 </head>
 <body>
@@ -57,6 +66,7 @@ h1 { font-size: 1.5rem; font-weight: 600; color: #94a3b8; letter-spacing: 0.05em
   <button id="mic-btn" title="Click to record" disabled>🎤</button>
   <div id="status" class="active">Loading model…</div>
   <div id="transcript-box" class="empty">Transcription will appear here…</div>
+  <button id="speak-btn">▶ Say "attack"</button>
 </div>
 
 <script type="importmap">
@@ -128,6 +138,43 @@ try {
 } catch (e) {
   setStatus('Model load failed: ' + e.message, 'error');
 }
+
+function getVoices() {
+  return new Promise(resolve => {
+    const v = speechSynthesis.getVoices();
+    if (v.length) return resolve(v);
+    speechSynthesis.addEventListener('voiceschanged', () => resolve(speechSynthesis.getVoices()), { once: true });
+  });
+}
+
+// Prefer a natural/enhanced female English voice.
+async function pickFemaleVoice() {
+  const voices = await getVoices();
+  const en = voices.filter(v => v.lang.startsWith('en'));
+
+  // Tiers: neural/natural first, then known female names, then anything non-male-named
+  const tiers = [
+    v => /natural|enhanced|neural/i.test(v.name) && /samantha|karen|victoria|moira|fiona|allison|ava|susan|zira|aria|jenny|sonia|libby|mia|nora/i.test(v.name),
+    v => /natural|enhanced|neural/i.test(v.name),
+    v => /samantha|karen|victoria|moira|fiona|allison|ava|susan|zira|aria|jenny|sonia|libby|mia|nora/i.test(v.name),
+    v => !/daniel|david|alex|fred|tom|james|oliver|rishi|liam|aaron|arthur/i.test(v.name),
+  ];
+
+  for (const tier of tiers) {
+    const match = en.find(tier);
+    if (match) return match;
+  }
+  return en[0] ?? voices[0] ?? null;
+}
+
+let _utt = null; // keep reference alive — Chrome GCs it mid-speech otherwise
+
+document.getElementById('speak-btn').addEventListener('click', async () => {
+  _utt = new SpeechSynthesisUtterance('attack me.');
+  _utt.voice = await pickFemaleVoice();
+  _utt.rate = 0.95;
+  speechSynthesis.speak(_utt);
+});
 
 micBtn.addEventListener('click', async () => {
   if (mediaRecorder?.state === 'recording') {
