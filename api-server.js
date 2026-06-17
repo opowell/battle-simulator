@@ -461,7 +461,7 @@ async function handleDeleteSession(res, id) {
 // Server
 // ---------------------------------------------------------------------------
 
-const PORT = process.env.PORT ?? 3000;
+const PORT = process.env.PORT ?? 3333;
 
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {

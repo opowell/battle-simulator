@@ -1,5 +1,5 @@
 export class BattleSimClient {
-  constructor(base = 'http://localhost:3000') {
+  constructor(base = 'http://localhost:3333') {
     this.base = base;
   }
 

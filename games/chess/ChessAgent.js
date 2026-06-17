@@ -331,9 +331,13 @@ export const ChessAgent = {
   id: 'chess-ai',
   name: 'Chess AI',
 
-  chooseAction(state, legalActions) {
+  async chooseAction(state, legalActions) {
     if (legalActions.length === 0) return null;
     if (legalActions.length === 1) return legalActions[0];
+
+    // Yield to the event loop so the server can respond with the human's move
+    // before the synchronous minimax search blocks the event loop.
+    await new Promise(r => setImmediate(r));
 
     const color = state.activePlayers[0];
     const { board, gameSpecific } = state;

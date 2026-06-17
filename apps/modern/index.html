@@ -145,7 +145,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans
   const { loadModule } = window['vue3-sfc-loader'];
 
   class BattleSimClient {
-    constructor(base = 'http://localhost:3000') { this.base = base; }
+    constructor(base = 'http://localhost:3333') { this.base = base; }
     async _req(method, path, body) {
       const res = await fetch(`${this.base}${path}`, {
         method,

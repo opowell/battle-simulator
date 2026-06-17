@@ -1,6 +1,6 @@
 // api.js — HTTP client for the Battle Simulator API
 
-const _BASE = 'http://localhost:3000';
+const _BASE = 'http://localhost:3333';
 
 async function _req(path, opts) {
   const r = await fetch(_BASE + path, {
