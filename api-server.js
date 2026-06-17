@@ -50,6 +50,7 @@ const SESSIONS_DIR = resolve(ROOT_DIR, 'sessions');
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js':   'text/javascript; charset=utf-8',
+  '.mjs':  'text/javascript; charset=utf-8',
   '.vue':  'text/plain; charset=utf-8',
   '.css':  'text/css; charset=utf-8',
   '.json': 'application/json',
@@ -60,6 +61,8 @@ const MIME_TYPES = {
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
   '.ico':  'image/x-icon',
+  '.wasm': 'application/wasm',
+  '.onnx': 'application/octet-stream',
 };
 
 async function serveApp(appName, req, res) {
@@ -264,7 +267,7 @@ class Session {
       pendingPlayer: pending?.playerId ?? null,
       legalActions: pending?.legalActions ?? null,
       rendered: rawState ? game.renderState(viewState) : null,
-      grid: viewState && game.toGrid ? game.toGrid(viewState) : null,
+      grid: viewState && game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null,
       lastActions: rawState?.lastActions ?? null,
       log: this.engine.log,
     };
@@ -281,6 +284,17 @@ class Session {
 // ---------------------------------------------------------------------------
 // Router helpers
 // ---------------------------------------------------------------------------
+
+// A game's static `axisLabels` (e.g. Chess's algebraic file letters) always wins over
+// whatever labels its `toGrid` happened to compute, so renderers stay correct even if
+// `toGrid` changes independently.
+function applyAxisLabels(game, grid) {
+  if (!grid || !game.axisLabels) return grid;
+  const { x, y } = game.axisLabels;
+  if (x) grid.xLabels = x;
+  if (y) grid.yLabels = y;
+  return grid;
+}
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -463,7 +477,7 @@ const server = createServer(async (req, res) => {
     }
 
     // Static UI apps — GET /ui/<name>/* or GET /design/* (legacy)
-    const UI_APPS = ['classic', 'minimal', 'modern', 'design'];
+    const UI_APPS = ['classic', 'minimal', 'modern', 'design', 'voice', 'voice2'];
     if (method === 'GET' && parts[0] === 'ui' && UI_APPS.includes(parts[1])) {
       // Redirect /ui/<name> (no trailing slash) so relative asset paths resolve correctly
       if (parts.length === 2 && !url.pathname.endsWith('/')) {

@@ -3,12 +3,14 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import SchematicLayer from './SchematicLayer.vue';
 
 const props = defineProps({
-  liveState: Object,  // raw API session JSON
-  field:     Object,
-  theme:     String,
-  fog:       { type: Boolean, default: false },
+  liveState:  Object,  // raw API session JSON
+  field:      Object,
+  theme:      String,
+  fog:        { type: Boolean, default: false },
+  gamesCount: { type: Number, default: 0 },
+  serverErr:  { type: String, default: '' },
 });
-const emit = defineEmits(['exit', 'submit-action']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action']);
 
 // ── playback ─────────────────────────────────────────────────
 const tFloat   = ref(0);
@@ -16,6 +18,7 @@ const playing  = ref(false);
 
 // ── view toggles ─────────────────────────────────────────────
 const showRuler = ref(false);
+const showMenu   = ref(false);
 
 // ── selection ─────────────────────────────────────────────────
 const selectedId = ref(null);
@@ -126,6 +129,12 @@ const rdr = computed(() => RDR[props.theme] || RDR.military);
 
 // ── game UI flags (provided by the game definition, generic) ──
 const ui = computed(() => props.field.ui ?? {});
+
+// Reset the ruler to each game's initial visibility when entering a (new) session,
+// rather than carrying over whatever the previous game's session left it at.
+watch(() => props.liveState?.id, (id) => {
+  if (id) showRuler.value = ui.value.showGrid ?? true;
+}, { immediate: true });
 
 // ── world → screen transform ──────────────────────────────────
 const fit = computed(() => makeFitter(props.field.world, { w: stageW.value, h: stageH.value }, 24));
@@ -307,7 +316,8 @@ function scrub(e) {
 function onKeyDown(e) {
   if (e.key === 'Escape') {
     if (infoAbility.value) closeAbilityInfo();
-    else closeInfo();
+    else if (infoUnit.value) closeInfo();
+    else showMenu.value = !showMenu.value;
   }
 }
 
@@ -329,47 +339,39 @@ onUnmounted(() => {
 <template>
   <div style="height:100%;display:flex;flex-direction:column;overflow:hidden">
 
-    <!-- ── Toolbar ───────────────────────────────────────────── -->
-    <div class="topbar" style="min-height:44px;padding:0 14px;border-bottom:1px solid var(--line)">
-      <button class="btn btn-sm btn-ghost" style="gap:5px" @click="$emit('exit')">
-        <BsIcon name="back" :size="13" color="var(--dim)"/>
-        Lobby
-      </button>
-      <div style="margin-left:10px;display:flex;align-items:center;gap:8px">
-        <BsIcon name="crosshair" :size="14" color="var(--accent)"/>
-        <span style="font-weight:600;font-size:13px">{{field.game}}</span>
-        <span class="mono" style="font-size:11px;color:var(--faint)">{{field.label}}</span>
-      </div>
-
-      <!-- Live status badge -->
-      <div v-if="isLive" style="display:flex;align-items:center;gap:7px;margin-left:12px">
-        <span v-if="isDone"
-              style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(70,211,154,.1);color:var(--ok)">
-          ✓ {{liveState.result?.winner ? 'Winner: ' + liveState.result.winner : 'Game over'}}
-        </span>
-        <span v-else-if="isPending"
-              class="mono" style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(70,211,154,.1);color:var(--ok)">
-          ● Your turn · {{pendingPlayerId}}
-        </span>
-        <span v-else
-              class="mono" style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(242,180,65,.1);color:var(--warn)">
-          ○ AI thinking…
-        </span>
-      </div>
-
-      <div style="flex:1"/>
-
-      <button class="iconbtn" :style="{color: showRuler ? 'var(--accent)' : 'var(--dim)'}"
-              title="Show ruler" style="width:32px;height:32px" @click="showRuler = !showRuler">
-        <BsIcon name="move" :size="15"/>
-      </button>
-    </div>
-
     <!-- ── Main: Left panel + Stage + Sidebar ───────────────── -->
     <div style="flex:1;min-height:0;display:flex;overflow:hidden">
 
       <!-- Left: Selected unit panel -->
       <div style="width:240px;min-height:0;overflow-y:auto;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--bg1)">
+
+        <!-- Game header: name, turn, live status -->
+        <div style="padding:12px 14px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+            <BsIcon name="crosshair" :size="14" color="var(--accent)"/>
+            <span style="font-weight:700;font-size:14px">{{field.game}}</span>
+            <button class="iconbtn" title="Menu" style="width:22px;height:22px"
+                    :style="{borderColor: showMenu ? 'var(--accent)' : 'var(--line2)'}"
+                    @click="showMenu = !showMenu">
+              <BsIcon name="grid" :size="12" :color="showMenu ? 'var(--accent)' : 'var(--dim)'"/>
+            </button>
+            <span class="mono" style="font-size:11px;color:var(--faint);margin-left:auto">Turn {{liveState?.turn ?? 0}}</span>
+          </div>
+          <div v-if="isLive" style="display:flex">
+            <span v-if="isDone"
+                  style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(70,211,154,.1);color:var(--ok)">
+              ✓ {{liveState.result?.winner ? 'Winner: ' + liveState.result.winner : 'Game over'}}
+            </span>
+            <span v-else-if="isPending"
+                  class="mono" style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(70,211,154,.1);color:var(--ok)">
+              ● Your turn · {{pendingPlayerId}}
+            </span>
+            <span v-else
+                  class="mono" style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(242,180,65,.1);color:var(--warn)">
+              ○ AI thinking…
+            </span>
+          </div>
+        </div>
 
         <!-- Selected unit detail -->
         <div v-if="selectedUnit" style="padding:12px 14px;border-bottom:1px solid var(--line)">
@@ -492,7 +494,7 @@ onUnmounted(() => {
         <!-- Live: Actions panel -->
         <div v-if="isLive" style="padding:12px 14px;border-top:1px solid var(--line)">
           <div class="panel-t" style="margin-bottom:8px">
-            Turn {{liveState.turn ?? 0}}
+            Actions
             <span v-if="liveState.phase" class="mono" style="font-weight:400;color:var(--faint)">
               · {{liveState.phase}}
             </span>
@@ -721,6 +723,51 @@ onUnmounted(() => {
       <BsIcon name="clock" :size="14" color="var(--faint)"/>
     </div>
   </div>
+
+  <!-- ── Menu Overlay (everything not directly game-related) ──── -->
+  <teleport to="body">
+    <div v-if="showMenu"
+         style="position:fixed;inset:0;z-index:1002;background:rgba(4,7,10,.82);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)"
+         @click.self="showMenu = false">
+
+      <div style="background:var(--bg1);border:1px solid var(--line2);border-radius:var(--r2);width:340px;max-width:92vw;overflow:hidden;box-shadow:0 24px 64px -12px rgba(0,0,0,.85)">
+
+        <div style="padding:16px 18px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)">
+          <span style="width:24px;height:24px;display:grid;place-items:center;border:1px solid var(--accent);color:var(--accent);border-radius:5px;flex:none">
+            <BsIcon name="crosshair" :size="14"/>
+          </span>
+          <span style="font-weight:700;letter-spacing:.12em;font-size:13px;flex:1">BATTLE&nbsp;SIMULATOR</span>
+          <button @click="showMenu = false"
+                  style="flex:none;width:28px;height:28px;display:grid;place-items:center;border:1px solid var(--line2);border-radius:var(--r);background:var(--bg2);color:var(--dim);font-size:16px;cursor:pointer;line-height:1">
+            ×
+          </button>
+        </div>
+
+        <div style="padding:16px 18px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:9px">
+          <div class="statuschip"
+               :style="serverErr ? {borderColor:'var(--danger)',color:'var(--danger)'} : {}">
+            <span class="pulse"
+                  :style="serverErr ? {background:'var(--danger)',animationPlayState:'paused'} : {}"/>
+            {{ serverErr ? 'offline' : 'api · localhost:3000' }}
+          </div>
+          <span class="mono" style="font-size:11px;color:var(--faint)">{{gamesCount}} games</span>
+        </div>
+
+        <div style="padding:10px;display:flex;flex-direction:column;gap:4px">
+          <button class="btn btn-ghost" style="justify-content:flex-start;gap:8px" @click="showMenu = false; $emit('exit')">
+            <BsIcon name="back" :size="14" color="var(--dim)"/> Back to Lobby
+          </button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;gap:8px" @click="showRuler = !showRuler">
+            <BsIcon name="move" :size="14" :color="showRuler ? 'var(--accent)' : 'var(--dim)'"/>
+            {{showRuler ? 'Hide ruler' : 'Show ruler'}}
+          </button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;gap:8px" @click="showMenu = false; $emit('open-settings')">
+            <BsIcon name="sliders" :size="14" color="var(--dim)"/> Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  </teleport>
 
   <!-- ── Unit Info Overlay ────────────────────────────────────── -->
   <!-- ── Game-Over Overlay ─────────────────────────────────────── -->

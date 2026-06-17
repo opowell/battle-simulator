@@ -803,6 +803,7 @@ export const FFTAGame = {
     { id: 'grandMelee',      name: 'Grand Melee',           description: '5v5 clash featuring all-new job classes across the full tactical map', config: { scenario: 'grandMelee' } },
   ],
   colors: { floor: '#8a9c70', elevated: '#a07858', 'elevated-high': '#b89060', wall: '#2a2018' },
+  ui: { moveAnimation: 'hop' },
   createInitialState,
   getLegalActions,
   applyActions,

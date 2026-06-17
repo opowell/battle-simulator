@@ -29,18 +29,30 @@ const gridY = computed(() => {
 });
 
 const rulerX = computed(() => {
+  if (props.field.grid === 'square') {
+    return Array.from({ length: props.field.world.w }, (_, x) => ({ label: props.field.xLabels?.[x] ?? x, pos: x + 0.5 }));
+  }
   const step = Math.max(1, Math.round(props.field.world.w / 8));
   const out = [];
-  for (let x = 0; x <= props.field.world.w; x += step) out.push(x);
+  for (let x = 0; x <= props.field.world.w; x += step) out.push({ label: x, pos: x });
   return out;
 });
 
 const rulerY = computed(() => {
+  if (props.field.grid === 'square') {
+    return Array.from({ length: props.field.world.h }, (_, y) => ({ label: props.field.yLabels?.[y] ?? y, pos: y + 0.5 }));
+  }
   const step = Math.max(1, Math.round(props.field.world.h / 6));
   const out = [];
-  for (let y = 0; y <= props.field.world.h; y += step) out.push(y);
+  for (let y = 0; y <= props.field.world.h; y += step) out.push({ label: y, pos: y });
   return out;
 });
+
+// X-axis ruler reads below the board for games like Chess (algebraic file letters);
+// everything else keeps the original top placement.
+const xRulerY = computed(() => props.field.ui?.gridLabelsBottom
+  ? props.fit.y(props.field.world.h) + 11
+  : props.fit.y(0) - 4);
 
 const fogMask = computed(() => {
   const friends = props.units.filter(u => u.friendly && !u.dead);
@@ -71,7 +83,9 @@ const boardSquares = computed(() => {
 
 function unitR(u) {
   const mult = props.field.grid === 'square' ? (props.field.world.w <= 10 ? 0.36 : 0.42) : 2.4;
-  return Math.max(5, props.fit.len(mult));
+  // Bare sprite images have no stroke/padding eating into them, so let them fill more of the cell.
+  const boosted = u?.imagePath ? mult * 1.25 : mult;
+  return Math.max(5, props.fit.len(boosted));
 }
 
 // Grid-based fog of war: compute per-square visibility from friendly pieces.
@@ -258,7 +272,7 @@ function facingArrow(u) {
       <!-- Units -->
       <template v-for="u in units" :key="u.id">
       <g v-if="isVisible(u)"
-         :style="{ transform: `translate(${fit.x(u.x)}px, ${fit.y(u.y)}px)`, transition: 'transform 0.15s ease', cursor: 'pointer' }"
+         :style="{ transform: `translate(${fit.x(u.x)}px, ${fit.y(u.y)}px)`, transition: hasMoveIntent(u) ? 'transform 0.15s ease' : 'none', cursor: 'pointer' }"
          @click="handleUnitClick($event, u)">
 
         <!-- Dead: X marker -->
@@ -289,26 +303,31 @@ function facingArrow(u) {
                    :points="facingArrow(u)"
                    :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw"
                    :stroke="rdr.stage" stroke-width="1"/>
-          <!-- Body shape: active unit gets solid team-color fill -->
-          <circle v-if="unitShape(u)==='circle'"
+          <!-- Body shape: active unit gets solid team-color fill (skipped when a sprite image is available) -->
+          <circle v-if="!u.imagePath && unitShape(u)==='circle'"
                   cx="0" cy="0" :r="unitR(u)"
                   :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
                   :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
-          <polygon v-else-if="unitShape(u)==='triangle'"
+          <polygon v-else-if="!u.imagePath && unitShape(u)==='triangle'"
                    :points="`0,${-unitR(u)} ${unitR(u)},${unitR(u)} ${-unitR(u)},${unitR(u)}`"
                    :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
                    :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
-          <rect v-else
+          <rect v-else-if="!u.imagePath"
                 :x="-unitR(u)" :y="-unitR(u)"
                 :width="unitR(u)*2" :height="unitR(u)*2"
                 :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
                 :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <!-- Sprite image or first letter of unit name -->
-          <image v-if="u.imagePath"
-                 :x="-unitR(u)" :y="-unitR(u)"
-                 :width="unitR(u)*2" :height="unitR(u)*2"
-                 :href="u.imagePath"
-                 style="pointer-events:none;image-rendering:pixelated"/>
+          <template v-if="u.imagePath">
+            <!-- Invisible hit-area: the image itself has pointer-events:none so it doesn't block clicks on what's behind it -->
+            <rect :x="-unitR(u)" :y="-unitR(u)"
+                  :width="unitR(u)*2" :height="unitR(u)*2"
+                  fill="transparent" style="pointer-events:all"/>
+            <image :x="-unitR(u)" :y="-unitR(u)"
+                   :width="unitR(u)*2" :height="unitR(u)*2"
+                   :href="u.imagePath"
+                   style="pointer-events:none;image-rendering:pixelated"/>
+          </template>
           <text v-else x="0" y="0"
                 :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" :font-family="rdr.font"
                 :font-size="unitR(u)" font-weight="800"
@@ -327,12 +346,12 @@ function facingArrow(u) {
 
       <!-- Ruler labels -->
       <template v-if="showRuler">
-        <text v-for="gx in rulerX" :key="'rx'+gx"
-              :x="fit.x(gx)" :y="fit.y(0)-4"
-              :fill="rdr.ruler" font-size="8" :font-family="rdr.font" text-anchor="middle">{{gx}}</text>
-        <text v-for="gy in rulerY" :key="'ry'+gy"
-              :x="fit.x(0)-6" :y="fit.y(gy)+3"
-              :fill="rdr.ruler" font-size="8" :font-family="rdr.font" text-anchor="end">{{gy}}</text>
+        <text v-for="r in rulerX" :key="'rx'+r.label"
+              :x="fit.x(r.pos)" :y="xRulerY"
+              :fill="rdr.ruler" font-size="8" :font-family="rdr.font" text-anchor="middle">{{r.label}}</text>
+        <text v-for="r in rulerY" :key="'ry'+r.label"
+              :x="fit.x(0)-6" :y="fit.y(r.pos)+3"
+              :fill="rdr.ruler" font-size="8" :font-family="rdr.font" text-anchor="end">{{r.label}}</text>
       </template>
     </svg>
 

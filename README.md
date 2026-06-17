@@ -1,6 +1,6 @@
 # Battle Simulator
 
-A turn-based game engine for running and building strategy games in JavaScript (ESM). Comes with 15 game implementations, three agent types, and an HTTP API server.
+A turn-based game engine for running and building strategy games in JavaScript (ESM). Comes with 15 game implementations, three agent types, and an HTTP API server. No install required; works offline or online.
 
 ## Games
 

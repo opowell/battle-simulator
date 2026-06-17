@@ -80,6 +80,7 @@ export const ChessGame = {
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
   ],
+  axisLabels: { x: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] },
   ui: {
     freeSelection:  true,   // any piece can be moved; UI should not pre-pick the "active" unit
     showHpBars:    false,   // pieces don't have HP bars
@@ -89,6 +90,7 @@ export const ChessGame = {
     showRoster:    false,   // hide roster (pieces shown on board)
     showUnitsLost:  true,   // show captured pieces panel
     unitShapes: { king: 'circle', queen: 'circle', rook: 'square', bishop: 'triangle', knight: 'triangle', pawn: 'circle' },
+    gridLabelsBottom: true, // file letters read below the board, like algebraic notation
   },
 
   createInitialState(players, config = {}) {

@@ -20,6 +20,21 @@ const DARK_VARS = {
   '--border': '#334155', '--text': '#f1f5f9', '--text-2': '#cbd5e1', '--muted': '#94a3b8',
 };
 
+// Offered for every game, regardless of what the game itself declares via gameOptions.
+// A game can override the default via `ui.<id>` (e.g. FFTA sets ui.moveAnimation = 'hop').
+const GENERAL_GAME_OPTIONS = [
+  {
+    id: 'moveAnimation', label: 'Move Animation', type: 'select',
+    description: 'How units animate when moving across the board',
+    default: 'none',
+    choices: [
+      { value: 'none', label: 'None' },
+      { value: 'hop', label: 'Hop' },
+      { value: 'slide', label: 'Slide' },
+    ],
+  },
+];
+
 const client = new BattleSimClient();
 const screen = ref('main');
 const theme = ref({ accent: '#4f46e5', mode: 'light' });
@@ -56,6 +71,7 @@ const selectedUnitId = ref(null);
 const animCells = ref({});   // "x,y" → { flash: 'hit'|'heal' }
 const movingSprite = ref(null); // { unitId, glyph, color, shadow, path, step }
 const failedImages = reactive({}); // imagePath → true when load failed
+const moveAnimation = ref('none'); // 'none' | 'hop' | 'slide' — resolved for the active session
 let spriteTimer = null;
 
 function buildMovePath(from, to) {
@@ -107,6 +123,7 @@ watch(session, (newSess, oldSess) => {
   const newAnim = {};
   for (const { action } of lastActions) {
     if (action.type === 'move') {
+      if (moveAnimation.value === 'none') continue;
       const old = oldPos[action.unitId];
       if (old && (old.x !== action.to.x || old.y !== action.to.y)) {
         const src = oldSess.grid.cells.find(c => c.unitId === action.unitId);
@@ -197,6 +214,10 @@ const activeSessions = computed(() => sessions.value.filter(s => s.status === 'a
 const sessionMeta = computed(() => session.value ? gameMeta(session.value.game) : null);
 const pendingMeta = computed(() => pendingGame.value ? gameMeta(pendingGame.value.name) : null);
 const humanCount = computed(() => pendingPlayers.value.filter(p => p.agent === 'human').length);
+const allGameOptions = computed(() => {
+  if (!pendingGame.value) return [];
+  return [...GENERAL_GAME_OPTIONS, ...(pendingGame.value.gameOptions ?? [])];
+});
 
 const isDone = computed(() => !!session.value && session.value.status !== 'active');
 const isMyTurn = computed(() => {
@@ -208,6 +229,10 @@ const isMyTurn = computed(() => {
 const isWaitingForHuman = computed(() =>
   !isDone.value && !isMyTurn.value && session.value?.pendingPlayer !== null
 );
+
+watch(isMyTurn, (myTurn, wasMyTurn) => {
+  if (wasMyTurn && !myTurn && !activeUnitId.value) selectedUnitId.value = null;
+});
 const sessionLog = computed(() => session.value?.log ?? []);
 const sessionActions = computed(() => session.value?.legalActions ?? []);
 const filteredActions = computed(() => {
@@ -303,6 +328,7 @@ async function init() {
       session.value = await client.getSession(sessionParam);
       const game = games.value.find(g => g.name === session.value.game);
       players.value = game ? game.defaultPlayers : [];
+      moveAnimation.value = localStorage.getItem(`battleSim_${sessionParam}_moveAnim`) ?? game?.ui?.moveAnimation ?? 'none';
       screen.value = 'session';
       actionSearch.value = '';
       startPolling();
@@ -319,8 +345,11 @@ function selectGame(name) {
   pendingGame.value = game;
   pendingPlayers.value = game.defaultPlayers.map((p, i) => ({ ...p, agent: i === 0 ? 'human' : 'random' }));
   pendingScenario.value = game.scenarios?.[0] ?? null;
+  const optionDefs = [...GENERAL_GAME_OPTIONS, ...(game.gameOptions ?? [])];
   const opts = {};
-  for (const opt of game.gameOptions ?? []) opts[opt.id] = opt.default ?? false;
+  for (const opt of optionDefs) {
+    opts[opt.id] = game.ui?.[opt.id] ?? opt.default ?? false;
+  }
   pendingOptions.value = opts;
   screen.value = 'configure';
 }
@@ -340,6 +369,8 @@ async function launchGame() {
     const firstHuman = pls.find(p => p.agent === 'human');
     myPlayerId.value = firstHuman?.id ?? null;
     if (myPlayerId.value) localStorage.setItem(`battleSim_${session.value.id}_player`, myPlayerId.value);
+    moveAnimation.value = pendingOptions.value.moveAnimation ?? 'none';
+    localStorage.setItem(`battleSim_${session.value.id}_moveAnim`, moveAnimation.value);
     pendingGame.value = null;
     pendingPlayers.value = [];
     pendingScenario.value = null;
@@ -358,6 +389,7 @@ async function resumeSession(id) {
       myPlayerId.value = session.value.humanPlayers[0];
     const game = games.value.find(g => g.name === session.value.game);
     players.value = game ? game.defaultPlayers : [];
+    moveAnimation.value = localStorage.getItem(`battleSim_${id}_moveAnim`) ?? game?.ui?.moveAnimation ?? 'none';
     screen.value = 'session';
     actionSearch.value = '';
     startPolling();
@@ -387,6 +419,7 @@ function exitSession() {
   clearInterval(pollTimer);
   const id = session.value.id;
   localStorage.removeItem(`battleSim_${id}_player`);
+  localStorage.removeItem(`battleSim_${id}_moveAnim`);
   sessions.value = sessions.value.filter(s => s.id !== id);
   client.deleteSession(id).catch(() => {});
   session.value = null;
@@ -397,7 +430,9 @@ function exitSession() {
 }
 
 onMounted(init);
-onUnmounted(() => clearInterval(pollTimer));
+onUnmounted(() => {
+  clearInterval(pollTimer);
+});
 </script>
 
 <template>
@@ -514,9 +549,9 @@ onUnmounted(() => clearInterval(pollTimer));
             </button>
           </div>
         </div>
-        <div v-if="pendingGame.gameOptions?.length" class="config-options">
+        <div v-if="allGameOptions.length" class="config-options">
           <h3 class="config-section-label">Options</h3>
-          <div v-for="opt in pendingGame.gameOptions" :key="opt.id" class="config-option-row">
+          <div v-for="opt in allGameOptions" :key="opt.id" class="config-option-row">
             <div class="config-option-info">
               <span class="config-option-label">{{ opt.label }}</span>
               <span v-if="opt.description" class="config-option-desc">{{ opt.description }}</span>
@@ -656,8 +691,9 @@ onUnmounted(() => clearInterval(pollTimer));
                 </div>
               </template>
             </div>
-            <!-- Hopping unit sprite -->
-            <div v-if="movingSprite && spriteStyle" class="unit-sprite" :style="spriteStyle">
+            <!-- Moving unit sprite: slides between cells always; hops only when moveAnimation === 'hop' -->
+            <div v-if="movingSprite && spriteStyle" class="unit-sprite"
+              :class="{ 'unit-sprite-hop': moveAnimation === 'hop' }" :style="spriteStyle">
               {{ movingSprite.glyph }}
             </div>
           </div>
@@ -665,8 +701,8 @@ onUnmounted(() => clearInterval(pollTimer));
         <pre v-else class="board-pre">{{ session.rendered ?? '' }}</pre>
       </div>
 
-      <div class="actions-card">
-        <div class="actions-main">
+      <div class=”actions-card”>
+        <div class=”actions-main”>
           <!-- Unit info for selected unit (active or not) -->
           <template v-if="selectedCell && selectedCell.unitName">
             <div class="card-title unit-card-title">
@@ -874,8 +910,8 @@ onUnmounted(() => clearInterval(pollTimer));
 
 .hint-text { padding: 12px; color: #666; font-size: 0.82em; font-style: italic; }
 
-/* Hopping movement sprite */
-.unit-sprite { animation: sprite-hop 0.21s ease-in-out infinite alternate; }
+/* Movement sprite: hop adds a bounce on top of the slide transition in spriteStyle */
+.unit-sprite-hop { animation: sprite-hop 0.21s ease-in-out infinite alternate; }
 @keyframes sprite-hop { from { transform: translateY(0) scale(1); } to { transform: translateY(-30%) scale(1.1); } }
 
 /* Ability flash overlay */
