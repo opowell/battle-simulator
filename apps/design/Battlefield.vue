@@ -28,6 +28,29 @@ const dismissedResult = ref(false);
 
 watch(() => props.liveState?.id, () => { dismissedResult.value = false; });
 
+// ── action history (back/forward replay) ─────────────────────
+const fieldHistory = ref([]);
+const histPos      = ref(0);
+const atLatest     = computed(() => histPos.value >= fieldHistory.value.length - 1);
+
+watch(() => props.liveState?.id, () => {
+  fieldHistory.value = props.field ? [props.field] : [];
+  histPos.value = 0;
+}, { immediate: true });
+
+watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
+  if (oldLen === undefined || !props.field) return;
+  fieldHistory.value = [...fieldHistory.value, props.field];
+  if (histPos.value >= fieldHistory.value.length - 2) histPos.value = fieldHistory.value.length - 1;
+});
+
+const displayField = computed(() =>
+  fieldHistory.value.length > 0 ? fieldHistory.value[histPos.value] : props.field
+);
+
+function goBack()    { if (histPos.value > 0)          histPos.value--; }
+function goForward() { if (!atLatest.value)             histPos.value++; }
+
 const winnerTeam = computed(() => {
   const winnerId = props.liveState?.result?.winnerId;
   if (!winnerId) return null;
@@ -140,7 +163,7 @@ watch(() => props.liveState?.id, (id) => {
 const fit = computed(() => makeFitter(props.field.world, { w: stageW.value, h: stageH.value }, 24));
 
 // ── live units at current time ─────────────────────────────────
-const units = computed(() => computeUnits(props.field, tFloat.value));
+const units = computed(() => computeUnits(displayField.value, tFloat.value));
 
 // ── live session helpers ───────────────────────────────────────
 const isLive          = computed(() => !!props.liveState);
@@ -523,6 +546,12 @@ onUnmounted(() => {
               : 'Game over'}}
           </div>
 
+          <!-- Viewing historical state -->
+          <div v-else-if="!atLatest"
+               style="font-size:11px;color:var(--accent);background:rgba(66,198,230,.08);border:1px solid rgba(66,198,230,.2);border-radius:var(--r);padding:7px 10px">
+            Viewing past state — advance to latest to issue orders.
+          </div>
+
           <!-- Human's turn with a unit selected (freeSelection: any piece; otherwise: must be the active unit) -->
           <template v-else-if="isPending && selectedId && (ui.freeSelection || selectedId === activeUnitId)">
             <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
@@ -561,7 +590,7 @@ onUnmounted(() => {
 
       <!-- Stage -->
       <div ref="stageEl" style="flex:1;position:relative;overflow:hidden">
-        <SchematicLayer :field="field" :fit="fit" :units="displayUnits"
+        <SchematicLayer :field="displayField" :fit="fit" :units="displayUnits"
                         :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
                         :showRuler="showRuler" :rdr="rdr"
                         :legalSquares="unitMoves"
@@ -715,6 +744,17 @@ onUnmounted(() => {
 
       <!-- Live session status -->
       <template v-else-if="isLive">
+        <button class="iconbtn" style="width:30px;height:30px" :disabled="histPos <= 0" @click="goBack" title="Previous action">
+          <BsIcon name="back" :size="15" color="var(--dim)"/>
+        </button>
+        <span class="mono" style="font-size:11px;min-width:36px;text-align:center"
+              :style="{color: atLatest ? 'var(--faint)' : 'var(--accent)'}">
+          {{histPos + 1}}/{{fieldHistory.length}}
+        </span>
+        <button class="iconbtn" style="width:30px;height:30px" :disabled="atLatest" @click="goForward" title="Next action">
+          <BsIcon name="back" :size="15" color="var(--dim)" style="transform:scaleX(-1)"/>
+        </button>
+        <span class="mono" style="font-size:11px;color:var(--faint)">·</span>
         <span class="mono" style="font-size:11px;color:var(--dim)">
           <b style="color:var(--txt)">{{liveState.id.slice(0, 8)}}</b>
         </span>
