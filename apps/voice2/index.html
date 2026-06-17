@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<link rel="icon" href="data:,">
 <title>Voice 2</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -58,13 +59,41 @@ h1 { font-size: 1.5rem; font-weight: 600; color: #94a3b8; letter-spacing: 0.05em
   <div id="transcript-box" class="empty">Transcription will appear here…</div>
 </div>
 
+<script type="importmap">
+{
+  "imports": {
+    "/node/process.mjs": "./vendor/node/process.mjs",
+    "/node/buffer.mjs": "./vendor/node/buffer.mjs",
+    "/node/events.mjs": "./vendor/node/events.mjs",
+    "/node/tty.mjs": "./vendor/node/tty.mjs",
+    "/node/async_hooks.mjs": "./vendor/node/async_hooks.mjs",
+    "/onnxruntime-web@1.14.0/es2022/onnxruntime-web.mjs": "./vendor/ort.mjs",
+    "/onnxruntime-common@~1.14.0?target=es2022": "./vendor/ort-common.mjs",
+    "/onnxruntime-common@1.14.0/es2022/onnxruntime-common.mjs": "./vendor/ort-common.mjs",
+    "/@huggingface/jinja@^0.2.2?target=es2022": "./vendor/jinja.mjs",
+    "/@huggingface/jinja@0.2.2/es2022/jinja.mjs": "./vendor/jinja.mjs"
+  }
+}
+</script>
+<script>
+// Suppress: ONNX Runtime WASM graph-optimization logs, CJS require() fallback noise
+const _warn = console.warn.bind(console);
+const _error = console.error.bind(console);
+const _onnxFilter = s => typeof s === 'string' && (
+  s.includes('[W:onnxruntime:') || s.includes('Dynamic require of')
+);
+console.warn  = (...a) => { if (!_onnxFilter(a[0])) _warn(...a);  };
+console.error = (...a) => { if (!_onnxFilter(a[0])) _error(...a); };
+</script>
 <script type="module">
-// esm.sh builds a browser-compatible ESM bundle, rewriting bare specifiers
-// (onnxruntime-web, @huggingface/jinja, fs, path, etc.) to CDN URLs.
-// jsDelivr/unpkg serve the raw source which has unresolvable bare specifiers.
-let pipeline;
+let pipeline, env;
 try {
-  ({ pipeline } = await import('https://esm.sh/@xenova/transformers@2.17.2'));
+  ({ pipeline, env } = await import('./vendor/transformers.mjs'));
+  // Override CDN paths to use local vendor files
+  env.backends.onnx.wasm.wasmPaths = './vendor/';
+  // Use local model files instead of fetching from HuggingFace
+  env.allowRemoteModels = false;
+  env.localModelPath = './models/';
 } catch (e) {
   document.getElementById('status').textContent = 'Failed to load library: ' + e.message;
   document.getElementById('status').className = 'error';
@@ -92,7 +121,7 @@ function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
 // whisper-tiny.en is ~40 MB; cached in browser Cache API after first load
 let transcriber;
 try {
-  setStatus('Downloading model (~40 MB, cached after first load)…', 'active');
+  setStatus('Loading local model…', 'active');
   transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en');
   setStatus('Tap to record');
   micBtn.disabled = false;
