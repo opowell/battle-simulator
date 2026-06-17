@@ -28,8 +28,14 @@ const serverErr   = ref('');
 const sessionMeta = ref({});
 
 // ── hop animation ─────────────────────────────────────────────
+// A single server update can bundle several turns (e.g. a human move plus the
+// computer's immediate reply). Each turn gets queued and animated in full
+// before the next one starts, so a later turn never renders ahead of an
+// earlier turn's still-playing animation.
 const hopAnim = ref(null); // { unitId, steps: [{x,y},...], step }
+const hopQueue = ref([]); // [{ unitId, steps: [{x,y},...] }, ...] — not yet started
 let hopTimer = null;
+let seenLogLength = 0;
 
 function buildHopPath(from, to, diagonal = false) {
   const path = [{ x: from.x, y: from.y }];
@@ -47,33 +53,52 @@ function buildHopPath(from, to, diagonal = false) {
   return path;
 }
 
+function playNextHop() {
+  if (hopAnim.value || hopQueue.value.length === 0) return;
+  const { unitId, steps } = hopQueue.value[0];
+  hopQueue.value = hopQueue.value.slice(1);
+  hopAnim.value = { unitId, steps, step: 0 };
+  hopTimer = setTimeout(advanceHop, 220);
+}
+
 function advanceHop() {
   if (!hopAnim.value) return;
   const next = hopAnim.value.step + 1;
-  if (next >= hopAnim.value.steps.length) { hopAnim.value = null; return; }
+  if (next >= hopAnim.value.steps.length) { hopAnim.value = null; playNextHop(); return; }
   hopAnim.value = { ...hopAnim.value, step: next };
   hopTimer = setTimeout(advanceHop, 220);
 }
 
 watch(liveState, (newState, oldState) => {
-  if (!newState?.grid?.cells || !oldState?.grid?.cells) return;
+  const log = newState?.log ?? [];
+  if (!newState?.grid?.cells || !oldState?.grid?.cells) { seenLogLength = log.length; return; }
+
+  const moved = new Map(); // unitId -> { from, to }
   for (const newCell of newState.grid.cells) {
     if (!newCell.unitId) continue;
     const oldCell = oldState.grid.cells.find(c => c.unitId === newCell.unitId);
     if (!oldCell || (oldCell.x === newCell.x && oldCell.y === newCell.y)) continue;
-    clearTimeout(hopTimer);
-    hopAnim.value = {
-      unitId: newCell.unitId,
-      steps: buildHopPath(
-        { x: oldCell.x, y: oldCell.y },
-        { x: newCell.x, y: newCell.y },
-        activeField.value?.ui?.allowDiagonalHopsWhileMoving ?? false,
-      ),
-      step: 0,
-    };
-    hopTimer = setTimeout(advanceHop, 220);
-    break;
+    moved.set(newCell.unitId, { from: { x: oldCell.x, y: oldCell.y }, to: { x: newCell.x, y: newCell.y } });
   }
+  if (moved.size === 0) { seenLogLength = log.length; return; }
+
+  // Order queued hops by the turn log so bundled turns play back in the order they happened.
+  const order = [];
+  for (const entry of log.slice(seenLogLength)) {
+    for (const { action } of entry.playerActions ?? []) {
+      if (action?.unitId && moved.has(action.unitId) && !order.includes(action.unitId)) order.push(action.unitId);
+    }
+  }
+  for (const unitId of moved.keys()) if (!order.includes(unitId)) order.push(unitId);
+
+  const diagonal = activeField.value?.ui?.allowDiagonalHopsWhileMoving ?? false;
+  const queued = order.map(unitId => {
+    const { from, to } = moved.get(unitId);
+    return { unitId, steps: buildHopPath(from, to, diagonal) };
+  });
+  hopQueue.value = [...hopQueue.value, ...queued];
+  seenLogLength = log.length;
+  playNextHop();
 });
 
 // ── field for the battlefield ────────────────────────────────
@@ -138,11 +163,20 @@ const activeField = computed(() => {
       moveRange:     c.moveRange,
     }));
 
-  if (hopAnim.value) {
-    const { unitId, steps, step } = hopAnim.value;
-    const { x, y } = steps[step];
-    units = units.map(u => u.id !== unitId ? u : { ...u, path: [[x + 0.5, y + 0.5]] });
-  }
+  // Units already queued to hop later must stay put at their pre-move square — otherwise
+  // they'd render at their (already-applied) final grid position while waiting their turn.
+  units = units.map(u => {
+    if (hopAnim.value?.unitId === u.id) {
+      const { x, y } = hopAnim.value.steps[hopAnim.value.step];
+      return { ...u, path: [[x + 0.5, y + 0.5]] };
+    }
+    const queued = hopQueue.value.find(q => q.unitId === u.id);
+    if (queued) {
+      const { x, y } = queued.steps[0];
+      return { ...u, path: [[x + 0.5, y + 0.5]] };
+    }
+    return u;
+  });
 
   const tiles = g.cells
     .filter(c => c.color)
@@ -159,7 +193,9 @@ const activeField = computed(() => {
     zones: [],
     tiles,
     units,
-    ui:    apiGame?.ui ?? {},
+    ui:       apiGame?.ui ?? {},
+    xLabels:  g.xLabels ?? null,
+    yLabels:  g.yLabels ?? null,
   };
 });
 
@@ -293,7 +329,7 @@ function exitBattle() {
 
 <template>
   <div style="height:100vh;display:flex;flex-direction:column">
-    <div class="topbar">
+    <div class="topbar" v-if="view !== 'battle'">
       <div class="brand">
         <span class="mark"><BsIcon name="crosshair" :size="15"/></span>
         BATTLE&nbsp;SIMULATOR
@@ -360,7 +396,10 @@ function exitBattle() {
                    :field="activeField"
                    :theme="theme"
                    :fog="liveState?.fog ?? false"
+                   :games-count="apiGames.length"
+                   :server-err="serverErr"
                    @exit="exitBattle"
+                   @open-settings="openSettings"
                    @submit-action="submitAction"/>
       <div v-else
            style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--dim)">
