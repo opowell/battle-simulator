@@ -13,8 +13,124 @@ body {
   display: flex; align-items: center; justify-content: center; min-height: 100vh;
   font-size: 15px; -webkit-font-smoothing: antialiased;
 }
+#app {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 24px; width: 480px; max-width: 90vw;
+}
+h1 { font-size: 1.5rem; font-weight: 600; color: #94a3b8; letter-spacing: 0.05em; }
+
+#mic-btn {
+  width: 96px; height: 96px; border-radius: 50%; border: none;
+  background: #1e40af; color: white; font-size: 2.2rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s, transform 0.1s;
+  box-shadow: 0 4px 24px rgba(30,64,175,0.5); outline: none;
+}
+#mic-btn:hover:not(:disabled) { background: #2563eb; }
+#mic-btn:active:not(:disabled) { transform: scale(0.95); }
+#mic-btn.recording {
+  background: #dc2626; box-shadow: 0 4px 24px rgba(220,38,38,0.5);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+#mic-btn:disabled { opacity: 0.4; cursor: default; animation: none; }
+@keyframes pulse {
+  0%,100% { box-shadow: 0 4px 24px rgba(220,38,38,0.5); }
+  50%      { box-shadow: 0 4px 40px rgba(220,38,38,0.85), 0 0 0 10px rgba(220,38,38,0.15); }
+}
+
+#status { font-size: 0.85rem; color: #64748b; min-height: 1.2em; letter-spacing: 0.03em; text-align: center; }
+#status.active { color: #60a5fa; }
+#status.error  { color: #f87171; }
+
+#transcript-box {
+  width: 100%; min-height: 120px; background: #1e293b; border: 1px solid #334155;
+  border-radius: 12px; padding: 16px 20px; font-size: 1.05rem; line-height: 1.6;
+  color: #e2e8f0; white-space: pre-wrap; word-break: break-word;
+}
+#transcript-box.empty { color: #475569; font-style: italic; }
 </style>
 </head>
 <body>
+<div id="app">
+  <h1>VOICE INPUT</h1>
+  <button id="mic-btn" title="Click to record">🎤</button>
+  <div id="status">Tap to record</div>
+  <div id="transcript-box" class="empty">Transcription will appear here…</div>
+</div>
+
+<script type="module">
+const micBtn       = document.getElementById('mic-btn');
+const statusEl     = document.getElementById('status');
+const transcriptEl = document.getElementById('transcript-box');
+
+let mediaRecorder = null;
+let chunks = [];
+let timerInterval = null;
+
+function setStatus(msg, cls = '') { statusEl.textContent = msg; statusEl.className = cls; }
+
+function startTimer() {
+  const start = Date.now();
+  timerInterval = setInterval(() => {
+    setStatus(`Transcribing… ${((Date.now() - start) / 1000).toFixed(0)}s`, 'active');
+  }, 500);
+}
+function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
+
+micBtn.addEventListener('click', async () => {
+  if (mediaRecorder?.state === 'recording') {
+    mediaRecorder.stop();
+    return;
+  }
+
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { setStatus('Microphone access denied', 'error'); return; }
+
+  chunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = e => chunks.push(e.data);
+  mediaRecorder.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    micBtn.textContent = '⏳';
+    micBtn.disabled = true;
+
+    // Decode audio to 16kHz PCM on the client (AudioContext handles any format)
+    const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioCtx = new AudioContext({ sampleRate: 16000 });
+    let decoded;
+    try { decoded = await audioCtx.decodeAudioData(arrayBuffer); }
+    catch (e) { setStatus('Audio decode failed: ' + e.message, 'error'); micBtn.textContent = '🎤'; micBtn.disabled = false; return; }
+    const float32 = decoded.getChannelData(0);
+
+    startTimer();
+    try {
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: float32.buffer,
+      });
+      if (!res.ok) throw new Error(`Server error ${res.status}: ${await res.text()}`);
+      const { text } = await res.json();
+      transcriptEl.textContent = text || '(silence)';
+      transcriptEl.classList.remove('empty');
+      setStatus('Done — tap to record again');
+    } catch (e) {
+      setStatus('Error: ' + e.message, 'error');
+    } finally {
+      stopTimer();
+      micBtn.textContent = '🎤';
+      micBtn.disabled = false;
+      mediaRecorder = null;
+    }
+  };
+
+  mediaRecorder.start();
+  micBtn.classList.add('recording');
+  micBtn.textContent = '⏹';
+  setStatus('Recording… tap to stop', 'active');
+});
+</script>
 </body>
 </html>

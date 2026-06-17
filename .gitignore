@@ -2,3 +2,4 @@
 apps/*/node_modules/.vite/
 /sessions
 .claude/settings.local.json
+/node_modules
