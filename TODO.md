@@ -7,3 +7,7 @@ Stack:
 - Session manager
 - Board game
 - Chess
+
+Bugs:
+- civ1: turn fog of war on
+- chess: when fog of war on, do not show opponent moves on board or in log.
