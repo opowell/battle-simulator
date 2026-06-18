@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0f172a"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="56dp"
+        android:paddingBottom="40dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="VOICE INPUT"
+            android:textColor="#94a3b8"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.05"
+            android:layout_marginBottom="32dp"/>
+
+        <Button
+            android:id="@+id/mic_btn"
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:text="🎤"
+            android:textSize="28sp"
+            android:background="@drawable/btn_mic_idle"
+            android:stateListAnimator="@null"
+            android:elevation="4dp"
+            android:layout_marginBottom="20dp"/>
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Starting…"
+            android:textColor="@color/status_normal"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:layout_marginBottom="28dp"/>
+
+        <!-- Voice commands card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_bg"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="VOICE COMMANDS"
+                android:textColor="#475569"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.1"
+                android:layout_marginBottom="10dp"/>
+
+            <!-- new game -->
+            <LinearLayout
+                android:id="@+id/cmd_new_game"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/cmd_bg"
+                android:padding="9dp"
+                android:layout_marginBottom="6dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="say"
+                    android:textColor="#64748b"
+                    android:textSize="11sp"
+                    android:background="@drawable/cmd_key_bg"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:layout_marginEnd="10dp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cmd-text"
+                    android:text="new game"
+                    android:textColor="@color/cmd_text"
+                    android:textSize="15sp"/>
+            </LinearLayout>
+
+            <!-- resume game -->
+            <LinearLayout
+                android:id="@+id/cmd_resume_game"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/cmd_bg"
+                android:padding="9dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="say"
+                    android:textColor="#64748b"
+                    android:textSize="11sp"
+                    android:background="@drawable/cmd_key_bg"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:layout_marginEnd="10dp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:tag="cmd-text"
+                    android:text="resume game"
+                    android:textColor="@color/cmd_text"
+                    android:textSize="15sp"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Transcript box -->
+        <TextView
+            android:id="@+id/transcript"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="120dp"
+            android:text="Transcription will appear here…"
+            android:textColor="@color/transcript_hint"
+            android:textSize="16sp"
+            android:lineSpacingMultiplier="1.5"
+            android:background="@drawable/card_bg"
+            android:padding="16dp"
+            android:layout_marginBottom="20dp"/>
+
+        <!-- Speak demo button -->
+        <Button
+            android:id="@+id/speak_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="▶ Say &quot;attack&quot;"
+            android:textColor="#d1fae5"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:background="@drawable/btn_speak"
+            android:stateListAnimator="@null"
+            android:paddingStart="28dp"
+            android:paddingEnd="28dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"/>
+
+    </LinearLayout>
+</ScrollView>

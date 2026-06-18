@@ -58,6 +58,33 @@ h1 { font-size: 1.5rem; font-weight: 600; color: #94a3b8; letter-spacing: 0.05em
 }
 #speak-btn:hover { background: #047857; }
 #speak-btn:active { transform: scale(0.96); }
+
+#commands {
+  width: 100%; background: #1e293b; border: 1px solid #334155;
+  border-radius: 12px; padding: 16px 20px;
+}
+#commands h2 {
+  font-size: 0.7rem; font-weight: 600; color: #475569;
+  letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px;
+}
+#commands ul { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+#commands li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 8px;
+  font-size: 0.95rem; color: #94a3b8;
+  border: 1px solid transparent;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+#commands li .cmd-key {
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em;
+  color: #64748b; background: #0f172a; border-radius: 4px;
+  padding: 2px 6px; flex-shrink: 0;
+}
+#commands li.matched {
+  background: #0f2d1f; border-color: #166534;
+  color: #4ade80;
+}
+#commands li.matched .cmd-key { color: #4ade80; background: #052e16; }
 </style>
 </head>
 <body>
@@ -65,6 +92,13 @@ h1 { font-size: 1.5rem; font-weight: 600; color: #94a3b8; letter-spacing: 0.05em
   <h1>VOICE INPUT</h1>
   <button id="mic-btn" title="Click to record" disabled>🎤</button>
   <div id="status" class="active">Loading model…</div>
+  <div id="commands">
+    <h2>Voice Commands</h2>
+    <ul>
+      <li id="cmd-new-game"><span class="cmd-key">say</span> new game</li>
+      <li id="cmd-resume-game"><span class="cmd-key">say</span> resume game</li>
+    </ul>
+  </div>
   <div id="transcript-box" class="empty">Transcription will appear here…</div>
   <button id="speak-btn">▶ Say "attack"</button>
 </div>
@@ -113,6 +147,25 @@ try {
 const micBtn       = document.getElementById('mic-btn');
 const statusEl     = document.getElementById('status');
 const transcriptEl = document.getElementById('transcript-box');
+
+const COMMANDS = [
+  { id: 'cmd-new-game',    phrase: 'new game',    action: () => console.log('[command] new game') },
+  { id: 'cmd-resume-game', phrase: 'resume game', action: () => console.log('[command] resume game') },
+];
+
+function matchCommand(text) {
+  const normalized = text.toLowerCase().replace(/[^a-z\s]/g, '').trim();
+  COMMANDS.forEach(c => {
+    const el = document.getElementById(c.id);
+    el.classList.remove('matched');
+  });
+  const match = COMMANDS.find(c => normalized.includes(c.phrase));
+  if (match) {
+    document.getElementById(match.id).classList.add('matched');
+    match.action();
+  }
+  return match ?? null;
+}
 
 let mediaRecorder = null;
 let chunks = [];
@@ -206,9 +259,11 @@ micBtn.addEventListener('click', async () => {
     startTimer();
     try {
       const result = await transcriber(float32, { language: 'english', task: 'transcribe' });
-      transcriptEl.textContent = result.text?.trim() || '(silence)';
+      const text = result.text?.trim() || '(silence)';
+      transcriptEl.textContent = text;
       transcriptEl.classList.remove('empty');
-      setStatus('Done — tap to record again');
+      const matched = matchCommand(text);
+      setStatus(matched ? `Command: "${matched.phrase}"` : 'Done — tap to record again');
     } catch (e) {
       setStatus('Transcription error: ' + e.message, 'error');
     } finally {

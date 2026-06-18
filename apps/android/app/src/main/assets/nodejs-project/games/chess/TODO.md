@@ -1,0 +1,1 @@
+- available moves not shown on board when unit is selected/active.

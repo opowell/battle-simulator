@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="status_normal">#64748b</color>
+    <color name="status_active">#60a5fa</color>
+    <color name="status_error">#f87171</color>
+    <color name="transcript_text">#e2e8f0</color>
+    <color name="transcript_partial">#94a3b8</color>
+    <color name="transcript_hint">#475569</color>
+    <color name="cmd_text">#94a3b8</color>
+    <color name="cmd_matched_text">#4ade80</color>
+</resources>

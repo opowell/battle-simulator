@@ -1,0 +1,77 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.battlesimulator'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.battlesimulator"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+        externalNativeBuild {
+            cmake { cppFlags "-std=c++17" }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.18.1'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    packagingOptions {
+        jniLibs {
+            // Keep libnode.so debug symbols so crash reports are readable
+            keepDebugSymbols += ['**/libnode.so']
+        }
+    }
+}
+
+// Copy the Node.js server files from the repo root into Android assets before each build.
+// This ensures the embedded Node.js runtime can find api-server.js and all game code.
+tasks.register('copyNodeAssets', Copy) {
+    from('../../../') {
+        include 'api-server.js'
+        include 'package.json'
+        include 'engine/**'
+        include 'games/**'
+        include 'agents/**'
+    }
+    into 'src/main/assets/nodejs-project'
+    includeEmptyDirs = false
+}
+
+preBuild.dependsOn copyNodeAssets
+
+dependencies {
+    // Node.js runtime is embedded via libnode.so (extracted from nodejs-mobile-react-native npm pkg)
+    // and our own JNI wrapper in src/main/cpp/ — no AAR dependency needed.
+
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+}
