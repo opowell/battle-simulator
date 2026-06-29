@@ -79,6 +79,16 @@ export const ChessGame = {
   ],
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
+    { id: 'debugAI',  label: 'Debug AI',   description: 'Show all AI-controlled pieces even through Fog of War', type: 'boolean', default: false },
+    {
+      id: 'difficulty', label: 'AI Difficulty', type: 'select', default: 'hard',
+      options: [
+        { value: 'easy',   label: 'Easy',   description: 'Random-ish play, misses most tactics' },
+        { value: 'medium', label: 'Medium',  description: 'Sees simple tactics, makes some mistakes' },
+        { value: 'hard',   label: 'Hard',    description: 'Strong tactical play (default)' },
+        { value: 'expert', label: 'Expert',  description: 'Deep search with quiescence — very strong' },
+      ],
+    },
   ],
   axisLabels: { x: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] },
   ui: {
@@ -99,6 +109,12 @@ export const ChessGame = {
 
   createInitialState(players, config = {}) {
     const board = initialBoard();
+    // Identify AI-controlled players so getVisibleState can pass their pieces through
+    // fog in debug mode without changing AI search behaviour. API agents have ids
+    // like 'api:<playerId>'; all other agents (chess-ai, random, …) are AI-controlled.
+    const aiPlayerIds = players
+      .filter(p => p.agent?.id && !p.agent.id.startsWith('api:'))
+      .map(p => p.id);
     return {
       gameName: 'Chess',
       turnNumber: 1,
@@ -116,7 +132,10 @@ export const ChessGame = {
         },
         halfMoveClock: 0,
         inCheck: false,
-        fogOfWar: config.fogOfWar ?? false,
+        fogOfWar:    config.fogOfWar   ?? false,
+        debugAI:     config.debugAI    ?? false,
+        aiPlayerIds,
+        difficulty:  config.difficulty ?? 'hard',
       },
     };
   },
@@ -192,7 +211,13 @@ export const ChessGame = {
       activePlayers: [opponent],
       turnNumber: newTurn,
       lastActions: playerActions,
-      gameSpecific: { enPassantTarget, castlingRights, halfMoveClock, inCheck, fogOfWar: state.gameSpecific.fogOfWar },
+      gameSpecific: {
+        enPassantTarget, castlingRights, halfMoveClock, inCheck,
+        fogOfWar:    state.gameSpecific.fogOfWar,
+        debugAI:     state.gameSpecific.debugAI,
+        aiPlayerIds: state.gameSpecific.aiPlayerIds,
+        difficulty:  state.gameSpecific.difficulty,
+      },
     };
   },
 
@@ -267,6 +292,10 @@ export const ChessGame = {
 
   getVisibleState(state, playerId) {
     if (!state.gameSpecific.fogOfWar) return state;
+    const { debugAI, aiPlayerIds = [] } = state.gameSpecific;
+    // Debug mode: human players see the full board; AI agents still get their fog-filtered
+    // view so their search behaviour is unchanged.
+    if (debugAI && !aiPlayerIds.includes(playerId)) return state;
     const visible = getVisibleSquares(state.board, playerId);
     const filteredBoard = { ...state.board };
     for (const sq of Object.keys(filteredBoard)) {

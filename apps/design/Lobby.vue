@@ -16,15 +16,24 @@ const game     = computed(() => props.apiGames.find(g => g.name === selGame.valu
 const scens    = computed(() => game.value?.scenarios ?? []);
 const scenKey  = ref('');
 const name     = ref('');
-const fog      = ref(false);
 const maxTurns = ref(300);
+const gameOpts = ref({});
 const slots    = ref([]);
+
+function initGameOpts(g) {
+  const opts = {};
+  for (const opt of g.gameOptions ?? []) {
+    opts[opt.id] = opt.default ?? (opt.type === 'boolean' ? false : opt.options?.[0]?.value ?? '');
+  }
+  gameOpts.value = opts;
+}
 
 watch(() => props.apiGames, (games) => {
   if (!games.length) return;
   if (!selGame.value || !games.find(g => g.name === selGame.value)) {
     selGame.value = games[0].name;
     slots.value = makeSlots(games[0]);
+    initGameOpts(games[0]);
     const sc = games[0].scenarios?.[0];
     if (sc) { scenKey.value = sc.id; applyScenario(games[0], sc); }
   }
@@ -50,6 +59,7 @@ function makeSlots(g, n) {
 function pick(g) {
   selGame.value = g.name;
   name.value = '';
+  initGameOpts(g);
   const sc = g.scenarios?.[0];
   if (sc) { scenKey.value = sc.id; applyScenario(g, sc); }
   else     { slots.value = makeSlots(g); }
@@ -63,7 +73,7 @@ function chooseScenario(sc) {
 function applyScenario(g, sc) {
   maxTurns.value = sc.config?.maxTurns ?? 300;
   const fog_ = sc.config?.fog ?? sc.config?.fogOfWar;
-  if (fog_ != null) fog.value = fog_;
+  if (fog_ != null) gameOpts.value = { ...gameOpts.value, fogOfWar: fog_ };
   slots.value = makeSlots(g);
 }
 
@@ -97,7 +107,7 @@ function handleCreate() {
   emit('create', {
     game:      selGame.value,
     name:      name.value || selGame.value,
-    fog:       fog.value,
+    gameOpts:  { ...gameOpts.value },
     maxTurns:  maxTurns.value,
     scenario:  scenKey.value,
     players:   slots.value,
@@ -277,15 +287,23 @@ function sessionStatusColor(s) {
             </button>
           </div>
 
-          <!-- Engine config -->
+          <!-- Game options + engine config -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px">
-            <div class="field">
-              <label>Fog of war</label>
-              <div class="seg" style="font-size:11px">
-                <button :class="{on: !fog}" @click="fog = false" style="padding:3px 9px">Off</button>
-                <button :class="{on: fog}"  @click="fog = true"  style="padding:3px 9px">On</button>
+            <template v-for="opt in (game?.gameOptions ?? [])" :key="opt.id">
+              <div v-if="opt.type === 'boolean'" class="field">
+                <label>{{opt.label}}</label>
+                <div class="seg" style="font-size:11px">
+                  <button :class="{on: !gameOpts[opt.id]}" @click="gameOpts[opt.id] = false" style="padding:3px 9px">Off</button>
+                  <button :class="{on:  gameOpts[opt.id]}" @click="gameOpts[opt.id] = true"  style="padding:3px 9px">On</button>
+                </div>
               </div>
-            </div>
+              <div v-else-if="opt.type === 'select'" class="field">
+                <label>{{opt.label}}</label>
+                <select v-model="gameOpts[opt.id]" style="padding:5px 8px;font-size:12px">
+                  <option v-for="o in opt.options" :key="o.value" :value="o.value">{{o.label}}</option>
+                </select>
+              </div>
+            </template>
             <div class="field">
               <label>Max turns · {{maxTurns}}</label>
               <input type="range" min="50" max="500" step="10" v-model.number="maxTurns"/>

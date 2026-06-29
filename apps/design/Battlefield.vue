@@ -19,6 +19,7 @@ const playing  = ref(false);
 // ── view toggles ─────────────────────────────────────────────
 const showRuler = ref(false);
 const showMenu   = ref(false);
+const showHelp   = ref(false);
 
 // ── selection ─────────────────────────────────────────────────
 const selectedId = ref(null);
@@ -181,12 +182,25 @@ const lastMoveSquares = computed(() => {
   const log = props.liveState?.log;
   if (!log?.length) return [];
   const lastEntry = log[log.length - 1];
+  if (props.liveState?.fog) {
+    const humanPlayers = props.liveState?.humanPlayers ?? [];
+    const mover = lastEntry?.playerActions?.[0]?.playerId;
+    if (mover && !humanPlayers.includes(mover)) return [];
+  }
   const action = lastEntry?.playerActions?.[0]?.action;
   if (!action) return [];
   const squares = [];
   if (action.gridFrom) squares.push(action.gridFrom);
   if (action.gridTo)   squares.push(action.gridTo);
   return squares;
+});
+
+const displayLog = computed(() => {
+  const log = props.liveState?.log ?? [];
+  if (!props.liveState?.fog) return log;
+  if (props.liveState?.debugAI) return log;
+  const humanPlayers = props.liveState?.humanPlayers ?? [];
+  return log.filter(entry => entry.playerActions?.every(pa => humanPlayers.includes(pa.playerId)));
 });
 
 // Actions carry gridTo/gridFrom when the game populates them; otherwise fall back to {x,y}.
@@ -354,6 +368,7 @@ function onKeyDown(e) {
   if (e.key === 'Escape') {
     if (infoAbility.value) closeAbilityInfo();
     else if (infoUnit.value) closeInfo();
+    else if (showHelp.value) showHelp.value = false;
     else showMenu.value = !showMenu.value;
   }
 }
@@ -386,7 +401,14 @@ onUnmounted(() => {
         <div style="padding:12px 14px;border-bottom:1px solid var(--line)">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
             <BsIcon name="crosshair" :size="14" color="var(--accent)"/>
-            <span style="font-weight:700;font-size:14px">{{field.game}}</span>
+            <span v-if="ui.help"
+                  style="font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:5px"
+                  :title="'How to play ' + field.game"
+                  @click="showHelp = true">
+              {{field.game}}
+              <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(66,198,230,.12);color:var(--accent);font-weight:500;letter-spacing:.04em">?</span>
+            </span>
+            <span v-else style="font-weight:700;font-size:14px">{{field.game}}</span>
             <button class="iconbtn" title="Menu" style="width:22px;height:22px"
                     :style="{borderColor: showMenu ? 'var(--accent)' : 'var(--line2)'}"
                     @click="showMenu = !showMenu">
@@ -590,7 +612,8 @@ onUnmounted(() => {
 
       <!-- Stage -->
       <div ref="stageEl" style="flex:1;position:relative;overflow:hidden">
-        <SchematicLayer :field="displayField" :fit="fit" :units="displayUnits"
+        <SchematicLayer
+                        :field="displayField" :fit="fit" :units="displayUnits"
                         :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
                         :showRuler="showRuler" :rdr="rdr"
                         :legalSquares="unitMoves"
@@ -692,10 +715,10 @@ onUnmounted(() => {
         <div v-if="isLive" style="border-top:1px solid var(--line);display:flex;flex-direction:column;max-height:200px">
           <div class="panel-t" style="padding:7px 14px;flex-shrink:0">Log</div>
           <div style="overflow-y:auto;flex:1">
-            <div v-if="!liveState.log?.length" style="padding:4px 14px 8px;font-size:11px;color:var(--faint)">
+            <div v-if="!displayLog.length" style="padding:4px 14px 8px;font-size:11px;color:var(--faint)">
               No moves yet.
             </div>
-            <div v-for="(entry, ei) in [...(liveState.log ?? [])].reverse()" :key="ei"
+            <div v-for="(entry, ei) in [...displayLog].reverse()" :key="ei"
                  style="padding:3px 14px;border-bottom:1px solid var(--line);font-size:11px">
               <span class="mono" style="font-size:9px;color:var(--faint);margin-right:6px">T{{entry.turnNumber}}</span>
               <span v-for="(pa, i) in entry.playerActions" :key="i"
@@ -1006,6 +1029,36 @@ onUnmounted(() => {
           </div>
         </div>
 
+      </div>
+    </div>
+  </teleport>
+
+  <!-- ── Help Overlay ─────────────────────────────────────────── -->
+  <teleport to="body">
+    <div v-if="showHelp && ui.help"
+         style="position:fixed;inset:0;z-index:1003;background:rgba(4,7,10,.82);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)"
+         @click.self="showHelp = false">
+
+      <div style="background:var(--bg1);border:1px solid var(--line2);border-radius:var(--r2);width:480px;max-width:92vw;max-height:86vh;overflow-y:auto;box-shadow:0 24px 64px -12px rgba(0,0,0,.85)">
+
+        <div style="padding:16px 20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg1);z-index:1">
+          <BsIcon name="crosshair" :size="15" color="var(--accent)"/>
+          <span style="font-weight:700;font-size:15px;letter-spacing:.01em;flex:1">{{ui.help.title ?? field.game}}</span>
+          <span class="mono up" style="font-size:9px;padding:2px 7px;border-radius:3px;background:rgba(66,198,230,.1);color:var(--accent)">How to Play</span>
+          <button @click="showHelp = false"
+                  style="flex:none;width:28px;height:28px;display:grid;place-items:center;border:1px solid var(--line2);border-radius:var(--r);background:var(--bg2);color:var(--dim);font-size:16px;cursor:pointer;line-height:1">
+            ×
+          </button>
+        </div>
+
+        <div style="padding:18px 20px;display:flex;flex-direction:column;gap:16px">
+          <div v-for="(section, i) in ui.help.sections" :key="i">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">
+              {{section.heading}}
+            </div>
+            <div style="font-size:13px;color:var(--txt);line-height:1.65">{{section.text}}</div>
+          </div>
+        </div>
       </div>
     </div>
   </teleport>

@@ -3,6 +3,45 @@ import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
 
+const BASE = '/images/civ1';
+
+const UNIT_IMAGES = {
+  settlers:      `${BASE}/units/settlers`,
+  diplomat:      `${BASE}/units/diplomat`,
+  militia:       `${BASE}/units/warrior`,
+  phalanx:       `${BASE}/units/spearman`,
+  archers:       `${BASE}/units/swordman`,
+  legion:        `${BASE}/units/swordman`,
+  catapult:      `${BASE}/units/catapult`,
+  cavalry:       `${BASE}/units/horseman`,
+  chariot:       `${BASE}/units/chariot`,
+  knights:       `${BASE}/units/knight`,
+  crusaders:     `${BASE}/units/knight`,
+  musketeers:    `${BASE}/units/musketman`,
+  cannon:        `${BASE}/units/cannon`,
+  riflemen:      `${BASE}/units/rifleman`,
+  'cav-modern':  `${BASE}/units/horseman`,
+  artillery:     `${BASE}/units/artillery`,
+  infantry:      `${BASE}/units/combat_1`,
+  armor:         `${BASE}/units/tank`,
+  'mech-inf':    `${BASE}/units/mechanizedinfantry`,
+  paratroopers:  `${BASE}/units/combat_3`,
+  marines:       `${BASE}/units/combat_2`,
+  fighter:       `${BASE}/units/fighter`,
+  bomber:        `${BASE}/units/bomber`,
+  helicopter:    `${BASE}/units/combat_5`,
+  trireme:       `${BASE}/units/trireme`,
+  sail:          `${BASE}/units/sail`,
+  frigate:       `${BASE}/units/frigate`,
+  ironclad:      `${BASE}/units/ironclad`,
+  destroyer:     `${BASE}/units/combat_4`,
+  submarine:     `${BASE}/units/submarine`,
+  transport:     `${BASE}/units/transport`,
+  cruiser:       `${BASE}/units/cruiser`,
+  battleship:    `${BASE}/units/battleship`,
+  carrier:       `${BASE}/units/carrier`,
+};
+
 // ── City name pools ───────────────────────────────────────────────────────────
 
 const CITY_NAMES_P1 = [
@@ -370,6 +409,7 @@ function getActionDuration(state, action) {
 
 export const Civ1Game = {
   name: 'Civ1',
+  ui: { hideGrid: true, freeSelection: true, showHpBars: true, dragToMove: true },
   scenarios: [
     { id: 'standard', name: 'Standard',   description: 'Default 20×14 world map',         config: {} },
     { id: 'large',    name: 'Large World', description: '30×20 world — longer campaign',    config: { width: 30, height: 20 } },
@@ -400,6 +440,8 @@ export const Civ1Game = {
         cells.push({
           x, y: height - 1 - y,
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
+          imagePath: u ? (UNIT_IMAGES[u.type] ?? null) : null,
+          bgImage: tile.terrain ? `${BASE}/terrain/${tile.terrain}` : null,
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,
           color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
           hp: u?.hp, maxHp: u?.maxHp,

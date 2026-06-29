@@ -187,8 +187,9 @@ const overlayMap = computed(() => {
   for (const c of cells) if (c.unitId) unitPos[c.unitId] = { x: c.x, y: c.y };
   const map = {};
   for (const a of sessionActions.value) {
-    if (a.type === 'move') {
-      map[`${a.to.x},${a.to.y}`] = 'move';
+    if (a.type === 'move' && a.to) {
+      if (!selectedUnitId.value || a.unitId === selectedUnitId.value)
+        map[`${a.to.x},${a.to.y}`] = 'move';
     } else if (a.type === 'ability') {
       const pos = unitPos[a.targetId];
       if (pos) map[`${pos.x},${pos.y}`] = 'ability';
@@ -210,6 +211,7 @@ function gameMeta(name) {
 
 function formatAction(a) {
   if (typeof a !== 'object' || a === null) return String(a);
+  if (a.label) return a.label;
   return Object.entries(a)
     .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
     .join('  ·  ');
@@ -242,9 +244,10 @@ const sessionLog = computed(() => session.value?.log ?? []);
 const sessionActions = computed(() => session.value?.legalActions ?? []);
 const filteredActions = computed(() => {
   const term = actionSearch.value.trim().toLowerCase();
-  return term
-    ? sessionActions.value.filter(a => formatAction(a).toLowerCase().includes(term))
+  let actions = selectedUnitId.value
+    ? sessionActions.value.filter(a => a.type !== 'move' || a.unitId === selectedUnitId.value)
     : sessionActions.value;
+  return term ? actions.filter(a => formatAction(a).toLowerCase().includes(term)) : actions;
 });
 const otherHumans = computed(() => {
   if (!session.value || isDone.value || !myPlayerId.value) return [];
@@ -277,6 +280,9 @@ const gridView = computed(() => {
 function cellStyle(c, cellSize, fontSize) {
   return {
     background: c.color ?? '#808070',
+    backgroundImage: c.bgImage ? `url(${c.bgImage})` : undefined,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
     width: cellSize + 'px',
     height: cellSize + 'px',
     display: 'flex',

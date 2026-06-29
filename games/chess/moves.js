@@ -180,7 +180,7 @@ function kingMoves(board, unit, castlingRights, fogOfWar = false) {
 // Pseudo-legal → legal (filter moves that leave king in check)
 // ---------------------------------------------------------------------------
 
-function pseudoLegalForUnit(board, unit, gameSpecific, fogOfWar = false) {
+export function pseudoLegalForUnit(board, unit, gameSpecific, fogOfWar = false) {
   switch (unit.type) {
     case 'pawn':   return pawnMoves(board, unit, gameSpecific.enPassantTarget);
     case 'rook':   return rookMoves(board, unit);

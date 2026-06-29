@@ -2,7 +2,7 @@ import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
-import { assets } from './assets/index.js';
+import { assets, cityImg } from './assets/index.js';
 
 // ── City name pools ───────────────────────────────────────────────────────────
 
@@ -411,11 +411,19 @@ export const Civ2Game = {
         const city = cmap[`${x},${y}`];
         const ta = this.assets?.terrain?.[tile.terrain];
         const ua = u ? this.assets?.units?.[u.type] : null;
-        const ca = !u && city ? this.assets?.city : null;
+        // Pick terrain variant deterministically by position
+        const variantImgs = ta?.imgs;
+        const bgImage = variantImgs
+          ? variantImgs[((x * 7 + y * 13) >>> 0) % variantImgs.length]
+          : null;
+        const imagePath = ua?.img
+          ?? (city ? cityImg(state.turnNumber, city.size) : null);
         cells.push({
           x, y: height - 1 - y,
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
-          emoji: (ua ?? ca ?? ta)?.emoji ?? null,
+          emoji: ua?.emoji ?? null,
+          imagePath,
+          bgImage,
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,
           color: ta?.color ?? this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
           hp: u?.hp, maxHp: u?.maxHp,

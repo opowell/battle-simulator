@@ -217,7 +217,6 @@ function createInitialState(players, config = {}) {
   const p1Camp = { x: 3,           y: cy };
   const p2Camp = { x: width - 4,   y: cy };
 
-  _idCtr = 0;
   const rng   = mulberry32(seed);
   const tiles = generateMap(width, height, rng, [p1Camp, p2Camp]);
   const board = { width, height, tiles };

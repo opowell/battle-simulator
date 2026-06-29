@@ -5,7 +5,17 @@
 Stack:
 - App server (jas)
 - Session manager
+  - sessions
+  - rooms
+  - apps
+  - clients
+  - players
+
+Clients connect to the server
+
 - Board game
+  - board
+  - piece
 - Chess
 
 Bugs:
