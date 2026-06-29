@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>War of Dots</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0e14; color: #e0e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; user-select: none; }
+#canvas { display: block; cursor: default; }
+#hud {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 16px; background: rgba(10,14,20,0.92);
+  border-bottom: 1px solid #1e2a3a; pointer-events: none; z-index: 10;
+  font-size: 13px;
+}
+.hud-stat { display: flex; align-items: center; gap: 6px; }
+.hud-dot { width: 10px; height: 10px; border-radius: 50%; }
+.hud-label { color: #7a90a8; }
+.hud-val { font-weight: 700; }
+.hud-sep { color: #2a3a4a; }
+#hud-win { flex: 1; text-align: center; font-weight: 700; font-size: 15px; color: #ffd700; }
+
+#panel {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: rgba(10,14,20,0.92); border-top: 1px solid #1e2a3a;
+  padding: 8px 16px; display: flex; gap: 12px; align-items: center;
+  z-index: 10; font-size: 12px; min-height: 52px;
+}
+.panel-section { display: flex; flex-direction: column; gap: 4px; }
+.panel-title { color: #7a90a8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.panel-row { display: flex; gap: 8px; align-items: center; }
+.btn {
+  background: #1e2a3a; border: 1px solid #2e3e52; color: #c0d0e0;
+  border-radius: 5px; padding: 4px 10px; cursor: pointer; font-size: 11px;
+  font-family: inherit; pointer-events: all; transition: background 0.12s;
+}
+.btn:hover { background: #283848; border-color: #4a6a8a; }
+.btn.primary { background: #1a3d6e; border-color: #2a6dbe; color: #80c0ff; }
+.btn.primary:hover { background: #1e4a84; }
+.btn.danger { background: #3d1a1a; border-color: #be2a2a; color: #ff8080; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+#msg { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 20;
+  background: rgba(10,14,20,0.96); border: 2px solid #2e3e52; border-radius: 12px;
+  padding: 32px 48px; text-align: center; display: none; }
+#msg h2 { font-size: 28px; margin-bottom: 12px; }
+#msg p { color: #7a90a8; font-size: 14px; margin-bottom: 20px; }
+#msg .btn { font-size: 14px; padding: 10px 28px; pointer-events: all; }
+.sel-info { color: #c0d0e0; }
+.hp-bar-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.hp-bar { width: 60px; height: 6px; background: #1e2a3a; border-radius: 3px; overflow: hidden; }
+.hp-fill { height: 100%; border-radius: 3px; transition: width 0.1s; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <div class="hud-stat">
+    <div class="hud-dot" style="background:#3a8cff"></div>
+    <span class="hud-label">Gold</span>
+    <span class="hud-val" id="p-gold">0</span>
+  </div>
+  <div class="hud-sep">|</div>
+  <div class="hud-stat">
+    <div class="hud-dot" style="background:#3a8cff"></div>
+    <span class="hud-label">Units</span>
+    <span class="hud-val" id="p-units">0</span>
+  </div>
+  <div class="hud-sep">|</div>
+  <div class="hud-stat">
+    <div class="hud-dot" style="background:#3a8cff"></div>
+    <span class="hud-label">Cities</span>
+    <span class="hud-val" id="p-cities">0</span>
+  </div>
+  <div class="hud-sep">|</div>
+  <div class="hud-stat">
+    <div class="hud-dot" style="background:#ff4444"></div>
+    <span class="hud-label">AI Units</span>
+    <span class="hud-val" id="ai-units">0</span>
+  </div>
+  <div class="hud-sep">|</div>
+  <div class="hud-stat">
+    <div class="hud-dot" style="background:#ff4444"></div>
+    <span class="hud-label">AI Cities</span>
+    <span class="hud-val" id="ai-cities">0</span>
+  </div>
+  <div id="hud-win"></div>
+  <div style="margin-left:auto;display:flex;gap:14px;align-items:center">
+    <span style="color:#7a90a8;font-size:11px">Win: Capture enemy capital + 80% cities</span>
+    <span class="hud-sep">|</span>
+    <span class="hud-label" style="font-size:11px">Difficulty:</span>
+    <span id="hud-diff" style="font-weight:700;font-size:11px;color:#ffd700">20</span>
+  </div>
+</div>
+
+<div id="panel">
+  <div class="panel-section" id="sel-section" style="display:none">
+    <div class="panel-title">Selection</div>
+    <div class="panel-row">
+      <span class="sel-info" id="sel-info">—</span>
+      <button class="btn" onclick="stopSelected()">Stop [S]</button>
+      <button class="btn" onclick="clearOrders()">Clear [C]</button>
+    </div>
+  </div>
+  <div class="panel-section" id="city-section" style="display:none">
+    <div class="panel-title" id="city-name">City</div>
+    <div class="panel-row">
+      <button class="btn primary" id="btn-light" onclick="buyUnit('light')">Buy Light (200g)</button>
+      <button class="btn primary" id="btn-heavy" onclick="buyUnit('heavy')">Buy Heavy (400g)</button>
+      <span style="color:#7a90a8;font-size:11px" id="city-queue"></span>
+    </div>
+  </div>
+  <div style="margin-left:auto;color:#7a90a8;font-size:11px;line-height:1.6">
+    Click: select | Drag: box-select | Right-click: move/attack<br>
+    S: stop | C: clear orders | A: attack-move
+  </div>
+</div>
+
+<div id="start-modal" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:30;background:rgba(10,14,20,0.97);display:flex;align-items:center;justify-content:center;">
+  <div style="text-align:center;max-width:420px;padding:40px 32px">
+    <h1 style="font-size:36px;color:#e0e8f0;margin-bottom:8px;letter-spacing:-1px">War of Dots</h1>
+    <p style="color:#7a90a8;font-size:13px;margin-bottom:36px;line-height:1.6">Real-time strategy — capture the enemy capital<br>and 80% of cities to win.</p>
+    <p style="color:#4a6a8a;font-size:10px;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px">AI Difficulty</p>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+      <div style="display:flex;align-items:center;gap:14px;width:280px">
+        <span style="color:#7a90a8;font-size:11px;width:20px;text-align:right">0</span>
+        <input type="range" id="diff-slider" min="0" max="100" value="20" style="flex:1;accent-color:#ffd700" oninput="updateDiffLabel(this.value)">
+        <span style="color:#7a90a8;font-size:11px;width:20px">100</span>
+      </div>
+      <div style="font-size:26px;font-weight:700;color:#ffd700" id="diff-label">20</div>
+    </div>
+    <button class="btn primary" onclick="startGame(+document.getElementById('diff-slider').value)" style="font-size:14px;padding:10px 28px;margin-top:16px">Start</button>
+    <p style="color:#2a3a4a;font-size:11px;margin-top:16px;line-height:1.8">
+      0 = passive &nbsp;·&nbsp; 20 = easy &nbsp;·&nbsp; 50 = balanced &nbsp;·&nbsp; 100 = expert
+    </p>
+  </div>
+</div>
+
+<div id="msg">
+  <h2 id="msg-title"></h2>
+  <p id="msg-body"></p>
+  <button class="btn primary" onclick="restartGame()">Play Again</button>
+</div>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────
+const T = 28;          // tile size px
+const COLS = 40;
+const ROWS = 26;
+const HUD_H = 44;
+const PANEL_H = 52;
+
+const TERRAIN = { PLAINS:0, FOREST:1, HILLS:2, WATER:3, MOUNTAINS:4, SAND:5, CITY:6, CAPITAL:7, BRIDGE:8 };
+
+const TERRAIN_COLOR = {
+  [TERRAIN.PLAINS]:    '#3a6e28',
+  [TERRAIN.FOREST]:    '#1e4010',
+  [TERRAIN.HILLS]:     '#7a6040',
+  [TERRAIN.WATER]:     '#0e3d5c',
+  [TERRAIN.MOUNTAINS]: '#50504a',
+  [TERRAIN.SAND]:      '#b09050',
+  [TERRAIN.CITY]:      '#3a6e28',
+  [TERRAIN.CAPITAL]:   '#3a6e28',
+  [TERRAIN.BRIDGE]:    '#5a4a30',
+};
+
+const UNIT_DEF = {
+  light: { cost: 200, hp: 60,  speed: 75, dmg: 6,  atkRate: 0.9, range: 38, moraleDmg: 3  },
+  heavy: { cost: 400, hp: 150, speed: 35, dmg: 16, atkRate: 0.5, range: 38, moraleDmg: 8  },
+};
+
+const GOLD_PER_SEC = 18;   // per city owned
+const UNIT_UPKEEP  = 0.8;  // gold/sec per unit (above city capacity)
+const CITY_CAP     = 5;    // units a city supports before upkeep kicks in
+const CAPTURE_TIME = 3.0;  // seconds to capture a city
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function getAIConfig(level) {
+  const t = level / 100;
+  return {
+    buyInterval:    [lerp(12, 0.8, t), lerp(16, 1.5, t)],
+    heavyChance:    lerp(0, 0.5, t),
+    attackInterval: [lerp(14, 1, t),   lerp(20, 2, t)],
+    captureNeutral: level >= 40,
+    defenderRatio:  lerp(0.2, 1.0, t),
+    blunderChance:  lerp(0.8, 0, Math.min(t * 2, 1)),
+  };
+}
+
+// ── Game state ─────────────────────────────────────────────────────────────
+let map, cities, units, players, gameOver, winner;
+let aiDifficulty = 20;
+let _uid = 0;
+let lastTime = 0;
+
+function newId() { return ++_uid; }
+
+function initGame() {
+  _uid = 0; gameOver = false; winner = null;
+  document.getElementById('msg').style.display = 'none';
+  document.getElementById('hud-win').textContent = '';
+
+  const cfg = getAIConfig(aiDifficulty);
+  players = {
+    player: { id: 'player', gold: 300, color: '#3a8cff', darkColor: '#1a4c9f', morale: 100 },
+    ai:     { id: 'ai',     gold: 300,                   color: '#ff4444', darkColor: '#8f1010', morale: 100 },
+  };
+
+  map = generateMap();
+  cities = map.cityList;
+  units = [];
+
+  // Spawn starting units
+  const pCap = cities.find(c => c.isCapital && c.owner === 'player');
+  const aiCap = cities.find(c => c.isCapital && c.owner === 'ai');
+  for (let i = 0; i < 3; i++) {
+    spawnUnit('light', 'player', pCap.cx + (Math.random()-0.5)*60, pCap.cy + (Math.random()-0.5)*60);
+    spawnUnit('light', 'ai',    aiCap.cx + (Math.random()-0.5)*60, aiCap.cy + (Math.random()-0.5)*60);
+  }
+
+  selection = [];
+  selBox = null;
+  focusedCity = null;
+  aiState = { nextBuy: cfg.buyInterval[0], attackWave: cfg.attackInterval[0] };
+  camera = { x: 0, y: 0 };
+
+  // Center camera on player capital
+  camera.x = pCap.cx - canvas.width / 2;
+  camera.y = pCap.cy - canvas.height / 2;
+  clampCamera();
+}
+
+// ── Map generation ─────────────────────────────────────────────────────────
+function generateMap() {
+  const grid = [];
+  for (let r = 0; r < ROWS; r++) {
+    grid[r] = [];
+    for (let c = 0; c < COLS; c++) grid[r][c] = TERRAIN.PLAINS;
+  }
+
+  const rng = mulberry32(Date.now() ^ 0xdeadbeef);
+
+  // Water bodies
+  for (let i = 0; i < 4; i++) {
+    let r0 = Math.floor(rng() * ROWS * 0.7 + ROWS * 0.15);
+    let c0 = Math.floor(rng() * COLS * 0.7 + COLS * 0.15);
+    let len = Math.floor(rng() * 8 + 4);
+    let dir = rng() < 0.5 ? 'h' : 'v';
+    for (let j = 0; j < len; j++) {
+      let r = r0 + (dir === 'v' ? j : Math.floor((rng()-0.5)*2));
+      let c = c0 + (dir === 'h' ? j : Math.floor((rng()-0.5)*2));
+      if (r >= 1 && r < ROWS-1 && c >= 1 && c < COLS-1) {
+        grid[r][c] = TERRAIN.WATER;
+        if (rng() < 0.5 && r+1 < ROWS-1) grid[r+1][c] = TERRAIN.WATER;
+      }
+    }
+  }
+
+  // Forest clusters
+  for (let i = 0; i < 6; i++) {
+    let r0 = Math.floor(rng() * (ROWS-4) + 2);
+    let c0 = Math.floor(rng() * (COLS-4) + 2);
+    for (let dr = -2; dr <= 2; dr++) {
+      for (let dc = -2; dc <= 2; dc++) {
+        if (rng() < 0.55) {
+          let r = r0+dr, c = c0+dc;
+          if (r>=0&&r<ROWS&&c>=0&&c<COLS && grid[r][c]===TERRAIN.PLAINS) grid[r][c]=TERRAIN.FOREST;
+        }
+      }
+    }
+  }
+
+  // Hills
+  for (let i = 0; i < 5; i++) {
+    let r0 = Math.floor(rng() * (ROWS-2) + 1);
+    let c0 = Math.floor(rng() * (COLS-2) + 1);
+    for (let dr = -1; dr <= 2; dr++) {
+      for (let dc = -1; dc <= 2; dc++) {
+        if (rng() < 0.6) {
+          let r = r0+dr, c = c0+dc;
+          if (r>=0&&r<ROWS&&c>=0&&c<COLS && grid[r][c]===TERRAIN.PLAINS) grid[r][c]=TERRAIN.HILLS;
+        }
+      }
+    }
+  }
+
+  // Mountains (edges)
+  for (let i = 0; i < 3; i++) {
+    let r0 = Math.floor(rng() * ROWS);
+    let c0 = Math.floor(rng() * COLS);
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        let r = r0+dr, c = c0+dc;
+        if (r>1&&r<ROWS-2&&c>1&&c<COLS-2 && grid[r][c]===TERRAIN.HILLS) grid[r][c]=TERRAIN.MOUNTAINS;
+      }
+    }
+  }
+
+  // Add bridges over water at a couple points
+  for (let r = 1; r < ROWS-1; r++) {
+    for (let c = 1; c < COLS-1; c++) {
+      if (grid[r][c]===TERRAIN.WATER && rng()<0.04) grid[r][c]=TERRAIN.BRIDGE;
+    }
+  }
+
+  // Place cities (neutral + 2 capitals)
+  const cityPositions = [];
+  // Capitals at left and right ends
+  const capL = { col: Math.floor(rng()*3)+2,       row: Math.floor(ROWS/2 + (rng()-0.5)*4) };
+  const capR = { col: COLS - Math.floor(rng()*3)-3, row: Math.floor(ROWS/2 + (rng()-0.5)*4) };
+
+  function clearForCity(r, c) {
+    for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
+      let nr=r+dr, nc=c+dc;
+      if (nr>=0&&nr<ROWS&&nc>=0&&nc<COLS) grid[nr][nc]=TERRAIN.PLAINS;
+    }
+  }
+
+  clearForCity(capL.row, capL.col);
+  clearForCity(capR.row, capR.col);
+  grid[capL.row][capL.col] = TERRAIN.CAPITAL;
+  grid[capR.row][capR.col] = TERRAIN.CAPITAL;
+  cityPositions.push({ col: capL.col, row: capL.row, owner: 'player', isCapital: true });
+  cityPositions.push({ col: capR.col, row: capR.row, owner: 'ai', isCapital: true });
+
+  // Neutral cities in between
+  const neutralCount = 7;
+  let attempts = 0;
+  while (cityPositions.length < neutralCount + 2 && attempts < 500) {
+    attempts++;
+    let c = Math.floor(rng() * (COLS-4)) + 2;
+    let r = Math.floor(rng() * (ROWS-4)) + 2;
+    if (grid[r][c] === TERRAIN.WATER || grid[r][c] === TERRAIN.MOUNTAINS) continue;
+    let tooClose = cityPositions.some(cp => Math.abs(cp.col-c)+Math.abs(cp.row-r) < 5);
+    if (tooClose) continue;
+    clearForCity(r, c);
+    grid[r][c] = TERRAIN.CITY;
+    cityPositions.push({ col: c, row: r, owner: 'neutral', isCapital: false });
+  }
+
+  const cityList = cityPositions.map((cp, i) => ({
+    id: i,
+    col: cp.col, row: cp.row,
+    cx: cp.col * T + T/2, cy: cp.row * T + T/2,
+    owner: cp.owner,
+    isCapital: cp.isCapital,
+    captureProgress: 0,
+    capturer: null,
+    queue: [],
+    buildTimer: 0,
+  }));
+
+  return { grid, cityList };
+}
+
+function mulberry32(a) {
+  return function() {
+    a|=0; a=a+0x6D2B79F5|0;
+    var t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296;
+  };
+}
+
+// ── Unit helpers ───────────────────────────────────────────────────────────
+function spawnUnit(type, owner, x, y) {
+  const def = UNIT_DEF[type];
+  units.push({
+    id: newId(), type, owner,
+    x, y,
+    tx: x, ty: y,           // target pos
+    hp: def.hp, maxHp: def.hp,
+    morale: 100,
+    speed: def.speed,
+    dmg: def.dmg,
+    atkRate: def.atkRate,
+    range: def.range,
+    atkCooldown: Math.random(),
+    state: 'idle',           // idle | moving | combat | flee
+    target: null,
+    attackMove: false,
+    waterTimer: 0,
+    isShip: false,
+    selected: false,
+  });
+}
+
+function getTerrain(x, y) {
+  const c = Math.floor(x / T);
+  const r = Math.floor(y / T);
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return TERRAIN.PLAINS;
+  return map.grid[r][c];
+}
+
+function terrainSpeedMod(terrain, type) {
+  if (terrain === TERRAIN.MOUNTAINS) return 0;
+  if (terrain === TERRAIN.WATER) return 0.45;
+  if (terrain === TERRAIN.FOREST || terrain === TERRAIN.HILLS) return type==='heavy' ? 0.5 : 0.78;
+  if (terrain === TERRAIN.SAND) return type==='light' ? 0.65 : 1.0;
+  if (terrain === TERRAIN.BRIDGE) return 0.9;
+  return 1.0;
+}
+
+function terrainDmgMod(terrain, type) {
+  if (terrain === TERRAIN.WATER) return 0.6;
+  if ((terrain === TERRAIN.FOREST || terrain === TERRAIN.HILLS) && type === 'heavy') return 0.65;
+  return 1.0;
+}
+
+// ── Camera ─────────────────────────────────────────────────────────────────
+let camera = { x: 0, y: 0 };
+const MAP_W = COLS * T;
+const MAP_H = ROWS * T;
+
+function clampCamera() {
+  const vw = canvas.width, vh = canvas.height;
+  camera.x = Math.max(0, Math.min(Math.max(0, MAP_W - vw), camera.x));
+  camera.y = Math.max(0, Math.min(Math.max(0, MAP_H - vh + PANEL_H), camera.y));
+}
+
+function worldToScreen(wx, wy) {
+  return { x: wx - camera.x, y: wy - camera.y };
+}
+
+function screenToWorld(sx, sy) {
+  return { x: sx + camera.x, y: sy + camera.y };
+}
+
+// ── Input state ────────────────────────────────────────────────────────────
+let selection = [];
+let selBox = null;
+let mouseDown = false;
+let mouseStart = { x: 0, y: 0 };
+let mouseCur   = { x: 0, y: 0 };
+let focusedCity = null;
+let attackMoveMode = false;
+let panStart = null;
+let isPanning = false;
+
+// ── AI state ───────────────────────────────────────────────────────────────
+let aiState = { nextBuy: 2, attackWave: 0 };
+
+// ── Canvas setup ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  if (map) clampCamera();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Input handlers ─────────────────────────────────────────────────────────
+
+canvas.addEventListener('contextmenu', e => { e.preventDefault(); });
+
+canvas.addEventListener('mousedown', e => {
+  if (gameOver) return;
+  if (e.button === 1) { // middle mouse pan
+    panStart = { mx: e.clientX, my: e.clientY, cx: camera.x, cy: camera.y };
+    isPanning = true;
+    return;
+  }
+  const sy = e.clientY;
+  if (sy < HUD_H || sy > canvas.height - PANEL_H) return;
+
+  if (e.button === 2) {
+    // Right-click: move/attack order
+    const wx = e.clientX + camera.x;
+    const wy = e.clientY + camera.y;
+    if (selection.length > 0) {
+      issueMove(wx, wy, attackMoveMode || e.shiftKey);
+    }
+    return;
+  }
+
+  mouseDown = true;
+  mouseStart = { x: e.clientX, y: e.clientY };
+  mouseCur   = { x: e.clientX, y: e.clientY };
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (isPanning && panStart) {
+    camera.x = panStart.cx - (e.clientX - panStart.mx);
+    camera.y = panStart.cy - (e.clientY - panStart.my);
+    clampCamera(); return;
+  }
+  if (!mouseDown) return;
+  mouseCur = { x: e.clientX, y: e.clientY };
+  const dx = Math.abs(mouseCur.x - mouseStart.x);
+  const dy = Math.abs(mouseCur.y - mouseStart.y);
+  if (dx > 4 || dy > 4) selBox = { x1: mouseStart.x, y1: mouseStart.y, x2: mouseCur.x, y2: mouseCur.y };
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (e.button === 1) { isPanning = false; panStart = null; return; }
+  if (gameOver || !mouseDown) return;
+  mouseDown = false;
+
+  const wx = e.clientX + camera.x;
+  const wy = e.clientY + camera.y;
+
+  if (selBox) {
+    // Box selection
+    const x1w = Math.min(mouseStart.x, mouseCur.x) + camera.x;
+    const x2w = Math.max(mouseStart.x, mouseCur.x) + camera.x;
+    const y1w = Math.min(mouseStart.y, mouseCur.y) + camera.y;
+    const y2w = Math.max(mouseStart.y, mouseCur.y) + camera.y;
+    units.forEach(u => u.selected = false);
+    units.filter(u => u.owner === 'player').forEach(u => {
+      if (u.x >= x1w && u.x <= x2w && u.y >= y1w && u.y <= y2w) u.selected = true;
+    });
+    selection = units.filter(u => u.selected);
+    selBox = null;
+  } else {
+    // Click: check unit click, then city click
+    const clicked = getUnitAt(wx, wy, 'player');
+    if (clicked) {
+      if (!e.shiftKey) units.forEach(u => u.selected = false);
+      clicked.selected = !clicked.selected || e.shiftKey;
+      selection = units.filter(u => u.selected);
+    } else {
+      // Check city click
+      const city = getCityAt(wx, wy);
+      if (city && city.owner === 'player') {
+        focusedCity = city;
+        updateCityPanel();
+      } else {
+        if (!e.shiftKey) { units.forEach(u => u.selected = false); selection = []; }
+        focusedCity = null;
+      }
+    }
+  }
+  updateSelPanel();
+});
+
+// Wheel to zoom pan
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  camera.x += e.deltaX * 0.8;
+  camera.y += e.deltaY * 0.8;
+  clampCamera();
+}, { passive: false });
+
+document.addEventListener('keydown', e => {
+  if (e.key === 's' || e.key === 'S') stopSelected();
+  if (e.key === 'c' || e.key === 'C') clearOrders();
+  if (e.key === 'a' || e.key === 'A') attackMoveMode = !attackMoveMode;
+});
+
+function getUnitAt(wx, wy, owner) {
+  return units.find(u => u.owner === owner && Math.hypot(u.x-wx, u.y-wy) < 10);
+}
+
+function getCityAt(wx, wy) {
+  return cities.find(c => Math.hypot(c.cx-wx, c.cy-wy) < T*0.9);
+}
+
+function issueMove(wx, wy, atk) {
+  const sel = units.filter(u => u.selected && u.owner === 'player');
+  // Spread them around target in formation
+  const n = sel.length;
+  sel.forEach((u, i) => {
+    const angle = (i / n) * Math.PI * 2;
+    const r = n > 1 ? Math.min(20 + n * 5, 80) : 0;
+    u.tx = wx + Math.cos(angle) * r;
+    u.ty = wy + Math.sin(angle) * r;
+    u.tx = Math.max(0, Math.min(MAP_W, u.tx));
+    u.ty = Math.max(0, Math.min(MAP_H, u.ty));
+    u.state = 'moving';
+    u.attackMove = atk;
+    u.target = null;
+  });
+}
+
+function stopSelected() {
+  units.filter(u => u.selected && u.owner === 'player').forEach(u => {
+    u.tx = u.x; u.ty = u.y; u.state = 'idle'; u.target = null;
+  });
+}
+
+function clearOrders() {
+  units.filter(u => u.selected && u.owner === 'player').forEach(u => {
+    u.state = 'idle'; u.target = null;
+  });
+}
+
+function buyUnit(type) {
+  if (!focusedCity || focusedCity.owner !== 'player') return;
+  const cost = UNIT_DEF[type].cost;
+  if (players.player.gold < cost) return;
+  players.player.gold -= cost;
+  focusedCity.queue.push(type);
+  updateCityPanel();
+}
+
+function updateSelPanel() {
+  const sec = document.getElementById('sel-section');
+  const sel = units.filter(u => u.selected && u.owner === 'player');
+  if (sel.length === 0) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  const light = sel.filter(u => u.type === 'light').length;
+  const heavy = sel.filter(u => u.type === 'heavy').length;
+  let txt = `${sel.length} unit${sel.length>1?'s':''}: `;
+  if (light) txt += `${light} Light`;
+  if (heavy) txt += (light?' ':'') + `${heavy} Heavy`;
+  document.getElementById('sel-info').textContent = txt;
+}
+
+function updateCityPanel() {
+  const sec = document.getElementById('city-section');
+  if (!focusedCity || focusedCity.owner !== 'player') { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  const name = focusedCity.isCapital ? 'Capital' : `City`;
+  document.getElementById('city-name').textContent = name + ` (${focusedCity.col},${focusedCity.row})`;
+  document.getElementById('btn-light').disabled = players.player.gold < 200;
+  document.getElementById('btn-heavy').disabled = players.player.gold < 400;
+  const q = focusedCity.queue;
+  document.getElementById('city-queue').textContent = q.length ? `Queue: ${q.join(', ')}` : 'Queue empty';
+}
+
+// ── Update ─────────────────────────────────────────────────────────────────
+function update(dt) {
+  if (gameOver) return;
+
+  updateEconomy(dt);
+  updateCityCapture(dt);
+  updateCityProduction(dt);
+  updateUnits(dt);
+  updateAI(dt);
+  checkVictory();
+  updateHUD();
+}
+
+function updateEconomy(dt) {
+  for (const [pid, pl] of Object.entries(players)) {
+    const owned = cities.filter(c => c.owner === pid).length;
+    pl.gold += owned * GOLD_PER_SEC * dt;
+
+    // Upkeep for excess units
+    const myUnits = units.filter(u => u.owner === pid).length;
+    const free = owned * CITY_CAP;
+    if (myUnits > free) {
+      pl.gold -= (myUnits - free) * UNIT_UPKEEP * dt;
+      if (pl.gold < 0) {
+        // Kill weakest unit
+        const victims = units.filter(u => u.owner === pid).sort((a,b)=>a.hp-b.hp);
+        if (victims.length) victims[0].hp = 0;
+        pl.gold = 0;
+      }
+    }
+    pl.gold = Math.max(0, pl.gold);
+  }
+}
+
+function updateCityCapture(dt) {
+  for (const city of cities) {
+    const nearby = units.filter(u => Math.hypot(u.x-city.cx, u.y-city.cy) < T*1.2);
+    const playerOn  = nearby.filter(u => u.owner === 'player');
+    const aiOn      = nearby.filter(u => u.owner === 'ai');
+
+    if (playerOn.length > 0 && aiOn.length === 0 && city.owner !== 'player') {
+      city.capturer = 'player';
+      city.captureProgress += dt / CAPTURE_TIME;
+      if (city.captureProgress >= 1) {
+        city.owner = 'player'; city.captureProgress = 0; city.capturer = null; city.queue = [];
+      }
+    } else if (aiOn.length > 0 && playerOn.length === 0 && city.owner !== 'ai') {
+      city.capturer = 'ai';
+      city.captureProgress += dt / CAPTURE_TIME;
+      if (city.captureProgress >= 1) {
+        city.owner = 'ai'; city.captureProgress = 0; city.capturer = null; city.queue = [];
+      }
+    } else if (playerOn.length === 0 && aiOn.length === 0) {
+      // Decay
+      if (city.capturer) city.captureProgress = Math.max(0, city.captureProgress - dt / CAPTURE_TIME);
+      if (city.captureProgress <= 0) city.capturer = null;
+    }
+  }
+}
+
+function updateCityProduction(dt) {
+  for (const city of cities) {
+    if (city.queue.length === 0) continue;
+    const pid = city.owner;
+    if (pid === 'neutral') { city.queue = []; continue; }
+    const type = city.queue[0];
+    const buildTime = type === 'light' ? 4 : 7;
+    city.buildTimer += dt;
+    if (city.buildTimer >= buildTime) {
+      city.buildTimer = 0;
+      city.queue.shift();
+      const angle = Math.random() * Math.PI * 2;
+      spawnUnit(type, pid,
+        city.cx + Math.cos(angle) * T * 0.8,
+        city.cy + Math.sin(angle) * T * 0.8);
+    }
+  }
+}
+
+function updateUnits(dt) {
+  // Remove dead
+  units = units.filter(u => u.hp > 0);
+
+  for (const u of units) {
+    const terrain = getTerrain(u.x, u.y);
+
+    // Water damage
+    if (terrain === TERRAIN.WATER) {
+      u.waterTimer += dt;
+      if (u.waterTimer > 1) u.hp -= 2 * dt;
+    } else {
+      u.waterTimer = 0;
+    }
+
+    // Heal when not in combat and away from enemies
+    if (u.state !== 'combat' && u.hp < u.maxHp) {
+      const inCity = cities.some(c => c.owner === u.owner && Math.hypot(u.x-c.cx, u.y-c.cy) < T);
+      u.hp = Math.min(u.maxHp, u.hp + (inCity ? 6 : 2) * dt);
+    }
+
+    // Find nearest enemy
+    const enemies = units.filter(e => e.owner !== u.owner && e.hp > 0);
+    let nearestEnemy = null, nearestDist = Infinity;
+    for (const e of enemies) {
+      const d = Math.hypot(e.x-u.x, e.y-u.y);
+      if (d < nearestDist) { nearestDist = d; nearestEnemy = e; }
+    }
+
+    // Auto-attack if in range
+    if (nearestEnemy && nearestDist < u.range) {
+      u.state = 'combat';
+      u.target = nearestEnemy;
+      u.atkCooldown -= dt;
+      if (u.atkCooldown <= 0) {
+        u.atkCooldown = 1 / u.atkRate;
+        const dmgMod = terrainDmgMod(terrain, u.type);
+        const moraleMod = 0.6 + 0.4 * (u.morale / 100);
+        nearestEnemy.hp -= u.dmg * dmgMod * moraleMod;
+        nearestEnemy.morale = Math.max(0, nearestEnemy.morale - UNIT_DEF[u.type].moraleDmg);
+      }
+    } else {
+      if (u.state === 'combat') { u.state = 'idle'; u.target = null; }
+    }
+
+    // Flee if very low morale
+    if (u.morale < 20 && u.state !== 'flee') {
+      u.state = 'flee';
+      // Move away from nearest enemy
+      if (nearestEnemy) {
+        const dx = u.x - nearestEnemy.x, dy = u.y - nearestEnemy.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const friendCap = cities.find(c => c.owner === u.owner && c.isCapital);
+        u.tx = (friendCap?.cx ?? u.x + dx/len*100);
+        u.ty = (friendCap?.cy ?? u.y + dy/len*100);
+      }
+    }
+
+    // Morale recovery
+    if (u.state !== 'combat') {
+      u.morale = Math.min(100, u.morale + 8 * dt);
+    }
+
+    // Attack-move: chase nearest enemy
+    if (u.state === 'moving' && u.attackMove && nearestEnemy && nearestDist < 180) {
+      u.tx = nearestEnemy.x; u.ty = nearestEnemy.y;
+    }
+
+    // Movement
+    if (u.state === 'moving' || u.state === 'flee') {
+      const dx = u.tx - u.x, dy = u.ty - u.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 3) {
+        u.x = u.tx; u.y = u.ty;
+        if (u.state !== 'flee') u.state = 'idle';
+        else { u.state = 'idle'; u.morale = Math.min(100, u.morale + 20); }
+      } else {
+        const spd = u.speed * terrainSpeedMod(terrain, u.type);
+        const move = Math.min(spd * dt, dist);
+        u.x += (dx / dist) * move;
+        u.y += (dy / dist) * move;
+        u.x = Math.max(2, Math.min(MAP_W-2, u.x));
+        u.y = Math.max(2, Math.min(MAP_H-2, u.y));
+      }
+    }
+  }
+}
+
+function updateAI(dt) {
+  const cfg = getAIConfig(aiDifficulty);
+  const ai = players.ai;
+  const aiCities = cities.filter(c => c.owner === 'ai');
+  const aiUnits  = units.filter(u => u.owner === 'ai');
+  const playerCities = cities.filter(c => c.owner === 'player');
+  const pCap = cities.find(c => c.isCapital && c.owner === 'player');
+  const aiCap = cities.find(c => c.isCapital && c.owner === 'ai');
+
+  // Buy units
+  aiState.nextBuy -= dt;
+  if (aiState.nextBuy <= 0) {
+    const [bMin, bMax] = cfg.buyInterval;
+    aiState.nextBuy = bMin + Math.random() * (bMax - bMin);
+    for (const city of aiCities) {
+      if (city.queue.length < 3) {
+        const type = ai.gold >= 400 && Math.random() < cfg.heavyChance ? 'heavy' : 'light';
+        if (ai.gold >= UNIT_DEF[type].cost) {
+          ai.gold -= UNIT_DEF[type].cost;
+          city.queue.push(type);
+        }
+      }
+    }
+  }
+
+  // Move AI units
+  aiState.attackWave -= dt;
+  if (aiState.attackWave <= 0) {
+    const [aMin, aMax] = cfg.attackInterval;
+    aiState.attackWave = aMin + Math.random() * (aMax - aMin);
+
+    for (const u of aiUnits) {
+      if (u.state === 'combat' || u.state === 'flee') continue;
+      if (cfg.blunderChance > 0 && Math.random() < cfg.blunderChance) continue;
+
+      let target;
+      if (pCap) {
+        target = pCap;
+      } else if (playerCities.length > 0) {
+        target = playerCities.reduce((a,b) => Math.hypot(a.cx-u.x,a.cy-u.y) < Math.hypot(b.cx-u.x,b.cy-u.y) ? a : b);
+      }
+
+      if (target) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.random() * 30;
+        u.tx = target.cx + Math.cos(angle) * r;
+        u.ty = target.cy + Math.sin(angle) * r;
+        u.state = 'moving';
+        u.attackMove = true;
+      }
+    }
+
+    // Hard: send idle units near neutral cities to capture them
+    if (cfg.captureNeutral) {
+      const neutralCities = cities.filter(c => c.owner === 'neutral');
+      const idleUnits = aiUnits.filter(u => u.state === 'idle');
+      for (const nc of neutralCities) {
+        const closest = idleUnits.find(u => Math.hypot(u.x - nc.cx, u.y - nc.cy) < T * 18);
+        if (closest) {
+          closest.tx = nc.cx; closest.ty = nc.cy;
+          closest.state = 'moving'; closest.attackMove = false;
+        }
+      }
+    }
+
+    // Defend capital
+    if (aiCap) {
+      const nearPlayer = units.filter(u => u.owner === 'player' && Math.hypot(u.x-aiCap.cx,u.y-aiCap.cy) < T*6);
+      if (nearPlayer.length > 0) {
+        const defCount = Math.ceil((nearPlayer.length + 2) * cfg.defenderRatio);
+        const defenders = aiUnits.filter(u => u.state !== 'combat').slice(0, defCount);
+        for (const d of defenders) {
+          const angle = Math.random() * Math.PI * 2;
+          d.tx = aiCap.cx + Math.cos(angle)*T*0.5;
+          d.ty = aiCap.cy + Math.sin(angle)*T*0.5;
+          d.state = 'moving';
+          d.attackMove = true;
+        }
+      }
+    }
+  }
+}
+
+function checkVictory() {
+  const totalCities = cities.length;
+  const threshold = Math.floor(totalCities * 0.8);
+
+  const pCities  = cities.filter(c => c.owner === 'player').length;
+  const aiCities = cities.filter(c => c.owner === 'ai').length;
+  const pCapGone  = !cities.find(c => c.isCapital && c.owner === 'player');
+  const aiCapGone = !cities.find(c => c.isCapital && c.owner === 'ai');
+
+  // Player wins: enemy capital captured + 80% cities
+  if (aiCapGone && pCities >= threshold) { endGame('player'); return; }
+  // AI wins: player capital captured + 80% cities
+  if (pCapGone  && aiCities >= threshold) { endGame('ai');    return; }
+  // Annihilation
+  if (pCities === 0 && units.filter(u => u.owner === 'player').length === 0) { endGame('ai'); return; }
+  if (aiCities === 0 && units.filter(u => u.owner === 'ai').length === 0)    { endGame('player'); return; }
+}
+
+function endGame(winnerId) {
+  if (gameOver) return;
+  gameOver = true;
+  winner = winnerId;
+  const msg = document.getElementById('msg');
+  msg.style.display = 'block';
+  document.getElementById('msg-title').textContent = winnerId === 'player' ? 'Victory!' : 'Defeat';
+  document.getElementById('msg-title').style.color = winnerId === 'player' ? '#3aff8c' : '#ff4444';
+  document.getElementById('msg-body').textContent = winnerId === 'player'
+    ? 'You captured the enemy capital and control the majority of cities.'
+    : 'The enemy has overwhelmed your forces. Better luck next time!';
+}
+
+function updateHUD() {
+  const pGold  = Math.floor(players.player.gold);
+  const pUnits = units.filter(u => u.owner === 'player').length;
+  const pCities= cities.filter(c => c.owner === 'player').length;
+  const aiU    = units.filter(u => u.owner === 'ai').length;
+  const aiC    = cities.filter(c => c.owner === 'ai').length;
+  document.getElementById('p-gold').textContent   = pGold;
+  document.getElementById('p-units').textContent  = pUnits;
+  document.getElementById('p-cities').textContent = pCities;
+  document.getElementById('ai-units').textContent = aiU;
+  document.getElementById('ai-cities').textContent= aiC;
+  updateCityPanel();
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function render() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.translate(-camera.x, -camera.y);
+
+  renderTerrain();
+  renderCities();
+  renderUnits();
+  renderSelBox();
+
+  ctx.restore();
+}
+
+function renderTerrain() {
+  const c0 = Math.max(0, Math.floor(camera.x / T));
+  const c1 = Math.min(COLS, c0 + Math.ceil(canvas.width / T) + 2);
+  const r0 = Math.max(0, Math.floor(camera.y / T));
+  const r1 = Math.min(ROWS, r0 + Math.ceil(canvas.height / T) + 2);
+
+  for (let r = r0; r < r1; r++) {
+    for (let c = c0; c < c1; c++) {
+      const t = map.grid[r][c];
+      const x = c * T, y = r * T;
+
+      // Base terrain
+      ctx.fillStyle = TERRAIN_COLOR[t];
+      ctx.fillRect(x, y, T, T);
+
+      // Texture overlays
+      if (t === TERRAIN.FOREST) {
+        ctx.fillStyle = 'rgba(0,80,0,0.25)';
+        ctx.beginPath(); ctx.arc(x+T/2, y+T/2, T*0.35, 0, Math.PI*2); ctx.fill();
+      } else if (t === TERRAIN.MOUNTAINS) {
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.beginPath();
+        ctx.moveTo(x+T/2, y+4); ctx.lineTo(x+T-4, y+T-4); ctx.lineTo(x+4, y+T-4);
+        ctx.closePath(); ctx.fill();
+      } else if (t === TERRAIN.WATER) {
+        ctx.fillStyle = 'rgba(30,120,180,0.18)';
+        ctx.fillRect(x, y, T, T/2);
+      } else if (t === TERRAIN.BRIDGE) {
+        ctx.fillStyle = '#8a7050';
+        ctx.fillRect(x+4, y+T*0.35, T-8, T*0.3);
+      }
+
+      // Grid line
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(x, y, T, T);
+    }
+  }
+}
+
+function renderCities() {
+  for (const city of cities) {
+    const sx = city.cx, sy = city.cy;
+    const visC = worldToScreen(sx, sy);
+    // Only render if in viewport (with margin)
+    if (visC.x < -40 || visC.x > canvas.width+40 || visC.y < HUD_H-40 || visC.y > canvas.height-PANEL_H+40) continue;
+
+    const ownerColor = city.owner === 'player' ? '#3a8cff' : city.owner === 'ai' ? '#ff4444' : '#aaaaaa';
+
+    // City ring
+    ctx.strokeStyle = ownerColor;
+    ctx.lineWidth = city.isCapital ? 3 : 2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, city.isCapital ? 14 : 10, 0, Math.PI*2);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.beginPath();
+    ctx.arc(sx, sy, city.isCapital ? 14 : 10, 0, Math.PI*2);
+    ctx.fill();
+
+    // City icon
+    if (city.isCapital) {
+      // Star
+      ctx.fillStyle = ownerColor;
+      drawStar(ctx, sx, sy, 5, 6, 3);
+    } else {
+      // Circle dot
+      ctx.fillStyle = ownerColor;
+      ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI*2); ctx.fill();
+    }
+
+    // Capture progress arc
+    if (city.captureProgress > 0 && city.captureProgress < 1) {
+      const capColor = city.capturer === 'player' ? '#3a8cff' : '#ff4444';
+      ctx.strokeStyle = capColor;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(sx, sy, city.isCapital ? 17 : 13, -Math.PI/2, -Math.PI/2 + city.captureProgress * Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Production queue dots
+    if (city.queue.length > 0) {
+      for (let i = 0; i < Math.min(city.queue.length, 4); i++) {
+        const qcolor = city.queue[i] === 'heavy' ? '#ffd700' : '#88ddff';
+        ctx.fillStyle = qcolor;
+        ctx.beginPath(); ctx.arc(sx - 9 + i*6, sy + 18, 3, 0, Math.PI*2); ctx.fill();
+      }
+    }
+  }
+}
+
+function drawStar(ctx, cx, cy, points, outer, inner) {
+  ctx.beginPath();
+  for (let i = 0; i < points*2; i++) {
+    const r = i%2===0 ? outer : inner;
+    const a = (i * Math.PI / points) - Math.PI/2;
+    if (i===0) ctx.moveTo(cx+r*Math.cos(a), cy+r*Math.sin(a));
+    else ctx.lineTo(cx+r*Math.cos(a), cy+r*Math.sin(a));
+  }
+  ctx.closePath(); ctx.fill();
+}
+
+function renderUnits() {
+  for (const u of units) {
+    const { x: sx, y: sy } = worldToScreen(u.x, u.y);
+    if (sx < -20 || sx > canvas.width+20 || sy < HUD_H-20 || sy > canvas.height-PANEL_H+20) continue;
+
+    const col = u.owner === 'player' ? '#3a8cff' : '#ff4444';
+    const r   = u.type === 'heavy' ? 8 : 5;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.arc(sx+1, sy+1, r, 0, Math.PI*2); ctx.fill();
+
+    // Body
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2); ctx.fill();
+
+    // Heavy indicator
+    if (u.type === 'heavy') {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(sx, sy, r*0.5, 0, Math.PI*2); ctx.stroke();
+    }
+
+    // Selected ring
+    if (u.selected) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(sx, sy, r+3, 0, Math.PI*2); ctx.stroke();
+    }
+
+    // Combat shake
+    if (u.state === 'combat') {
+      ctx.strokeStyle = '#ffcc00';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(sx, sy, r+2, 0, Math.PI*2); ctx.stroke();
+    }
+
+    // HP bar
+    const bw = 20, bh = 3, bx = sx - bw/2, by = sy - r - 8;
+    ctx.fillStyle = '#1e2a3a';
+    ctx.fillRect(bx, by, bw, bh);
+    const hpPct = Math.max(0, u.hp / u.maxHp);
+    ctx.fillStyle = hpPct > 0.5 ? '#3aff8c' : hpPct > 0.25 ? '#ffcc00' : '#ff4444';
+    ctx.fillRect(bx, by, bw * hpPct, bh);
+  }
+}
+
+function renderSelBox() {
+  if (!selBox) return;
+  const x1 = selBox.x1 + camera.x, y1 = selBox.y1 + camera.y;
+  const x2 = selBox.x2 + camera.x, y2 = selBox.y2 + camera.y;
+  ctx.strokeStyle = '#3a8cff';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4,3]);
+  ctx.strokeRect(Math.min(x1,x2), Math.min(y1,y2), Math.abs(x2-x1), Math.abs(y2-y1));
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(58,140,255,0.08)';
+  ctx.fillRect(Math.min(x1,x2), Math.min(y1,y2), Math.abs(x2-x1), Math.abs(y2-y1));
+}
+
+// ── Game loop ──────────────────────────────────────────────────────────────
+function loop(ts) {
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+  if (map) { update(dt); render(); }
+  requestAnimationFrame(loop);
+}
+
+function updateDiffLabel(val) {
+  document.getElementById('diff-label').textContent = val;
+}
+
+function startGame(level) {
+  aiDifficulty = level;
+  document.getElementById('start-modal').style.display = 'none';
+  initGame();
+  const el = document.getElementById('hud-diff');
+  el.textContent = level;
+  const hue = Math.round(120 - level * 1.2);
+  el.style.color = `hsl(${hue},80%,60%)`;
+}
+
+function restartGame() {
+  document.getElementById('msg').style.display = 'none';
+  document.getElementById('start-modal').style.display = 'flex';
+}
+
+lastTime = performance.now();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

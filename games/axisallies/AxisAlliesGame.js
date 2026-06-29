@@ -52,11 +52,10 @@ function reachable(startTerritory, domain, maxMoves, board, units, playerId, com
 
 // ── Unit factory ──────────────────────────────────────────────────────────────
 
-let _idCtr = 0;
-function makeUnit(ownerId, type, territory) {
+function makeUnit(id, ownerId, type, territory) {
   const stats = UNITS[type];
   return {
-    id: `u${_idCtr++}`,
+    id,
     ownerId,
     type,
     territory,
@@ -419,7 +418,8 @@ function handlePlace(state, playerId, action) {
   if (idx === -1) return state;
   queue.splice(idx, 1);
 
-  const newUnit = makeUnit(playerId, action.payload.unit, action.payload.territory);
+  const nextId = state.gameSpecific.nextId;
+  const newUnit = makeUnit(`u${nextId}`, playerId, action.payload.unit, action.payload.territory);
   return {
     ...state,
     units: [...state.units, newUnit],
@@ -427,6 +427,7 @@ function handlePlace(state, playerId, action) {
     gameSpecific: {
       ...state.gameSpecific,
       pendingUnits: { ...pendingUnits, [playerId]: queue },
+      nextId: nextId + 1,
     },
   };
 }
@@ -548,14 +549,13 @@ function summarizeUnits(units) {
 // ── createInitialState ────────────────────────────────────────────────────────
 
 export function createInitialState(players, config = {}) {
-  _idCtr = 0;
-
   const ownership = { ...STARTING_OWNERS };
 
+  let idCtr = 0;
   const units = [];
   for (const { ownerId, type, territory, count } of STARTING_UNITS) {
     for (let i = 0; i < count; i++) {
-      units.push(makeUnit(ownerId, type, territory));
+      units.push(makeUnit(`u${idCtr++}`, ownerId, type, territory));
     }
   }
 
@@ -573,6 +573,7 @@ export function createInitialState(players, config = {}) {
     gameSpecific: {
       ipcs: { axis: 30, allies: 36 },
       pendingUnits: { axis: [], allies: [] },
+      nextId: idCtr,
     },
   };
 }

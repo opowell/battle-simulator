@@ -1,5 +1,8 @@
-import { getAllLegalMoves, getAllFogMoves } from './moves.js';
+import { getAllLegalMoves } from './moves.js';
 import { applyMoveToBoard, isKingInCheck, fileIndex, rankOf, getVisibleSquares } from './board.js';
+import { Belief } from './belief.js';
+
+const FILES = 'abcdefgh';
 
 const PIECE_VALUE = { pawn: 100, knight: 320, bishop: 330, rook: 500, queen: 900, king: 20000 };
 
@@ -79,28 +82,96 @@ function pieceScore(p) {
   return PIECE_VALUE[p.type] + (table ? table[pstIndex(p.position, p.ownerId)] : 0);
 }
 
-// Standard evaluation: sum of (material + PST) relative to aiColor
-function evaluate(board, aiColor) {
+// Pawn structure: doubled/isolated penalties, passed pawn bonus
+function pawnStructure(board, color) {
+  const myFiles = new Array(8).fill(0);
+  const myPawns = [];
+  const oppByFile = Array.from({ length: 8 }, () => []);
+
+  for (const sq of Object.keys(board)) {
+    const p = board[sq];
+    if (!p || p.type !== 'pawn') continue;
+    const fi = fileIndex(sq);
+    const r  = rankOf(sq);
+    if (p.ownerId === color) {
+      myFiles[fi]++;
+      myPawns.push([fi, r]);
+    } else {
+      oppByFile[fi].push(r);
+    }
+  }
+
+  let score = 0;
+
+  for (const cnt of myFiles) {
+    if (cnt >= 2) score -= 20 * (cnt - 1);
+  }
+
+  for (let fi = 0; fi < 8; fi++) {
+    if (!myFiles[fi]) continue;
+    const hasNeighbor = (fi > 0 && myFiles[fi - 1] > 0) || (fi < 7 && myFiles[fi + 1] > 0);
+    if (!hasNeighbor) score -= 15;
+  }
+
+  for (const [fi, r] of myPawns) {
+    let passed = true;
+    outer: for (let adj = Math.max(0, fi - 1); adj <= Math.min(7, fi + 1); adj++) {
+      for (const oppR of oppByFile[adj]) {
+        if ((color === 'white' && oppR > r) || (color === 'black' && oppR < r)) {
+          passed = false;
+          break outer;
+        }
+      }
+    }
+    if (passed) {
+      const advance = color === 'white' ? r - 2 : 7 - r;
+      score += 15 + advance * 15;
+    }
+  }
+
+  return score;
+}
+
+function bishopPairBonus(board, color) {
+  let cnt = 0;
+  for (const sq of Object.keys(board)) {
+    const p = board[sq];
+    if (p && p.ownerId === color && p.type === 'bishop') cnt++;
+  }
+  return cnt >= 2 ? 30 : 0;
+}
+
+function rookFileBonus(board, color) {
+  const myPawnFiles  = new Set();
+  const oppPawnFiles = new Set();
+  for (const sq of Object.keys(board)) {
+    const p = board[sq];
+    if (!p || p.type !== 'pawn') continue;
+    if (p.ownerId === color) myPawnFiles.add(fileIndex(sq));
+    else                     oppPawnFiles.add(fileIndex(sq));
+  }
   let score = 0;
   for (const sq of Object.keys(board)) {
     const p = board[sq];
-    if (!p) continue;
-    const s = pieceScore(p);
-    score += p.ownerId === aiColor ? s : -s;
+    if (!p || p.ownerId !== color || p.type !== 'rook') continue;
+    const fi = fileIndex(sq);
+    if (!myPawnFiles.has(fi))  score += 10; // semi-open
+    if (!oppPawnFiles.has(fi)) score += 10; // fully open
   }
   return score;
 }
 
-// Fog evaluation: known material + visibility bonus (reward information advantage)
-function fogEvaluate(board, aiColor) {
+function evaluate(board, aiColor) {
+  const opp = aiColor === 'white' ? 'black' : 'white';
   let score = 0;
   for (const sq of Object.keys(board)) {
     const p = board[sq];
     if (!p) continue;
-    const s = pieceScore(p);
-    score += p.ownerId === aiColor ? s : -s;
+    score += p.ownerId === aiColor ? pieceScore(p) : -pieceScore(p);
   }
-  score += getVisibleSquares(board, aiColor).size * 3;
+  score += pawnStructure(board, aiColor)   - pawnStructure(board, opp);
+  score += bishopPairBonus(board, aiColor) - bishopPairBonus(board, opp);
+  score += rookFileBonus(board, aiColor)   - rookFileBonus(board, opp);
   return score;
 }
 
@@ -165,162 +236,291 @@ function orderMoves(moves, board) {
 }
 
 // ---------------------------------------------------------------------------
-// Standard minimax with alpha-beta pruning
+// Transposition table (cleared at the start of each full-info root search)
 // ---------------------------------------------------------------------------
 
-const STANDARD_DEPTH = 4;
+let TT = new Map();
 
-function alphaBeta(board, gs, color, aiColor, depth, alpha, beta) {
-  if (depth === 0) return evaluate(board, aiColor);
-
-  const opp   = color === 'white' ? 'black' : 'white';
-  const moves = getAllLegalMoves(board, color, gs);
-
-  if (moves.length === 0) {
-    if (isKingInCheck(board, color)) {
-      // Checkmate — prefer mates delivered sooner (higher depth remaining = fewer moves away)
-      return color === aiColor ? -19000 - depth : 19000 + depth;
+function boardKey(board, color, gs) {
+  const cr = gs.castlingRights;
+  let key  = color + '|' +
+    (cr.white.kingSide  ? 'K' : '') +
+    (cr.white.queenSide ? 'Q' : '') +
+    (cr.black.kingSide  ? 'k' : '') +
+    (cr.black.queenSide ? 'q' : '') + '|' +
+    (gs.enPassantTarget ?? '') + '|';
+  for (let r = 8; r >= 1; r--) {
+    for (let fi = 0; fi < 8; fi++) {
+      const p = board[FILES[fi] + r];
+      key += p ? p.ownerId[0] + p.type[0] : '.';
     }
-    return 0; // stalemate
   }
+  return key;
+}
 
-  const sorted = orderMoves(moves, board);
+// ---------------------------------------------------------------------------
+// Quiescence search: resolve capture sequences at leaf nodes (full-info only)
+// ---------------------------------------------------------------------------
+
+function quiesce(board, gs, color, aiColor, alpha, beta) {
+  const opp   = color === 'white' ? 'black' : 'white';
+  const stand = evaluate(board, aiColor);
 
   if (color === aiColor) {
-    let best = -Infinity;
-    for (const m of sorted) {
-      const score = alphaBeta(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, aiColor, depth - 1, alpha, beta);
-      if (score > best) { best = score; if (best > alpha) alpha = best; }
-      if (alpha >= beta) break;
+    if (stand >= beta) return stand;
+    let best = stand;
+    if (stand > alpha) alpha = stand;
+
+    const captures = getAllLegalMoves(board, color, gs).filter(m => m.isCapture || m.payload?.promote);
+    for (const m of orderMoves(captures, board)) {
+      const score = quiesce(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, aiColor, alpha, beta);
+      if (score > best) {
+        best = score;
+        if (best > alpha) alpha = best;
+        if (alpha >= beta) break;
+      }
     }
     return best;
   } else {
-    let best = Infinity;
-    for (const m of sorted) {
-      const score = alphaBeta(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, aiColor, depth - 1, alpha, beta);
-      if (score < best) { best = score; if (best < beta) beta = best; }
-      if (alpha >= beta) break;
+    if (stand <= alpha) return stand;
+    let best = stand;
+    if (stand < beta) beta = stand;
+
+    const captures = getAllLegalMoves(board, color, gs).filter(m => m.isCapture || m.payload?.promote);
+    for (const m of orderMoves(captures, board)) {
+      const score = quiesce(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, aiColor, alpha, beta);
+      if (score < best) {
+        best = score;
+        if (best < beta) beta = best;
+        if (alpha >= beta) break;
+      }
     }
     return best;
   }
 }
 
-function standardSearch(board, gs, color, legalActions) {
-  const opp    = color === 'white' ? 'black' : 'white';
-  const sorted = orderMoves(legalActions, board);
-  let bestScore = -Infinity;
-  let bestMove  = sorted[0];
+// ---------------------------------------------------------------------------
+// Search configurations — one per information model
+// ---------------------------------------------------------------------------
 
-  for (const m of sorted) {
-    const score = alphaBeta(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, color, STANDARD_DEPTH - 1, -Infinity, Infinity);
+// Per-particle search config: a particle is a fully-specified board, so we use
+// ordinary legal moves with checkmate/stalemate terminals. (Under fog this is an
+// approximation — the real game ends on king capture — but it gives strong,
+// safe tactical evaluation within each hypothesised world.)
+const FULL_INFO_CFG = {
+  getMoves:     getAllLegalMoves,
+  evaluate:     evaluate,
+  // Returns a terminal score if the position is decided, undefined otherwise.
+  hardTerminal: null,
+  noMoves(board, color, aiColor, depth) {
+    return isKingInCheck(board, color)
+      ? (color === aiColor ? -19000 - depth : 19000 + depth)
+      : 0; // stalemate
+  },
+  useTT: true,
+};
+
+// ---------------------------------------------------------------------------
+// Difficulty configuration
+//
+// There is a single search (see `search` below): it always evaluates moves
+// against a cloud of belief particles. With perfect information that cloud is
+// exactly one particle — the true board — so the same code plays ordinary
+// chess; with fog of war it is several sampled worlds.
+//
+//   depth      total plies searched per particle when there is ONE particle
+//   noise      random tie-break jitter (centipawns), for weaker difficulties
+//   useQuiesce resolve capture sequences at leaves
+//   fog        overrides used under fog, where many particles force a shallower
+//              per-particle depth and a candidate-move prefilter to bound cost
+// ---------------------------------------------------------------------------
+
+const DIFFICULTY_CONFIG = {
+  easy:   { depth: 2, noise: 250, useQuiesce: false, fog: { particles: 4,  depth: 1, topK: 6  } },
+  medium: { depth: 3, noise:  40, useQuiesce: true,  fog: { particles: 8,  depth: 2, topK: 8  } },
+  hard:   { depth: 4, noise:   0, useQuiesce: true,  fog: { particles: 12, depth: 2, topK: 8  } },
+  expert: { depth: 5, noise:   0, useQuiesce: true,  fog: { particles: 18, depth: 2, topK: 10 } },
+};
+
+// Weight on tail risk when aggregating a move's score across particles. The
+// score is a blend of the mean outcome and the average of the worst-30% of
+// particles, so a move that hangs a piece in some plausible world is penalised
+// without one paranoid particle vetoing every move.
+const PESSIMISM = 0.5;
+// Small bonus per square the move would reveal — encourages scouting to shrink
+// future uncertainty. Kept well below a pawn (100) so it only breaks ties.
+const INFO_WEIGHT = 2;
+// Per-particle score clamp (centipawns) under fog. Big enough that losing a
+// queen still dominates losing a pawn, small enough that imagined checkmates
+// from phantom hidden pieces don't swamp concrete material decisions.
+const FOG_CLAMP = 2000;
+
+// ---------------------------------------------------------------------------
+// Minimax with alpha-beta pruning, used to evaluate a move inside a single
+// fully-specified particle. cfg controls evaluator / terminal / TT usage.
+// ---------------------------------------------------------------------------
+
+function alphaBeta(board, gs, color, aiColor, depth, alpha, beta, cfg, useQuiesce) {
+  // Hard terminal (e.g., a king was captured under fog rules)
+  if (cfg.hardTerminal) {
+    const t = cfg.hardTerminal(board, aiColor);
+    if (t !== undefined) return t;
+  }
+
+  // Transposition table lookup
+  let origAlpha = alpha, origBeta = beta, key;
+  if (cfg.useTT) {
+    key = boardKey(board, color, gs);
+    const cached = TT.get(key);
+    if (cached && cached.depth >= depth) {
+      if (cached.flag === 'EXACT') return cached.score;
+      if (cached.flag === 'LOWER' && cached.score >= beta)  return cached.score;
+      if (cached.flag === 'UPPER' && cached.score <= alpha) return cached.score;
+    }
+  }
+
+  // Leaf node
+  if (depth === 0) {
+    const score = useQuiesce
+      ? quiesce(board, gs, color, aiColor, alpha, beta)
+      : cfg.evaluate(board, aiColor);
+    if (cfg.useTT) TT.set(key, { score, depth: 0, flag: 'EXACT' });
+    return score;
+  }
+
+  const opp   = color === 'white' ? 'black' : 'white';
+  const moves = cfg.getMoves(board, color, gs);
+
+  if (moves.length === 0) return cfg.noMoves(board, color, aiColor, depth);
+
+  const sorted    = orderMoves(moves, board);
+  let bestScore   = color === aiColor ? -Infinity : Infinity;
+
+  if (color === aiColor) {
+    for (const m of sorted) {
+      const score = alphaBeta(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, aiColor, depth - 1, alpha, beta, cfg, useQuiesce);
+      if (score > bestScore) bestScore = score;
+      if (bestScore > alpha) alpha = bestScore;
+      if (alpha >= beta) break;
+    }
+  } else {
+    for (const m of sorted) {
+      const score = alphaBeta(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, aiColor, depth - 1, alpha, beta, cfg, useQuiesce);
+      if (score < bestScore) bestScore = score;
+      if (bestScore < beta) beta = bestScore;
+      if (alpha >= beta) break;
+    }
+  }
+
+  if (cfg.useTT) {
+    const flag = bestScore <= origAlpha ? 'UPPER' : bestScore >= origBeta ? 'LOWER' : 'EXACT';
+    TT.set(key, { score: bestScore, depth, flag });
+  }
+  return bestScore;
+}
+
+// ---------------------------------------------------------------------------
+// Full-information root search (no fog).
+// ---------------------------------------------------------------------------
+
+// Score one root move within one particle: play it, then run lookahead (with
+// quiescence) from the opponent's reply. `depth` is total plies including the
+// root move.
+function scoreMoveInParticle(particleBoard, gs, aiColor, move, depth, useQuiesce) {
+  const opp = aiColor === 'white' ? 'black' : 'white';
+  const nb  = applyMoveToBoard(particleBoard, move);
+  const ngs = advanceGs(gs, particleBoard, move, aiColor);
+  return alphaBeta(nb, ngs, opp, aiColor, depth - 1, -Infinity, Infinity, FULL_INFO_CFG, useQuiesce);
+}
+
+// Blend the mean outcome with the average of the worst-30% of particles. With a
+// single particle this is just that particle's score.
+function aggregateScores(scores) {
+  if (scores.length === 0) return 0;
+  if (scores.length === 1) return scores[0];
+  const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+  const sorted = [...scores].sort((a, b) => a - b);
+  const k = Math.max(1, Math.ceil(sorted.length * 0.3));
+  let tail = 0;
+  for (let i = 0; i < k; i++) tail += sorted[i];
+  tail /= k;
+  return PESSIMISM * tail + (1 - PESSIMISM) * mean;
+}
+
+// ---------------------------------------------------------------------------
+// The one and only search.
+// Evaluate each candidate move against a cloud of belief particles — each a
+// fully-specified guess at where every piece is — and aggregate the outcomes
+// pessimistically, so a move that hangs material in some plausible world is
+// avoided even when the threatening piece is currently invisible. Under perfect
+// information the cloud is a single particle (the true board) and this reduces
+// to ordinary alpha-beta search.
+// ---------------------------------------------------------------------------
+
+function search(board, gs, color, legalActions, particles, opts) {
+  TT = new Map();
+  const { depth, useQuiesce, noise, topK, infoWeight, clamp } = opts;
+  // Across many uncertain worlds we clamp each particle's score so that a single
+  // fantasy line (e.g. a phantom checkmate from imagined hidden pieces) cannot
+  // dominate the aggregate and scare the AI out of saving real material.
+  const clip = clamp ? (s => (s > clamp ? clamp : s < -clamp ? -clamp : s)) : (s => s);
+
+  // Under fog (many particles) a candidate move's full evaluation is costly, so
+  // first rank moves cheaply against one particle and keep only the best topK.
+  let candidates = orderMoves(legalActions, board);
+  if (topK && candidates.length > topK) {
+    const rep = particles[0];
+    candidates = candidates
+      .map(m => ({ m, s: scoreMoveInParticle(rep, gs, color, m, 1, false) }))
+      .sort((a, b) => b.s - a.s)
+      .slice(0, topK)
+      .map(x => x.m);
+  }
+
+  let bestScore = -Infinity;
+  let bestMove  = candidates[0] ?? legalActions[0];
+  for (const m of candidates) {
+    const scores = particles.map(p => clip(scoreMoveInParticle(p, gs, color, m, depth, useQuiesce)));
+    let score = aggregateScores(scores);
+    if (infoWeight) score += getVisibleSquares(applyMoveToBoard(board, m), color).size * infoWeight;
+    if (noise > 0)  score += Math.random() * noise * 2 - noise;
     if (score > bestScore) { bestScore = score; bestMove = m; }
   }
   return bestMove;
 }
 
-// ---------------------------------------------------------------------------
-// Fog-of-war minimax
-//
-// The board received by the agent already has invisible enemy pieces removed.
-// We search using fog (pseudo-legal) moves for both sides. Our reasoning about
-// the opponent is limited to what we can currently see — hidden threats are
-// implicitly handled by the visibility bonus in fogEvaluate.
-// ---------------------------------------------------------------------------
-
-const FOG_DEPTH = 3;
-
-function fogAlphaBeta(board, gs, color, aiColor, depth, alpha, beta) {
-  // In fog mode the king can be captured — detect win/loss
-  let hasAiKing = false, hasOppKing = false;
-  for (const sq of Object.keys(board)) {
-    const p = board[sq];
-    if (!p || p.type !== 'king') continue;
-    if (p.ownerId === aiColor) hasAiKing = true; else hasOppKing = true;
+export function _debugFog(board, gs, color, legalActions, particles, opts) {
+  TT = new Map();
+  const { depth, useQuiesce, topK } = opts;
+  let candidates = orderMoves(legalActions, board);
+  let prelim = null;
+  if (topK && candidates.length > topK) {
+    const rep = particles[0];
+    prelim = candidates.map(m => ({ m, s: scoreMoveInParticle(rep, gs, color, m, 1, false) })).sort((a, b) => b.s - a.s);
+    candidates = prelim.slice(0, topK).map(x => x.m);
   }
-  if (!hasAiKing)  return -20000;
-  if (!hasOppKing) return  20000;
-
-  if (depth === 0) return fogEvaluate(board, aiColor);
-
-  const opp   = color === 'white' ? 'black' : 'white';
-  const moves = getAllFogMoves(board, color, gs);
-  if (moves.length === 0) return color === aiColor ? -5000 : 5000;
-
-  const sorted = orderMoves(moves, board);
-
-  if (color === aiColor) {
-    let best = -Infinity;
-    for (const m of sorted) {
-      const score = fogAlphaBeta(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, aiColor, depth - 1, alpha, beta);
-      if (score > best) { best = score; if (best > alpha) alpha = best; }
-      if (alpha >= beta) break;
-    }
-    return best;
-  } else {
-    let best = Infinity;
-    for (const m of sorted) {
-      const score = fogAlphaBeta(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, aiColor, depth - 1, alpha, beta);
-      if (score < best) { best = score; if (best < beta) beta = best; }
-      if (alpha >= beta) break;
-    }
-    return best;
-  }
+  const rows = candidates.map(m => {
+    const scores = particles.map(p => scoreMoveInParticle(p, gs, color, m, depth, useQuiesce));
+    const reveal = getVisibleSquares(applyMoveToBoard(board, m), color).size;
+    return { move: `${m.from}->${m.to}`, agg: aggregateScores(scores), reveal, total: aggregateScores(scores) + reveal * INFO_WEIGHT };
+  }).sort((a, b) => b.total - a.total);
+  return { prelimTop: prelim?.slice(0, topK).map(x => `${x.m.from}->${x.m.to}:${x.s.toFixed(0)}`), rows };
 }
 
-// Map a fog move (from the visible board) to the nearest valid full-board legal action.
-// Handles the case where a sliding piece intends to move past a hidden blocking piece.
-function resolveToFullAction(fogMove, fullLegalActions) {
-  if (!fogMove) return fullLegalActions[0];
-  // Direct match by from+to (captures of visible pieces, non-sliding moves, etc.)
-  const exact = fullLegalActions.find(a => a.from === fogMove.from && a.to === fogMove.to);
-  if (exact) return exact;
+// ---------------------------------------------------------------------------
+// Per-game belief store. Keyed by the (stable) players array so each game —
+// and each AI colour within an AI-vs-AI game — keeps its own belief, and a new
+// game (new players array) starts fresh automatically.
+// ---------------------------------------------------------------------------
 
-  // Castling with no exact match — shouldn't happen but fall through to random
-  if (fogMove.type === 'castle') return fullLegalActions[0];
+const beliefStore = new WeakMap();
 
-  // Sliding piece overshot a hidden blocker: find farthest reachable square in same direction
-  if (fogMove.from && fogMove.to) {
-    const fromFi = fileIndex(fogMove.from);
-    const fromR  = rankOf(fogMove.from);
-    const dfi    = Math.sign(fileIndex(fogMove.to) - fromFi);
-    const dr     = Math.sign(rankOf(fogMove.to)    - fromR);
-
-    const candidates = fullLegalActions.filter(a => {
-      if (!a.from || !a.to || a.from !== fogMove.from) return false;
-      return Math.sign(fileIndex(a.to) - fromFi) === dfi &&
-             Math.sign(rankOf(a.to)    - fromR)  === dr;
-    });
-
-    if (candidates.length > 0) {
-      return candidates.reduce((best, a) => {
-        const d = Math.max(Math.abs(fileIndex(a.to) - fromFi), Math.abs(rankOf(a.to) - fromR));
-        const bd = Math.max(Math.abs(fileIndex(best.to) - fromFi), Math.abs(rankOf(best.to) - fromR));
-        return d > bd ? a : best;
-      });
-    }
-  }
-
-  return fullLegalActions[0];
-}
-
-function fogSearch(board, gs, color, fullLegalActions) {
-  const opp = color === 'white' ? 'black' : 'white';
-
-  // Generate candidate moves from the VISIBLE board so the AI only considers moves
-  // it can actually see — hidden blocking pieces don't restrict the choice set.
-  const fogMoves  = getAllFogMoves(board, color, gs);
-  const sorted    = orderMoves(fogMoves, board);
-  let bestScore   = -Infinity;
-  let bestFogMove = sorted[0];
-
-  for (const m of sorted) {
-    const score = fogAlphaBeta(applyMoveToBoard(board, m), advanceGs(gs, board, m, color), opp, color, FOG_DEPTH - 1, -Infinity, Infinity);
-    if (score > bestScore) { bestScore = score; bestFogMove = m; }
-  }
-
-  // The chosen fog move may target a square that a hidden piece is blocking in the real game.
-  // Resolve it to the nearest valid full-board legal action before returning.
-  return resolveToFullAction(bestFogMove, fullLegalActions);
+function getBelief(state, aiColor) {
+  let byColor = beliefStore.get(state.players);
+  if (!byColor) { byColor = new Map(); beliefStore.set(state.players, byColor); }
+  let belief = byColor.get(aiColor);
+  if (!belief) { belief = new Belief(aiColor); byColor.set(aiColor, belief); }
+  return belief;
 }
 
 // ---------------------------------------------------------------------------
@@ -335,15 +535,30 @@ export const ChessAgent = {
     if (legalActions.length === 0) return null;
     if (legalActions.length === 1) return legalActions[0];
 
-    // Yield to the event loop so the server can respond with the human's move
-    // before the synchronous minimax search blocks the event loop.
+    // Yield to the event loop before blocking synchronous search
     await new Promise(r => setImmediate(r));
 
     const color = state.activePlayers[0];
     const { board, gameSpecific } = state;
+    const cfg = DIFFICULTY_CONFIG[gameSpecific.difficulty] ?? DIFFICULTY_CONFIG.hard;
 
-    return gameSpecific.fogOfWar
-      ? fogSearch(board, gameSpecific, color, legalActions)
-      : standardSearch(board, gameSpecific, color, legalActions);
+    // Build the belief particle cloud. Without fog the AI sees everything, so
+    // the cloud is exactly one particle — the true board. With fog it is several
+    // sampled worlds and the chosen move is committed back for next turn.
+    if (!gameSpecific.fogOfWar) {
+      return search(board, gameSpecific, color, legalActions, [board], {
+        depth: cfg.depth, useQuiesce: cfg.useQuiesce, noise: cfg.noise, topK: 0, infoWeight: 0,
+      });
+    }
+
+    const belief = getBelief(state, color);
+    belief.beginTurn(board);
+    let particles = belief.sample(board, cfg.fog.particles);
+    if (particles.length === 0) particles = [board]; // fallback: trust the visible board
+    const action = search(board, gameSpecific, color, legalActions, particles, {
+      depth: cfg.fog.depth, useQuiesce: cfg.useQuiesce, noise: cfg.noise, topK: cfg.fog.topK, infoWeight: INFO_WEIGHT, clamp: FOG_CLAMP,
+    });
+    belief.commitOurMove(action, board);
+    return action;
   },
 };

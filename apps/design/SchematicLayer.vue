@@ -144,6 +144,32 @@ const fogSquares = computed(() => {
   return out;
 });
 
+// Visible tile set for distance-based square fog (non-chess square-grid games).
+const squareFogVisibleSet = computed(() => {
+  if (!props.fog || props.field.ui?.gridFog || props.field.grid !== 'square') return null;
+  const W = props.field.world.w, H = props.field.world.h;
+  const sight = W * 0.22;
+  const friends = props.units.filter(u => u.friendly && !u.dead);
+  const visible = new Set();
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (friends.some(f => Math.hypot(f.x - (x + 0.5), f.y - (y + 0.5)) < sight))
+        visible.add(`${x},${y}`);
+  return visible;
+});
+
+function tileColor(tile) {
+  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`))
+    return props.rdr.fogA;
+  return tile.color;
+}
+
+function tileBgImage(tile) {
+  if (!tile.bgImage) return null;
+  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
+  return tile.bgImage;
+}
+
 function unitShape(u) {
   const shapes = props.field.ui?.unitShapes;
   if (shapes) return shapes[u.type] || 'circle';
@@ -269,11 +295,20 @@ function facingArrow(u) {
          :style="{ display:'block', position:'absolute', inset:0, cursor: dragUnit ? 'grabbing' : '' }"
          @click="handleBoardClick">
 
-      <!-- Terrain tiles (per-cell color from game toGrid) -->
+      <!-- Terrain tiles (per-cell color from game toGrid; fog applied per-tile) -->
       <rect v-for="(tile, i) in (field.tiles ?? [])" :key="'t'+i"
             :x="fit.x(tile.x)" :y="fit.y(tile.y)"
             :width="fit.len(1)" :height="fit.len(1)"
-            :fill="tile.color"/>
+            :fill="tileColor(tile)"/>
+      <!-- Terrain images (overlaid on color; absent when fogged) -->
+      <template v-for="(tile, i) in (field.tiles ?? [])" :key="'ti'+i">
+        <image v-if="tileBgImage(tile)"
+               :x="fit.x(tile.x)" :y="fit.y(tile.y)"
+               :width="fit.len(1)" :height="fit.len(1)"
+               :href="tileBgImage(tile)"
+               preserveAspectRatio="xMidYMid slice"
+               style="pointer-events:none"/>
+      </template>
 
       <!-- Board squares (alternating pattern for small square grids) -->
       <rect v-for="(sq, i) in boardSquares" :key="'bs'+i"
@@ -303,12 +338,14 @@ function facingArrow(u) {
             style="cursor:pointer"/>
 
       <!-- Grid -->
-      <line v-for="gx in gridX" :key="'gx'+gx"
-            :x1="fit.x(gx)" :y1="fit.y(0)" :x2="fit.x(gx)" :y2="fit.y(field.world.h)"
-            :stroke="rdr.grid" stroke-width="1"/>
-      <line v-for="gy in gridY" :key="'gy'+gy"
-            :x1="fit.x(0)" :y1="fit.y(gy)" :x2="fit.x(field.world.w)" :y2="fit.y(gy)"
-            :stroke="rdr.grid" stroke-width="1"/>
+      <template v-if="!field.ui?.hideGrid">
+        <line v-for="gx in gridX" :key="'gx'+gx"
+              :x1="fit.x(gx)" :y1="fit.y(0)" :x2="fit.x(gx)" :y2="fit.y(field.world.h)"
+              :stroke="rdr.grid" stroke-width="1"/>
+        <line v-for="gy in gridY" :key="'gy'+gy"
+              :x1="fit.x(0)" :y1="fit.y(gy)" :x2="fit.x(field.world.w)" :y2="fit.y(gy)"
+              :stroke="rdr.grid" stroke-width="1"/>
+      </template>
 
       <!-- Boundary -->
       <rect :x="fit.x(0)" :y="fit.y(0)"
@@ -463,8 +500,8 @@ function facingArrow(u) {
       </g>
     </svg>
 
-    <!-- Fog mask (radial gradient blobs, only when grid-based fog is not used) -->
-    <div v-if="fog && !field.ui?.gridFog" class="bf-layer" style="pointer-events:none;z-index:3"
+    <!-- Fog mask (radial gradient blobs, only for non-square non-chess-fog games) -->
+    <div v-if="fog && !field.ui?.gridFog && field.grid !== 'square'" class="bf-layer" style="pointer-events:none;z-index:3"
          :style="{
            background: rdr.fogS,
            WebkitMaskImage: fogMask,

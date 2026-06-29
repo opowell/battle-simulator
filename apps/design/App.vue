@@ -180,7 +180,7 @@ const activeField = computed(() => {
 
   const tiles = g.cells
     .filter(c => c.color)
-    .map(c => ({ x: c.x, y: c.y, color: c.color }));
+    .map(c => ({ x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null }));
 
   return {
     game:  s.game,
@@ -298,7 +298,8 @@ async function createSession(cfg) {
     agent: p.agent === 'human' ? 'human' : (p.agent ?? 'random'),
   }));
   try {
-    const created = await api.create({ game: cfg.game, players, config: { maxTurns: cfg.maxTurns ?? 500, fog: cfg.fog ?? false, scenario: cfg.scenario } });
+    const opts    = cfg.gameOpts ?? {};
+    const created = await api.create({ game: cfg.game, players, config: { maxTurns: cfg.maxTurns ?? 500, fog: opts.fogOfWar ?? false, ...opts, scenario: cfg.scenario } });
     sessionMeta.value = { ...sessionMeta.value, [created.id]: players };
     await enterSession(created.id);
     refresh();

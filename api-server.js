@@ -38,6 +38,7 @@ import { Sc2Game }           from './games/sc2/index.js';
 import { DoomGame }          from './games/doom/index.js';
 import { MudAndBloodGame }  from './games/mudandblood/index.js';
 import { KDiceGame }        from './games/kdice/index.js';
+import { WarodDotsGame }   from './games/warofdots/WarodDotsGame.js';
 
 // ---------------------------------------------------------------------------
 // Static file serving — /ui/<name>/* → apps/<name>/
@@ -113,51 +114,59 @@ const TYPE_EXT_PREF = { gif: 0, png: 1, jpg: 2, jpeg: 2, webp: 3 };
 
 async function serveGameImage(gameName, job, res, type) {
   const safe = job.replace(/[^a-zA-Z0-9_-]/g, '');
+  // Search both images/ and assets/ directories
+  const baseDirs = [
+    resolve(GAMES_DIR, gameName, 'images'),
+    resolve(GAMES_DIR, gameName, 'assets'),
+  ];
 
-  // /images/:game/:job/:type  →  games/:game/images/:job/{type}*
+  // /images/:game/:job/:type  →  games/:game/{images,assets}/:job/{type}*
   if (type) {
     const safeType = type.replace(/[^a-zA-Z0-9_-]/g, '');
-    const subdir = resolve(GAMES_DIR, gameName, 'images', safe);
-    let files;
-    try { files = await readdir(subdir); } catch { files = []; }
-    // collect candidates whose stem starts with safeType
-    const candidates = files
-      .map(f => { const dot = f.lastIndexOf('.'); return dot < 0 ? null : { f, ext: f.slice(dot + 1).toLowerCase() }; })
-      .filter(x => x && f_stem(x.f).startsWith(safeType))
-      .sort((a, b) => (TYPE_EXT_PREF[a.ext] ?? 99) - (TYPE_EXT_PREF[b.ext] ?? 99));
-    for (const { f } of candidates) {
-      try {
-        const data = await readFile(resolve(subdir, f));
-        const ext = f.slice(f.lastIndexOf('.'));
-        const ct = sniffMime(data) ?? MIME_TYPES[ext] ?? 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400' });
-        return res.end(data);
-      } catch {}
+    for (const base of baseDirs) {
+      const subdir = resolve(base, safe);
+      let files;
+      try { files = await readdir(subdir); } catch { continue; }
+      const candidates = files
+        .map(f => { const dot = f.lastIndexOf('.'); return dot < 0 ? null : { f, ext: f.slice(dot + 1).toLowerCase() }; })
+        .filter(x => x && f_stem(x.f).startsWith(safeType))
+        .sort((a, b) => (TYPE_EXT_PREF[a.ext] ?? 99) - (TYPE_EXT_PREF[b.ext] ?? 99));
+      for (const { f } of candidates) {
+        try {
+          const data = await readFile(resolve(subdir, f));
+          const ext = f.slice(f.lastIndexOf('.'));
+          const ct = sniffMime(data) ?? MIME_TYPES[ext] ?? 'application/octet-stream';
+          res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400' });
+          return res.end(data);
+        } catch {}
+      }
     }
     res.writeHead(404); res.end('Not found');
     return;
   }
 
-  // /images/:game/:job  →  games/:game/images/:job.*  (flat file)
-  const dir = resolve(GAMES_DIR, gameName, 'images');
-  let files;
-  try { files = await readdir(dir); } catch { files = []; }
-  for (const f of files) {
-    const dot = f.lastIndexOf('.');
-    if (dot < 0) continue;
-    if (f.slice(0, dot) === safe) {
-      try {
-        const data = await readFile(resolve(dir, f));
-        const ct = sniffMime(data) ?? MIME_TYPES[f.slice(dot)] ?? 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400' });
-        return res.end(data);
-      } catch {}
+  // /images/:game/:job  →  games/:game/{images,assets}/:job.*  (flat file)
+  for (const base of baseDirs) {
+    let files;
+    try { files = await readdir(base); } catch { continue; }
+    for (const f of files) {
+      const dot = f.lastIndexOf('.');
+      if (dot < 0) continue;
+      if (f.slice(0, dot) === safe) {
+        try {
+          const data = await readFile(resolve(base, f));
+          const ct = sniffMime(data) ?? MIME_TYPES[f.slice(dot)] ?? 'application/octet-stream';
+          res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400' });
+          return res.end(data);
+        } catch {}
+      }
     }
   }
   res.writeHead(404); res.end('Not found');
 }
 
 function f_stem(f) { const dot = f.lastIndexOf('.'); return dot < 0 ? f : f.slice(0, dot); }
+
 
 // ---------------------------------------------------------------------------
 // Game registry
@@ -181,6 +190,7 @@ const GAMES = {
   doom:          { game: DoomGame,          icon: 'flame',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'marine', name: 'Marine' }, { id: 'demons', name: 'Demons' }] },
   mudandblood:   { game: MudAndBloodGame,   icon: 'skull',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
   kdice:         { game: KDiceGame,         icon: 'dice',      minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }] },
+  warofdots:     { game: WarodDotsGame,    icon: 'target',    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'player', name: 'You' }, { id: 'ai', name: 'AI' }] },
 };
 
 // ---------------------------------------------------------------------------
@@ -190,12 +200,13 @@ const GAMES = {
 const sessions = new Map();
 
 class Session {
-  constructor(id, gameName, engine, apiAgents, fog = false) {
+  constructor(id, gameName, engine, apiAgents, fog = false, debugAI = false) {
     this.id = id;
     this.gameName = gameName;
     this.engine = engine;
     this.apiAgents = apiAgents; // Map<playerId, ApiAgent>
     this.fog = fog;
+    this.debugAI = debugAI;
     this.status = 'active';
     this.result = null;
     this.error = null;
@@ -257,6 +268,7 @@ class Session {
       id: this.id,
       game: this.gameName,
       fog: this.fog,
+      debugAI: this.debugAI,
       status: this.status,
       result: this.result,
       summary,
@@ -384,7 +396,7 @@ async function handleCreateSession(req, res) {
   const fogOfWar = config.fog ?? config.fogOfWar ?? false;
   const engine = new GameEngine(entry.game, players, { maxTurns: config.maxTurns ?? 500, ...config, fogOfWar });
   const id = randomUUID();
-  const session = new Session(id, gameName, engine, apiAgents, config.fog ?? config.fogOfWar ?? false);
+  const session = new Session(id, gameName, engine, apiAgents, config.fog ?? config.fogOfWar ?? false, config.debugAI ?? false);
   sessions.set(id, session);
 
   const firstHumanId = [...apiAgents.keys()][0] ?? null;
@@ -490,6 +502,33 @@ const server = createServer(async (req, res) => {
     }
     if (method === 'GET' && parts[0] === 'design')
       return await serveApp('design', req, res);
+
+    // Standalone browser games — GET /play/<name>/* → games/<name>/
+    if (method === 'GET' && parts[0] === 'play' && parts[1]) {
+      const gameName = parts[1];
+      if (parts.length === 2 && !url.pathname.endsWith('/')) {
+        res.writeHead(302, { Location: `/play/${gameName}/` });
+        return res.end();
+      }
+      const rel     = url.pathname.replace(new RegExp(`^/play/${gameName}/?`), '') || 'index.html';
+      const gameDir = resolve(GAMES_DIR, gameName);
+      const abs     = resolve(gameDir, rel);
+      if (!abs.startsWith(gameDir + sep) && abs !== gameDir) { res.writeHead(403); return res.end('Forbidden'); }
+      try {
+        const data = await readFile(abs);
+        res.writeHead(200, { 'Content-Type': MIME_TYPES[extname(abs)] ?? 'application/octet-stream', 'Access-Control-Allow-Origin': '*' });
+        return res.end(data);
+      } catch {
+        if (!MIME_TYPES[extname(abs)]) {
+          try {
+            const html = await readFile(resolve(gameDir, 'index.html'));
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+            return res.end(html);
+          } catch {}
+        }
+        res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found');
+      }
+    }
 
     // GET /images/:game/:job[/:type] — serve game images (e.g. /images/ffta/soldier/sprite)
     if (method === 'GET' && parts[0] === 'images' && (parts.length === 3 || parts.length === 4))

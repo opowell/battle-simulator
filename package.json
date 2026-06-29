@@ -53,7 +53,7 @@
     "demo:kdice:auto": "node demo/kdice-demo.js --auto",
     "demo:kdice:3p": "node demo/kdice-demo.js --auto --players=3",
     "demo:kdice:4p": "node demo/kdice-demo.js --auto --players=4",
-    "test": "node --test test/*.test.js",
+    "test": "node --test $(find games engine -name '*.test.js')",
     "kill:port:3000": "lsof -i tcp:3000 | awk 'NR!=1 {print $2}' | xargs kill -9"
   },
   "dependencies": {}

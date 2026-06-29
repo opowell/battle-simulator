@@ -150,7 +150,7 @@ export const CardBattleGame = {
 
       if (card === 'heal') {
         const hero = units.find(u => u.ownerId === pid && u.type === 'hero');
-        if (hero) {
+        if (hero && hero.alive) {
           const newHp = Math.min(MAX_HP, hero.hp + 6);
           units = units.map(u => u.id === hero.id ? { ...u, hp: newHp } : u);
         }

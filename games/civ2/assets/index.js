@@ -1,81 +1,112 @@
+const BASE = '/images/civ2';
+
+function t(name) {
+  return [
+    `${BASE}/terrain/${name}`,
+    `${BASE}/terrain/${name}_variant1`,
+    `${BASE}/terrain/${name}_variant2`,
+    `${BASE}/terrain/${name}_variant3`,
+    `${BASE}/terrain/${name}_variant4`,
+  ];
+}
+
+const ERA_THRESHOLDS = [
+  [1,   'bronze_age'],
+  [21,  'classical'],
+  [41,  'medieval'],
+  [61,  'renaissance'],
+  [81,  'industrial'],
+  [101, 'modern'],
+  [121, 'futuristic'],
+];
+
+export function cityImg(turnNumber, size) {
+  let era = 'bronze_age';
+  for (const [turn, name] of ERA_THRESHOLDS) {
+    if (turnNumber >= turn) era = name;
+  }
+  const tier = size >= 7 ? 'metropolis' : size >= 5 ? 'large_city' : size >= 3 ? 'city' : size >= 2 ? 'town' : 'village';
+  return `${BASE}/cities/${era}_${tier}`;
+}
+
 export const assets = {
   terrain: {
-    ocean:     { emoji: '🌊', color: '#0d3d5c' },
-    arctic:    { emoji: '🧊', color: '#c0d4d8' },
-    tundra:    { emoji: '❄️',  color: '#8898a0' },
-    desert:    { emoji: '🏜️', color: '#c09428' },
-    plains:    { emoji: '🌾', color: '#a09050' },
-    grassland: { emoji: '🌿', color: '#246818' },
-    forest:    { emoji: '🌲', color: '#174c14' },
-    hills:     { emoji: '⛰️',  color: '#7a6030' },
-    mountains: { emoji: '🗻', color: '#504838' },
-    swamp:     { emoji: '🌿', color: '#304828' },
-    jungle:    { emoji: '🌴', color: '#0c3810' },
+    ocean:     { emoji: '🌊', color: '#0d3d5c', imgs: t('ocean') },
+    arctic:    { emoji: '🧊', color: '#c0d4d8', imgs: t('arctic') },
+    tundra:    { emoji: '❄️',  color: '#8898a0', imgs: t('tundra') },
+    desert:    { emoji: '🏜️', color: '#c09428', imgs: t('desert') },
+    plains:    { emoji: '🌾', color: '#a09050', imgs: t('prairie') },
+    grassland: { emoji: '🌿', color: '#246818', imgs: t('grassland') },
+    forest:    { emoji: '🌲', color: '#174c14', imgs: t('forest') },
+    hills:     { emoji: '⛰️',  color: '#7a6030', imgs: t('hills') },
+    mountains: { emoji: '🗻', color: '#504838', imgs: t('mountains') },
+    swamp:     { emoji: '🌿', color: '#304828', imgs: t('swamp') },
+    jungle:    { emoji: '🌴', color: '#0c3810', imgs: t('jungle') },
   },
 
   units: {
     // terrain improvement
-    settlers:          { emoji: '🏗️' },
+    settlers:          { emoji: '🏗️', img: `${BASE}/units/settlers` },
     workers:           { emoji: '🔨' },
-    engineers:         { emoji: '⚙️' },
+    engineers:         { emoji: '⚙️',  img: `${BASE}/units/engineers` },
     // diplomacy / espionage
-    diplomat:          { emoji: '📜' },
-    spy:               { emoji: '🕵️' },
-    explorer:          { emoji: '🧭' },
+    diplomat:          { emoji: '📜', img: `${BASE}/units/diplomat` },
+    spy:               { emoji: '🕵️', img: `${BASE}/units/spy` },
+    explorer:          { emoji: '🧭', img: `${BASE}/units/explorer` },
     // ancient land
-    warriors:          { emoji: '⚔️' },
-    phalanx:           { emoji: '🛡️' },
-    archers:           { emoji: '🏹' },
-    legion:            { emoji: '🗡️' },
-    catapult:          { emoji: '💣' },
+    warriors:          { emoji: '⚔️',  img: `${BASE}/units/warriors` },
+    phalanx:           { emoji: '🛡️', img: `${BASE}/units/phalanx` },
+    archers:           { emoji: '🏹', img: `${BASE}/units/archers` },
+    legion:            { emoji: '🗡️', img: `${BASE}/units/legion` },
+    catapult:          { emoji: '💣', img: `${BASE}/units/catapult` },
     // ancient mounted
-    horsemen:          { emoji: '🐴' },
-    chariot:           { emoji: '🏇' },
+    horsemen:          { emoji: '🐴', img: `${BASE}/units/horsemen` },
+    chariot:           { emoji: '🏇', img: `${BASE}/units/chariot` },
     // medieval
-    pikemen:           { emoji: '🔱' },
-    knights:           { emoji: '🗡️' },
-    crusaders:         { emoji: '✝️' },
+    pikemen:           { emoji: '🔱', img: `${BASE}/units/pikemen` },
+    knights:           { emoji: '🗡️', img: `${BASE}/units/knights` },
+    crusaders:         { emoji: '✝️',  img: `${BASE}/units/crusaders` },
     // renaissance
-    musketeers:        { emoji: '🔫' },
-    cannon:            { emoji: '💣' },
-    dragoons:          { emoji: '🐎' },
+    musketeers:        { emoji: '🔫', img: `${BASE}/units/musketeers` },
+    cannon:            { emoji: '💣', img: `${BASE}/units/cannon` },
+    dragoons:          { emoji: '🐎', img: `${BASE}/units/dragoons` },
     // industrial
-    riflemen:          { emoji: '🎯' },
-    cavalry:           { emoji: '🐎' },
-    artillery:         { emoji: '💥' },
+    riflemen:          { emoji: '🎯', img: `${BASE}/units/riflemen` },
+    cavalry:           { emoji: '🐎', img: `${BASE}/units/cavalry` },
+    artillery:         { emoji: '💥', img: `${BASE}/units/artillery` },
     // modern land
-    infantry:          { emoji: '🪖' },
-    'mech-infantry':   { emoji: '🤖' },
-    armor:             { emoji: '🛡️' },
-    howitzer:          { emoji: '💥' },
+    infantry:          { emoji: '🪖', img: `${BASE}/units/infantry` },
+    'mech-infantry':   { emoji: '🤖', img: `${BASE}/units/mech_infantry` },
+    armor:             { emoji: '🛡️', img: `${BASE}/units/armor` },
+    howitzer:          { emoji: '💥', img: `${BASE}/units/howitzer` },
     // special land
-    partisans:         { emoji: '🌿' },
-    fanatics:          { emoji: '🔥' },
-    marines:           { emoji: '⚓' },
-    paratroopers:      { emoji: '🪂' },
-    'alpine-troops':   { emoji: '🏔️' },
+    partisans:         { emoji: '🌿', img: `${BASE}/units/partisans` },
+    fanatics:          { emoji: '🔥', img: `${BASE}/units/fanatics` },
+    marines:           { emoji: '⚓', img: `${BASE}/units/marines` },
+    paratroopers:      { emoji: '🪂', img: `${BASE}/units/paratroopers` },
+    'alpine-troops':   { emoji: '🏔️', img: `${BASE}/units/alpine_troops` },
     // air
-    fighter:           { emoji: '✈️' },
-    bomber:            { emoji: '💣' },
-    helicopter:        { emoji: '🚁' },
-    'stealth-fighter': { emoji: '🛩️' },
-    'stealth-bomber':  { emoji: '🌑' },
+    fighter:           { emoji: '✈️',  img: `${BASE}/units/fighter` },
+    bomber:            { emoji: '💣', img: `${BASE}/units/bomber` },
+    helicopter:        { emoji: '🚁', img: `${BASE}/units/helicopter` },
+    'stealth-fighter': { emoji: '🛩️', img: `${BASE}/units/stealth_fighter` },
+    'stealth-bomber':  { emoji: '🌑', img: `${BASE}/units/stealth_bomber` },
     awacs:             { emoji: '📡' },
-    'cruise-missile':  { emoji: '🚀' },
-    'nuclear-missile': { emoji: '☢️' },
+    'cruise-missile':  { emoji: '🚀', img: `${BASE}/units/cruise_missile` },
+    'nuclear-missile': { emoji: '☢️',  img: `${BASE}/units/nuclear_missile` },
     // sea
-    trireme:           { emoji: '⛵' },
-    caravel:           { emoji: '⛵' },
-    galleon:           { emoji: '🚢' },
-    frigate:           { emoji: '⚓' },
-    ironclad:          { emoji: '🛡️' },
-    destroyer:         { emoji: '🚢' },
-    cruiser:           { emoji: '🚢' },
-    battleship:        { emoji: '🛳️' },
-    carrier:           { emoji: '🛳️' },
-    submarine:         { emoji: '🤿' },
-    transport:         { emoji: '🚢' },
-    'aegis-cruiser':   { emoji: '⚓' },
+    trireme:           { emoji: '⛵', img: `${BASE}/units/trireme` },
+    caravel:           { emoji: '⛵', img: `${BASE}/units/caravel` },
+    galleon:           { emoji: '🚢', img: `${BASE}/units/galleon` },
+    frigate:           { emoji: '⚓', img: `${BASE}/units/frigate` },
+    ironclad:          { emoji: '🛡️', img: `${BASE}/units/ironclad` },
+    destroyer:         { emoji: '🚢', img: `${BASE}/units/destroyer` },
+    cruiser:           { emoji: '🚢', img: `${BASE}/units/cruiser` },
+    battleship:        { emoji: '🛳️', img: `${BASE}/units/battleship` },
+    carrier:           { emoji: '🛳️', img: `${BASE}/units/carrier` },
+    submarine:         { emoji: '🤿', img: `${BASE}/units/submarine` },
+    transport:         { emoji: '🚢', img: `${BASE}/units/transport` },
+    'aegis-cruiser':   { emoji: '⚓', img: `${BASE}/units/aegis_cruiser` },
   },
 
   city: { emoji: '🏛️' },
