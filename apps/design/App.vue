@@ -102,11 +102,8 @@ watch(liveState, (newState, oldState) => {
 });
 
 // ── field for the battlefield ────────────────────────────────
-const activeField = computed(() => {
-  const s = liveState.value;
-  if (!s) return null;
-  const g = s.grid;
-  if (!g) return null;
+function buildField(g, s) {
+  if (!g || !s) return null;
 
   const apiGame = apiGames.value.find(x => x.name === s.game);
   const defs    = apiGame?.defaultPlayers ?? [];
@@ -135,7 +132,7 @@ const activeField = computed(() => {
   const ownerTeam = {};
   teams.forEach((t, i) => { ownerTeam[i + 1] = t.id; });
 
-  let units = g.cells
+  const units = g.cells
     .filter(c => c.glyph)
     .map(c => ({
       id:        c.unitId ?? `u_${c.x}_${c.y}`,
@@ -163,21 +160,6 @@ const activeField = computed(() => {
       moveRange:     c.moveRange,
     }));
 
-  // Units already queued to hop later must stay put at their pre-move square — otherwise
-  // they'd render at their (already-applied) final grid position while waiting their turn.
-  units = units.map(u => {
-    if (hopAnim.value?.unitId === u.id) {
-      const { x, y } = hopAnim.value.steps[hopAnim.value.step];
-      return { ...u, path: [[x + 0.5, y + 0.5]] };
-    }
-    const queued = hopQueue.value.find(q => q.unitId === u.id);
-    if (queued) {
-      const { x, y } = queued.steps[0];
-      return { ...u, path: [[x + 0.5, y + 0.5]] };
-    }
-    return u;
-  });
-
   const tiles = g.cells
     .filter(c => c.color)
     .map(c => ({ x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null }));
@@ -196,7 +178,41 @@ const activeField = computed(() => {
     ui:       apiGame?.ui ?? {},
     xLabels:  g.xLabels ?? null,
     yLabels:  g.yLabels ?? null,
+    // Authoritative fog visibility from the server (computed on the full board). When
+    // present the UI must use this rather than re-deriving fog from the filtered board.
+    fogVisible: g.visible ? new Set(g.visible.map(([x, y]) => `${x},${y}`)) : null,
   };
+}
+
+const historyFields = ref([]);
+// Full (unfiltered) per-ply board + move log for a finished fog game, used by the
+// "Reveal all" review toggle. Only fetched once the game is over, so they never leak
+// live positions or the opponent's moves mid-game.
+const revealFields = ref([]);
+const revealLog    = ref([]);
+
+const activeField = computed(() => {
+  const s = liveState.value;
+  if (!s) return null;
+  const field = buildField(s.grid, s);
+  if (!field) return null;
+
+  // Units already queued to hop later must stay put at their pre-move square — otherwise
+  // they'd render at their (already-applied) final grid position while waiting their turn.
+  field.units = field.units.map(u => {
+    if (hopAnim.value?.unitId === u.id) {
+      const { x, y } = hopAnim.value.steps[hopAnim.value.step];
+      return { ...u, path: [[x + 0.5, y + 0.5]] };
+    }
+    const queued = hopQueue.value.find(q => q.unitId === u.id);
+    if (queued) {
+      const { x, y } = queued.steps[0];
+      return { ...u, path: [[x + 0.5, y + 0.5]] };
+    }
+    return u;
+  });
+
+  return field;
 });
 
 // ── theme ────────────────────────────────────────────────────
@@ -223,14 +239,19 @@ let _poll = null;
 
 function stopPoll() { clearInterval(_poll); _poll = null; }
 
+function fogHumanId(s) {
+  return s?.fog ? (s.humanPlayers?.[0] ?? null) : null;
+}
+
 function maybeStartPoll(s) {
   stopPoll();
   if (!s || s.status !== 'active') return;
   const pendingHuman = s.pendingPlayer && s.humanPlayers?.includes(s.pendingPlayer);
   if (pendingHuman) return; // human's turn — no poll needed
+  const humanId = fogHumanId(s);
   _poll = setInterval(async () => {
     try {
-      const fresh = await api.session(s.id);
+      const fresh = await api.session(s.id, humanId);
       liveState.value = fresh;
       if (fresh.status !== 'active') { stopPoll(); return; }
       if (fresh.pendingPlayer && fresh.humanPlayers?.includes(fresh.pendingPlayer)) stopPoll();
@@ -269,13 +290,48 @@ onMounted(async () => {
 onUnmounted(stopPoll);
 
 // ── session flow ─────────────────────────────────────────────
-async function enterSession(id, { push = true } = {}) {
+async function loadHistory(id, state) {
   try {
-    const state = await api.session(id);
+    const grids = await api.history(id);
+    if (liveState.value?.id !== id) return;
+    historyFields.value = grids.map(g => buildField(g, state)).filter(Boolean);
+  } catch {
+    historyFields.value = [];
+  }
+}
+
+// The /history endpoint returns full unfiltered grids; in fog mode we only fetch it once
+// the game is done (revealing earlier would expose hidden pieces mid-game).
+async function loadReveal(id, state) {
+  try {
+    const [grids, log] = await Promise.all([api.history(id), api.log(id)]);
+    if (liveState.value?.id !== id) return;
+    revealFields.value = grids.map(g => buildField(g, state)).filter(Boolean);
+    revealLog.value    = Array.isArray(log) ? log : [];
+  } catch {
+    revealFields.value = [];
+    revealLog.value    = [];
+  }
+}
+
+watch(() => (liveState.value?.fog && liveState.value?.status !== 'active') ? liveState.value.id : null,
+  (id) => {
+    revealFields.value = [];
+    revealLog.value    = [];
+    if (id) loadReveal(id, liveState.value);
+  });
+
+async function enterSession(id, { push = true } = {}) {
+  historyFields.value = [];
+  try {
+    let state = await api.session(id);
+    const humanId = fogHumanId(state);
+    if (humanId) state = await api.session(id, humanId);
     liveState.value = state;
     view.value = 'battle';
     if (push) router.push('/session/' + id);
     maybeStartPoll(state);
+    if (!humanId) loadHistory(id, state); // skip history in fog mode (would reveal all pieces)
   } catch (e) {
     if (/session not found/i.test(e.message)) {
       router.replace('/');
@@ -395,6 +451,9 @@ function exitBattle() {
       <Battlefield v-else-if="activeField"
                    :live-state="liveState"
                    :field="activeField"
+                   :history-fields="historyFields"
+                   :reveal-fields="revealFields"
+                   :reveal-log="revealLog"
                    :theme="theme"
                    :fog="liveState?.fog ?? false"
                    :games-count="apiGames.length"

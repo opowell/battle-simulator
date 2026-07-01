@@ -1,3 +1,4 @@
+import { unitStrengthEval } from '../evalHelpers.js';
 /**
  * Card Battle — demonstrates simultaneous multi-player turns.
  *
@@ -49,6 +50,9 @@ function heroOf(state, playerId) {
 // ---------------------------------------------------------------------------
 
 export const CardBattleGame = {
+  // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
+  // minus the enemy's. See games/evalHelpers.js.
+  evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'CardBattle',
   scenarios: [
     { id: 'standard', name: 'Standard Duel', description: '30HP each, draw and play cards to win', config: {} },

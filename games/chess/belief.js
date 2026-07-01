@@ -36,11 +36,14 @@ for (const f of FILES) for (let r = 1; r <= 8; r++) ALL_SQUARES.push(f + r);
 const NO_CASTLING = { white: { kingSide: false, queenSide: false }, black: { kingSide: false, queenSide: false } };
 
 const MAX_POSSIBLE = 28; // cap a piece's possible-square set so sampling stays cheap
-const THREAT_BIAS = 5;   // how strongly to over-sample placements that attack our pieces
+const THREAT_BIAS = 3;   // how strongly to over-sample placements that attack our pieces
 // At most this many invisible pieces per particle may be placed on a square that
 // attacks one of our pieces. Real positions rarely have the whole hidden army
 // bearing down at once; without this cap, threat-biased sampling hallucinates
 // coordinated mating attacks and the AI huddles instead of saving real material.
+// (THREAT_BIAS is kept modest for the same reason — over-weighting phantom
+// attackers made the AI play passively, shuffling its king and pawns rather than
+// developing; we still surface real threats, just without imagining a swarm.)
 const MAX_LURKERS = 2;
 
 function opp(color) { return color === 'white' ? 'black' : 'white'; }
@@ -245,6 +248,11 @@ export class Belief {
     // real lurking threat is surfaced without imagining the whole army developed.
     const threatCapable = new Set(unseen.filter(canThreaten).map(p => p.id));
 
+    // Reserve every hidden piece's home square so a deviating piece never squats
+    // on another's anchor and forces it out too (which used to cascade a single
+    // move into several pieces leaving home).
+    const anchors = new Set(unseen.map(pc => pc.anchor));
+
     const particles = [];
     const keys = new Set();
     for (let attempt = 0; attempt < n * 4 && particles.length < n; attempt++) {
@@ -261,7 +269,8 @@ export class Belief {
       const order = [...unseen].sort((a, b) =>
         ((threatCapable.has(a.id) ? -0.7 : 0) + rng()) - ((threatCapable.has(b.id) ? -0.7 : 0) + rng()));
       for (const pc of order) {
-        const cands = [...pc.possible].filter(sq => !pb[sq] && !used.has(sq) && !visible.has(sq));
+        const cands = [...pc.possible].filter(sq =>
+          !pb[sq] && !used.has(sq) && !visible.has(sq) && !(anchors.has(sq) && sq !== pc.anchor));
         if (cands.length === 0) continue; // leave this piece off this particle
         const anchorFree = cands.includes(pc.anchor);
         let sq;
@@ -281,8 +290,16 @@ export class Belief {
         used.add(sq);
       }
       // Honour squares we know hold an enemy (recent capture of one of our pieces).
+      // Infer the piece type from unseen pieces that could reach this square rather
+      // than always defaulting to queen, which over-weights dangerous worlds.
       for (const fsq of this.forcedEnemy) {
-        if (!pb[fsq]) pb[fsq] = { id: '__capt__' + fsq, ownerId: this.oppColor, type: 'queen', position: fsq, alive: true };
+        if (!pb[fsq]) {
+          const plausible = unseen.filter(pc => pc.possible.has(fsq));
+          const type = plausible.length > 0
+            ? plausible[Math.floor(rng() * plausible.length)].type
+            : 'queen';
+          pb[fsq] = { id: '__capt__' + fsq, ownerId: this.oppColor, type, position: fsq, alive: true };
+        }
       }
       const key = boardSignature(pb, this.oppColor);
       if (keys.has(key)) continue;
@@ -319,4 +336,22 @@ function boardSignature(board, oppColor) {
     key += !p ? '.' : (p.ownerId === oppColor ? p.type[0].toUpperCase() : p.type[0]);
   }
   return key;
+}
+
+// ---------------------------------------------------------------------------
+// Per-game belief store. Keyed by the (stable) players array so each game — and
+// each AI colour within an AI-vs-AI game — keeps its own belief, and a new game
+// (new players array) starts fresh automatically. Shared by every belief-using
+// agent (ChessAgent, ObscuroAgent) so a colour keeps one belief regardless of
+// which agent drives it.
+// ---------------------------------------------------------------------------
+
+const beliefStore = new WeakMap();
+
+export function getBelief(state, aiColor) {
+  let byColor = beliefStore.get(state.players);
+  if (!byColor) { byColor = new Map(); beliefStore.set(state.players, byColor); }
+  let belief = byColor.get(aiColor);
+  if (!belief) { belief = new Belief(aiColor); byColor.set(aiColor, belief); }
+  return belief;
 }

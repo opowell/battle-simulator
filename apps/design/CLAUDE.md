@@ -1,0 +1,1 @@
+Avoid making large Vue Single File Components. Make SFCs as small in scope as possible.

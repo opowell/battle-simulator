@@ -23,7 +23,7 @@ const slots    = ref([]);
 function initGameOpts(g) {
   const opts = {};
   for (const opt of g.gameOptions ?? []) {
-    opts[opt.id] = opt.default ?? (opt.type === 'boolean' ? false : opt.options?.[0]?.value ?? '');
+    opts[opt.id] = opt.default ?? (opt.type === 'boolean' ? false : opt.type === 'range' ? (opt.min ?? 0) : opt.options?.[0]?.value ?? '');
   }
   gameOpts.value = opts;
 }
@@ -302,6 +302,10 @@ function sessionStatusColor(s) {
                 <select v-model="gameOpts[opt.id]" style="padding:5px 8px;font-size:12px">
                   <option v-for="o in opt.options" :key="o.value" :value="o.value">{{o.label}}</option>
                 </select>
+              </div>
+              <div v-else-if="opt.type === 'range'" class="field" :title="opt.description">
+                <label>{{opt.label}} · {{gameOpts[opt.id]}}</label>
+                <input type="range" :min="opt.min ?? 0" :max="opt.max ?? 100" :step="opt.step ?? 1" v-model.number="gameOpts[opt.id]"/>
               </div>
             </template>
             <div class="field">

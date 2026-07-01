@@ -14,7 +14,9 @@ async function _req(path, opts) {
 window.api = {
   games:    ()                      => _req('/games'),
   sessions: ()                      => _req('/sessions'),
-  session:  (id)                    => _req('/sessions/' + id),
+  session:  (id, player)             => _req('/sessions/' + id + (player ? '?player=' + player : '')),
+  history:  (id)                    => _req('/sessions/' + id + '/history'),
+  log:      (id)                    => _req('/sessions/' + id + '/log'),
   create:   (body)                  => _req('/sessions', { method: 'POST', body: JSON.stringify(body) }),
   action:   (id, playerId, action)  => _req('/sessions/' + id + '/action', { method: 'POST', body: JSON.stringify({ playerId, action }) }),
   del:      (id)                    => _req('/sessions/' + id, { method: 'DELETE' }),

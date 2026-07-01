@@ -1,3 +1,4 @@
+import { unitStrengthEval } from '../evalHelpers.js';
 import { ABILITIES } from './abilities.js';
 import { JOB_DEFS, createUnit } from './units.js';
 import { createMap, renderMap, getTile } from './map.js';
@@ -790,6 +791,9 @@ function getActionDuration(state, action) {
 }
 
 export const FFTAGame = {
+  // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
+  // minus the enemy's. See games/evalHelpers.js.
+  evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'Final Fantasy Tactics Advance',
   scenarios: [
     { id: 'standard',        name: 'Standard Battle',       description: '4v4 balanced job-class combat on a height-based grid', config: { scenario: 'standard' } },

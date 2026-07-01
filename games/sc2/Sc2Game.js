@@ -1,8 +1,10 @@
+import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
 import { resolveAttack, resolveAttackVsBuilding, inRange, chebyshev, effectiveRange } from './combat.js';
 import { generateMap, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
+import { getSc2Belief } from './belief.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -959,19 +961,25 @@ export function createInitialState(players, config = {}) {
         [p1.id]: { minerals: 50, gas: 0 },
         [p2.id]: { minerals: 50, gas: 0 },
       },
+      fogOfWar: config.fogOfWar ?? false,
+      startRoster: {
+        units:     units.map(u => ({ ...u })),
+        buildings: buildings.map(b => ({ ...b })),
+      },
     },
   };
 }
 
 // ── Fog of war ────────────────────────────────────────────────────────────────
 
+const VISION_RANGE = 3;
+
 function getVisibleState(state, playerId) {
-  const VISION = 3;
-  const myUnits = state.units.filter(u => u.alive && u.ownerId === playerId);
+  const myUnits     = state.units.filter(u => u.alive && u.ownerId === playerId);
   const myBuildings = state.buildings.filter(b => b.alive && b.ownerId === playerId);
   const canSee = pos =>
-    myUnits.some(m     => Math.max(Math.abs(m.position.x - pos.x), Math.abs(m.position.y - pos.y)) <= VISION) ||
-    myBuildings.some(b => Math.max(Math.abs(b.position.x - pos.x), Math.abs(b.position.y - pos.y)) <= VISION);
+    myUnits.some(m     => Math.max(Math.abs(m.position.x - pos.x), Math.abs(m.position.y - pos.y)) <= VISION_RANGE) ||
+    myBuildings.some(b => Math.max(Math.abs(b.position.x - pos.x), Math.abs(b.position.y - pos.y)) <= VISION_RANGE);
   return {
     ...state,
     units:     state.units.filter(u     => u.ownerId === playerId || canSee(u.position)),
@@ -1001,6 +1009,12 @@ function getActionDuration(state, action) {
 }
 
 export const Sc2Game = {
+  // Units plus buildings, main structures weighted heavily (destroying an
+  // enemy's base and army wins). Leaf for the generic ObscuroAgent.
+  evaluateState: (state, playerId) =>
+    unitStrengthEval(state, playerId)
+    + sidesEval(state.buildings, playerId, b =>
+        ['command-center', 'hatchery', 'lair', 'hive', 'nexus'].includes(b.type) ? 300 : 80),
   name: 'SC2',
   scenarios: [
     { id: 'tvz', name: 'Terran vs Zerg',    description: 'Marines & siege tanks vs the Swarm',    config: { race1: 'terran',  race2: 'zerg' } },
@@ -1015,6 +1029,13 @@ export const Sc2Game = {
   renderState,
   getVisibleState,
   getActionDuration,
+
+  sampleWorlds(observation, playerId, n, rng = Math.random) {
+    if (!observation.gameSpecific.fogOfWar) return [];
+    const belief = getSc2Belief(observation, playerId);
+    belief.beginTurn(observation);
+    return belief.sample(observation, n, rng, makeUnit);
+  },
 
   toGrid(state) {
     const { board, units = [], buildings = [] } = state;

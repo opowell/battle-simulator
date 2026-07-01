@@ -22,9 +22,45 @@
  * @property {(state: GameState) => string} renderState
  *   Returns a human-readable string representation.
  *
+ * --- Imperfect-information ("fog of war") interface -------------------------
+ * These four optional hooks make fog of war a first-class part of a game and
+ * let the generic ObscuroAgent (agents/ObscuroAgent.js) reason about hidden
+ * state for ANY game. A game may implement none, some, or all of them; the
+ * agent degrades gracefully:
+ *   • none                       → best-response / minimax-lite over the
+ *                                  observed state (the information set is a
+ *                                  single world).
+ *   • evaluateState only         → a non-random opponent for any game.
+ *   • evaluateState + sampleWorlds → full CFR equilibrium over the belief
+ *                                  cloud — the paper's mixed/bluffing play.
+ *
  * @property {(state: GameState, playerId: string) => GameState} [getVisibleState]
- *   Optional. Returns a filtered view of state for the given player's perspective.
- *   Called instead of full state when config.fogOfWar is true.
+ *   Optional. The OBSERVATION function: returns a filtered view of state for the
+ *   given player's perspective (hidden units removed, etc.). Called instead of
+ *   the full state when config.fogOfWar is true.
+ *
+ * @property {(observation: GameState, playerId: string, n: number, rng?: () => number) => GameState[]} [sampleWorlds]
+ *   Optional. The BELIEF sampler: given what `playerId` can observe, return up
+ *   to `n` concrete full states ("particles") consistent with that observation
+ *   — the information set. Return [] (or omit) when there is nothing hidden, in
+ *   which case the observation itself is treated as the single world. This is
+ *   the only inherently game-specific piece of fog reasoning (it encodes how
+ *   hidden state could have evolved); chess implements it via belief.js.
+ *
+ * @property {(state: GameState, playerId: string) => number} [evaluateState]
+ *   Optional. Heuristic leaf value of a state to `playerId` (higher = better for
+ *   that player). Used to score search leaves. Omitting it makes the agent rely
+ *   solely on getResult terminals (so it only distinguishes win/draw/loss).
+ *
+ * @property {(action: Action) => string} [actionKey]
+ *   Optional. Canonical identity for an action, so the SAME opponent reply seen
+ *   across different sampled worlds maps to the same payoff-matrix column.
+ *   Defaults to a structural key over {type, unitId, from, to, targetId}.
+ *
+ * @property {(observation: GameState, playerId: string, action: Action) => void} [onActionCommitted]
+ *   Optional. Notified after the agent commits to `action` from `observation`,
+ *   so a stateful belief tracker can record the move (e.g. to detect its own
+ *   captured units next turn). Pure-stateless games can omit it.
  *
  * @property {(state: GameState, action: Action) => number} [getActionDuration]
  *   Optional. Continuous-time mode only. Returns the sim-time (in seconds) for

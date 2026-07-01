@@ -153,14 +153,16 @@ export function getVisibleSquares(board, color) {
 
     if (piece.type === 'pawn') {
       const dir = color === 'white' ? 1 : -1;
+      // Forward squares: only visible when not blocked (pawn can't see through blockers)
       const pushSq = squareAt(fi, r + dir);
-      if (pushSq) {
+      if (pushSq && !board[pushSq]) {
         visible.add(pushSq);
-        if (!board[pushSq] && r === (color === 'white' ? 2 : 7)) {
+        if (r === (color === 'white' ? 2 : 7)) {
           const push2 = squareAt(fi, r + dir * 2);
-          if (push2) visible.add(push2);
+          if (push2 && !board[push2]) visible.add(push2);
         }
       }
+      // Diagonal attack squares: always visible (pawn always watches these)
       for (const dfi of [-1, 1]) {
         const capSq = squareAt(fi + dfi, r + dir);
         if (capSq) visible.add(capSq);

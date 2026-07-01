@@ -1,6 +1,8 @@
+import { unitStrengthEval } from '../evalHelpers.js';
 import { MAP_WIDTH, MAP_HEIGHT, hasLOS, getReachable, manhattan, renderMap } from './map.js';
 import { WEAPONS, AMMO_CAPS, WEAPON_RANK } from './weapons.js';
 import { createMarine, createMonster } from './units.js';
+import { getDoomBelief } from './belief.js';
 
 // ── Default item placement ─────────────────────────────────────────────────────
 
@@ -275,7 +277,7 @@ function renderState(state) {
 
 // ── createInitialState ────────────────────────────────────────────────────────
 
-function createInitialState(players, _config = {}) {
+function createInitialState(players, config = {}) {
   const [p1, p2] = players;
   const teamMap       = { [p1.id]: 'marine', [p2.id]: 'demon' };
   const teamPlayerMap = { marine: p1.id, demon: p2.id };
@@ -307,7 +309,16 @@ function createInitialState(players, _config = {}) {
     board: { width: MAP_WIDTH, height: MAP_HEIGHT },
     units: [...marines, ...demons],
     lastActions: null,
-    gameSpecific: { teamMap, teamPlayerMap, items: defaultItems() },
+    gameSpecific: {
+      teamMap, teamPlayerMap, items: defaultItems(),
+      fogOfWar: config.fogOfWar ?? false,
+      // Common-knowledge starting deployment, used to seed the fog belief
+      // tracker (belief.js).
+      startRoster: [...marines, ...demons].map(u => ({
+        id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position },
+        hp: u.hp, moveRange: u.attrs.moveRange, maxAP: u.attrs.maxAP,
+      })),
+    },
   };
 }
 
@@ -328,10 +339,30 @@ function getVisibleState(state, teamId) {
   };
 }
 
+// ── Fog belief sampler (internal, called with team ID via withTeam) ────────────
+function makeEnemyUnit(id, ownerId, type, x, y) {
+  return ownerId === 'marine' ? createMarine(id, { x, y }) : createMonster(id, type, { x, y });
+}
+
+function sampleWorlds(observation, myTeam, n, rng = Math.random) {
+  if (!observation.gameSpecific.fogOfWar) return [];
+  const belief = getDoomBelief(observation, myTeam);
+  belief.beginTurn(observation);
+  return belief.sample(observation, n, rng, makeEnemyUnit);
+}
+
 export const DoomGame = {
+  // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
+  // minus the enemy's. See games/evalHelpers.js.
+  // Team game: withTeam translates the player id to its team ownerId (T/CT,
+  // marine/demon) before the material eval. See games/evalHelpers.js.
+  evaluateState: withTeam((state, teamId) => unitStrengthEval(state, teamId)),
   name: 'Doom',
   scenarios: [
     { id: 'e1m1', name: 'Hangar (E1M1)', description: 'The UAC hangar — survive waves of hell-spawned demons', config: {} },
+  ],
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
   ],
   createInitialState,
   getLegalActions:  withTeam(getLegalActions),
@@ -339,4 +370,5 @@ export const DoomGame = {
   getResult,
   renderState,
   getVisibleState:  withTeam(getVisibleState),
+  sampleWorlds:     withTeam(sampleWorlds),
 };
