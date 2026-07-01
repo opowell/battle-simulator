@@ -1,6 +1,8 @@
 import { isKingInCheck, renderBoard, getVisibleSquares, squareToXY, squareToGrid } from './board.js';
 import { getAllLegalMoves, getAllFogMoves } from './moves.js';
-import { ChessAgent } from './ChessAgent.js';
+import { ChessAgent, evaluate } from './ChessAgent.js';
+import { ObscuroAgent } from './ObscuroAgent.js';
+import { getBelief } from './belief.js';
 
 // ---------------------------------------------------------------------------
 // Initial board setup
@@ -76,18 +78,14 @@ export const ChessGame = {
   colors: { light: '#f0d9b5', dark: '#b58863' },
   agents: [
     { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent },
+    { id: 'obscuro',  name: 'Obscuro (CFR)', agent: ObscuroAgent },
   ],
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
     { id: 'debugAI',  label: 'Debug AI',   description: 'Show all AI-controlled pieces even through Fog of War', type: 'boolean', default: false },
     {
-      id: 'difficulty', label: 'AI Difficulty', type: 'select', default: 'hard',
-      options: [
-        { value: 'easy',   label: 'Easy',   description: 'Random-ish play, misses most tactics' },
-        { value: 'medium', label: 'Medium',  description: 'Sees simple tactics, makes some mistakes' },
-        { value: 'hard',   label: 'Hard',    description: 'Strong tactical play (default)' },
-        { value: 'expert', label: 'Expert',  description: 'Deep search with quiescence — very strong' },
-      ],
+      id: 'difficulty', label: 'AI Difficulty', type: 'range', min: 0, max: 100, step: 1, default: 25,
+      description: '0 = random play, 100 = strongest (deeper search, more sampled worlds — slower per move)',
     },
   ],
   axisLabels: { x: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] },
@@ -109,12 +107,6 @@ export const ChessGame = {
 
   createInitialState(players, config = {}) {
     const board = initialBoard();
-    // Identify AI-controlled players so getVisibleState can pass their pieces through
-    // fog in debug mode without changing AI search behaviour. API agents have ids
-    // like 'api:<playerId>'; all other agents (chess-ai, random, …) are AI-controlled.
-    const aiPlayerIds = players
-      .filter(p => p.agent?.id && !p.agent.id.startsWith('api:'))
-      .map(p => p.id);
     return {
       gameName: 'Chess',
       turnNumber: 1,
@@ -134,8 +126,7 @@ export const ChessGame = {
         inCheck: false,
         fogOfWar:    config.fogOfWar   ?? false,
         debugAI:     config.debugAI    ?? false,
-        aiPlayerIds,
-        difficulty:  config.difficulty ?? 'hard',
+        difficulty:  config.difficulty ?? 25,
       },
     };
   },
@@ -215,7 +206,6 @@ export const ChessGame = {
         enPassantTarget, castlingRights, halfMoveClock, inCheck,
         fogOfWar:    state.gameSpecific.fogOfWar,
         debugAI:     state.gameSpecific.debugAI,
-        aiPlayerIds: state.gameSpecific.aiPlayerIds,
         difficulty:  state.gameSpecific.difficulty,
       },
     };
@@ -292,10 +282,9 @@ export const ChessGame = {
 
   getVisibleState(state, playerId) {
     if (!state.gameSpecific.fogOfWar) return state;
-    const { debugAI, aiPlayerIds = [] } = state.gameSpecific;
-    // Debug mode: human players see the full board; AI agents still get their fog-filtered
-    // view so their search behaviour is unchanged.
-    if (debugAI && !aiPlayerIds.includes(playerId)) return state;
+    // A player NEVER sees the board through the fog — every requester (human or AI)
+    // gets only the squares its own pieces can see. Debug AI does not change this; it
+    // only reveals the move log (handled where the log is served), never the board.
     const visible = getVisibleSquares(state.board, playerId);
     const filteredBoard = { ...state.board };
     for (const sq of Object.keys(filteredBoard)) {
@@ -308,7 +297,51 @@ export const ChessGame = {
       ...state,
       board: filteredBoard,
       units: boardToUnits(filteredBoard),
+      // The authoritative set of squares this player can see, computed on the FULL board
+      // so hidden enemies still block and occupy. The UI must render fog from this — it
+      // cannot re-derive visibility from the filtered board, where a stripped piece (e.g. a
+      // hidden pawn on e5 blocking our e4 pawn's push) would wrongly look like empty + seen.
+      visibleSquares: [...visible],
     };
+  },
+
+  // --- Imperfect-information interface (drives the generic ObscuroAgent) -----
+
+  // Heuristic leaf value of a position to `playerId` (white/black), reusing the
+  // chess agent's material + piece-square evaluation.
+  evaluateState(state, playerId) {
+    return evaluate(state.board, playerId);
+  },
+
+  // Canonical identity of a move, so the same opponent reply across different
+  // sampled worlds maps to the same payoff-matrix column. from+to(+promotion) is
+  // unique per move, including the king's two-square castling hop.
+  actionKey(action) {
+    const promo = action.payload?.promote ? '=' + action.payload.promote[0] : '';
+    return (action.from ?? '') + (action.to ?? '') + promo;
+  },
+
+  // Belief sampler: draw up to `n` full boards consistent with what `playerId`
+  // can see, via the fog-of-war particle tracker (belief.js). With fog off there
+  // is nothing hidden, so we return [] and the agent treats the position as the
+  // single known world (perfect-information minimax).
+  sampleWorlds(observation, playerId, n, rng = Math.random) {
+    if (!observation.gameSpecific.fogOfWar) return [];
+    const belief = getBelief(observation, playerId);
+    belief.beginTurn(observation.board);
+    const boards = belief.sample(observation.board, n, rng);
+    return boards.map(board => ({
+      ...observation,
+      board,
+      units: boardToUnits(board),
+    }));
+  },
+
+  // Let the belief tracker record the move we just chose, so next turn it can
+  // detect our own captured pieces and drop enemies we captured.
+  onActionCommitted(observation, playerId, action) {
+    if (!observation.gameSpecific.fogOfWar) return;
+    getBelief(observation, playerId).commitOurMove(action, observation.board);
   },
 
   toGrid(state) {
@@ -316,10 +349,13 @@ export const ChessGame = {
     const SYMS = { king: 'K', queen: 'Q', rook: 'R', bishop: 'B', knight: 'N', pawn: 'P' };
     const pidIdx = {};
     (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+    const visSet = state.visibleSquares ? new Set(state.visibleSquares) : null;
     const cells = [];
+    const visible = visSet ? [] : null; // grid coords [x,y] the player can see (fog mode only)
     for (let rank = 1; rank <= 8; rank++) {
       for (let fi = 0; fi < 8; fi++) {
-        const piece = state.board?.[FILES[fi] + rank];
+        const algSq = FILES[fi] + rank;
+        const piece = state.board?.[algSq];
         const sq = (fi + rank) % 2 === 0 ? 'light' : 'dark';
         const sym = piece ? (SYMS[piece.type] ?? piece.type[0].toUpperCase()) : '';
         cells.push({
@@ -330,8 +366,9 @@ export const ChessGame = {
           unitId: piece?.id,
           imagePath: piece ? `/images/chess/${piece.ownerId === 'white' ? 'w' : 'b'}${sym}` : null,
         });
+        if (visSet && visSet.has(algSq)) visible.push([fi, 8 - rank]);
       }
     }
-    return { width: 8, height: 8, cells, xLabels: FILES.split(''), yLabels: '87654321'.split('') };
+    return { width: 8, height: 8, cells, xLabels: FILES.split(''), yLabels: '87654321'.split(''), visible };
   },
 };

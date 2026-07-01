@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onUnmounted } from 'vue';
+import { computed, ref, watch, onUnmounted } from 'vue';
 
 const props = defineProps({
   field:        Object,
@@ -13,8 +13,19 @@ const props = defineProps({
   legalSquares:    { type: Array, default: () => [] },
   lastMoveSquares: { type: Array, default: () => [] },
   dragToMove:      { type: Boolean, default: false },
+  // Reveal-all (finished fog games): show every piece's true position. Hidden enemies
+  // render as translucent markers and fog is drawn from `viewerTeam`'s perspective.
+  revealAll:       { type: Boolean, default: false },
+  viewerTeam:      { type: String, default: null },
 });
 const emit = defineEmits(['select', 'sq-click']);
+
+// Team whose pieces project vision. Normally the human (teams[0]); in reveal mode it
+// follows whoever is to move at the displayed ply, so fog flips as you step through.
+const viewerId = computed(() => props.revealAll
+  ? props.viewerTeam
+  : (props.field.teams?.[0]?.id ?? null));
+const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.id);
 
 const gridX = computed(() => {
   const step = props.field.grid === 'square' ? 1 : Math.max(1, Math.round(props.field.world.w / 20));
@@ -95,7 +106,16 @@ function unitR(u) {
 // Friendly pieces move up the board — decreasing y (y = 8 - rank).
 const gridFogVisibleSet = computed(() => {
   if (!props.fog || !props.field.ui?.gridFog) return null;
+  // Prefer the server's authoritative visibility set: the client cannot reproduce it from
+  // the filtered board, where hidden enemies (which block sliders and occupy push squares)
+  // have been stripped and would wrongly read as empty + visible (e.g. a hidden pawn on e5).
+  // In reveal mode we always recompute: the board is full (every blocker present) so the
+  // derivation is accurate, and we need the viewer's perspective, not the server's white set.
+  if (!props.revealAll && props.field.fogVisible) return props.field.fogVisible;
   const W = props.field.world.w, H = props.field.world.h;
+  // Pawns advance toward rank 8 (lower y) for white, toward rank 1 (higher y) for black.
+  const pDir     = viewerIsBlack.value ? 1 : -1;
+  const pStartRow = viewerIsBlack.value ? 1 : 6;
   const visible = new Set();
   const occ = new Set();
   for (const u of props.units)
@@ -103,14 +123,14 @@ const gridFogVisibleSet = computed(() => {
   const inB = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
   const add  = (x, y) => { if (inB(x, y)) visible.add(`${x},${y}`); };
   for (const u of props.units) {
-    if (!u.friendly || u.dead) continue;
+    if (u.team !== viewerId.value || u.dead) continue;
     const gx = Math.floor(u.x), gy = Math.floor(u.y);
     const t = u.type; // 'k','q','r','b','n','p'
     add(gx, gy);
     if (t === 'p') {
-      add(gx, gy - 1);          // push forward (white moves up = y--)
-      if (gy === 6) add(gx, gy - 2); // double push from starting rank
-      add(gx - 1, gy - 1); add(gx + 1, gy - 1); // diagonal attacks
+      add(gx, gy + pDir);                       // push forward
+      if (gy === pStartRow) add(gx, gy + pDir * 2); // double push from starting rank
+      add(gx - 1, gy + pDir); add(gx + 1, gy + pDir); // diagonal attacks
     } else if (t === 'n') {
       for (const [dx, dy] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])
         add(gx + dx, gy + dy);
@@ -176,6 +196,53 @@ function unitShape(u) {
   return 'circle';
 }
 
+// ── square markers (user annotations on unseen squares) ──────────────────────
+const MARKER_CYCLE = ['p', 'n', 'b', 'r', 'q', 'k', null];
+const MARKER_IMG   = { p: '/images/chess/bP', n: '/images/chess/bN', b: '/images/chess/bB', r: '/images/chess/bR', q: '/images/chess/bQ', k: '/images/chess/bK' };
+const squareMarkers = ref(new Map()); // "col,row" → piece type string
+
+function isFogSquare(col, row) {
+  if (gridFogVisibleSet.value) return !gridFogVisibleSet.value.has(`${col},${row}`);
+  if (squareFogVisibleSet.value) return !squareFogVisibleSet.value.has(`${col},${row}`);
+  return false;
+}
+
+watch([gridFogVisibleSet, squareFogVisibleSet], ([gridVis, squareVis]) => {
+  const visible = gridVis || squareVis;
+  if (!visible || squareMarkers.value.size === 0) return;
+  let changed = false;
+  const updated = new Map(squareMarkers.value);
+  for (const key of updated.keys())
+    if (visible.has(key)) { updated.delete(key); changed = true; }
+  if (changed) squareMarkers.value = updated;
+});
+
+const squareMarkerList = computed(() => {
+  const out = [];
+  for (const [key, type] of squareMarkers.value) {
+    const [col, row] = key.split(',').map(Number);
+    out.push({ col, row, type });
+  }
+  return out;
+});
+
+// Reveal mode: every piece the viewer can't see is drawn as a translucent marker at its
+// true square (using its own colour's sprite), so hidden positions are exposed.
+const revealMarkerList = computed(() => {
+  if (!props.revealAll) return [];
+  const vis = gridFogVisibleSet.value;
+  if (!vis) return [];
+  const out = [];
+  for (const u of props.units) {
+    if (u.dead) continue;
+    const col = Math.floor(u.x), row = Math.floor(u.y);
+    if (!vis.has(`${col},${row}`)) out.push({ col, row, type: u.type, img: u.imagePath });
+  }
+  return out;
+});
+
+const displayMarkers = computed(() => props.revealAll ? revealMarkerList.value : squareMarkerList.value);
+
 // ── drag-to-move ──────────────────────────────────────────────────────────────
 const svgEl       = ref(null);
 const dragUnit    = ref(null);
@@ -235,6 +302,17 @@ function handleBoardClick(e) {
   const col = Math.floor((e.clientX - rect.left - props.fit.x(0)) / props.fit.s);
   const row = Math.floor((e.clientY - rect.top  - props.fit.y(0)) / props.fit.s);
   if (col >= 0 && col < props.field.world.w && row >= 0 && row < props.field.world.h) {
+    if (!props.revealAll && !props.selectedId && isFogSquare(col, row)) {
+      const key = `${col},${row}`;
+      const current = squareMarkers.value.get(key) ?? null;
+      const idx = MARKER_CYCLE.indexOf(current);
+      const next = MARKER_CYCLE[(idx + 1) % MARKER_CYCLE.length];
+      const updated = new Map(squareMarkers.value);
+      if (next === null) updated.delete(key);
+      else updated.set(key, next);
+      squareMarkers.value = updated;
+      return;
+    }
     emit('sq-click', col, row);
   } else {
     emit('select', null);
@@ -260,6 +338,12 @@ function hpColor(frac, raw) {
 
 function isVisible(u) {
   if (!props.fog) return true;
+  // Reveal mode: pieces the viewer can see render normally; the rest are drawn as
+  // translucent markers (see revealMarkerList), so hide their normal token here.
+  if (props.revealAll) {
+    const vis = gridFogVisibleSet.value;
+    return !vis || vis.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
+  }
   if (u.friendly) return true;
   if (gridFogVisibleSet.value) return gridFogVisibleSet.value.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
   return u.visible;
@@ -322,6 +406,14 @@ function facingArrow(u) {
             :width="fit.len(1)" :height="fit.len(1)"
             :fill="rdr.fogA"
             style="pointer-events:none"/>
+
+      <!-- Square markers: user annotations on unseen squares, or (reveal mode) true piece positions -->
+      <image v-for="m in displayMarkers" :key="'sm'+m.col+','+m.row"
+             :x="fit.x(m.col) + fit.len(0.1)" :y="fit.y(m.row) + fit.len(0.1)"
+             :width="fit.len(0.8)" :height="fit.len(0.8)"
+             :href="m.img ?? MARKER_IMG[m.type]"
+             opacity="0.55"
+             style="pointer-events:none"/>
 
       <!-- Last move highlights -->
       <rect v-for="([lc, lr], i) in lastMoveSquares" :key="'lmv'+i"

@@ -1,6 +1,7 @@
 import { getAllLegalMoves } from './moves.js';
 import { applyMoveToBoard, isKingInCheck, fileIndex, rankOf, getVisibleSquares } from './board.js';
-import { Belief } from './belief.js';
+import { getBelief } from './belief.js';
+import { stockfishBestAction, sfOptsForDifficulty, difficultyToNumber } from './stockfish.js';
 
 const FILES = 'abcdefgh';
 
@@ -161,7 +162,7 @@ function rookFileBonus(board, color) {
   return score;
 }
 
-function evaluate(board, aiColor) {
+export function evaluate(board, aiColor) {
   const opp = aiColor === 'white' ? 'black' : 'white';
   let score = 0;
   for (const sq of Object.keys(board)) {
@@ -176,7 +177,7 @@ function evaluate(board, aiColor) {
 }
 
 // Propagate castling rights and en-passant across a search ply
-function advanceGs(gs, board, action, color) {
+export function advanceGs(gs, board, action, color) {
   let { castlingRights, halfMoveClock } = gs;
   let enPassantTarget = null;
 
@@ -240,6 +241,11 @@ function orderMoves(moves, board) {
 // ---------------------------------------------------------------------------
 
 let TT = new Map();
+
+// Reset the shared transposition table. The full-info root search resets it
+// itself; ObscuroAgent calls this once per move before reusing alphaBeta so the
+// table never grows unbounded across a game.
+export function clearTT() { TT = new Map(); }
 
 function boardKey(board, color, gs) {
   const cr = gs.castlingRights;
@@ -307,7 +313,7 @@ function quiesce(board, gs, color, aiColor, alpha, beta) {
 // ordinary legal moves with checkmate/stalemate terminals. (Under fog this is an
 // approximation — the real game ends on king capture — but it gives strong,
 // safe tactical evaluation within each hypothesised world.)
-const FULL_INFO_CFG = {
+export const FULL_INFO_CFG = {
   getMoves:     getAllLegalMoves,
   evaluate:     evaluate,
   // Returns a terminal score if the position is decided, undefined otherwise.
@@ -335,12 +341,19 @@ const FULL_INFO_CFG = {
 //              per-particle depth and a candidate-move prefilter to bound cost
 // ---------------------------------------------------------------------------
 
-const DIFFICULTY_CONFIG = {
-  easy:   { depth: 2, noise: 250, useQuiesce: false, fog: { particles: 4,  depth: 1, topK: 6  } },
-  medium: { depth: 3, noise:  40, useQuiesce: true,  fog: { particles: 8,  depth: 2, topK: 8  } },
-  hard:   { depth: 4, noise:   0, useQuiesce: true,  fog: { particles: 12, depth: 2, topK: 8  } },
-  expert: { depth: 5, noise:   0, useQuiesce: true,  fog: { particles: 18, depth: 2, topK: 10 } },
-};
+// Difficulty is a 0–100 dial (see stockfish.js). Knobs are derived continuously:
+// search depth and particle count rise with difficulty, while the random "noise"
+// added to scores (which makes weak play blunder) fades out by the mid-range.
+function chessConfigForDifficulty(difficulty) {
+  const t = difficultyToNumber(difficulty) / 100;
+  const lerp = (a, b) => Math.round(a + (b - a) * t);
+  return {
+    depth: lerp(2, 5),
+    noise: Math.round(Math.max(0, 250 * (1 - t / 0.5))), // 250 cp at 0 → 0 by 50
+    useQuiesce: t >= 0.2,
+    fog: { particles: lerp(4, 18), depth: t < 0.2 ? 1 : 2, topK: lerp(6, 10) },
+  };
+}
 
 // Weight on tail risk when aggregating a move's score across particles. The
 // score is a blend of the mean outcome and the average of the worst-30% of
@@ -351,16 +364,17 @@ const PESSIMISM = 0.5;
 // future uncertainty. Kept well below a pawn (100) so it only breaks ties.
 const INFO_WEIGHT = 2;
 // Per-particle score clamp (centipawns) under fog. Big enough that losing a
-// queen still dominates losing a pawn, small enough that imagined checkmates
-// from phantom hidden pieces don't swamp concrete material decisions.
-const FOG_CLAMP = 2000;
+// queen still dominates losing a pawn, small enough that an imagined checkmate
+// from phantom hidden pieces can't swamp a concrete material decision (which was
+// making the AI keep a hanging queen home rather than expose its king to ghosts).
+const FOG_CLAMP = 1200;
 
 // ---------------------------------------------------------------------------
 // Minimax with alpha-beta pruning, used to evaluate a move inside a single
 // fully-specified particle. cfg controls evaluator / terminal / TT usage.
 // ---------------------------------------------------------------------------
 
-function alphaBeta(board, gs, color, aiColor, depth, alpha, beta, cfg, useQuiesce) {
+export function alphaBeta(board, gs, color, aiColor, depth, alpha, beta, cfg, useQuiesce) {
   // Hard terminal (e.g., a king was captured under fog rules)
   if (cfg.hardTerminal) {
     const t = cfg.hardTerminal(board, aiColor);
@@ -426,7 +440,7 @@ function alphaBeta(board, gs, color, aiColor, depth, alpha, beta, cfg, useQuiesc
 // Score one root move within one particle: play it, then run lookahead (with
 // quiescence) from the opponent's reply. `depth` is total plies including the
 // root move.
-function scoreMoveInParticle(particleBoard, gs, aiColor, move, depth, useQuiesce) {
+export function scoreMoveInParticle(particleBoard, gs, aiColor, move, depth, useQuiesce) {
   const opp = aiColor === 'white' ? 'black' : 'white';
   const nb  = applyMoveToBoard(particleBoard, move);
   const ngs = advanceGs(gs, particleBoard, move, aiColor);
@@ -489,39 +503,8 @@ function search(board, gs, color, legalActions, particles, opts) {
   return bestMove;
 }
 
-export function _debugFog(board, gs, color, legalActions, particles, opts) {
-  TT = new Map();
-  const { depth, useQuiesce, topK } = opts;
-  let candidates = orderMoves(legalActions, board);
-  let prelim = null;
-  if (topK && candidates.length > topK) {
-    const rep = particles[0];
-    prelim = candidates.map(m => ({ m, s: scoreMoveInParticle(rep, gs, color, m, 1, false) })).sort((a, b) => b.s - a.s);
-    candidates = prelim.slice(0, topK).map(x => x.m);
-  }
-  const rows = candidates.map(m => {
-    const scores = particles.map(p => scoreMoveInParticle(p, gs, color, m, depth, useQuiesce));
-    const reveal = getVisibleSquares(applyMoveToBoard(board, m), color).size;
-    return { move: `${m.from}->${m.to}`, agg: aggregateScores(scores), reveal, total: aggregateScores(scores) + reveal * INFO_WEIGHT };
-  }).sort((a, b) => b.total - a.total);
-  return { prelimTop: prelim?.slice(0, topK).map(x => `${x.m.from}->${x.m.to}:${x.s.toFixed(0)}`), rows };
-}
-
-// ---------------------------------------------------------------------------
-// Per-game belief store. Keyed by the (stable) players array so each game —
-// and each AI colour within an AI-vs-AI game — keeps its own belief, and a new
-// game (new players array) starts fresh automatically.
-// ---------------------------------------------------------------------------
-
-const beliefStore = new WeakMap();
-
-function getBelief(state, aiColor) {
-  let byColor = beliefStore.get(state.players);
-  if (!byColor) { byColor = new Map(); beliefStore.set(state.players, byColor); }
-  let belief = byColor.get(aiColor);
-  if (!belief) { belief = new Belief(aiColor); byColor.set(aiColor, belief); }
-  return belief;
-}
+// The per-game belief store (getBelief) now lives in belief.js and is shared
+// with ObscuroAgent.
 
 // ---------------------------------------------------------------------------
 // Agent export
@@ -540,12 +523,16 @@ export const ChessAgent = {
 
     const color = state.activePlayers[0];
     const { board, gameSpecific } = state;
-    const cfg = DIFFICULTY_CONFIG[gameSpecific.difficulty] ?? DIFFICULTY_CONFIG.hard;
+    const cfg = chessConfigForDifficulty(gameSpecific.difficulty);
 
     // Build the belief particle cloud. Without fog the AI sees everything, so
     // the cloud is exactly one particle — the true board. With fog it is several
     // sampled worlds and the chosen move is committed back for next turn.
     if (!gameSpecific.fogOfWar) {
+      // Prefer the vendored Stockfish for full-information play; fall back to the
+      // built-in alpha-beta search if the engine isn't available.
+      const sf = await stockfishBestAction(state, legalActions, sfOptsForDifficulty(gameSpecific.difficulty));
+      if (sf) return sf;
       return search(board, gameSpecific, color, legalActions, [board], {
         depth: cfg.depth, useQuiesce: cfg.useQuiesce, noise: cfg.noise, topK: 0, infoWeight: 0,
       });

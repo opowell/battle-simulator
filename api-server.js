@@ -20,6 +20,7 @@ import { fileURLToPath }         from 'node:url';
 import { GameEngine } from './engine/index.js';
 import { RandomAgent } from './agents/index.js';
 import { ApiAgent } from './agents/ApiAgent.js';
+import { ObscuroAgent } from './agents/ObscuroAgent.js';
 
 import { ChessGame }         from './games/chess/index.js';
 import { TacticalGame }      from './games/tactical/index.js';
@@ -81,7 +82,12 @@ async function serveApp(appName, req, res) {
   try {
     const data = await readFile(abs);
     const ct   = MIME_TYPES[extname(abs)] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*' });
+    // Never cache .vue/.js source files so code changes are reflected immediately.
+    const ext  = extname(abs);
+    const cc   = (ext === '.vue' || ext === '.js') ? 'no-cache' : undefined;
+    const hdrs = { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*' };
+    if (cc) hdrs['Cache-Control'] = cc;
+    res.writeHead(200, hdrs);
     res.end(data);
   } catch {
     // SPA fallback: unknown paths without a file extension serve index.html
@@ -210,8 +216,18 @@ class Session {
     this.status = 'active';
     this.result = null;
     this.error = null;
+    this.gridHistory = [];
     this._logPath = resolve(SESSIONS_DIR, id, 'log.json');
     this._run();
+  }
+
+  _captureGrid() {
+    try {
+      const { game } = GAMES[this.gameName];
+      const rawState = this.engine.state;
+      if (!rawState || !game.toGrid) return null;
+      return applyAxisLabels(game, game.toGrid(rawState));
+    } catch { return null; }
   }
 
   async _persistLog() {
@@ -224,9 +240,13 @@ class Session {
   async _run() {
     try {
       this.engine._init();
+      const g0 = this._captureGrid();
+      if (g0) this.gridHistory.push(g0);
       while (this.status === 'active') {
         const { done } = await this.engine.step();
         this._persistLog();
+        const g = this._captureGrid();
+        if (g) this.gridHistory.push(g);
         if (done) {
           this.status = 'done';
           this.result = this.engine.result;
@@ -257,6 +277,11 @@ class Session {
   toJSON(playerId = null) {
     const { game } = GAMES[this.gameName];
     const rawState = this.engine.state;
+    // The board is ALWAYS fog-filtered for the requesting player — debugAI never reveals
+    // it (it only reveals the move log below). A playerless fog request therefore cannot
+    // be given any board/log state; we return session metadata only (so a client can
+    // discover the human player and re-request with it) and withhold everything secret.
+    const fogNoPlayer = this.fog && !playerId;
     const viewState = (this.fog && playerId && game.getVisibleState)
       ? game.getVisibleState(rawState, playerId)
       : rawState;
@@ -264,6 +289,15 @@ class Session {
     const summary = (this.status === 'done' && rawState && game.getBattleSummary)
       ? game.getBattleSummary(rawState, this.engine.log)
       : null;
+    // In fog mode (without debugAI) hide the opponent's move from log and lastActions.
+    const humanIds = new Set(this.apiAgents.keys());
+    const fogFilter = this.fog && !this.debugAI && !!playerId;
+    const lastActions = fogNoPlayer ? null : fogFilter
+      ? (rawState?.lastActions?.filter(pa => pa.playerId === playerId) ?? null)
+      : (rawState?.lastActions ?? null);
+    const log = fogNoPlayer ? [] : fogFilter
+      ? this.engine.log.filter(e => e.playerActions?.every(pa => humanIds.has(pa.playerId)))
+      : this.engine.log;
     return {
       id: this.id,
       game: this.gameName,
@@ -279,16 +313,17 @@ class Session {
       humanPlayers: [...this.apiAgents.keys()],
       pendingPlayer: pending?.playerId ?? null,
       legalActions: pending?.legalActions ?? null,
-      rendered: rawState ? game.renderState(viewState) : null,
-      grid: viewState && game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null,
-      lastActions: rawState?.lastActions ?? null,
-      log: this.engine.log,
+      rendered: fogNoPlayer ? null : (rawState ? game.renderState(viewState) : null),
+      grid: fogNoPlayer ? null : (viewState && game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null),
+      lastActions,
+      log,
     };
   }
 
   stateJSON(playerId = null) {
     const { game } = GAMES[this.gameName];
     const rawState = this.engine.state;
+    if (this.fog && !playerId) throw new Error('player required for fog-of-war session');
     if (this.fog && playerId && game.getVisibleState) return game.getVisibleState(rawState, playerId);
     return rawState;
   }
@@ -342,9 +377,21 @@ function route(req) {
 // Handlers
 // ---------------------------------------------------------------------------
 
+// Available for every game. 'obscuro' is the generic equilibrium/CFR agent
+// (agents/ObscuroAgent.js); a game may override it with a stronger specialised
+// version by declaring an 'obscuro' entry in its own `agents` array (chess does).
 const BUILTIN_AGENTS = [
   { id: 'random', name: 'AI (random)' },
+  { id: 'obscuro', name: 'AI (Obscuro/CFR)' },
 ];
+
+// Merge builtin + game-declared agents, keeping the LAST entry per id so a
+// game's specialised agent (e.g. chess's Obscuro) overrides the builtin label.
+function dedupeAgents(list) {
+  const byId = new Map();
+  for (const a of list) byId.set(a.id, a);
+  return [...byId.values()];
+}
 
 async function handleGames(res) {
   send(res, 200, Object.entries(GAMES).map(([name, { game, icon, defaultPlayers, minPlayers, maxPlayers }]) => ({
@@ -356,7 +403,7 @@ async function handleGames(res) {
     scenarios: game.scenarios ?? [],
     gameOptions: game.gameOptions ?? [],
     ui: game.ui ?? {},
-    agents: [...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n }) => ({ id, name: n }))],
+    agents: dedupeAgents([...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n }) => ({ id, name: n }))]),
   })));
 }
 
@@ -383,6 +430,9 @@ async function handleCreateSession(req, res) {
       const gameAgent = entry.game.agents?.find(a => a.id === agentType);
       if (gameAgent) {
         agent = gameAgent.agent;
+      } else if (agentType === 'obscuro') {
+        // Generic equilibrium agent — runs for any game the engine can drive.
+        agent = new ObscuroAgent(entry.game);
       }
     }
     if (!agent) {
@@ -417,14 +467,22 @@ async function handleGetSession(res, id, url) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
   const playerId = url.searchParams.get('player') ?? null;
-  send(res, 200, session.toJSON(playerId));
+  try {
+    send(res, 200, session.toJSON(playerId));
+  } catch (e) {
+    err(res, 400, e.message);
+  }
 }
 
 async function handleGetState(res, id, url) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
   const playerId = url.searchParams.get('player') ?? null;
-  send(res, 200, session.stateJSON(playerId));
+  try {
+    send(res, 200, session.stateJSON(playerId));
+  } catch (e) {
+    err(res, 400, e.message);
+  }
 }
 
 async function handleSubmitAction(req, res, id) {
@@ -459,6 +517,12 @@ async function handleGetLog(res, id) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
   send(res, 200, session.engine.log);
+}
+
+async function handleGetHistory(res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+  send(res, 200, session.gridHistory);
 }
 
 async function handleDeleteSession(res, id) {
@@ -557,6 +621,10 @@ const server = createServer(async (req, res) => {
     // GET /sessions/:id/log
     if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'log')
       return await handleGetLog(res, parts[1]);
+
+    // GET /sessions/:id/history
+    if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'history')
+      return await handleGetHistory(res, parts[1]);
 
     // POST /sessions/:id/action
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'action')

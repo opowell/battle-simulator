@@ -1,3 +1,4 @@
+import { sidesEval } from '../evalHelpers.js';
 import { generateMap, getLargestConnectedRegion } from './map.js';
 
 const MAX_DICE = 8;
@@ -261,6 +262,10 @@ function getActionDuration(_state, action) {
 }
 
 export const KDiceGame = {
+  // Territory control: each owned territory plus its dice, minus opponents'.
+  // Heuristic leaf for the generic ObscuroAgent; see games/evalHelpers.js.
+  evaluateState: (state, playerId) =>
+    sidesEval(Object.values(state.board.territories), playerId, t => 10 + (t.dice ?? 0), t => t.owner),
   name: 'KDice',
   ui: { showUnitInfo: false },
   createInitialState,

@@ -1,5 +1,6 @@
 import { chebyshev, reachableSquares } from './grid.js';
 import { UNIT_STATS, calculateDamage } from './combat.js';
+import { getTacticalBelief } from './belief.js';
 
 // ---------------------------------------------------------------------------
 // Default scenario
@@ -96,6 +97,10 @@ export const TacticalGame = {
   ],
   colors: { plains: '#c8b87a', water: '#4a8fd4', forest: '#3a7a3a' },
 
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
+  ],
+
   createInitialState(players, config = {}) {
     const boardConfig = { ...DEFAULT_CONFIG, ...config };
     const units = config.units ?? defaultUnits(players.map(p => p.id));
@@ -108,7 +113,13 @@ export const TacticalGame = {
       board: { width: boardConfig.width, height: boardConfig.height, terrain: boardConfig.terrain },
       units,
       lastActions: null,
-      gameSpecific: {},
+      gameSpecific: {
+        fogOfWar: config.fogOfWar ?? false,
+        // Common-knowledge starting deployment: you know the enemy's composition
+        // and where it started, not where it has moved under fog. Seeds the
+        // belief tracker (belief.js).
+        startRoster: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
+      },
     };
   },
 
@@ -203,6 +214,19 @@ export const TacticalGame = {
     return null;
   },
 
+  // Heuristic leaf value to `playerId`: our surviving strength minus the
+  // enemy's (current hp, with a flat bonus per living unit). Enough to give the
+  // generic ObscuroAgent a non-random, materially-sensible opponent.
+  evaluateState(state, playerId) {
+    let score = 0;
+    for (const u of state.units) {
+      if (!u.alive) continue;
+      const worth = (u.hp ?? 0) + 10; // surviving units are valuable beyond raw hp
+      score += u.ownerId === playerId ? worth : -worth;
+    }
+    return score;
+  },
+
   renderState(state) {
     const { turnNumber, activePlayers, units } = state;
     const unitSummary = state.players.map(p => {
@@ -242,6 +266,16 @@ export const TacticalGame = {
         myUnits.some(m => Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= VISION)
       ),
     };
+  },
+
+  // Fog belief sampler for the generic ObscuroAgent: plausible full worlds with
+  // the unseen enemies placed from the stateful TacticalBelief (belief.js).
+  // Returns [] when fog is off (agent uses the observation as the single world).
+  sampleWorlds(observation, playerId, n, rng = Math.random) {
+    if (!observation.gameSpecific.fogOfWar) return [];
+    const belief = getTacticalBelief(observation, playerId);
+    belief.beginTurn(observation);
+    return belief.sample(observation, n, rng, makeUnit);
   },
 
   toGrid(state) {

@@ -1,8 +1,10 @@
+import { unitStrengthEval } from '../evalHelpers.js';
 import { UNIT_DEFS, createUnit } from './units.js';
 import { createMap, renderMap } from './map.js';
 import { getReachable } from './grid.js';
 import { hasLOS } from './los.js';
 import { resolveFire } from './combat.js';
+import { getCombatMissionBelief } from './belief.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
 
@@ -199,7 +201,16 @@ function createInitialState(players, config = {}) {
     board,
     units,
     lastActions: null,
-    gameSpecific: { lastCombat: null },
+    gameSpecific: {
+      lastCombat: null,
+      fogOfWar: config.fogOfWar ?? false,
+      startRoster: units.map(u => ({
+        id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position },
+        hp: u.hp,
+        moveRange: UNIT_DEFS[u.type].moveRange,
+        maxAP: UNIT_DEFS[u.type].ap,
+      })),
+    },
   };
 }
 
@@ -243,9 +254,15 @@ function getActionDuration(state, action) {
 }
 
 export const CombatMissionGame = {
+  // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
+  // minus the enemy's. See games/evalHelpers.js.
+  evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'CombatMission',
   scenarios: [
     { id: 'standard', name: 'Ambush', description: 'Platoon-level infantry ambush on mixed terrain', config: {} },
+  ],
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
   ],
   createInitialState,
   getLegalActions,
@@ -254,4 +271,12 @@ export const CombatMissionGame = {
   renderState,
   getVisibleState,
   getActionDuration,
+
+  sampleWorlds(observation, playerId, n, rng = Math.random) {
+    if (!observation.gameSpecific.fogOfWar) return [];
+    const belief = getCombatMissionBelief(observation, playerId);
+    belief.beginTurn(observation);
+    return belief.sample(observation, n, rng,
+      (id, ownerId, type, x, y) => createUnit(id, type, ownerId, { x, y }));
+  },
 };

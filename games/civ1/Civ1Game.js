@@ -1,3 +1,4 @@
+import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
@@ -408,6 +409,10 @@ function getActionDuration(state, action) {
 }
 
 export const Civ1Game = {
+  // Units plus cities (cities weighted heavily — losing your last city loses the
+  // game). Heuristic leaf for the generic ObscuroAgent; see games/evalHelpers.js.
+  evaluateState: (state, playerId) =>
+    unitStrengthEval(state, playerId) + sidesEval(state.cities, playerId, () => 100),
   name: 'Civ1',
   ui: { hideGrid: true, freeSelection: true, showHpBars: true, dragToMove: true },
   scenarios: [

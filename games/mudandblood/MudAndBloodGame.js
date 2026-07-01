@@ -1,3 +1,4 @@
+import { unitStrengthEval } from '../evalHelpers.js';
 import { createMap, renderMap } from './map.js';
 import { getReachable, manhattan } from './grid.js';
 import { calcHitChance, rollHit, rollDamage } from './combat.js';
@@ -107,6 +108,17 @@ function fmtUnit(u) {
 // ---------------------------------------------------------------------------
 
 export const MudAndBloodGame = {
+  // Material strength plus a positional term: the Axis wins by reaching the
+  // Allied trench, so reward its advance up the board. Leaf for ObscuroAgent.
+  evaluateState(state, playerId) {
+    const axisId = state.players[1]?.id;
+    let score = unitStrengthEval(state, playerId);
+    for (const u of state.units) {
+      if (!u.alive || u.ownerId !== axisId) continue;
+      score += playerId === axisId ? u.position.y : -u.position.y;
+    }
+    return score;
+  },
   name: 'Mud and Blood 2',
 
   createInitialState(players, _config = {}) {

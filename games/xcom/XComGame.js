@@ -1,8 +1,10 @@
+import { unitStrengthEval } from '../evalHelpers.js';
 import { createMap, renderMap } from './map.js';
 import { getReachable, manhattan } from './grid.js';
 import { hasLOS } from './los.js';
 import { calcHitChance, rollHit, rollDamage } from './combat.js';
 import { createUnit } from './units.js';
+import { getXcomBelief } from './belief.js';
 
 function defaultUnits(playerIds) {
   const [xcomId, aliensId] = playerIds;
@@ -24,23 +26,38 @@ function fmtUnit(u) {
 }
 
 export const XComGame = {
+  // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
+  // minus the enemy's. See games/evalHelpers.js.
+  evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'X-Com Tactical',
   scenarios: [
     { id: 'ufo-crash', name: 'UFO Crash Site', description: 'Secure a downed UFO against alien survivors', config: {} },
   ],
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
+  ],
   colors: { floor: '#9a8c7a', wall: '#2a2018', 'cover-low': '#c8943a', 'cover-high': '#8a5a18' },
 
-  createInitialState(players, _config = {}) {
+  createInitialState(players, config = {}) {
+    const units = defaultUnits(players.map(p => p.id));
     return {
       gameName: 'xcom',
       turnNumber: 1,
       activePlayers: [players[0].id],
       currentPhase: 'xcom-turn',
       players,
-      units: defaultUnits(players.map(p => p.id)),
+      units,
       board: createMap(),
       lastActions: [],
-      gameSpecific: {},
+      gameSpecific: {
+        fogOfWar: config.fogOfWar ?? false,
+        // Common-knowledge starting deployment (composition + start positions),
+        // used to seed the fog belief tracker (belief.js).
+        startRoster: units.map(u => ({
+          id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position },
+          hp: u.hp, moveRange: u.attrs.moveRange, maxAP: u.attrs.maxAP,
+        })),
+      },
     };
   },
 
@@ -200,6 +217,17 @@ export const XComGame = {
         )
       ),
     };
+  },
+
+  // Fog belief sampler for the generic ObscuroAgent: plausible full worlds with
+  // the unseen enemies placed from the stateful XcomBelief (belief.js). Returns
+  // [] when fog is off (agent uses the observation as the single world).
+  sampleWorlds(observation, playerId, n, rng = Math.random) {
+    if (!observation.gameSpecific.fogOfWar) return [];
+    const belief = getXcomBelief(observation, playerId);
+    belief.beginTurn(observation);
+    return belief.sample(observation, n, rng,
+      (id, ownerId, type, x, y) => createUnit(id, type, ownerId, { x, y }));
   },
 
   toGrid(state) {

@@ -1,3 +1,5 @@
+import { getWarodDotsBelief } from './belief.js';
+
 const T = 28;
 const COLS = 40;
 const ROWS = 26;
@@ -421,7 +423,12 @@ export const WarodDotsGame = {
       units,
       board: { grid, cities, cols: COLS, rows: ROWS },
       lastActions: [],
-      gameSpecific: { nextUnitId: nextId },
+      gameSpecific: {
+        nextUnitId: nextId,
+        fogOfWar: config.fogOfWar ?? false,
+        // Snapshot of starting units — seeds the fog belief tracker.
+        startRoster: units.map(u => ({ ...u })),
+      },
     };
   },
 
@@ -549,6 +556,25 @@ export const WarodDotsGame = {
     lines.push(`  Neutral: ${neutral} cities`);
     lines.push('═'.repeat(52));
     return lines.join('\n');
+  },
+
+  getVisibleState(state, playerId) {
+    const myUnits = state.units.filter(u => u.owner === playerId);
+    const VISION_PX = 5 * T;
+    return {
+      ...state,
+      units: state.units.filter(u =>
+        u.owner === playerId ||
+        myUnits.some(m => Math.hypot(m.x - u.x, m.y - u.y) <= VISION_PX)
+      ),
+    };
+  },
+
+  sampleWorlds(observation, playerId, n, rng = Math.random) {
+    if (!observation.gameSpecific.fogOfWar) return [];
+    const belief = getWarodDotsBelief(observation, playerId);
+    belief.beginTurn(observation);
+    return belief.sample(observation, n, rng, makeUnit);
   },
 
   toGrid(state) {

@@ -1,3 +1,4 @@
+import { unitStrengthEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
@@ -285,6 +286,9 @@ function getActionDuration(state, action) {
 }
 
 export const AowGame = {
+  // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
+  // minus the enemy's. See games/evalHelpers.js.
+  evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'AncientArtOfWar',
   scenarios: [
     { id: 'conquest',     name: 'Conquest',      description: 'Default 22×12 fantasy map',        config: {} },

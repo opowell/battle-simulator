@@ -1,3 +1,4 @@
+import { sidesEval } from '../evalHelpers.js';
 import { TERRITORY_IDS, TERRITORY_NAMES, ADJACENCY, CONTINENTS, getConnectedOwned } from './RiskMap.js';
 import { resolveCombat } from './RiskCombat.js';
 
@@ -459,6 +460,10 @@ function getActionDuration(_state, action) {
 }
 
 export const RiskGame = {
+  // Territory control: each owned territory plus its armies, minus opponents'.
+  // Heuristic leaf for the generic ObscuroAgent; see games/evalHelpers.js.
+  evaluateState: (state, playerId) =>
+    sidesEval(Object.values(state.board.territories), playerId, t => 10 + (t.armies ?? 0), t => t.owner),
   name: 'Risk',
   ui: { showUnitInfo: false },
   scenarios: [

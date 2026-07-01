@@ -1,3 +1,4 @@
+import { unitStrengthEval } from '../evalHelpers.js';
 import {
   WEAPONS, GRENADES, EQUIPMENT,
   ARMOR_COST, ARMOR_HP, ARMOR_REDUCTION, HELMET_EXTRA_REDUCTION,
@@ -11,6 +12,7 @@ import {
   MAPS,
   isBombsite, hasLOS, euclidean, getReachable, getThrowTargets, renderMap,
 } from './map.js';
+import { getCsBelief } from './belief.js';
 
 
 const MOVE_RANGE     = 4;
@@ -545,6 +547,7 @@ export function createInitialState(players, config = {}) {
       fireZones: [],
       roundEndTurns: 0,
       roundResult: null,
+      fogOfWar: config.fogOfWar ?? false,
       map,
       teamMap, teamPlayerMap,
     },
@@ -601,7 +604,32 @@ function getActionDuration(state, action) {
   return 1;
 }
 
+// ── Fog-of-war belief sampler ───────────────────────────────────────────────
+// Under fog getVisibleState hands the agent only its own team plus enemies
+// within sight. csSampleWorlds reconstructs plausible full worlds ("particles")
+// for the generic ObscuroAgent from the stateful CsBelief tracker (belief.js),
+// which remembers sightings across turns and localises each unseen enemy near
+// where it was last seen. Returns [] when fog is off (agent uses the
+// observation as the single known world).
+function csSampleWorlds(observation, myTeam, n, rng = Math.random) {
+  if (!observation.gameSpecific.fogOfWar) return [];
+  const belief = getCsBelief(observation, myTeam);
+  belief.beginTurn(observation);
+  return belief.sample(observation, n, rng, makeUnit);
+}
+
 export const CsGame = {
+  // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
+  // minus the enemy's. See games/evalHelpers.js.
+  // Team game: withTeam translates the player id to its team ownerId (T/CT,
+  // marine/demon) before the material eval. See games/evalHelpers.js.
+  evaluateState: withTeam((state, teamId) => unitStrengthEval(state, teamId)),
+  // Fog of war: each team sees only enemies near its players; the generic
+  // ObscuroAgent samples the unseen enemies via sampleWorlds below.
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies near its own players', type: 'boolean', default: false },
+  ],
+  sampleWorlds: withTeam(csSampleWorlds),
   name: 'CS',
   scenarios: [
     { id: 'dust2',    name: 'Dust II',   description: 'Classic defuse map — two sites, mid control', config: { mapId: 'dust2' } },
