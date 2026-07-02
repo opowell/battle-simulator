@@ -4,6 +4,7 @@ import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
 import { assets, cityImg } from './assets/index.js';
+import { getCiv2Belief } from './belief.js';
 
 // ── City name pools ───────────────────────────────────────────────────────────
 
@@ -346,7 +347,17 @@ function createInitialState(players, config = {}) {
     units,
     cities: [],
     lastActions: null,
-    gameSpecific: { nextId: idCtr },
+    gameSpecific: {
+      nextId: idCtr,
+      fogOfWar: config.fogOfWar ?? false,
+      // Common-knowledge starting deployment: cities are founded later so this
+      // only seeds units; the belief tracker (belief.js) learns enemy cities
+      // the first time it sees them.
+      startRoster: {
+        units: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
+        cities: [],
+      },
+    },
   };
 }
 
@@ -364,6 +375,16 @@ function getVisibleState(state, playerId) {
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
     cities: state.cities.filter(c => c.ownerId  === playerId || canSee(c.position)),
   };
+}
+
+// Fog belief sampler for the generic ObscuroAgent: plausible full worlds with
+// the unseen enemies (and known-but-hidden enemy cities) placed from the
+// stateful Civ2Belief (belief.js). Returns [] when fog is off.
+function sampleWorlds(observation, playerId, n, rng = Math.random) {
+  if (!observation.gameSpecific.fogOfWar) return [];
+  const belief = getCiv2Belief(observation, playerId);
+  belief.beginTurn(observation);
+  return belief.sample(observation, n, rng, makeUnit);
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────
@@ -392,12 +413,16 @@ export const Civ2Game = {
     { id: 'large',    name: 'Large World', description: '32×18 world — longer campaign',    config: { width: 32, height: 18 } },
   ],
   colors: { ocean: '#1a5a8a', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: false },
+  ],
   createInitialState,
   getLegalActions,
   applyActions,
   getResult,
   renderState,
   getVisibleState,
+  sampleWorlds,
   getActionDuration,
 
   toGrid(state) {

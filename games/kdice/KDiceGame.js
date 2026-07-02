@@ -1,5 +1,6 @@
 import { sidesEval } from '../evalHelpers.js';
 import { generateMap, getLargestConnectedRegion } from './map.js';
+import { getKDiceBelief, visibleTerritoryIds } from './belief.js';
 
 const MAX_DICE = 8;
 
@@ -66,6 +67,7 @@ function createInitialState(players, config = {}) {
       currentPlayerIndex: 0,
       lastBattle: null,
       eliminatedPlayers: [],
+      fogOfWar: config.fogOfWar ?? false,
     },
   };
 }
@@ -101,6 +103,15 @@ function applyActions(state, playerActions, rng = Math.random) {
   if (action.type === 'attack') {
     const from = territories[action.from];
     const to = territories[action.to];
+    // Defensive guard: under fog, ObscuroAgent applies legal actions (derived
+    // from the TRUE state) to belief-sampled worlds during search. A sampled
+    // world can occasionally disagree with the acting territory (e.g. it no
+    // longer belongs to playerId, or the target vanished) — bail out rather
+    // than crash or corrupt state, mirroring aow/civ1's attack-handler guards.
+    if (!from || !to || from.owner !== playerId || to.owner === playerId) {
+      newState.lastActions = playerActions;
+      return newState;
+    }
     const defenderId = to.owner;
 
     const attackerRolls = rollDice(from.dice, rng);
@@ -252,8 +263,33 @@ function renderState(state) {
   return lines.join('\n');
 }
 
-function getVisibleState(state, _playerId) {
-  return state; // all information is public in KDice
+// By default all information is public in KDice (matches the real board
+// game). The optional fogOfWar gameOption ("hide part of the map") switches
+// this to: a territory's owner/dice are visible only if it's ours or
+// graph-adjacent (hop 1) to one of ours; everything else is concealed.
+function getVisibleState(state, playerId) {
+  if (!state.gameSpecific.fogOfWar) return state;
+
+  const { territories, adjacency } = state.board;
+  const vis = visibleTerritoryIds(territories, adjacency, playerId);
+
+  const filtered = {};
+  for (const [id, t] of Object.entries(territories)) {
+    filtered[id] = vis.has(id) ? t : { ...t, owner: null, dice: null };
+  }
+
+  return { ...state, board: { ...state.board, territories: filtered } };
+}
+
+// Fog belief sampler for the generic ObscuroAgent: plausible full worlds with
+// hidden territories' owner/dice filled in from the stateful KDiceBelief
+// (belief.js). Returns [] when fog is off (agent uses the observation as the
+// single world).
+function sampleWorlds(observation, playerId, n, rng = Math.random) {
+  if (!observation.gameSpecific.fogOfWar) return [];
+  const belief = getKDiceBelief(observation, playerId);
+  belief.beginTurn(observation);
+  return belief.sample(observation, n, rng);
 }
 
 function getActionDuration(_state, action) {
@@ -268,11 +304,15 @@ export const KDiceGame = {
     sidesEval(Object.values(state.board.territories), playerId, t => 10 + (t.dice ?? 0), t => t.owner),
   name: 'KDice',
   ui: { showUnitInfo: false },
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Distant territories are hidden until you border them', type: 'boolean', default: false },
+  ],
   createInitialState,
   getLegalActions,
   applyActions,
   getResult,
   renderState,
   getVisibleState,
+  sampleWorlds,
   getActionDuration,
 };

@@ -11,6 +11,7 @@ const COSTS = {
 const POWER_RADIUS = 5;
 const WATER_RADIUS = 4;
 const STARTING_FUNDS = 20000;
+const REVEAL_RADIUS = 5;
 
 // ── Grid utilities ────────────────────────────────────────────────────────────
 
@@ -216,9 +217,57 @@ function getResult(_state) {
   return null;
 }
 
+// ── evaluateState ─────────────────────────────────────────────────────────────
+//
+// SimCity is a sandbox with no win/loss condition (getResult is always null), so
+// this heuristic is the ONLY leaf signal ObscuroAgent (or any search-based agent)
+// ever gets for this game. It mirrors the metrics renderState's own summary line
+// calls out as worth reporting: population, treasury health (funds), and — as a
+// tiebreaker/smoothness term — last year's net income, so the agent prefers a
+// city trending upward over one merely sitting on a pile of cash.
+function evaluateState(state, _playerId) {
+  const { population, budget } = state;
+  const net = (budget.lastIncome || 0) - (budget.lastExpenses || 0);
+  return population * 10 + budget.funds + net * 5;
+}
+
+// ── getVisibleState (fog of war) ─────────────────────────────────────────────
+//
+// SimCity has no adversary and no substantively hidden *value* — every empty
+// tile is identical until zoned. Fog here is purely a visibility gate: tiles
+// beyond REVEAL_RADIUS (Chebyshev distance) of any built structure (anything
+// other than 'empty' — roads, zones, power plants, water pumps) are reported
+// as 'unknown' rather than 'empty', so a fogged player can't see at a glance
+// that a distant tile is buildable. Revealed tiles are otherwise unchanged.
+function getVisibleState(state, playerId) {
+  if (!state.gameSpecific?.fogOfWar) return state;
+
+  const { board: { width, height, tiles } } = state;
+  const built = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (tiles[`${x},${y}`].type !== 'empty') built.push({ x, y });
+    }
+  }
+
+  const revealed = (x, y) =>
+    built.some(p => Math.max(Math.abs(p.x - x), Math.abs(p.y - y)) <= REVEAL_RADIUS);
+
+  const newTiles = { ...tiles };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const k = `${x},${y}`;
+      if (!revealed(x, y)) newTiles[k] = { type: 'unknown', zone: null, density: 0 };
+    }
+  }
+
+  return { ...state, board: { ...state.board, tiles: newTiles } };
+}
+
 // ── renderState ───────────────────────────────────────────────────────────────
 
 function tileChar(tile) {
+  if (tile.type === 'unknown')     return ' ';
   if (tile.type === 'empty')       return '·';
   if (tile.type === 'road')        return '─';
   if (tile.type === 'power-plant') return 'P';
@@ -248,7 +297,7 @@ function renderState(state) {
     '',
     `Pop: ${population.toLocaleString()}  |  Funds: $${budget.funds.toLocaleString()}  |  Tax: ${budget.taxRate}%`,
     `Last year: +$${(budget.lastIncome || 0).toLocaleString()} income  -$${(budget.lastExpenses || 0).toLocaleString()} expenses`,
-    `Legend: · empty  ─ road  P power  W water  r/R/# res  c/C/$ com  i/I/X ind`,
+    `Legend: · empty  ─ road  P power  W water  r/R/# res  c/C/$ com  i/I/X ind  (blank) unsurveyed`,
   ].join('\n');
 }
 
@@ -270,7 +319,9 @@ function createInitialState(players, config = {}) {
     population: 0,
     year: startYear,
     lastActions: null,
-    gameSpecific: {},
+    gameSpecific: {
+      fogOfWar: config.fogOfWar ?? false,
+    },
   };
 }
 
@@ -278,9 +329,14 @@ function createInitialState(players, config = {}) {
 
 export const SimCityGame = {
   name: 'SimCity',
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Land beyond your developed area starts unsurveyed', type: 'boolean', default: false },
+  ],
   createInitialState,
   getLegalActions,
   applyActions,
   getResult,
   renderState,
+  evaluateState,
+  getVisibleState,
 };

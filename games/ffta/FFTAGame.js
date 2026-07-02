@@ -3,6 +3,7 @@ import { ABILITIES } from './abilities.js';
 import { JOB_DEFS, createUnit } from './units.js';
 import { createMap, renderMap, getTile } from './map.js';
 import { getReachable, getInRange, getAoeTiles, manhattan } from './grid.js';
+import { getFftaBelief } from './belief.js';
 
 // ── Scenario definitions ──────────────────────────────────────────────────────
 
@@ -738,7 +739,14 @@ function createInitialState(players, config = {}) {
     units: tickedUnits,
     board,
     lastActions: null,
-    gameSpecific: { activeUnitId, turnQueue },
+    gameSpecific: {
+      activeUnitId, turnQueue,
+      fogOfWar: config.fogOfWar ?? false,
+      // Common-knowledge starting deployment: you know the enemy's composition
+      // and where it started, not where it has moved under fog. Seeds the
+      // belief tracker (belief.js).
+      startRoster: tickedUnits.map(u => ({ id: u.id, ownerId: u.ownerId, job: u.job, position: { ...u.position }, hp: u.hp })),
+    },
   };
 }
 
@@ -754,6 +762,16 @@ function getVisibleState(state, playerId) {
       myUnits.some(m => Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= VISION)
     ),
   };
+}
+
+// Fog belief sampler for the generic ObscuroAgent: plausible full worlds with
+// the unseen enemies placed from the stateful FftaBelief (belief.js).
+// Returns [] when fog is off (agent uses the observation as the single world).
+function sampleWorlds(observation, playerId, n, rng = Math.random) {
+  if (!observation.gameSpecific.fogOfWar) return [];
+  const belief = getFftaBelief(observation, playerId);
+  belief.beginTurn(observation);
+  return belief.sample(observation, n, rng, createUnit);
 }
 
 const JOB_LABELS = {
@@ -808,12 +826,16 @@ export const FFTAGame = {
   ],
   colors: { floor: '#8a9c70', elevated: '#a07858', 'elevated-high': '#b89060', wall: '#2a2018' },
   ui: { moveAnimation: 'hop' },
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
+  ],
   createInitialState,
   getLegalActions,
   applyActions,
   getResult,
   renderState,
   getVisibleState,
+  sampleWorlds,
   getActionDuration,
 
   getBattleSummary(finalState, log) {

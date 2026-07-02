@@ -1,16 +1,24 @@
 import { sidesEval } from '../evalHelpers.js';
 import { TERRITORY_IDS, TERRITORY_NAMES, ADJACENCY, CONTINENTS, getConnectedOwned } from './RiskMap.js';
 import { resolveCombat } from './RiskCombat.js';
+import { getRiskBelief } from './belief.js';
 
 // ── Cards ─────────────────────────────────────────────────────────────────────
 
-const CARD_TYPES = ['infantry', 'cavalry', 'artillery'];
+export const CARD_TYPES = ['infantry', 'cavalry', 'artillery'];
 
-function createDeck(rng) {
+// The full card pool is deterministic (one card per territory, cycling type by
+// index, plus 2 wilds) — only the deal *order* is random. belief.js reuses this
+// to reconstruct "every card that exists" without needing any RNG or history.
+export function allCardsInGame() {
   const cards = TERRITORY_IDS.map((tid, i) => ({ type: CARD_TYPES[i % 3], territory: tid }));
   cards.push({ type: 'wild', territory: null });
   cards.push({ type: 'wild', territory: null });
-  return shuffle(cards, rng);
+  return cards;
+}
+
+function createDeck(rng) {
+  return shuffle(allCardsInGame(), rng);
 }
 
 function isValidSet(trio) {
@@ -452,6 +460,24 @@ function getVisibleState(state, playerId) {
   return { ...state, gameSpecific: { ...state.gameSpecific, cards } };
 }
 
+// Fog belief sampler for the generic ObscuroAgent: reconstructs plausible
+// opponent card hands (see belief.js) from a single observation, stateful
+// across turns so multi-opponent hand SIZES can be tracked. Returns [] when
+// there's nothing hidden (no opponent holds any card) — the observation is
+// then treated as the single world.
+function sampleWorlds(observation, playerId, n, rng = Math.random) {
+  const belief = getRiskBelief(observation, playerId);
+  belief.update(observation);
+  const worlds = belief.reconstructHands(observation, n, rng);
+  if (worlds.length === 0) return [];
+
+  return worlds.map(handsByOpponent => {
+    const cards = { ...observation.gameSpecific.cards };
+    for (const [oid, hand] of handsByOpponent) cards[oid] = hand;
+    return { ...observation, gameSpecific: { ...observation.gameSpecific, cards } };
+  });
+}
+
 function getActionDuration(_state, action) {
   // Abstract game — all phases take time proportional to their complexity
   if (action.type === 'attack')   return 0.5;
@@ -475,5 +501,6 @@ export const RiskGame = {
   getResult,
   renderState,
   getVisibleState,
+  sampleWorlds,
   getActionDuration,
 };

@@ -3,6 +3,7 @@ import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, getReachableTiles, renderMap } from './map.js';
+import { getAowBelief } from './belief.js';
 
 // ── Starting formation (offsets from camp; P2 mirrors dx) ─────────────────────
 // Archers defend the camp from range; warriors form the front line; cavalry flanks.
@@ -249,7 +250,14 @@ function createInitialState(players, config = {}) {
     board,
     units,
     lastActions: null,
-    gameSpecific: { p1Camp, p2Camp },
+    gameSpecific: {
+      p1Camp, p2Camp,
+      fogOfWar: config.fogOfWar ?? false,
+      // Common-knowledge starting deployment: you know the enemy's composition
+      // and where it started, not where it has moved under fog. Seeds the
+      // belief tracker (belief.js).
+      startRoster: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
+    },
   };
 }
 
@@ -265,6 +273,16 @@ function getVisibleState(state, playerId) {
       myUnits.some(m => Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= VISION)
     ),
   };
+}
+
+// Fog belief sampler for the generic ObscuroAgent: plausible full worlds with
+// the unseen enemies placed from the stateful AowBelief (belief.js). Returns
+// [] when fog is off (agent uses the observation as the single world).
+function sampleWorlds(observation, playerId, n, rng = Math.random) {
+  if (!observation.gameSpecific.fogOfWar) return [];
+  const belief = getAowBelief(observation, playerId);
+  belief.beginTurn(observation);
+  return belief.sample(observation, n, rng, makeUnit);
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────
@@ -295,12 +313,16 @@ export const AowGame = {
     { id: 'epic',         name: 'Epic Campaign',  description: '30×18 expanded world to conquer',  config: { width: 30, height: 18 } },
   ],
   colors: { plains: '#b8a860', forest: '#2a6830', hills: '#9a8050', mountains: '#706050' },
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
+  ],
   createInitialState,
   getLegalActions,
   applyActions,
   getResult,
   renderState,
   getVisibleState,
+  sampleWorlds,
   getActionDuration,
 
   toGrid(state) {

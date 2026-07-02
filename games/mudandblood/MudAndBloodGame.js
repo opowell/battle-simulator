@@ -3,6 +3,7 @@ import { createMap, renderMap } from './map.js';
 import { getReachable, manhattan } from './grid.js';
 import { calcHitChance, rollHit, rollDamage } from './combat.js';
 import { createUnit } from './units.js';
+import { getMudAndBloodBelief } from './belief.js';
 
 // ---------------------------------------------------------------------------
 // Wave definitions — each wave index = wave number - 1
@@ -120,23 +121,34 @@ export const MudAndBloodGame = {
     return score;
   },
   name: 'Mud and Blood 2',
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within range', type: 'boolean', default: false },
+  ],
 
-  createInitialState(players, _config = {}) {
+  createInitialState(players, config = {}) {
     const [alliesPlayer, axisPlayer] = players;
     const wave1 = spawnWave(1, axisPlayer.id, 0);
+    const units = [...defaultAllies(alliesPlayer.id), ...wave1];
     return {
       gameName: 'mudandblood',
       turnNumber: 1,
       activePlayers: [alliesPlayer.id],
       currentPhase: 'allies-turn',
       players,
-      units: [...defaultAllies(alliesPlayer.id), ...wave1],
+      units,
       board: createMap(),
       wave: 1,
       waveTimer: WAVE_INTERVAL,
       axisUnitCounter: wave1.length,
       lastActions: [],
       log: [`Wave 1 incoming! (${wave1.length} units)`],
+      gameSpecific: {
+        fogOfWar: config.fogOfWar ?? false,
+        // Common-knowledge wave-1 deployment. Later waves aren't known in
+        // advance — the belief tracker (belief.js) registers them the first
+        // time it spots one of their units.
+        startRoster: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
+      },
     };
   },
 
@@ -197,6 +209,10 @@ export const MudAndBloodGame = {
     if (action.type === 'shoot') {
       const shooter    = units.find(u => u.id === action.unitId);
       const target     = units.find(u => u.id === action.targetId);
+      // Under fog, a candidate action evaluated against a sampled world can
+      // target an enemy that world never placed (never spotted, so no belief
+      // entry) — no-op rather than crash, mirroring aow/civ1's attack guards.
+      if (!shooter || !target || !shooter.alive || !target.alive) return state;
       const bonus      = nearbyOfficerBonus(state, shooter);
       const hitChance  = calcHitChance(shooter, target, state.board, bonus);
       const { hit, crit, roll } = rollHit(hitChance, rng);
@@ -347,9 +363,27 @@ export const MudAndBloodGame = {
     return 1;
   },
 
-  getVisibleState(state, _playerId) {
-    // Open battlefield — no fog of war
-    return state;
+  getVisibleState(state, playerId) {
+    if (!state.gameSpecific?.fogOfWar) return state;
+    const VISION = 5; // manhattan, matches belief.js
+    const myUnits = state.units.filter(u => u.alive && u.ownerId === playerId);
+    return {
+      ...state,
+      units: state.units.filter(u =>
+        u.ownerId === playerId ||
+        myUnits.some(m => Math.abs(m.position.x - u.position.x) + Math.abs(m.position.y - u.position.y) <= VISION)
+      ),
+    };
+  },
+
+  // Fog belief sampler for the generic ObscuroAgent: plausible full worlds
+  // with the unseen enemies placed from the stateful MudAndBloodBelief
+  // (belief.js). Returns [] when fog is off.
+  sampleWorlds(observation, playerId, n, rng = Math.random) {
+    if (!observation.gameSpecific?.fogOfWar) return [];
+    const belief = getMudAndBloodBelief(observation, playerId);
+    belief.beginTurn(observation);
+    return belief.sample(observation, n, rng, createUnit);
   },
 
   toGrid(state) {
