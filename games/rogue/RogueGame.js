@@ -3,6 +3,7 @@ import { isWalkable, manhattan, hasLOS, stepToward, stepRandom, randomFloorPos, 
 import { createHero, createMonster, spawnMonsters, MONSTER_DEFS } from './units.js';
 import { spawnItems, applyPickup, useInventoryItem, dropInventoryItem, generateDisguiseMap, getDisplayName, ITEM_DEFS } from './items.js';
 import { heroAttack, monsterAttack } from './combat.js';
+import { VISION, isMonsterVisible, getRogueBelief } from './belief.js';
 
 const MAX_HUNGER           = 1500;
 const AMULET_LEVEL_DEFAULT = 10;
@@ -432,6 +433,27 @@ function tickEffects(hero) {
   return { ...hero, attrs: { ...hero.attrs, effects: next } };
 }
 
+// ── Explored-tiles tracker (fog of war geometry) ──────────────────────────────
+// Reveals tiles within VISION (Chebyshev) + line-of-sight of a position, and
+// merges them into an existing explored set. `explored` may be a Set or an
+// array of "x,y" keys (gameSpecific stores it as a plain array, matching the
+// `identified` convention, so state stays JSON-serializable for the API
+// server's stateJSON()/toJSON()). Returns a NEW Set (never mutates the input).
+function revealAround(tiles, explored, pos) {
+  const next = new Set(explored);
+  for (let dy = -VISION; dy <= VISION; dy++) {
+    for (let dx = -VISION; dx <= VISION; dx++) {
+      const x = pos.x + dx, y = pos.y + dy;
+      const key = `${x},${y}`;
+      if (next.has(key)) continue;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) > VISION) continue;
+      if (tiles[key] === undefined) continue;
+      if (hasLOS(tiles, pos.x, pos.y, x, y)) next.add(key);
+    }
+  }
+  return next;
+}
+
 // ── createInitialState ────────────────────────────────────────────────────────
 
 function createInitialState(players, config = {}) {
@@ -455,6 +477,9 @@ function createInitialState(players, config = {}) {
       y: deepRoom.y + Math.floor(deepRoom.h / 2),
     };
   }
+
+  const fogOfWar = config.fogOfWar ?? false;
+  const explored = fogOfWar ? [...revealAround(floor.tiles, new Set(), heroPos)] : [];
 
   return {
     gameName: 'Rogue: Dungeons of Doom',
@@ -482,6 +507,12 @@ function createInitialState(players, config = {}) {
       rooms: floor.rooms,
       tiles: floor.tiles,
       traps: floor.traps,
+      fogOfWar,
+      // Array of "x,y" keys the hero has ever seen on the CURRENT floor (plain
+      // array so state stays JSON-serializable; see revealAround's comment).
+      // Reset on every floor transition (descend/ascend/trapdoor). Empty when
+      // fog is off (geometry fog is then skipped entirely).
+      explored,
     },
   };
 }
@@ -822,6 +853,16 @@ function applyActions(state, playerActions, rng = Math.random) {
     hero  = units.find(u => u.type === 'rogue') ?? hero;
   }
 
+  // ── Explored-tiles tracker (fog of war geometry) ──────────────────────────────
+  if (gs.fogOfWar) {
+    // A floor transition (stairs/trapdoor) starts a fresh explored set; otherwise
+    // merge in everything visible from the hero's new position.
+    const changedFloor = gs.dungeonLevel !== state.gameSpecific.dungeonLevel;
+    const base = changedFloor ? new Set() : new Set(gs.explored ?? []);
+    const next = hero.alive ? revealAround(board.tiles, base, hero.position) : base;
+    gs = { ...gs, explored: [...next] };
+  }
+
   return {
     ...state,
     board,
@@ -925,12 +966,158 @@ function getActionDuration(_state, action) {
   return 1;
 }
 
+// ── Fog of war: exploration + hidden-monster hooks for the generic ──────────
+// ObscuroAgent (see games/types.js and agents/ObscuroAgent.js). Rogue is
+// single-player, so there's no opposing agent to reason about: the "fog" is
+// classic roguelike exploration fog over dungeon geometry and monsters. See
+// games/rogue/belief.js for the stateful per-monster belief tracker.
+
+// Mask every tile the hero hasn't explored yet to '#' (unseen treated as
+// wall — a common, conservative roguelike-AI simplification: the hero has no
+// way to path through ground it has never seen, so this doesn't cost the
+// agent any real information, just occasionally makes it detour to a known
+// corridor rather than cut through an unexplored room).
+function maskTiles(tiles, explored) {
+  const masked = {};
+  for (const key of Object.keys(tiles)) masked[key] = explored.has(key) ? tiles[key] : '#';
+  return masked;
+}
+
+// The OBSERVATION function: hides monsters outside the hero's vision/LOS
+// (respecting the phantom/invisible special case) and, when geometry fog is
+// on, masks unexplored dungeon tiles — both in `board.tiles` (what
+// renderState/pathing use) and the `gameSpecific.tiles` duplicate the floor
+// builder also stores. A no-op when fogOfWar is off.
+function getVisibleState(state, playerId) {
+  const gs = state.gameSpecific;
+  if (!gs.fogOfWar) return state;
+
+  const hero = state.units.find(u => u.type === 'rogue' && u.ownerId === playerId);
+  const tiles = state.board.tiles;
+
+  const units = state.units.filter(u =>
+    u.ownerId !== 'dungeon' || !u.alive || isMonsterVisible(tiles, hero, u));
+
+  const explored = new Set(gs.explored ?? []);
+  const maskedTiles = maskTiles(tiles, explored);
+
+  return {
+    ...state,
+    units,
+    board: { ...state.board, tiles: maskedTiles },
+    gameSpecific: { ...gs, tiles: maskedTiles },
+  };
+}
+
+// The BELIEF sampler: plausible full worlds with unseen monsters placed back
+// in, via the stateful RogueBelief tracker (belief.js). Returns [] when fog
+// is off (the observation itself is treated as the single world). Sampled
+// worlds keep the OBSERVED (possibly masked) geometry — the agent reasons
+// about hidden monsters, not hidden walls; see maskTiles' comment.
+function sampleWorlds(observation, playerId, n, rng = Math.random) {
+  if (!observation.gameSpecific.fogOfWar) return [];
+  const belief = getRogueBelief(observation, playerId);
+  belief.beginTurn(observation);
+  return belief.sample(observation, n, rng, observation.gameSpecific.rooms);
+}
+
+// Bounded BFS distance (in steps) from `from` to `to`, ignoring units. Capped
+// at `maxDist` search radius so this stays cheap when called from evaluateState
+// (a CFR leaf evaluator runs many times per decision). Returns maxDist + 1 if
+// unreachable within the cap (e.g. `to` is in unexplored/masked territory).
+function bfsDistance(tiles, from, to, maxDist) {
+  if (from.x === to.x && from.y === to.y) return 0;
+  const visited = new Set([`${from.x},${from.y}`]);
+  let frontier = [from];
+  for (let d = 1; d <= maxDist; d++) {
+    const next = [];
+    for (const { x, y } of frontier) {
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const nx = x + dx, ny = y + dy, key = `${nx},${ny}`;
+        if (visited.has(key) || !isWalkable(tiles, nx, ny)) continue;
+        if (nx === to.x && ny === to.y) return d;
+        visited.add(key);
+        next.push({ x: nx, y: ny });
+      }
+    }
+    frontier = next;
+    if (frontier.length === 0) break;
+  }
+  return maxDist + 1;
+}
+
+// Heuristic leaf value from the hero's perspective: higher = better. Blends
+// survival (hp fraction), progress (dungeon depth, hero level, gold/xp,
+// distance closed to the current objective), and a large bonus for carrying
+// the Amulet — the actual win condition. The distance-to-objective term
+// matters more than it might look: without SOME directional gradient toward
+// the stairs/amulet, states that differ only by the hero's position along a
+// safe corridor score identically, and a CFR/expectimax search can settle on
+// a degenerate back-and-forth oscillation instead of making progress.
+function evaluateState(state, playerId) {
+  const gs = state.gameSpecific;
+  const hero = state.units.find(u => u.type === 'rogue' && u.ownerId === playerId);
+  if (!hero || !hero.alive) return -1000;
+
+  const hpFrac = hero.maxHp > 0 ? hero.hp / hero.maxHp : 0;
+  const hungerFrac = Math.max(0, Math.min(1, gs.hunger / MAX_HUNGER));
+
+  let score = 0;
+  score += hpFrac * 100;              // survival is paramount
+  score += hungerFrac * 10;           // don't starve
+  score += gs.dungeonLevel * 15;      // reward diving deeper
+  score += (hero.attrs.heroLevel ?? 1) * 8;
+  score += Math.min(gs.experience, 500) * 0.05;
+  score += Math.min(hero.attrs.gold ?? 0, 500) * 0.02;
+  if (gs.hasAmulet) score += 5000;    // the actual win condition
+
+  // Small directional nudge toward the current objective (amulet if it's on
+  // this floor and not yet collected, else the stairs down). Bounded BFS so
+  // it stays cheap; capped magnitude so it never outweighs survival/hunger.
+  // Under fog, the path to an objective in unexplored territory is often not
+  // yet walkable in the (masked) tiles the agent is evaluating — BFS would
+  // then report "unreachable" for every candidate move alike and the
+  // gradient would vanish exactly when it's needed most to drive
+  // exploration. Fall back to straight-line Manhattan distance in that case,
+  // so moving toward an unexplored objective is still visibly better than
+  // moving away from it.
+  const objective = (gs.amuletPos && !gs.hasAmulet) ? gs.amuletPos : gs.stairsDown;
+  if (objective && state.board?.tiles) {
+    const cap = 40;
+    const bfs = bfsDistance(state.board.tiles, hero.position, objective, cap);
+    const dist = bfs > cap ? manhattan(hero.position, objective) : bfs;
+    score += Math.max(0, cap - dist) * 0.3;
+  }
+
+  // Mild reward for cumulative exploration progress this floor. This is a
+  // secondary signal (small weight) alongside the objective-distance nudge
+  // above; together they still cannot give a shallow 1-2 ply search full
+  // foresight into narrow dead-end stubs (backing out of one necessarily
+  // increases the objective distance for a move or two before it can
+  // decrease), so the agent can occasionally stall at a dead end under fog.
+  // This is an accepted, documented limitation of the generic ObscuroAgent's
+  // shallow search applied to maze topology, not a fog-wiring bug: the game
+  // still proceeds safely (end-turn always stays legal) and the existing
+  // self-play tests already tolerate a max-turns draw as a valid outcome.
+  if (gs.fogOfWar && Array.isArray(gs.explored)) {
+    score += Math.min(gs.explored.length, 400) * 0.05;
+  }
+
+  return score;
+}
+
 export const RogueGame = {
   name: 'Rogue: Dungeons of Doom',
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Hide unexplored dungeon tiles and monsters outside the hero\'s sight/line-of-sight', type: 'boolean', default: false },
+  ],
   createInitialState,
   getLegalActions,
   applyActions,
   getResult,
   renderState,
   getActionDuration,
+  getVisibleState,
+  sampleWorlds,
+  evaluateState,
 };

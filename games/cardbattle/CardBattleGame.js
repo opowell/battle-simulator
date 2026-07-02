@@ -1,4 +1,5 @@
 import { unitStrengthEval } from '../evalHelpers.js';
+import { getCardBattleBelief } from './belief.js';
 /**
  * Card Battle — demonstrates simultaneous multi-player turns.
  *
@@ -220,5 +221,28 @@ export const CardBattleGame = {
       decks[pid]  = pid === playerId ? deck : deck.map(() => '?');
     }
     return { ...state, gameSpecific: { ...state.gameSpecific, hands, decks } };
+  },
+
+  sampleWorlds(observation, playerId, n, rng = Math.random) {
+    const opponentId = observation.players.map(p => p.id).find(id => id !== playerId);
+    if (!opponentId) return [];
+    const hand = observation.gameSpecific.hands[opponentId];
+    const deck = observation.gameSpecific.decks[opponentId];
+    if (!hand || !deck) return [];
+    // Nothing hidden (e.g. fog off, or somehow already revealed) — no worlds to sample.
+    if (!hand.some(c => c === '?') && !deck.some(c => c === '?')) return [];
+
+    const belief = getCardBattleBelief(observation, playerId);
+    belief.beginTurn(observation);
+    const reconstructions = belief.sample(hand.length, deck.length, n, rng);
+
+    return reconstructions.map(({ hand: h, deck: d }) => ({
+      ...observation,
+      gameSpecific: {
+        ...observation.gameSpecific,
+        hands: { ...observation.gameSpecific.hands, [opponentId]: h },
+        decks: { ...observation.gameSpecific.decks, [opponentId]: d },
+      },
+    }));
   },
 };

@@ -1,6 +1,8 @@
 import { UNITS } from './units.js';
 import { TERRITORIES, ADJACENCY, STARTING_OWNERS, STARTING_UNITS, CAPITALS } from './territories.js';
 import { resolveBattle } from './combat.js';
+import { getAxisAlliesBelief } from './belief.js';
+import { sidesEval } from '../evalHelpers.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -574,8 +576,57 @@ export function createInitialState(players, config = {}) {
       ipcs: { axis: 30, allies: 36 },
       pendingUnits: { axis: [], allies: [] },
       nextId: idCtr,
+      fogOfWar: config.fogOfWar ?? false,
+      // Common-knowledge starting deployment: you know the enemy's roster and
+      // where it started, not where unseen units have moved to since (or been
+      // mobilized to) under fog. Seeds the belief tracker (belief.js).
+      startRoster: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, territory: u.territory, hp: u.hp })),
     },
   };
+}
+
+// ── Fog of war ────────────────────────────────────────────────────────────────
+
+/**
+ * Territory ownership is always public (as in the real board game) — only
+ * enemy garrison *composition* is hidden. A territory's units are visible if
+ * we occupy it or occupy a territory adjacent to it (board.adj).
+ */
+function getVisibleState(state, playerId) {
+  if (!state.gameSpecific.fogOfWar) return state;
+  const { units, board } = state;
+  const myTerritories = new Set(units.filter(u => u.alive && u.ownerId === playerId).map(u => u.territory));
+  const visible = new Set(myTerritories);
+  for (const t of myTerritories) for (const adj of (board.adj[t] || [])) visible.add(adj);
+
+  return {
+    ...state,
+    units: units.filter(u => u.ownerId === playerId || visible.has(u.territory)),
+  };
+}
+
+// Heuristic leaf value to `playerId`: surviving unit strength (cost-weighted,
+// since a battleship and an infantry aren't interchangeable) plus the IPC
+// value of controlled territory. Enough to give the generic ObscuroAgent a
+// non-random, materially-sensible opponent.
+function evaluateState(state, playerId) {
+  const unitScore = sidesEval(state.units, playerId, u => (UNITS[u.type]?.cost ?? 1) + (u.hp ?? 1));
+  const territoryEntities = Object.entries(state.board.ownership)
+    .filter(([, owner]) => owner)
+    .map(([t, owner]) => ({ owner, value: TERRITORIES[t]?.ipc ?? 0 }));
+  const territoryScore = sidesEval(territoryEntities, playerId, t => t.value, t => t.owner);
+  return unitScore + territoryScore;
+}
+
+// Fog belief sampler for the generic ObscuroAgent: plausible full worlds with
+// unseen-but-believed-alive enemy garrisons placed from the stateful
+// AxisAlliesBelief (belief.js). Returns [] when fog is off (agent uses the
+// observation as the single world).
+function sampleWorlds(observation, playerId, n, rng = Math.random) {
+  if (!observation.gameSpecific.fogOfWar) return [];
+  const belief = getAxisAlliesBelief(observation, playerId);
+  belief.beginTurn(observation);
+  return belief.sample(observation, n, rng, makeUnit);
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────
@@ -585,10 +636,15 @@ export const AxisAlliesGame = {
   scenarios: [
     { id: 'wwii-1942', name: 'WWII 1942', description: 'Classic Axis & Allies global setup — Allies vs Axis powers', config: {} },
   ],
+  gameOptions: [
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Enemy garrison composition is hidden unless you occupy or border the territory', type: 'boolean', default: false },
+  ],
   createInitialState,
   getLegalActions,
   applyActions,
   getResult,
   renderState,
-  getVisibleState: (state) => state,
+  getVisibleState,
+  evaluateState,
+  sampleWorlds,
 };
