@@ -17,6 +17,9 @@ const props = defineProps({
   // render as translucent markers and fog is drawn from `viewerTeam`'s perspective.
   revealAll:       { type: Boolean, default: false },
   viewerTeam:      { type: String, default: null },
+  // Empty square selected for its terrain info (see Battlefield.vue's selectedSquare).
+  // Distinct from `selectedSquare` below, which tints a *unit's* square.
+  selectedEmptySquare: { type: Object, default: null },
 });
 const emit = defineEmits(['select', 'sq-click', 'set-marker']);
 
@@ -431,6 +434,13 @@ function facingArrow(u) {
             :x="fit.x(selectedSquare.x)" :y="fit.y(selectedSquare.y)"
             :width="fit.len(1)" :height="fit.len(1)"
             fill="rgba(255,255,255,0.35)"
+            style="pointer-events:none"/>
+
+      <!-- Selected empty square (terrain info) -->
+      <rect v-if="selectedEmptySquare"
+            :x="fit.x(selectedEmptySquare.x)" :y="fit.y(selectedEmptySquare.y)"
+            :width="fit.len(1)" :height="fit.len(1)"
+            fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2" stroke-dasharray="4,3"
             style="pointer-events:none"/>
 
       <!-- Last move highlights -->

@@ -391,6 +391,14 @@ export const MudAndBloodGame = {
       '.': '#c8b87a', '~': '#5a4530', 'o': '#8a7a6a',
       's': '#b8a040', 'T': '#4a3828', '#': '#1a1208',
     };
+    const MNB_TERRAIN = {
+      '.': { name: 'Open Ground',    description: 'No cover.' },
+      '~': { name: 'Barbed Wire',    description: 'Costs 2 AP to enter.' },
+      'o': { name: 'Crater',         description: 'Low cover.' },
+      's': { name: 'Sandbags',       description: 'High cover.' },
+      'T': { name: 'Allied Trench',  description: 'Maximum cover. Axis reaching this row wins.' },
+      '#': { name: 'Allied Base',    description: 'Impassable.' },
+    };
     const { board, units = [] } = state;
     const { width, height, tiles } = board;
     const pidIdx = {};
@@ -407,6 +415,7 @@ export const MudAndBloodGame = {
           glyph: u ? u.attrs.symbol : '',
           owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color: MNB_COLOR[ch] ?? MNB_COLOR['.'],
+          terrain: MNB_TERRAIN[ch] ?? MNB_TERRAIN['.'],
           hp: u?.hp, maxHp: u?.maxHp,
         });
       }

@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import SchematicLayer    from './SchematicLayer.vue';
 import GameHeader        from './battlefield/GameHeader.vue';
 import SelectedUnitDetail from './battlefield/SelectedUnitDetail.vue';
+import SelectedSquareDetail from './battlefield/SelectedSquareDetail.vue';
 import ActionsPanel      from './battlefield/ActionsPanel.vue';
 import RosterPanel       from './battlefield/RosterPanel.vue';
 import UnitsLostPanel    from './battlefield/UnitsLostPanel.vue';
@@ -39,6 +40,16 @@ const showHelp  = ref(false);
 // ── selection ─────────────────────────────────────────────────
 const selectedId = ref(null);
 
+// Empty-square selection (terrain info), only meaningful for games whose cells carry
+// `terrain` data (see field.hasTerrain, computed in App.vue's buildField). Selecting a
+// unit always clears this, and vice versa.
+const selectedSquare = ref(null);
+
+function selectUnit(id) {
+  selectedId.value = id;
+  if (id) selectedSquare.value = null;
+}
+
 // ── game-over overlay ─────────────────────────────────────────
 const dismissedResult = ref(false);
 
@@ -60,6 +71,7 @@ watch(() => props.liveState?.id, () => {
   histPos.value = 0;
   dismissedResult.value = false;
   revealAll.value = false;
+  selectedSquare.value = null;
 }, { immediate: true });
 
 watch(() => props.historyFields, (h) => {
@@ -109,6 +121,7 @@ const viewerTeam = computed(() => {
 function toggleReveal() {
   revealAll.value = !revealAll.value;
   selectedId.value = null;
+  selectedSquare.value = null;
   histPos.value = Math.max(0, histLength.value - 1);
 }
 
@@ -260,12 +273,21 @@ function handleSqClick(col, row) {
       const coords = actionGridCoord(a, 'to');
       return coords && coords[0] === col && coords[1] === row;
     });
-    if (action) { submitAction(action); return; }
+    if (action) { submitAction(action); selectedSquare.value = null; return; }
   }
   selectedId.value = null;
+  const occupied = displayUnits.value.some(u => !u.dead && Math.floor(u.x) === col && Math.floor(u.y) === row);
+  selectedSquare.value = (props.field.hasTerrain && !occupied) ? { x: col, y: row } : null;
 }
 
 const selectedUnit = computed(() => displayUnits.value.find(u => u.id === selectedId.value) || null);
+
+const selectedTerrain = computed(() => {
+  if (!selectedSquare.value) return null;
+  const { x, y } = selectedSquare.value;
+  const tile = displayField.value?.tiles?.find(t => t.x === x && t.y === y);
+  return tile?.terrain ? { x, y, ...tile.terrain } : null;
+});
 
 // ── roster groups ─────────────────────────────────────────────
 const rosterTeams = computed(() =>
@@ -404,8 +426,9 @@ onUnmounted(() => {
           :unit="selectedUnit" :field="field" :rdr="rdr"
           @open-info="openInfo"
           @open-ability-info="openAbilityInfo"/>
+        <SelectedSquareDetail v-else-if="selectedTerrain" :terrain="selectedTerrain"/>
         <div v-else style="padding:12px 14px;font-size:11px;color:var(--faint)">
-          Select a unit to view details.
+          Select a unit{{ field.hasTerrain ? ' or square' : '' }} to view details.
         </div>
 
         <ActionsPanel v-if="isLive"
@@ -426,7 +449,8 @@ onUnmounted(() => {
           :lastMoveSquares="lastMoveSquares"
           :dragToMove="ui.dragToMove ?? false"
           :revealAll="revealAll" :viewerTeam="viewerTeam"
-          @select="id => selectedId = id"
+          :selectedEmptySquare="selectedSquare"
+          @select="selectUnit"
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>
       </div>
@@ -435,7 +459,7 @@ onUnmounted(() => {
       <div style="width:240px;min-height:0;overflow-y:auto;border-left:1px solid var(--line);display:flex;flex-direction:column;background:var(--bg1)">
         <RosterPanel v-if="ui.showRoster !== false"
           :teams="rosterTeams" :selectedId="selectedId" :rdr="rdr" :field="field"
-          @select="id => selectedId = id"/>
+          @select="selectUnit"/>
 
         <UnitsLostPanel v-if="ui.showUnitsLost"
           :teams="lostUnitsTeams"/>

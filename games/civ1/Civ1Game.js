@@ -429,6 +429,16 @@ function getActionDuration(state, action) {
   return 1;
 }
 
+function terrainInfo(key) {
+  const t = TERRAIN[key] ?? TERRAIN.plains;
+  const name = key ? key[0].toUpperCase() + key.slice(1) : 'Plains';
+  const parts = [`Food ${t.food}`, `Shields ${t.shields}`, `Trade ${t.trade}`];
+  if (!t.passable.land) parts.push('impassable to land units');
+  else parts.push(`move cost ${t.moveCost}`);
+  if (t.defBonus) parts.push(`+${Math.round(t.defBonus * 100)}% defense`);
+  return { name, description: parts.join(' · ') };
+}
+
 export const Civ1Game = {
   // Units plus cities (cities weighted heavily — losing your last city loses the
   // game). Heuristic leaf for the generic ObscuroAgent; see games/evalHelpers.js.
@@ -474,6 +484,7 @@ export const Civ1Game = {
           bgImage: tile.terrain ? `${BASE}/terrain/${tile.terrain}` : null,
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,
           color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
+          terrain: terrainInfo(tile.terrain),
           hp: u?.hp, maxHp: u?.maxHp,
         });
       }

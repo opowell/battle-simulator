@@ -1008,6 +1008,19 @@ function getActionDuration(state, action) {
   return 1;
 }
 
+const TERRAIN_NAMES = { open: 'Open Ground', elevated: 'Elevated Ground', ramp: 'Ramp', minerals: 'Mineral Field', vespene: 'Vespene Geyser', obstacle: 'Obstacle' };
+
+function terrainInfo(key) {
+  const t = TERRAIN[key] ?? TERRAIN.open;
+  const name = TERRAIN_NAMES[key] ?? TERRAIN_NAMES.open;
+  if (!t.passable.ground) {
+    return { name, description: t.resource ? `${t.resource === 'gas' ? 'Vespene gas' : 'Mineral'} resource. Not walkable by ground units.` : 'Impassable to ground units.' };
+  }
+  const parts = [`Move cost ${t.moveCost}`, t.buildable ? 'buildable' : 'not buildable'];
+  if (t.defBonus) parts.push(`+${Math.round(t.defBonus * 100)}% defense`);
+  return { name, description: parts.join(' · ') };
+}
+
 export const Sc2Game = {
   // Units plus buildings, main structures weighted heavily (destroying an
   // enemy's base and army wins). Leaf for the generic ObscuroAgent.
@@ -1056,6 +1069,7 @@ export const Sc2Game = {
           glyph: u ? u.type[0].toUpperCase() : b ? b.type[0].toUpperCase() : '',
           owner: u ? (pidIdx[u.ownerId] ?? 0) : b ? (pidIdx[b.ownerId] ?? 0) : 0,
           color: this.colors[tile.terrain] ?? this.colors.open ?? '#808070',
+          terrain: terrainInfo(tile.terrain),
         });
       }
     }
