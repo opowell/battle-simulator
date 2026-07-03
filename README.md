@@ -47,68 +47,25 @@ node api-server.js
 
 Set `PORT` to use a different port.
 
-## Web UIs
+## Web UI
 
-Four browser UIs ship in `apps/`. The first three connect to the live API server and can play every game; they differ only in visual style. The fourth is a standalone design prototype.
+One browser UI ships in `apps/design`. It's a Vue 3 app with no build step — it loads Vue from a CDN and uses `vue3-sfc-loader` to compile `.vue` Single File Components directly in the browser at runtime.
 
-| App | Port | Aesthetic |
-|---|---|---|
-| `apps/classic` | 5173 | CRT terminal — green-on-black, monospace, sidebar action list |
-| `apps/modern` | 5174 | Card-based — clean sans-serif, hover effects, spinner for AI turns |
-| `apps/minimal` | 5175 | Text only — type a number and press Enter to act |
-| `apps/design` | any | Vue 3 UI prototype — hardcoded data, no API, no build step |
-
-### Running
-
-The UIs talk to the HTTP API server, so start that first:
+Start the API server, then serve `apps/design` with any static file server:
 
 ```sh
-node api-server.js    # API on localhost:3000
-```
-
-Then in a separate terminal, start whichever UI you want:
-
-```sh
-node apps/classic/vite.js   # → localhost:5173
-node apps/modern/vite.js    # → localhost:5174
-node apps/minimal/vite.js   # → localhost:5175
-```
-
-No `cd` needed — run everything from the repo root.
-
-Override the port with `--port`:
-
-```sh
-node apps/modern/vite.js --port 5200
-```
-
-Or use npm workspaces if you prefer:
-
-```sh
-npm run dev -w @battle-sim/classic
-npm run dev -w @battle-sim/modern
-npm run dev -w @battle-sim/minimal
-```
-
-All three can run simultaneously against the same server.
-
-### Design app
-
-`apps/design` is a UI prototype built with Vue 3 and has no build step. It loads Vue from a CDN and uses `vue3-sfc-loader` to compile `.vue` Single File Components directly in the browser at runtime. It contains hardcoded static data (`data.js`) and makes no API calls — it's a standalone sandbox for visual design, not a playable client.
-
-To run it, serve the directory with any static file server:
-
-```sh
+node api-server.js             # API on localhost:3000
 npx serve apps/design          # or:
 python3 -m http.server -d apps/design 5176
 ```
 
-### How they work
+Or hit it directly from the API server at `/ui/design` (`http://localhost:3000/ui/design`).
 
-Each UI follows the same flow:
+### How it works
+
 1. `GET /games` — show a game picker
 2. `POST /sessions` — create a session (you play player 1, random AI plays the rest)
-3. Poll `GET /sessions/:id` every 800 ms until it's your turn
+3. Poll `GET /sessions/:id` until it's your turn
 4. When `pendingPlayer` matches your player ID, display `legalActions` and wait for your pick
 5. `POST /sessions/:id/action` — submit your chosen action, re-render
 
@@ -118,53 +75,7 @@ Set both players to **Human** on the configure screen. After the session is crea
 
 When Player B opens their link (`?session=<id>&player=<pid>`), the app joins the existing session as that player. Each browser shows only that player's actions when it's their turn, and "Waiting for…" otherwise. The board stays in sync via polling.
 
-**Flow at a glance:**
-
-```
-Player A opens app → configures Chess (both Human) → Start Game
-  → sees White's actions
-  → share banner shows: Black → http://localhost:5174/?session=abc&player=black
-
-Player B opens the Black link
-  → joins session abc as Black
-  → sees "Waiting for White..." until White moves
-  → once it's Black's turn, sees Black's actions
-
-Both browsers poll every 800 ms and re-render automatically.
-```
-
 There is no lobby or authentication — the share link is the full credential. Anyone who opens a player's link can act as that player.
-
-They're vanilla JS with no framework. [Vite](https://vitejs.dev) is the only build tool, used for the dev server and ES module bundling.
-
-### Shared API client
-
-All three apps import from `packages/api-client`, a workspace package symlinked by npm workspaces. It's a thin `fetch` wrapper:
-
-```js
-import { BattleSimClient } from '@battle-sim/api-client';
-
-const client = new BattleSimClient();          // defaults to localhost:3000
-await client.listGames();
-await client.createSession('chess', players);
-await client.getSession(id);
-await client.submitAction(id, playerId, action);
-await client.deleteSession(id);
-```
-
-### Adding a new UI
-
-1. Copy any `apps/*` directory and add a `vite.js` with the new port
-2. Import `BattleSimClient` from `@battle-sim/api-client` and build whatever DOM structure you want
-
-### Building for production
-
-```sh
-node node_modules/vite/bin/vite.js build --root apps/classic
-# outputs to apps/classic/dist/
-```
-
-Serve the `dist/` directory from any static host. Point it at your deployed API server by instantiating `new BattleSimClient('https://your-api-host')`.
 
 ## Engine API
 

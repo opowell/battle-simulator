@@ -27,6 +27,18 @@ const viewerId = computed(() => props.revealAll
   : (props.field.teams?.[0]?.id ?? null));
 const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.id);
 
+// Which unit should blink when `ui.blinkActiveUnit` is set. In free-selection games
+// (e.g. civ1) there's no turn-scoped activeUnitId, so blink whichever unit is clicked.
+const blinkTargetId = computed(() => props.field.ui?.freeSelection ? props.selectedId : props.activeUnitId);
+
+// When `ui.highlightSelectedSquare` is set, the selected unit's square gets a background
+// tint instead of the dashed ring drawn around the unit itself.
+const selectedSquare = computed(() => {
+  if (!props.field.ui?.highlightSelectedSquare || !props.selectedId) return null;
+  const u = props.units.find(u => u.id === props.selectedId);
+  return u ? { x: Math.floor(u.x), y: Math.floor(u.y) } : null;
+});
+
 const gridX = computed(() => {
   const step = props.field.grid === 'square' ? 1 : Math.max(1, Math.round(props.field.world.w / 20));
   const out = [];
@@ -198,7 +210,11 @@ function unitShape(u) {
 
 // ── square markers (user annotations on unseen squares) ──────────────────────
 const MARKER_CYCLE = ['p', 'n', 'b', 'r', 'q', 'k', null];
-const MARKER_IMG   = { p: '/images/chess/bP', n: '/images/chess/bN', b: '/images/chess/bB', r: '/images/chess/bR', q: '/images/chess/bQ', k: '/images/chess/bK' };
+// Enemy piece colour from the viewer's perspective, so seeded/manual markers use the
+// opponent's actual sprite set rather than always assuming the enemy is black.
+const enemyPrefix = computed(() => viewerIsBlack.value ? 'w' : 'b');
+function markerImg(type) { return `/images/chess/${enemyPrefix.value}${type.toUpperCase()}`; }
+
 const squareMarkers = ref(new Map()); // "col,row" → piece type string
 
 function isFogSquare(col, row) {
@@ -216,6 +232,31 @@ watch([gridFogVisibleSet, squareFogVisibleSet], ([gridVis, squareVis]) => {
     if (visible.has(key)) { updated.delete(key); changed = true; }
   if (changed) squareMarkers.value = updated;
 });
+
+// Standard chess starting layout, by file (col 0-7 = a-h): back rank + pawn rank.
+const BACK_RANK_TYPES = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
+
+// Seed markers at the enemy's starting squares so a fresh fog game starts with a
+// reminder of common-knowledge piece placement instead of a blank fog. Only fires
+// once, before either side could have moved (so the guess is still certain), and
+// never overwrites markers the player has already placed/inherited.
+watch(() => [props.field?.game, props.fog, props.field?.ui?.gridFog, props.field?.turn], () => {
+  if (!props.fog || !props.field?.ui?.gridFog || props.field.game !== 'chess') return;
+  if ((props.field.turn ?? 1) > 1) return;
+  if (squareMarkers.value.size > 0) return;
+  const enemyRow    = viewerIsBlack.value ? 7 : 0; // enemy back rank
+  const enemyPawnRow = viewerIsBlack.value ? 6 : 1;
+  const visible = gridFogVisibleSet.value;
+  const seeded = new Map();
+  for (let col = 0; col < 8; col++) {
+    for (const [row, type] of [[enemyRow, BACK_RANK_TYPES[col]], [enemyPawnRow, 'p']]) {
+      const key = `${col},${row}`;
+      if (visible && visible.has(key)) continue; // already seen — don't guess over it
+      seeded.set(key, type);
+    }
+  }
+  squareMarkers.value = seeded;
+}, { immediate: true });
 
 const squareMarkerList = computed(() => {
   const out = [];
@@ -411,9 +452,16 @@ function facingArrow(u) {
       <image v-for="m in displayMarkers" :key="'sm'+m.col+','+m.row"
              :x="fit.x(m.col) + fit.len(0.1)" :y="fit.y(m.row) + fit.len(0.1)"
              :width="fit.len(0.8)" :height="fit.len(0.8)"
-             :href="m.img ?? MARKER_IMG[m.type]"
+             :href="m.img ?? markerImg(m.type)"
              opacity="0.55"
              style="pointer-events:none"/>
+
+      <!-- Selected square highlight (used instead of a ring on the unit when ui.highlightSelectedSquare is set) -->
+      <rect v-if="selectedSquare"
+            :x="fit.x(selectedSquare.x)" :y="fit.y(selectedSquare.y)"
+            :width="fit.len(1)" :height="fit.len(1)"
+            fill="rgba(255,255,255,0.35)"
+            style="pointer-events:none"/>
 
       <!-- Last move highlights -->
       <rect v-for="([lc, lr], i) in lastMoveSquares" :key="'lmv'+i"
@@ -490,16 +538,16 @@ function facingArrow(u) {
         </g>
 
         <!-- Live unit -->
-        <g v-else>
-          <!-- Active unit ring: white outer ring + inner glow ring -->
-          <template v-if="u.id === activeUnitId">
+        <g v-else :class="{ 'unit-blink': u.id === blinkTargetId && field.ui?.blinkActiveUnit }">
+          <!-- Active unit ring: white outer ring + inner glow ring (skipped when the game blinks the unit instead) -->
+          <template v-if="u.id === activeUnitId && !field.ui?.blinkActiveUnit">
             <circle cx="0" cy="0" :r="unitR(u)+11"
                     fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="6" class="active-ring"/>
             <circle cx="0" cy="0" :r="unitR(u)+7"
                     fill="none" stroke="white" stroke-width="2" class="active-ring"/>
           </template>
-          <!-- Selected unit ring: dashed ring -->
-          <circle v-if="u.id === selectedId && u.id !== activeUnitId"
+          <!-- Selected unit ring: dashed ring (skipped when blinking, or when the game highlights the square instead) -->
+          <circle v-if="u.id === selectedId && u.id !== activeUnitId && !(u.id === blinkTargetId && field.ui?.blinkActiveUnit) && !field.ui?.highlightSelectedSquare"
                   cx="0" cy="0" :r="unitR(u)+6"
                   fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.5" stroke-dasharray="3 3"/>
           <!-- Facing indicator: filled arrowhead on unit edge -->
@@ -611,5 +659,12 @@ function facingArrow(u) {
 }
 .active-ring {
   animation: active-pulse 1.2s ease-in-out infinite;
+}
+@keyframes unit-blink {
+  0%, 49%  { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.unit-blink {
+  animation: unit-blink 0.6s steps(1, end) infinite;
 }
 </style>

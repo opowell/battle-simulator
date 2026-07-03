@@ -103,6 +103,7 @@ export const ChessGame = {
     moveAnimation: 'none',
     highlightLastMove: true,
     dragToMove: true,
+    highlightSelectedSquare: true, // selection shown as a square tint, not a ring around the piece
   },
 
   createInitialState(players, config = {}) {
