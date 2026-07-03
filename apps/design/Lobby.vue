@@ -46,12 +46,17 @@ watch(scens, (s) => {
   }
 });
 
+function defaultCpuAgent(g) {
+  const ids = (g?.agents ?? []).map(a => a.id);
+  return ids.includes('obscuro') ? 'obscuro' : (ids[0] ?? 'random');
+}
+
 function makeSlots(g, n) {
   const count = n || (g?.defaultPlayers?.length ?? 2);
   return Array.from({ length: count }, (_, i) => ({
     id:    'slot' + i,
     name:  i === 0 ? 'You' : `CPU ${i}`,
-    agent: i === 0 ? 'human' : 'random',
+    agent: i === 0 ? 'human' : defaultCpuAgent(g),
     color: TEAM_COLORS[i % TEAM_COLORS.length],
   }));
 }
@@ -83,7 +88,7 @@ function addSlot() {
   slots.value = [...slots.value, {
     id:    'slot' + slots.value.length,
     name:  'CPU ' + slots.value.length,
-    agent: 'ai',
+    agent: defaultCpuAgent(game.value),
     color: TEAM_COLORS[slots.value.length % TEAM_COLORS.length],
   }];
 }

@@ -548,14 +548,14 @@ const server = createServer(async (req, res) => {
   try {
     const { parts, method, url } = route(req);
 
-    // Default — redirect to modern UI
+    // Default — redirect to design UI
     if (method === 'GET' && parts[0] === '') {
-      res.writeHead(302, { Location: '/ui/modern' });
+      res.writeHead(302, { Location: '/ui/design' });
       return res.end();
     }
 
     // Static UI apps — GET /ui/<name>/* or GET /design/* (legacy)
-    const UI_APPS = ['classic', 'minimal', 'modern', 'design', 'voice', 'voice2'];
+    const UI_APPS = ['design'];
     if (method === 'GET' && parts[0] === 'ui' && UI_APPS.includes(parts[1])) {
       // Redirect /ui/<name> (no trailing slash) so relative asset paths resolve correctly
       if (parts.length === 2 && !url.pathname.endsWith('/')) {

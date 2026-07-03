@@ -166,6 +166,7 @@ function buildField(g, s) {
 
   return {
     game:  s.game,
+    turn:  s.turn ?? null,
     label: `${s.game} · Turn ${s.turn ?? 0}`,
     world: { w: g.width, h: g.height },
     turns: 1,
