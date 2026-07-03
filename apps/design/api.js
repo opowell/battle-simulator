@@ -21,3 +21,57 @@ window.api = {
   action:   (id, playerId, action)  => _req('/sessions/' + id + '/action', { method: 'POST', body: JSON.stringify({ playerId, action }) }),
   del:      (id)                    => _req('/sessions/' + id, { method: 'DELETE' }),
 };
+
+// Subscribe to live session updates over WebSocket, replacing the old 2s poll.
+// onUpdate(data) fires with the same shape api.session() returns, once on connect
+// and again on every server-side state change. If the socket can't open or drops,
+// it falls back to a 2s REST poll and keeps retrying the socket with backoff, so
+// the UI never goes stale behind a proxy that strips upgrade headers. Returns a
+// handle with close(); the caller owns its lifecycle.
+const _WS_BASE = _BASE.replace(/^http/, 'ws'); // http→ws, https→wss
+
+window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate) {
+  const wsUrl = _WS_BASE + '/sessions/' + id + '/ws' + (playerId ? '?player=' + playerId : '');
+  let ws = null, closed = false, pollTimer = null, retryTimer = null, backoff = 1000;
+
+  function startPoll() {
+    if (pollTimer || closed) return;
+    pollTimer = setInterval(async () => {
+      try { onUpdate(await window.api.session(id, playerId)); } catch {}
+    }, 2000);
+  }
+  function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+  function scheduleRetry() {
+    if (closed || retryTimer) return;
+    retryTimer = setTimeout(() => { retryTimer = null; connect(); }, backoff);
+    backoff = Math.min(backoff * 2, 15000);
+  }
+
+  function connect() {
+    if (closed) return;
+    try { ws = new WebSocket(wsUrl); }
+    catch { startPoll(); scheduleRetry(); return; }
+    ws.onopen    = () => { backoff = 1000; stopPoll(); };
+    ws.onmessage = (ev) => { try { onUpdate(JSON.parse(ev.data)); } catch {} };
+    ws.onclose   = () => {
+      ws = null;
+      if (closed) return;
+      startPoll();      // safety net while the socket is down
+      scheduleRetry();
+    };
+    // onerror is followed by onclose, which handles fallback + retry.
+    ws.onerror   = () => {};
+  }
+
+  connect();
+
+  return {
+    close() {
+      closed = true;
+      stopPoll();
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      if (ws) { try { ws.close(); } catch {} ws = null; }
+    },
+  };
+};

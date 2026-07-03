@@ -182,6 +182,9 @@ function buildField(g, s) {
     // Authoritative fog visibility from the server (computed on the full board). When
     // present the UI must use this rather than re-deriving fog from the filtered board.
     fogVisible: g.visible ? new Set(g.visible.map(([x, y]) => `${x},${y}`)) : null,
+    // Server-persisted last-known sighting of each currently-hidden enemy piece, so a
+    // page reload doesn't forget what this player has already seen this game.
+    fogGhosts: g.ghosts ?? [],
   };
 }
 
@@ -235,10 +238,13 @@ function closeSettings() {
   view.value = prevView.value;
 }
 
-// ── polling ──────────────────────────────────────────────────
-let _poll = null;
+// ── live updates ─────────────────────────────────────────────
+// A WebSocket subscription pushes state changes instead of the old 2s poll
+// (api.subscribeSession falls back to polling internally if the socket drops).
+// _sub holds the subscription handle; stopPoll() tears it down.
+let _sub = null;
 
-function stopPoll() { clearInterval(_poll); _poll = null; }
+function stopPoll() { if (_sub) { _sub.close(); _sub = null; } }
 
 function fogHumanId(s) {
   return s?.fog ? (s.humanPlayers?.[0] ?? null) : null;
@@ -248,16 +254,13 @@ function maybeStartPoll(s) {
   stopPoll();
   if (!s || s.status !== 'active') return;
   const pendingHuman = s.pendingPlayer && s.humanPlayers?.includes(s.pendingPlayer);
-  if (pendingHuman) return; // human's turn — no poll needed
+  if (pendingHuman) return; // human's turn — nothing to wait on
   const humanId = fogHumanId(s);
-  _poll = setInterval(async () => {
-    try {
-      const fresh = await api.session(s.id, humanId);
-      liveState.value = fresh;
-      if (fresh.status !== 'active') { stopPoll(); return; }
-      if (fresh.pendingPlayer && fresh.humanPlayers?.includes(fresh.pendingPlayer)) stopPoll();
-    } catch {}
-  }, 2000);
+  _sub = api.subscribeSession(s.id, humanId, (fresh) => {
+    liveState.value = fresh;
+    if (fresh.status !== 'active') { stopPoll(); return; }
+    if (fresh.pendingPlayer && fresh.humanPlayers?.includes(fresh.pendingPlayer)) stopPoll();
+  });
 }
 
 // ── data loading ─────────────────────────────────────────────
