@@ -526,6 +526,15 @@ function abilityPreview(caster, target, ability, board) {
   return null;
 }
 
+// Final-facing choice offered once a unit is done acting, mirroring the
+// original game's "pick a direction, A confirms" step before the turn ends.
+const DIRECTIONS = {
+  N: { dx: 0,  dy: -1, angle: -Math.PI / 2 },
+  E: { dx: 1,  dy: 0,  angle: 0 },
+  S: { dx: 0,  dy: 1,  angle: Math.PI / 2 },
+  W: { dx: -1, dy: 0,  angle: Math.PI },
+};
+
 // ── Legal actions ─────────────────────────────────────────────────────────────
 
 function getLegalActions(state, playerId) {
@@ -606,7 +615,12 @@ function getLegalActions(state, playerId) {
     }
   }
 
-  actions.push({ type: 'end-turn', unitId: unit.id });
+  // Facing is chosen as part of ending the turn (not a separate phase), so
+  // every existing end-turn caller keeps working — a bare end-turn with no
+  // `direction` just leaves facing untouched, same as before this feature.
+  for (const direction of Object.keys(DIRECTIONS)) {
+    actions.push({ type: 'end-turn', unitId: unit.id, direction });
+  }
   return actions;
 }
 
@@ -616,6 +630,12 @@ function applyActions(state, playerActions, rng = Math.random) {
   const { action } = playerActions[0];
 
   if (action.type === 'end-turn') {
+    if (action.direction) {
+      const facing = DIRECTIONS[action.direction].angle;
+      const units = state.units.map(u => u.id === action.unitId ? { ...u, facing } : u);
+      const next = advanceTurn({ ...state, units });
+      return { ...state, ...next, lastActions: playerActions };
+    }
     const next = advanceTurn(state);
     return { ...state, ...next, lastActions: playerActions };
   }
