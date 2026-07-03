@@ -2,7 +2,7 @@ import { unitStrengthEval } from '../evalHelpers.js';
 import { ABILITIES } from './abilities.js';
 import { JOB_DEFS, createUnit } from './units.js';
 import { createMap, renderMap, getTile } from './map.js';
-import { getReachable, getInRange, getAoeTiles, manhattan } from './grid.js';
+import { getReachable, getInRange, getAoeTiles, manhattan, attackDirection } from './grid.js';
 import { getFftaBelief } from './belief.js';
 
 // ── Scenario definitions ──────────────────────────────────────────────────────
@@ -175,10 +175,24 @@ function effectiveStat(unit, stat) {
   return v;
 }
 
+// ── Facing / directional bonus ────────────────────────────────────────────────
+// A blow landing on a unit's flank or back — where it is slower to bring its
+// guard around — bites deeper, mirroring the original's side/back-attack edge.
+// Only physical attacks care about facing (a spell hits just as hard from any
+// angle). The front/side/back classification lives in grid.js (attackDirection).
+const FACING_MULT  = { front: 1,    side: 1.25,        back: 1.5 };
+const FACING_LABEL = { front: null, side: 'FLANK +25%', back: 'REAR +50%' };
+
+function facingMult(attacker, defender, ability) {
+  if (ability.type === 'magic') return 1;
+  return FACING_MULT[attackDirection(attacker.position, defender.position, defender.facing)];
+}
+
 function calcDamage(attacker, defender, ability, board, rng) {
   const atkH = getTile(board, attacker.position.x, attacker.position.y).height;
   const defH = getTile(board, defender.position.x, defender.position.y).height;
   const heightMult = 1 + 0.2 * Math.max(0, atkH - defH);
+  const faceMult = facingMult(attacker, defender, ability);
 
   let atk, def;
   if (ability.type === 'magic') {
@@ -194,7 +208,7 @@ function calcDamage(attacker, defender, ability, board, rng) {
   if (attacker.statusEffects.includes('blind')) atk = Math.floor(atk * 0.7);
 
   const elemMult = ability.element ? (defender.elemResist?.[ability.element] ?? 1) : 1;
-  const base = Math.max(1, Math.floor(atk * ability.power * heightMult * elemMult - def * 0.5));
+  const base = Math.max(1, Math.floor(atk * ability.power * heightMult * elemMult * faceMult - def * 0.5));
   return Math.max(1, Math.floor(base * (0.85 + rng() * 0.3)));
 }
 
@@ -493,11 +507,14 @@ function abilityPreview(caster, target, ability, board) {
     if (caster.statusEffects.includes('blind')) atk = Math.floor(atk * 0.7);
 
     const elemMult = ability.element ? (target.elemResist?.[ability.element] ?? 1) : 1;
-    const base = Math.max(1, Math.floor(atk * ability.power * heightMult * elemMult - def * 0.5));
+    const faceDir = ability.type === 'magic' ? 'front' : attackDirection(caster.position, target.position, target.facing);
+    const faceMult = FACING_MULT[faceDir];
+    const base = Math.max(1, Math.floor(atk * ability.power * heightMult * elemMult * faceMult - def * 0.5));
     const lo = Math.max(1, Math.floor(base * 0.85));
     const hi = Math.max(1, Math.floor(base * 1.15));
     let p = lo === hi ? `~${lo} dmg` : `${lo}-${hi} dmg`;
     if (elemMult !== 1) p += elemMult > 1 ? ' (WEAK)' : ' (RESIST)';
+    if (FACING_LABEL[faceDir]) p += ` (${FACING_LABEL[faceDir]})`;
     if (ability.type === 'physical' && target.reaction === 'weapon-guard') p += ' (50% evade)';
     if (ability.type === 'magic'    && target.reaction === 'reflex')        p += ' (50% evade)';
     if (effect === 'damage+status' && ability.status) p += ` + ${ability.status}`;
