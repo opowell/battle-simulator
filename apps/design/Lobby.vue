@@ -11,6 +11,19 @@ const emit = defineEmits(['open-session', 'create', 'delete-session', 'refresh']
 
 const TEAM_COLORS = ['var(--teamA)', 'var(--teamB)', 'var(--teamC)', 'var(--teamD)', '#b48cff', '#ff9e64'];
 
+const previewMode = ref(localStorage.getItem('bs.previewMode') || 'box');
+watch(previewMode, (m) => localStorage.setItem('bs.previewMode', m));
+const brokenPreviews = ref(new Set());
+function previewSrc(gameName) {
+  return `/images/${gameName}/preview_${previewMode.value}`;
+}
+function previewBroken(gameName) {
+  return brokenPreviews.value.has(gameName + ':' + previewMode.value);
+}
+function onPreviewError(gameName) {
+  brokenPreviews.value = new Set(brokenPreviews.value).add(gameName + ':' + previewMode.value);
+}
+
 const selGame  = ref('');
 const game     = computed(() => props.apiGames.find(g => g.name === selGame.value) || props.apiGames[0] || null);
 const scens    = computed(() => game.value?.scenarios ?? []);
@@ -210,13 +223,22 @@ function sessionStatusColor(s) {
       <div class="panel-b">
 
         <!-- 1 · Game -->
-        <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:9px">
-          1 · Game definition
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px">
+          <span style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)">
+            1 · Game definition
+          </span>
+          <div class="seg" style="font-size:11px">
+            <button :class="{on: previewMode === 'box'}"   @click="previewMode = 'box'"   style="padding:3px 9px" title="Box art">Cover</button>
+            <button :class="{on: previewMode === 'asset'}" @click="previewMode = 'asset'" style="padding:3px 9px" title="In-game asset">Asset</button>
+          </div>
         </div>
         <div class="gamegrid">
           <div v-for="g in apiGames" :key="g.name"
                class="gamecard" :class="{sel: g.name === selGame}"
                @click="pick(g)">
+            <div class="gamecard-thumb" v-if="!previewBroken(g.name)">
+              <img :src="previewSrc(g.name)" :alt="g.name" loading="lazy" @error="onPreviewError(g.name)"/>
+            </div>
             <div style="display:flex;justify-content:space-between;align-items:flex-start">
               <BsIcon :name="g.icon || 'grid'" :size="20" :color="g.name === selGame ? 'var(--accent)' : 'var(--txt)'"/>
               <span class="mono" style="font-size:9px;color:var(--faint)">{{g.name}}</span>
