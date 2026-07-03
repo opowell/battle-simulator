@@ -51,6 +51,46 @@ function boardToUnits(board) {
 }
 
 // ---------------------------------------------------------------------------
+// Fog-of-war "ghost" markers: each side's last-known sighting of every enemy
+// piece, persisted in gameSpecific so it survives page reloads and API polling.
+// Seeded at the common-knowledge starting position, then kept in sync once per
+// real move (in applyActions) — never inside getVisibleState, which the API
+// re-runs on every poll/reload and must stay a pure function of state.
+// ---------------------------------------------------------------------------
+
+function seedFogMarkers(board) {
+  const markers = { white: {}, black: {} };
+  for (const piece of Object.values(board)) {
+    if (!piece) continue; // vacated squares are set to undefined, not deleted
+    const viewer = piece.ownerId === 'white' ? 'black' : 'white';
+    markers[viewer][piece.id] = { id: piece.id, type: piece.type, position: piece.position };
+  }
+  return markers;
+}
+
+function updateFogMarkers(prevMarkers, board) {
+  const next = {};
+  for (const viewer of ['white', 'black']) {
+    const visible = getVisibleSquares(board, viewer);
+    const aliveEnemyIds = new Set(Object.values(board).filter(u => u && u.ownerId !== viewer).map(u => u.id));
+    const updated = {};
+    for (const [id, m] of Object.entries(prevMarkers[viewer] ?? {})) {
+      if (!aliveEnemyIds.has(id)) continue;                                  // captured — drop
+      if (visible.has(m.position) && board[m.position]?.id !== id) continue; // proven stale
+      updated[id] = m;
+    }
+    for (const sq of Object.keys(board)) {
+      const piece = board[sq];
+      if (piece && piece.ownerId !== viewer && visible.has(sq)) {
+        updated[piece.id] = { id: piece.id, type: piece.type, position: sq };
+      }
+    }
+    next[viewer] = updated;
+  }
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // applyActions helpers
 // ---------------------------------------------------------------------------
 
@@ -128,6 +168,11 @@ export const ChessGame = {
         fogOfWar:    config.fogOfWar   ?? false,
         debugAI:     config.debugAI    ?? false,
         difficulty:  config.difficulty ?? 25,
+        fogMarkers:  config.fogOfWar ? seedFogMarkers(board) : undefined,
+        // Player-placed guesses on squares with no real sighting yet (e.g. "I think the
+        // knight went to f6"). Kept server-side, distinct from `fogMarkers` (which only
+        // ever holds actually-observed positions), so a reload doesn't lose a guess either.
+        manualMarkers: config.fogOfWar ? { white: {}, black: {} } : undefined,
       },
     };
   },
@@ -195,6 +240,9 @@ export const ChessGame = {
 
     const inCheck = isKingInCheck(board, opponent);
     const newTurn = playerId === 'black' ? state.turnNumber + 1 : state.turnNumber;
+    const fogMarkers = state.gameSpecific.fogMarkers
+      ? updateFogMarkers(state.gameSpecific.fogMarkers, board)
+      : undefined;
 
     return {
       ...state,
@@ -208,6 +256,26 @@ export const ChessGame = {
         fogOfWar:    state.gameSpecific.fogOfWar,
         debugAI:     state.gameSpecific.debugAI,
         difficulty:  state.gameSpecific.difficulty,
+        fogMarkers,
+        manualMarkers: state.gameSpecific.manualMarkers,
+      },
+    };
+  },
+
+  // Record or clear a player's manual fog-square guess. This is UI metadata, not a game
+  // action: it doesn't touch the board, consume a turn, or require it to be that player's
+  // turn — the engine applies it via `patchState`, bypassing normal action validation.
+  setManualMarker(state, playerId, square, type) {
+    if (!state.gameSpecific.fogOfWar) return state;
+    const prevForPlayer = state.gameSpecific.manualMarkers?.[playerId] ?? {};
+    const updatedForPlayer = { ...prevForPlayer };
+    if (type) updatedForPlayer[square] = type;
+    else delete updatedForPlayer[square];
+    return {
+      ...state,
+      gameSpecific: {
+        ...state.gameSpecific,
+        manualMarkers: { ...state.gameSpecific.manualMarkers, [playerId]: updatedForPlayer },
       },
     };
   },
@@ -294,6 +362,20 @@ export const ChessGame = {
         filteredBoard[sq] = undefined;
       }
     }
+    // Ghost markers: this player's last-known sighting of each hidden enemy piece
+    // (seeded at the starting position, updated in applyActions as pieces are seen
+    // or lost), for squares the UI should render faded rather than blank. Persisted
+    // in gameSpecific so it survives a page reload, unlike a client-only cache.
+    const markers = state.gameSpecific.fogMarkers?.[playerId] ?? {};
+    const fogGhosts = Object.values(markers).filter(m => !visible.has(m.position));
+
+    // This player's own manual guesses, similarly hidden once their square is actually seen
+    // (a real sighting always supersedes a guess there).
+    const manual = state.gameSpecific.manualMarkers?.[playerId] ?? {};
+    const fogManualMarkers = Object.entries(manual)
+      .filter(([sq]) => !visible.has(sq))
+      .map(([position, type]) => ({ position, type }));
+
     return {
       ...state,
       board: filteredBoard,
@@ -303,6 +385,9 @@ export const ChessGame = {
       // cannot re-derive visibility from the filtered board, where a stripped piece (e.g. a
       // hidden pawn on e5 blocking our e4 pawn's push) would wrongly look like empty + seen.
       visibleSquares: [...visible],
+      fogGhosts,
+      fogManualMarkers,
+      viewerId: playerId, // so toGrid can tell which colour's sprites a manual guess should use
     };
   },
 
@@ -353,6 +438,22 @@ export const ChessGame = {
     const visSet = state.visibleSquares ? new Set(state.visibleSquares) : null;
     const cells = [];
     const visible = visSet ? [] : null; // grid coords [x,y] the player can see (fog mode only)
+    // Fog ghosts: server-persisted last-known sighting of each hidden enemy piece,
+    // converted from algebraic squares to the same [x,y] grid coords as `visible`.
+    const ghosts = (state.fogGhosts ?? []).map(g => {
+      const fi = FILES.indexOf(g.position[0]);
+      const rank = parseInt(g.position.slice(1), 10);
+      const sym = SYMS[g.type] ?? g.type[0].toUpperCase();
+      return { x: fi, y: 8 - rank, type: g.type, imagePath: `/images/chess/${g.id[0]}${sym}` };
+    });
+    // Manual guesses: always about the opponent, so use the enemy colour's sprites.
+    const enemyPrefix = state.viewerId === 'white' ? 'b' : 'w';
+    const manualMarkers = (state.fogManualMarkers ?? []).map(m => {
+      const fi = FILES.indexOf(m.position[0]);
+      const rank = parseInt(m.position.slice(1), 10);
+      const sym = SYMS[m.type] ?? m.type[0].toUpperCase();
+      return { x: fi, y: 8 - rank, type: m.type, imagePath: `/images/chess/${enemyPrefix}${sym}` };
+    });
     for (let rank = 1; rank <= 8; rank++) {
       for (let fi = 0; fi < 8; fi++) {
         const algSq = FILES[fi] + rank;
@@ -370,6 +471,12 @@ export const ChessGame = {
         if (visSet && visSet.has(algSq)) visible.push([fi, 8 - rank]);
       }
     }
-    return { width: 8, height: 8, cells, xLabels: FILES.split(''), yLabels: '87654321'.split(''), visible };
+    return { width: 8, height: 8, cells, xLabels: FILES.split(''), yLabels: '87654321'.split(''), visible, ghosts, manualMarkers };
+  },
+
+  // Convert a grid [col,row] click into the algebraic square setManualMarker expects.
+  gridToSquare(col, row) {
+    const FILES = 'abcdefgh';
+    return `${FILES[col]}${8 - row}`;
   },
 };

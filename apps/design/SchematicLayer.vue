@@ -18,7 +18,7 @@ const props = defineProps({
   revealAll:       { type: Boolean, default: false },
   viewerTeam:      { type: String, default: null },
 });
-const emit = defineEmits(['select', 'sq-click']);
+const emit = defineEmits(['select', 'sq-click', 'set-marker']);
 
 // Team whose pieces project vision. Normally the human (teams[0]); in reveal mode it
 // follows whoever is to move at the displayed ply, so fog flips as you step through.
@@ -210,12 +210,10 @@ function unitShape(u) {
 
 // ── square markers (user annotations on unseen squares) ──────────────────────
 const MARKER_CYCLE = ['p', 'n', 'b', 'r', 'q', 'k', null];
-// Enemy piece colour from the viewer's perspective, so seeded/manual markers use the
+// Enemy piece colour from the viewer's perspective, so manual markers use the
 // opponent's actual sprite set rather than always assuming the enemy is black.
 const enemyPrefix = computed(() => viewerIsBlack.value ? 'w' : 'b');
 function markerImg(type) { return `/images/chess/${enemyPrefix.value}${type.toUpperCase()}`; }
-
-const squareMarkers = ref(new Map()); // "col,row" → piece type string
 
 function isFogSquare(col, row) {
   if (gridFogVisibleSet.value) return !gridFogVisibleSet.value.has(`${col},${row}`);
@@ -223,49 +221,10 @@ function isFogSquare(col, row) {
   return false;
 }
 
-watch([gridFogVisibleSet, squareFogVisibleSet], ([gridVis, squareVis]) => {
-  const visible = gridVis || squareVis;
-  if (!visible || squareMarkers.value.size === 0) return;
-  let changed = false;
-  const updated = new Map(squareMarkers.value);
-  for (const key of updated.keys())
-    if (visible.has(key)) { updated.delete(key); changed = true; }
-  if (changed) squareMarkers.value = updated;
-});
-
-// Standard chess starting layout, by file (col 0-7 = a-h): back rank + pawn rank.
-const BACK_RANK_TYPES = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
-
-// Seed markers at the enemy's starting squares so a fresh fog game starts with a
-// reminder of common-knowledge piece placement instead of a blank fog. Only fires
-// once, before either side could have moved (so the guess is still certain), and
-// never overwrites markers the player has already placed/inherited.
-watch(() => [props.field?.game, props.fog, props.field?.ui?.gridFog, props.field?.turn], () => {
-  if (!props.fog || !props.field?.ui?.gridFog || props.field.game !== 'chess') return;
-  if ((props.field.turn ?? 1) > 1) return;
-  if (squareMarkers.value.size > 0) return;
-  const enemyRow    = viewerIsBlack.value ? 7 : 0; // enemy back rank
-  const enemyPawnRow = viewerIsBlack.value ? 6 : 1;
-  const visible = gridFogVisibleSet.value;
-  const seeded = new Map();
-  for (let col = 0; col < 8; col++) {
-    for (const [row, type] of [[enemyRow, BACK_RANK_TYPES[col]], [enemyPawnRow, 'p']]) {
-      const key = `${col},${row}`;
-      if (visible && visible.has(key)) continue; // already seen — don't guess over it
-      seeded.set(key, type);
-    }
-  }
-  squareMarkers.value = seeded;
-}, { immediate: true });
-
-const squareMarkerList = computed(() => {
-  const out = [];
-  for (const [key, type] of squareMarkers.value) {
-    const [col, row] = key.split(',').map(Number);
-    out.push({ col, row, type });
-  }
-  return out;
-});
+// Server-persisted manual guesses (see ChessGame.js `manualMarkers`/`fogManualMarkers`),
+// kept in game state so a reload or another viewer sees the same guesses immediately —
+// there's no local copy here, `field.fogManualMarkers` is the only source of truth.
+const squareMarkerList = computed(() => (props.field.fogManualMarkers ?? []).map(m => ({ col: m.x, row: m.y, type: m.type })));
 
 // Reveal mode: every piece the viewer can't see is drawn as a translucent marker at its
 // true square (using its own colour's sprite), so hidden positions are exposed.
@@ -282,7 +241,22 @@ const revealMarkerList = computed(() => {
   return out;
 });
 
-const displayMarkers = computed(() => props.revealAll ? revealMarkerList.value : squareMarkerList.value);
+// Server-persisted ghosts: the game's authoritative last-known sighting of every
+// currently-hidden enemy piece (seeded at the starting position, then updated once per
+// real move as pieces are seen or lost — see ChessGame.js `fogMarkers`/`fogGhosts`).
+// Living server-side, this survives a page reload, unlike a client-only cache.
+const serverGhostList = computed(() => {
+  if (!props.fog || props.revealAll) return [];
+  return (props.field.fogGhosts ?? []).map(g => ({ col: g.x, row: g.y, type: g.type, img: g.imagePath }));
+});
+
+const displayMarkers = computed(() => {
+  if (props.revealAll) return revealMarkerList.value;
+  // A server-confirmed last-known position is more trustworthy than a manual guess, so
+  // it wins when both land on the same square.
+  const ghostKeys = new Set(serverGhostList.value.map(g => `${g.col},${g.row}`));
+  return [...squareMarkerList.value.filter(m => !ghostKeys.has(`${m.col},${m.row}`)), ...serverGhostList.value];
+});
 
 // ── drag-to-move ──────────────────────────────────────────────────────────────
 const svgEl       = ref(null);
@@ -344,14 +318,10 @@ function handleBoardClick(e) {
   const row = Math.floor((e.clientY - rect.top  - props.fit.y(0)) / props.fit.s);
   if (col >= 0 && col < props.field.world.w && row >= 0 && row < props.field.world.h) {
     if (!props.revealAll && !props.selectedId && isFogSquare(col, row)) {
-      const key = `${col},${row}`;
-      const current = squareMarkers.value.get(key) ?? null;
+      const current = squareMarkerList.value.find(m => m.col === col && m.row === row)?.type ?? null;
       const idx = MARKER_CYCLE.indexOf(current);
       const next = MARKER_CYCLE[(idx + 1) % MARKER_CYCLE.length];
-      const updated = new Map(squareMarkers.value);
-      if (next === null) updated.delete(key);
-      else updated.set(key, next);
-      squareMarkers.value = updated;
+      emit('set-marker', col, row, next);
       return;
     }
     emit('sq-click', col, row);

@@ -537,6 +537,37 @@ async function handleSubmitAction(req, res, id) {
   send(res, 200, session.toJSON(playerId));
 }
 
+// Player-placed fog-square annotations (e.g. "I think the queen went here"). Unlike
+// /action this isn't a game move: it doesn't require it to be that player's turn and
+// doesn't advance the engine — it patches persisted UI metadata directly so a guess
+// survives a reload and updates immediately for the player who set it (and anyone else
+// watching, via the broadcast below).
+async function handleSetMarker(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+  if (session.status !== 'active') return err(res, 409, `Session is ${session.status}`);
+
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+
+  const { playerId, col, row, type } = body;
+  let { square } = body;
+  if (!playerId) return err(res, 400, 'Missing playerId');
+  if (!session.apiAgents.has(playerId)) return err(res, 400, `Player ${playerId} is not a human player in this session`);
+
+  const { game } = GAMES[session.gameName];
+  if (!game.setManualMarker) return err(res, 400, `${session.gameName} does not support manual fog markers`);
+  // Client sends generic grid coords, not game-specific square notation, so it never
+  // needs to know chess's algebraic-square scheme (or any other game's).
+  if (!square && col != null && row != null && game.gridToSquare) square = game.gridToSquare(col, row);
+  if (!square) return err(res, 400, 'Missing square (or col/row)');
+
+  session.engine.patchState(state => game.setManualMarker(state, playerId, square, type ?? null));
+  session._broadcast();
+  send(res, 200, session.toJSON(playerId));
+}
+
 async function handleGetLog(res, id) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
@@ -653,6 +684,10 @@ const server = createServer(async (req, res) => {
     // POST /sessions/:id/action
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'action')
       return await handleSubmitAction(req, res, parts[1]);
+
+    // POST /sessions/:id/marker
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'marker')
+      return await handleSetMarker(req, res, parts[1]);
 
     // DELETE /sessions/:id
     if (method === 'DELETE' && parts[0] === 'sessions' && parts.length === 2)
