@@ -17,6 +17,8 @@ import { extname, resolve, sep, dirname } from 'node:path';
 import { fileURLToPath }         from 'node:url';
 
 
+import { WebSocketServer } from './vendor/ws/wrapper.mjs';
+
 import { GameEngine } from './engine/index.js';
 import { RandomAgent } from './agents/index.js';
 import { ApiAgent } from './agents/ApiAgent.js';
@@ -217,8 +219,23 @@ class Session {
     this.result = null;
     this.error = null;
     this.gridHistory = [];
+    // WebSocket subscribers: Set<{ ws, playerId }>. Each gets a per-player
+    // (fog-filtered) snapshot pushed whenever this session's state changes.
+    this.wsClients = new Set();
     this._logPath = resolve(SESSIONS_DIR, id, 'log.json');
+    // Push the "your turn" state the moment a human agent starts waiting — the
+    // engine is otherwise parked inside `await step()` with nothing to observe.
+    for (const agent of this.apiAgents.values()) agent.onPending = () => this._broadcast();
     this._run();
+  }
+
+  /** Push the current per-player snapshot to every subscribed WebSocket client. */
+  _broadcast() {
+    if (this.wsClients.size === 0) return;
+    for (const client of this.wsClients) {
+      if (client.ws.readyState !== 1 /* WebSocket.OPEN */) continue;
+      try { client.ws.send(JSON.stringify(this.toJSON(client.playerId))); } catch {}
+    }
   }
 
   _captureGrid() {
@@ -242,6 +259,7 @@ class Session {
       this.engine._init();
       const g0 = this._captureGrid();
       if (g0) this.gridHistory.push(g0);
+      this._broadcast();
       while (this.status === 'active') {
         const { done } = await this.engine.step();
         this._persistLog();
@@ -250,13 +268,15 @@ class Session {
         if (done) {
           this.status = 'done';
           this.result = this.engine.result;
-          break;
         }
+        this._broadcast();
+        if (done) break;
       }
     } catch (err) {
       if (this.status !== 'closed') {
         this.status = 'error';
         this.error = err.message;
+        this._broadcast();
       }
     }
   }
@@ -264,6 +284,10 @@ class Session {
   close() {
     this.status = 'closed';
     for (const agent of this.apiAgents.values()) agent.abort('Session closed');
+    for (const client of this.wsClients) {
+      try { client.ws.close(); } catch {}
+    }
+    this.wsClients.clear();
   }
 
   /** Returns { playerId, legalActions } for the currently pending human action, or null. */
@@ -639,6 +663,45 @@ const server = createServer(async (req, res) => {
     console.error(e);
     err(res, 500, e.message);
   }
+});
+
+// ---------------------------------------------------------------------------
+// WebSocket push — clients subscribe at /sessions/:id/ws?player=:playerId and
+// receive the same per-player snapshot handleGetSession returns, pushed on every
+// state change. Replaces the old 2s poll; REST stays for initial load + fallback.
+// ---------------------------------------------------------------------------
+
+const wss = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (req, socket, head) => {
+  const url = new URL(req.url, 'http://localhost');
+  const parts = url.pathname.replace(/^\/|\/$/g, '').split('/');
+
+  // Only /sessions/:id/ws upgrades; anything else gets refused during handshake.
+  if (parts[0] !== 'sessions' || parts.length !== 3 || parts[2] !== 'ws') {
+    socket.destroy();
+    return;
+  }
+
+  const session = sessions.get(parts[1]);
+  if (!session) {
+    // Reject before accepting rather than accept-then-close, so the client sees a
+    // clean failed upgrade and falls back to polling.
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  const playerId = url.searchParams.get('player') ?? null;
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    const client = { ws, playerId };
+    session.wsClients.add(client);
+    // Immediate snapshot so a freshly-connected client is in sync without a REST round-trip.
+    try { ws.send(JSON.stringify(session.toJSON(playerId))); } catch {}
+    const drop = () => session.wsClients.delete(client);
+    ws.on('close', drop);
+    ws.on('error', drop);
+  });
 });
 
 server.listen(PORT, () => {

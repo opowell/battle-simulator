@@ -6,11 +6,17 @@ export class ApiAgent {
   constructor(playerId) {
     this.id = `api:${playerId}`;
     this._pending = null; // { resolve, reject, legalActions }
+    // Optional hook fired when this agent starts waiting for input, so the
+    // Session can push the "your turn" state to WebSocket clients. The engine
+    // is parked inside `await chooseAction(...)` at that moment, so there is no
+    // other place to observe the transition into a pending human turn.
+    this.onPending = null;
   }
 
   async chooseAction(_state, legalActions) {
     return new Promise((resolve, reject) => {
       this._pending = { resolve, reject, legalActions };
+      if (this.onPending) { try { this.onPending(); } catch {} }
     });
   }
 
