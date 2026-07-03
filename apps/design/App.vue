@@ -185,6 +185,8 @@ function buildField(g, s) {
     // Server-persisted last-known sighting of each currently-hidden enemy piece, so a
     // page reload doesn't forget what this player has already seen this game.
     fogGhosts: g.ghosts ?? [],
+    // Server-persisted manual fog-square guesses this player has placed themselves.
+    fogManualMarkers: g.manualMarkers ?? [],
   };
 }
 
@@ -375,6 +377,15 @@ async function submitAction({ playerId, action }) {
   } catch (e) { serverErr.value = e.message; }
 }
 
+// Persist a manual fog-square guess server-side so it survives a reload and (via the
+// server's WebSocket broadcast) shows up immediately without waiting on a turn to pass.
+async function setMarker({ playerId, col, row, type }) {
+  if (!liveState.value) return;
+  try {
+    liveState.value = await api.setMarker(liveState.value.id, playerId, col, row, type);
+  } catch (e) { serverErr.value = e.message; }
+}
+
 async function deleteSession(id) {
   try { await api.del(id); await refresh(); } catch {}
 }
@@ -464,7 +475,8 @@ function exitBattle() {
                    :server-err="serverErr"
                    @exit="exitBattle"
                    @open-settings="openSettings"
-                   @submit-action="submitAction"/>
+                   @submit-action="submitAction"
+                   @set-marker="setMarker"/>
       <div v-else
            style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--dim)">
         Loading…

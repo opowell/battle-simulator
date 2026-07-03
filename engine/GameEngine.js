@@ -49,6 +49,17 @@ export class GameEngine {
   get timeType() { return this.config.timeType ?? 'discrete'; }
   get clock() { return this._clock; }
 
+  /**
+   * Replace the authoritative state with a patched version, bypassing turn/action
+   * validation. For out-of-band UI metadata (e.g. fog-of-war markers a player has
+   * manually placed) that isn't part of game rules and shouldn't consume a turn.
+   * @param {(state: object) => object} updater
+   */
+  patchState(updater) {
+    if (!this._state) return;
+    this._state = freeze(updater(this._state));
+  }
+
   _playerById(id) {
     return this.players.find(p => p.id === id);
   }

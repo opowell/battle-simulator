@@ -25,7 +25,7 @@ const props = defineProps({
   gamesCount:    { type: Number, default: 0 },
   serverErr:     { type: String, default: '' },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker']);
 
 // ── playback ──────────────────────────────────────────────────
 const tFloat  = ref(0);
@@ -244,6 +244,15 @@ watch(activeUnitId, (id) => {
   if (id) selectedId.value = id;
 }, { immediate: true });
 
+// The one human player viewing this session (fog games are always 1 human vs AI/other-human
+// via separate sessions), used to attribute a manual fog marker to the right player.
+const humanPlayerId = computed(() => props.liveState?.humanPlayers?.[0] ?? null);
+
+function handleSetMarker(col, row, type) {
+  if (!humanPlayerId.value) return;
+  emit('set-marker', { playerId: humanPlayerId.value, col, row, type });
+}
+
 function handleSqClick(col, row) {
   if (isPending.value && selectedId.value) {
     const action = legalActions.value.find(a => {
@@ -418,7 +427,8 @@ onUnmounted(() => {
           :dragToMove="ui.dragToMove ?? false"
           :revealAll="revealAll" :viewerTeam="viewerTeam"
           @select="id => selectedId = id"
-          @sq-click="handleSqClick"/>
+          @sq-click="handleSqClick"
+          @set-marker="handleSetMarker"/>
       </div>
 
       <!-- Right sidebar -->
