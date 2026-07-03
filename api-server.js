@@ -127,6 +127,10 @@ async function serveGameImage(gameName, job, res, type) {
     resolve(GAMES_DIR, gameName, 'images'),
     resolve(GAMES_DIR, gameName, 'assets'),
   ];
+  // Lobby preview art gets swapped/curated by hand from time to time, unlike the
+  // static per-unit sprite sets — don't let browsers cache a stale image at the
+  // same URL for a full day after we replace the underlying file.
+  const cacheControl = safe.startsWith('preview_') ? 'no-cache' : 'public, max-age=86400';
 
   // /images/:game/:job/:type  →  games/:game/{images,assets}/:job/{type}*
   if (type) {
@@ -144,7 +148,7 @@ async function serveGameImage(gameName, job, res, type) {
           const data = await readFile(resolve(subdir, f));
           const ext = f.slice(f.lastIndexOf('.'));
           const ct = sniffMime(data) ?? MIME_TYPES[ext] ?? 'application/octet-stream';
-          res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400' });
+          res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': cacheControl });
           return res.end(data);
         } catch {}
       }
@@ -164,7 +168,7 @@ async function serveGameImage(gameName, job, res, type) {
         try {
           const data = await readFile(resolve(base, f));
           const ct = sniffMime(data) ?? MIME_TYPES[f.slice(dot)] ?? 'application/octet-stream';
-          res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400' });
+          res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': cacheControl });
           return res.end(data);
         } catch {}
       }
