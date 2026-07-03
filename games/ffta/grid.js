@@ -51,6 +51,20 @@ export function manhattan(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
+// Which of the defender's sides a blow coming from `fromPos` lands on, given the
+// direction the defender is looking (`targetFacing`, an angle in radians, as set
+// by moving/attacking/end-turn). Within 45° of that heading is a 'front' hit,
+// more than 135° away is a 'back' hit, and the wedge between is a 'side' hit.
+// Shared by the damage formula (FFTAGame) and the demo agent's positioning.
+export function attackDirection(fromPos, targetPos, targetFacing) {
+  const dx = fromPos.x - targetPos.x;
+  const dy = fromPos.y - targetPos.y;
+  if ((dx === 0 && dy === 0) || targetFacing == null) return 'front';
+  let delta = Math.abs(Math.atan2(dy, dx) - targetFacing) % (2 * Math.PI);
+  if (delta > Math.PI) delta = 2 * Math.PI - delta;
+  return delta < Math.PI / 4 ? 'front' : delta > 3 * Math.PI / 4 ? 'back' : 'side';
+}
+
 // Returns all tiles hit by an AoE ability.
 // diamond: all tiles within Manhattan distance `radius` of `center`
 // line: all tiles from casterPos in direction of `center`, up to `radius` steps

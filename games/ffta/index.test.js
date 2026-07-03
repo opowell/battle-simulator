@@ -287,6 +287,63 @@ test('ffta: defense-boost support reduces incoming physical damage', () => {
   assert.ok(hpBoost > hpBase, 'defense-boost should reduce damage taken');
 });
 
+// ---------------------------------------------------------------------------
+// Facing / directional bonus
+// ---------------------------------------------------------------------------
+
+// duelState places the attacker directly WEST of the target, so the target's
+// `facing` decides the angle of the blow: facing West means it is looking
+// straight at the attacker (front), a N/S facing is a flank, and facing East
+// turns its back to the attacker (rear).
+test('ffta: flank and rear physical attacks out-damage a front attack', () => {
+  const state    = FFTAGame.createInitialState(players());
+  const owner    = state.activePlayers[0];
+  const activeId = state.gameSpecific.activeUnitId;
+  const active   = state.units.find(u => u.id === activeId);
+  const target   = state.units.find(u => u.ownerId !== owner);
+  const action   = { type: 'ability', unitId: activeId, abilityName: 'attack', targetId: target.id };
+  const rng      = () => 0.5;
+  const aPatch   = { support: null, stats: { ...active.stats, atk: 16 } };
+  const tPatch   = { support: null, reaction: null, stats: { ...target.stats, def: 6 } };
+
+  const dmg = (facing) => {
+    const setup  = duelState(state, aPatch, { ...tPatch, facing });
+    const before = setup.units.find(u => u.id === target.id).hp;
+    const after  = FFTAGame.applyActions(setup, [{ playerId: owner, action }], rng)
+      .units.find(u => u.id === target.id).hp;
+    return before - after;
+  };
+
+  const front = dmg(Math.PI);       // looking straight at the attacker
+  const flank = dmg(Math.PI / 2);   // looking south — struck from the side
+  const rear  = dmg(0);             // looking east — struck from behind
+
+  assert.ok(flank > front, `flank (${flank}) should exceed front (${front})`);
+  assert.ok(rear  > flank, `rear (${rear}) should exceed flank (${flank})`);
+});
+
+test('ffta: magic damage ignores the target facing', () => {
+  const state    = FFTAGame.createInitialState(players());
+  const owner    = state.activePlayers[0];
+  const activeId = state.gameSpecific.activeUnitId;
+  const active   = state.units.find(u => u.id === activeId);
+  const target   = state.units.find(u => u.ownerId !== owner);
+  const action   = { type: 'ability', unitId: activeId, abilityName: 'fire', targetId: target.id };
+  const rng      = () => 0.5;
+  const aPatch   = { support: null, abilities: ['fire'], mp: 20, stats: { ...active.stats, mag: 20 } };
+  const tPatch   = { support: null, reaction: null, stats: { ...target.stats, res: 4 } };
+
+  const dmg = (facing) => {
+    const setup  = duelState(state, aPatch, { ...tPatch, facing });
+    const before = setup.units.find(u => u.id === target.id).hp;
+    const after  = FFTAGame.applyActions(setup, [{ playerId: owner, action }], rng)
+      .units.find(u => u.id === target.id).hp;
+    return before - after;
+  };
+
+  assert.equal(dmg(0), dmg(Math.PI), 'magic damage must not depend on facing');
+});
+
 test('ffta: awareness support blocks blind status', () => {
   const state    = FFTAGame.createInitialState(players());
   const owner    = state.activePlayers[0];

@@ -37,13 +37,15 @@ Each side starts with 4 units in a mix of jobs. Available jobs (FP = firepower/`
 | `ability` | Use `abilityName` on `targetId`; target must be within ability's Manhattan range; costs MP if applicable |
 | `end-turn` | End this unit's activation, choosing a final `direction` (`N`/`E`/`S`/`W`) to face — mirrors the original's post-action facing step |
 
-A unit may move and use an ability in the same turn (in either order, each once). Facing affects nothing yet — no back/side-attack bonuses — but is tracked for rendering.
+A unit may move and use an ability in the same turn (in either order, each once). Facing is set by moving/attacking and locked in when the turn ends; it affects how hard **physical** attacks land — see below.
+
+**Facing bonus** — a physical attack does more damage when it strikes the target from its flank or rear. The direction the attacker stands in is compared to where the defender faces: within 45° is a front hit (×1.0), more than 135° away is a rear hit (×1.5), and the wedge between is a flank (×1.25). Magic ignores facing.
 
 ## Abilities
 
 Ability range uses **Manhattan distance**.
 
-**Damage formula** — `max(1, floor(STAT × power × heightMult − RESIST × 0.5))`, then ×rand(0.85–1.15). Physical uses ATK/DEF; magic uses MAG/RES. Height multiplier: `1 + 0.2 × (attackerHeight − targetHeight)` (minimum 1).
+**Damage formula** — `max(1, floor(STAT × power × heightMult × faceMult − RESIST × 0.5))`, then ×rand(0.85–1.15). Physical uses ATK/DEF; magic uses MAG/RES. Height multiplier: `1 + 0.2 × (attackerHeight − targetHeight)` (minimum 1). Facing multiplier (physical only): front ×1.0, flank ×1.25, rear ×1.5.
 
 **Heal formula** — `floor(MAG × power)`, then ×rand(0.90–1.10).
 
