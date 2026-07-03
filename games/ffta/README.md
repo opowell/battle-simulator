@@ -35,9 +35,9 @@ Each side starts with 4 units in a mix of jobs. Available jobs (FP = firepower/`
 |---|---|
 | `move` | Move to `{x, y}` within `moveRange`; pathfinding cost includes +1 per height level gained; cannot end on occupied tile |
 | `ability` | Use `abilityName` on `targetId`; target must be within ability's Manhattan range; costs MP if applicable |
-| `end-turn` | End this unit's activation |
+| `end-turn` | End this unit's activation, choosing a final `direction` (`N`/`E`/`S`/`W`) to face — mirrors the original's post-action facing step |
 
-A unit may move and use an ability in the same turn (in either order, each once).
+A unit may move and use an ability in the same turn (in either order, each once). Facing affects nothing yet — no back/side-attack bonuses — but is tracked for rendering.
 
 ## Abilities
 

@@ -107,6 +107,12 @@ watch(() => props.liveState?.fog ? props.liveState?.pendingPlayer : null, (pendi
 const displayField = computed(() => {
   if (revealAll.value && props.revealFields.length)
     return props.revealFields[Math.min(histPos.value, props.revealFields.length - 1)];
+  // At the latest ply, follow the live reactive field rather than the frozen history
+  // snapshot — the snapshot is captured once, at the instant a move lands, which for
+  // games with a hop animation (see App.vue's hopAnim/hopQueue) is mid-animation, still
+  // pinned to the pre-move square. Following `field` live lets the animation actually
+  // play and settle. Stepping back into history still shows the frozen past snapshot.
+  if (atLatest.value) return props.field;
   return fieldHistory.value.length > 0 ? fieldHistory.value[histPos.value] : props.field;
 });
 

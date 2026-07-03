@@ -62,7 +62,18 @@ const GreedyAgent = {
       }
     }
 
-    return legalActions.find(a => a.type === 'end-turn');
+    // End turn: face the nearest enemy if one is known, else keep current facing
+    const endTurns = legalActions.filter(a => a.type === 'end-turn');
+    if (endTurns.length > 1 && activeUnit && enemies.length) {
+      const nearest = enemies.reduce((best, e) =>
+        manhattan(activeUnit.position, e.position) < manhattan(activeUnit.position, best.position) ? e : best
+      );
+      const dx = nearest.position.x - activeUnit.position.x;
+      const dy = nearest.position.y - activeUnit.position.y;
+      const wantDir = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'E' : 'W') : (dy >= 0 ? 'S' : 'N');
+      return endTurns.find(a => a.direction === wantDir) ?? endTurns[0];
+    }
+    return endTurns[0];
   },
 };
 
