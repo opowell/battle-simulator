@@ -303,6 +303,15 @@ function getActionDuration(state, action) {
   return 1;
 }
 
+function terrainInfo(key) {
+  const t = TERRAIN[key] ?? TERRAIN.plains;
+  const name = key ? key[0].toUpperCase() + key.slice(1) : 'Plains';
+  if (!t.passable) return { name, description: 'Impassable.' };
+  const parts = [`Move cost ${t.moveCost}`];
+  if (t.defBonus) parts.push(`+${Math.round(t.defBonus * 100)}% defense`);
+  return { name, description: parts.join(' · ') };
+}
+
 export const AowGame = {
   // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
   // minus the enemy's. See games/evalHelpers.js.
@@ -342,6 +351,7 @@ export const AowGame = {
           glyph: u ? u.type[0].toUpperCase() : '',
           owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
+          terrain: terrainInfo(tile.terrain),
           hp: u?.hp, maxHp: u?.maxHp,
         });
       }

@@ -238,6 +238,12 @@ export const XComGame = {
     const umap = {};
     for (const u of units ?? []) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
     const CH = { '.': 'floor', '#': 'wall', c: 'cover-low', C: 'cover-high' };
+    const TERRAIN_INFO = {
+      floor:        { name: 'Floor',      description: 'No cover.' },
+      wall:         { name: 'Wall',       description: 'Impassable. Blocks line of sight.' },
+      'cover-low':  { name: 'Low Cover',  description: '+20 defense against ranged attacks.' },
+      'cover-high': { name: 'High Cover', description: '+40 defense against ranged attacks.' },
+    };
     const cells = [];
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -249,6 +255,7 @@ export const XComGame = {
           glyph: u ? (u.attrs?.symbol ?? u.type?.[0]?.toUpperCase() ?? '?') : '',
           owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color: this.colors[t] ?? '#808070',
+          terrain: TERRAIN_INFO[t] ?? TERRAIN_INFO.floor,
           hp: u?.hp, maxHp: u?.maxHp,
         });
       }

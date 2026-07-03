@@ -162,7 +162,7 @@ function buildField(g, s) {
 
   const tiles = g.cells
     .filter(c => c.color)
-    .map(c => ({ x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null }));
+    .map(c => ({ x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null, terrain: c.terrain ?? null }));
 
   return {
     game:  s.game,
@@ -175,6 +175,10 @@ function buildField(g, s) {
     walls: [],
     zones: [],
     tiles,
+    // Whether this game's cells carry per-square terrain data — gates click-to-select
+    // on empty squares and the terrain-info panel (see Battlefield.vue). Games with
+    // uniform terrain (chess, etc.) never populate cell.terrain, so this stays false.
+    hasTerrain: tiles.some(t => t.terrain),
     units,
     ui:       apiGame?.ui ?? {},
     xLabels:  g.xLabels ?? null,

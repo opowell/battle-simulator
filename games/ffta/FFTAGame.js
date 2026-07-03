@@ -808,6 +808,17 @@ function getActionDuration(state, action) {
   return 1;
 }
 
+const TERRAIN_NAMES = { floor: 'Floor', elevated: 'Elevated Ground', 'elevated-high': 'High Ground', wall: 'Wall' };
+
+function terrainInfo(tile) {
+  if (!tile.passable) return { name: TERRAIN_NAMES.wall, description: 'Impassable.' };
+  const name = tile.height === 2 ? TERRAIN_NAMES['elevated-high'] : tile.height === 1 ? TERRAIN_NAMES.elevated : TERRAIN_NAMES.floor;
+  const desc = tile.height > 0
+    ? `Height ${tile.height}. Attacking from here deals +20% damage per level of height advantage over the target.`
+    : 'Height 0.';
+  return { name, description: desc };
+}
+
 export const FFTAGame = {
   // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
   // minus the enemy's. See games/evalHelpers.js.
@@ -886,6 +897,7 @@ export const FFTAGame = {
           glyph:    u ? (u.symbol ?? u.job?.[0]?.toUpperCase() ?? '?') : '',
           owner:    u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color:    this.colors[t] ?? '#808070',
+          terrain:  terrainInfo(tile),
           hp: u?.hp, maxHp: u?.maxHp,
           unitId:        u?.id,
           unitName:      u ? JOB_LABELS[u.job] ?? u.job : null,

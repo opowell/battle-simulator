@@ -84,6 +84,12 @@ function renderGrid(state) {
   return rows.join('\n');
 }
 
+const TERRAIN_INFO = {
+  plains: { name: 'Plains', description: 'Open ground. No movement or combat effect.' },
+  water:  { name: 'Water',  description: 'Impassable to all units.' },
+  forest: { name: 'Forest', description: 'Passable terrain.' },
+};
+
 // ---------------------------------------------------------------------------
 // GameDefinition
 // ---------------------------------------------------------------------------
@@ -295,6 +301,7 @@ export const TacticalGame = {
           glyph: u ? u.type[0].toUpperCase() : '',
           owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color: this.colors[t] ?? this.colors.plains ?? '#808070',
+          terrain: TERRAIN_INFO[t] ?? TERRAIN_INFO.plains,
           hp: u?.hp, maxHp: u?.maxHp,
         });
       }
