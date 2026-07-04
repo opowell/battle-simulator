@@ -77,30 +77,34 @@ function configForDifficulty(difficulty) {
     depth: ri(2, 5, t),   // perfect-info / JS-fallback minimax depth
     useQuiesce: true,     // JS-fallback leaf resolver (irrelevant while Stockfish drives play)
     fog: {
-      // Sampled worlds. More worlds ⇒ the payoff matrix is a lower-variance
-      // estimate of the expected value over the belief, so the ranking stops
-      // being washed out by a few unlucky guesses.
-      particles: ri(1, 8, t),
+      // Sampled worlds — the single most important knob. More worlds make the
+      // matrix a lower-variance estimate of the expected value over the belief,
+      // so a threat that appears in a minority of plausible worlds (e.g. a
+      // hidden bishop giving check that would capture the king) is surfaced
+      // reliably rather than sampled in only ~30% of runs; too few worlds makes
+      // defending such threats a coin flip. Both ranking and the matrix scale
+      // with this, so the search depths below are kept modest to stay responsive.
+      particles: ri(1, 20, t),
       // Candidate moves (matrix rows). Wide at the bottom (≈ every legal move,
       // so purification can spread over all of them) narrowing to a focused set
       // at the top (deep ranking reliably floats the best moves up).
-      rows: ri(36, 8, t),
+      rows: ri(30, 8, t),
       // Opponent replies modelled per world (matrix columns).
-      cols: ri(4, 12, t),
+      cols: ri(4, 10, t),
       leafDepth: 2,
       // CFR+ iterations. Zero leaves the strategy uniform (⇒ random); more
       // iterations converge it toward the equilibrium.
       iters: ri(0, 800, t),
-      // Stockfish depth for ranking candidates — one call per world, so cheap
-      // enough to go deep and get a trustworthy candidate ordering.
-      rankDepth: ri(1, 12, t),
+      // Stockfish depth for ranking candidates — one call per world. It scales
+      // with particle count, so it is capped lower than it would be otherwise.
+      rankDepth: ri(1, 8, t),
       // Stockfish depth at each matrix leaf — runs rows×worlds calls, so it is
-      // the dominant cost and the dominant strength dial; kept moderate.
-      sfDepth: Math.max(1, ri(1, 9, t)),
+      // the dominant cost; capped so many-world searches stay responsive.
+      sfDepth: Math.max(1, ri(1, 8, t)),
       // Support size when purifying the equilibrium to one move: full-width at
       // the bottom (sample over all candidates ⇒ random) collapsing to 1 at the
       // top (play the single best move, no randomisation).
-      purifyMax: ri(36, 1, t),
+      purifyMax: ri(30, 1, t),
       subgameDepth: 1,
       refineTopK: 0,
       innerRows: 3,
