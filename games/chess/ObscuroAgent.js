@@ -44,7 +44,7 @@ import {
 } from './ChessAgent.js';
 import { solveMatrixGame } from './cfr.js';
 import { toFEN, uciToAction } from './fen.js';
-import { stockfishBestAction, sfOptsForDifficulty, difficultyToNumber, available as stockfishAvailable, multiPV } from './stockfish.js';
+import { difficultyToNumber, available as stockfishAvailable, multiPV } from './stockfish.js';
 
 const otherColor = c => (c === 'white' ? 'black' : 'white');
 
@@ -56,47 +56,53 @@ function actionKey(a) {
   return a.from + a.to + promo;
 }
 
-// Difficulty is a single 0–100 dial; every search knob is derived from it so the
-// design UI can expose it as one slider. The mapping is continuous (not a few
-// fixed tiers) so each notch is a little stronger and a little slower.
+// Difficulty is a single 0–100 dial. There is ONE algorithm — the Stockfish-
+// scored CFR subgame over sampled worlds (fogStockfishStrategy) — at every
+// level; difficulty only slides its generic search parameters. Nothing is
+// special-cased for a particular level and no strength heuristics are layered
+// on: weak play emerges from small parameters, strong play from large ones, and
+// every knob is a continuous linear interpolation of the dial `t`.
 //
-//   depth/useQuiesce  perfect-information minimax fallback when fog is off
-//   fog               imperfect-information subgame: sampled worlds (particles),
-//                     candidate moves (rows) / opponent replies (cols), Stockfish
-//                     search depth at each leaf (sfDepth — the dominant strength
-//                     dial), CFR+ iterations, and how many moves we mix between
-//                     after purification.
-//
-// Play uses the level-1 Stockfish CFR subgame (fogStockfishStrategy): ~rows ×
-// particles MultiPV calls per move, fast enough to stay responsive. At the top
-// of the scale we additionally refine the best few candidates with the
-// opponent's own subgame (refineTopK — a bounded, "selective" slice of the full
-// second-order belief model fogStockfishLevel2Strategy, which on its own costs
-// rows × particles nested solves and is far too slow to run on every move).
+//   t = 0    → 1 world, no CFR iterations (uniform strategy), the widest
+//              candidate set and full-width purification ⇒ a uniformly random
+//              legal move.
+//   t = 1    → many worlds, deep Stockfish leaves, a converged equilibrium and a
+//              single pure best move.
 const lerp = (a, b, t) => a + (b - a) * t;
 const ri = (a, b, t) => Math.round(lerp(a, b, t));
 
 function configForDifficulty(difficulty) {
   const t = difficultyToNumber(difficulty) / 100;
   return {
-    depth: ri(2, 5, t),
-    useQuiesce: t >= 0.2,
+    depth: ri(2, 5, t),   // perfect-info / JS-fallback minimax depth
+    useQuiesce: true,     // JS-fallback leaf resolver (irrelevant while Stockfish drives play)
     fog: {
-      // The matrix costs ~rows × particles MultiPV calls, so sfDepth is capped
-      // (deep MultiPV is expensive per call); top-end strength comes instead from
-      // more sampled worlds, a wider matrix, and the selective refinement below.
-      particles: ri(2, 12, t),
-      rows: ri(4, 10, t),
-      cols: ri(4, 10, t),
+      // Sampled worlds. More worlds ⇒ the payoff matrix is a lower-variance
+      // estimate of the expected value over the belief, so the ranking stops
+      // being washed out by a few unlucky guesses.
+      particles: ri(1, 8, t),
+      // Candidate moves (matrix rows). Wide at the bottom (≈ every legal move,
+      // so purification can spread over all of them) narrowing to a focused set
+      // at the top (deep ranking reliably floats the best moves up).
+      rows: ri(36, 8, t),
+      // Opponent replies modelled per world (matrix columns).
+      cols: ri(4, 12, t),
       leafDepth: 2,
-      iters: ri(120, 600, t),
-      sfDepth: Math.max(1, ri(1, 8, t)),
-      purifyMax: t < 0.3 ? 3 : 2,
+      // CFR+ iterations. Zero leaves the strategy uniform (⇒ random); more
+      // iterations converge it toward the equilibrium.
+      iters: ri(0, 800, t),
+      // Stockfish depth for ranking candidates — one call per world, so cheap
+      // enough to go deep and get a trustworthy candidate ordering.
+      rankDepth: ri(1, 12, t),
+      // Stockfish depth at each matrix leaf — runs rows×worlds calls, so it is
+      // the dominant cost and the dominant strength dial; kept moderate.
+      sfDepth: Math.max(1, ri(1, 9, t)),
+      // Support size when purifying the equilibrium to one move: full-width at
+      // the bottom (sample over all candidates ⇒ random) collapsing to 1 at the
+      // top (play the single best move, no randomisation).
+      purifyMax: ri(36, 1, t),
       subgameDepth: 1,
-      // Selective second-order refinement: how many top moves to re-score with
-      // the opponent's level-1 subgame (0 = off). Only worth it near the top of
-      // the dial, with small inner matrices to stay affordable.
-      refineTopK: t >= 0.7 ? 3 : 0,
+      refineTopK: 0,
       innerRows: 3,
       innerCols: 3,
     },
@@ -258,7 +264,7 @@ export async function fogStockfishStrategy(board, gs, us, particles, fcfg, candi
   // Stockfish doesn't surface in a given world score 0 for that world, so moves
   // robust across many worlds naturally outscore moves only good in a few.
   const usSide = us === 'white' ? 'w' : 'b';
-  const rankDepth = Math.max(1, fcfg.sfDepth - 1);
+  const rankDepth = fcfg.rankDepth ?? Math.max(1, fcfg.sfDepth - 1);
   const scoreSum = new Map();
   for (const h of particles) {
     const pv = await multiPV(toFEN(h, gs, usSide, 1), { multipv: fcfg.rows, depth: rankDepth });
@@ -642,15 +648,15 @@ export function obscuroStrategy(state, legalActions, rng = Math.random) {
 
 // ---------------------------------------------------------------------------
 // ChessObscuroAgent — chess-specific subclass of the generic ObscuroAgent.
-// Overrides the two strategy entry-points to use Stockfish evaluation and the
-// multi-tier fog solver (level-1 / level-2 / refined), while the generic base
-// class owns the agent identity, RNG, and the difficulty-0 random-play path.
+// Overrides chooseAction and _chooseWithFog to plug in Stockfish evaluation and
+// the chess belief/particle sampler, while the generic base class owns the agent
+// identity and RNG. There is one move-selection path for every information model
+// (fog on or off): with fog off the belief collapses to the single true world.
 //
 // Circular-import note: ChessGame.js imports this file, so we cannot import
 // ChessGame here. We pass an empty stub as the game arg to super() — it is
-// never accessed because both _chooseWithoutFog and _chooseWithFog are
-// overridden and chooseAction is overridden to handle chess particle sampling
-// and belief commitment directly.
+// never accessed because chooseAction and _chooseWithFog are overridden to
+// handle chess particle sampling and belief commitment directly.
 // ---------------------------------------------------------------------------
 export class ChessObscuroAgent extends GenericObscuroAgent {
   constructor(opts = {}) {
@@ -666,10 +672,10 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     const us = state.activePlayers[0];
     const { board, gameSpecific } = state;
 
-    if (!gameSpecific.fogOfWar) {
-      return this._chooseWithoutFog(state, legalActions, null, us);
-    }
-
+    // One path for every information model. With fog off nothing is hidden, so
+    // the belief collapses to a single fully-known world (the true board) and
+    // the same Stockfish-CFR subgame reduces to ordinary perfect-information
+    // play — no special-cased perfect-info branch.
     const cfg = configForDifficulty(gameSpecific.difficulty);
     const belief = getBelief(state, us);
     belief.beginTurn(board);
@@ -681,20 +687,15 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     return action;
   }
 
-  async _chooseWithoutFog(state, legalActions) {
-    const sf = await stockfishBestAction(state, legalActions, sfOptsForDifficulty(state.gameSpecific.difficulty));
-    return sf ?? obscuroStrategy(state, legalActions).action;
-  }
-
   async _chooseWithFog(state, legalActions, cfg, us, particles) {
     const { board, gameSpecific } = state;
     const fcfg = (cfg ?? configForDifficulty(gameSpecific.difficulty)).fog;
+    // One algorithm at every difficulty: the Stockfish-scored CFR subgame. (The
+    // level-2 / refined solvers remain exported for tests and experimentation
+    // but are no longer selected by the difficulty dial.)
     if (await stockfishAvailable()) {
       try {
-        const sfStrategy = (fcfg.beliefDepth ?? 1) >= 2 ? fogStockfishLevel2Strategy
-          : (fcfg.refineTopK ?? 0) > 0 ? fogStockfishRefined
-          : fogStockfishStrategy;
-        const r = await sfStrategy(board, gameSpecific, us, particles, fcfg, legalActions);
+        const r = await fogStockfishStrategy(board, gameSpecific, us, particles, fcfg, legalActions);
         if (r) return r.action;
       } catch { /* fall through to the JS evaluation */ }
     }

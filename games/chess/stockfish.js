@@ -1,36 +1,46 @@
 // ---------------------------------------------------------------------------
 // Stockfish backend — a standalone, vendored UCI engine (no install required).
 //
-// We bundle Stockfish 11 (single-threaded WASM build) under ./vendor and load
-// it in-process in Node. This is the strong perfect-information evaluator the
-// Obscuro paper uses at its search leaves; here we use it directly to pick the
-// move when we have full information. Everything degrades gracefully: if the
-// vendored files are missing or the engine fails to load, `available()` returns
-// false and the agents fall back to the built-in JS search.
+// We bundle Stockfish 11 (single-threaded WASM build) under ./vendor. It is the
+// strong evaluator the Obscuro subgame scores its leaves with. Everything
+// degrades gracefully: if the vendored files are missing or the engine fails to
+// load, `available()` returns false and the agents fall back to the JS search.
 //
-// Quirk handled below: the vendored build predates Node's global `fetch`, and
-// its Emscripten loader mistakes `fetch` for a browser and tries to fetch the
-// .wasm as a URL. We temporarily remove `globalThis.fetch` during load so it
-// uses the Node filesystem path instead, then restore it.
+// The engine is loaded inside a worker thread (vendor/sf-worker.cjs) rather than
+// in-process, for one reason: the WASM heap grows with use and eventually aborts
+// with "memory access out of bounds", and only tearing down a whole worker
+// reclaims that memory (a fresh in-process instance shares the same linear
+// memory). We therefore recycle the worker periodically and respawn it if it
+// ever crashes — see maybeRecycle / init below. (The fetch-hiding quirk the
+// Emscripten loader needs now lives in the worker.)
 // ---------------------------------------------------------------------------
 
-import { createRequire } from 'module';
+import { Worker } from 'worker_threads';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
 import { toFEN, uciToAction } from './fen.js';
 
-const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// Loaded via require() so it must be CommonJS; the repo is "type":"module", so
-// the vendored loader carries a .cjs extension to opt out of ESM.
-const JS_PATH = path.join(HERE, 'vendor', 'stockfish.cjs');
+// The engine runs inside this worker (see sf-worker.cjs) so it can be terminated
+// and respawned to reclaim WASM memory. Both are .cjs to opt out of the repo's
+// ESM default and match the vendored CommonJS loader.
+const WORKER_PATH = path.join(HERE, 'vendor', 'sf-worker.cjs');
 const WASM_PATH = path.join(HERE, 'vendor', 'stockfish.wasm');
 
-let engine = null;
+let worker = null;
 let readyPromise = null;
-let listeners = [];          // line handlers currently attached to onmessage
+let listeners = [];          // line handlers currently attached to the engine output
 let queue = Promise.resolve(); // serialises searches (UCI is single-threaded/stateful)
+
+// The vendored Stockfish WASM accrues heap memory across searches and, in a
+// long-lived process, eventually aborts with "memory access out of bounds". An
+// in-process reload cannot reclaim it — a fresh instance shares the same linear
+// memory — so the engine lives in a worker thread that we terminate + respawn:
+// proactively every RECYCLE_AFTER searches (below the observed failure point),
+// and reactively if it ever does abort (the worker dies, this process does not).
+let callsSinceLoad = 0;
+const RECYCLE_AFTER = 400;
 
 // ---------------------------------------------------------------------------
 // Disk-backed LRU cache for multiPV results. multiPV is deterministic given
@@ -120,38 +130,43 @@ function cacheSet(key, value) {
   }
 }
 
-function send(cmd) { engine.postMessage(cmd, true); }
+function send(cmd) { if (worker) worker.postMessage(cmd); }
 
-// Lazily load and hand-shake the engine. Resolves to true if usable.
+// Spawn the engine worker and hand-shake it. Resolves true once usable.
 function init() {
   if (readyPromise) return readyPromise;
   readyPromise = new Promise((resolve) => {
-    if (!fs.existsSync(JS_PATH) || !fs.existsSync(WASM_PATH)) return resolve(false);
+    if (!fs.existsSync(WORKER_PATH) || !fs.existsSync(WASM_PATH)) return resolve(false);
 
-    let STOCKFISH;
-    try { STOCKFISH = require(JS_PATH); } catch { return resolve(false); }
-
-    const savedFetch = globalThis.fetch;
-    globalThis.fetch = undefined; // force the Node fs path in the Emscripten loader
-    try {
-      engine = STOCKFISH(WASM_PATH);
-    } catch {
-      globalThis.fetch = savedFetch;
-      return resolve(false);
-    }
+    let w;
+    try { w = new Worker(WORKER_PATH); } catch { return resolve(false); }
+    worker = w;
 
     let settled = false;
-    const finish = (ok) => { if (settled) return; settled = true; globalThis.fetch = savedFetch; resolve(ok); };
+    const finish = (ok) => { if (settled) return; settled = true; resolve(ok); };
 
-    engine.onmessage = (raw) => {
-      const line = String(raw == null ? '' : (raw.data ?? raw));
-      for (const l of [...listeners]) l(line);
-    };
     const onReady = (line) => {
       if (line.startsWith('readyok')) { listeners = listeners.filter(x => x !== onReady); finish(true); }
     };
     listeners.push(onReady);
-    try { send('uci'); send('isready'); } catch { return finish(false); }
+
+    w.on('message', (line) => {
+      if (typeof line !== 'string') return;
+      if (line.startsWith('__error__')) { finish(false); return; } // engine failed to construct
+      for (const l of [...listeners]) l(line);
+    });
+    // An abort inside the WASM (the "memory access out of bounds" fault) kills
+    // the worker — surfaced here as 'error'/'exit' — but not this process. Drop
+    // the dead worker so the next call respawns a fresh one; any in-flight
+    // request falls through to its timeout.
+    const die = () => {
+      finish(false); // no-op once ready; fails the handshake if still loading
+      if (worker === w) { worker = null; readyPromise = null; }
+    };
+    w.on('error', die);
+    w.on('exit', die);
+
+    send('uci'); send('isready');
     setTimeout(() => finish(false), 8000); // load watchdog
   });
   return readyPromise;
@@ -162,29 +177,48 @@ export function available() { return init(); }
 
 /** Best-effort shutdown (used by tests so the process can exit cleanly). */
 export function quit() {
-  try { if (engine) send('quit'); } catch { /* ignore */ }
-  engine = null; readyPromise = null; listeners = [];
+  const w = worker;
+  worker = null; readyPromise = null; listeners = [];
+  if (w) { w.removeAllListeners(); w.terminate().catch(() => {}); }
+}
+
+// Terminate the worker and spawn a fresh one once the search budget is spent, so
+// WASM heap growth never reaches the abort. Runs inside the serialised queue
+// (between requests), so no search is ever interrupted. Terminating a whole
+// worker (vs. reloading in-process) is what actually reclaims the memory.
+async function maybeRecycle() {
+  if (callsSinceLoad < RECYCLE_AFTER) return;
+  callsSinceLoad = 0;
+  const old = worker;
+  worker = null; readyPromise = null; listeners = [];
+  if (old) { old.removeAllListeners(); try { await old.terminate(); } catch { /* ignore */ } }
+  await init();
 }
 
 // Run one UCI request, collecting lines until `isDone(line)` returns a result.
 // Serialised behind `queue` so only one search runs at a time.
 function request(commands, isDone, timeoutMs) {
-  const run = () => new Promise((resolve) => {
-    let settled = false;
-    const handler = (line) => {
-      const r = isDone(line);
-      if (r !== undefined && !settled) {
-        settled = true;
-        listeners = listeners.filter(x => x !== handler);
-        resolve(r);
-      }
-    };
-    listeners.push(handler);
-    try { for (const c of commands) send(c); } catch { /* fall through to timeout */ }
-    setTimeout(() => {
-      if (!settled) { settled = true; listeners = listeners.filter(x => x !== handler); resolve(null); }
-    }, timeoutMs);
-  });
+  const run = async () => {
+    await maybeRecycle();
+    if (!(await init())) return null; // ensure a live worker (respawns if it crashed)
+    callsSinceLoad++;
+    return new Promise((resolve) => {
+      let settled = false;
+      const handler = (line) => {
+        const r = isDone(line);
+        if (r !== undefined && !settled) {
+          settled = true;
+          listeners = listeners.filter(x => x !== handler);
+          resolve(r);
+        }
+      };
+      listeners.push(handler);
+      try { for (const c of commands) send(c); } catch { /* fall through to timeout */ }
+      setTimeout(() => {
+        if (!settled) { settled = true; listeners = listeners.filter(x => x !== handler); resolve(null); }
+      }, timeoutMs);
+    });
+  };
   const p = queue.then(run);
   queue = p.catch(() => {});
   return p;
