@@ -42,6 +42,12 @@ let queue = Promise.resolve(); // serialises searches (UCI is single-threaded/st
 let callsSinceLoad = 0;
 const RECYCLE_AFTER = 400;
 
+// Abort callbacks for in-flight requests. When the worker dies mid-search we
+// call these to resolve each pending request as null immediately, rather than
+// leaving it to wait out its (multi-second) timeout.
+const pending = new Set();
+function failAllPending() { for (const abort of [...pending]) abort(); }
+
 // ---------------------------------------------------------------------------
 // Disk-backed LRU cache for multiPV results. multiPV is deterministic given
 // (fen, depth, multipv) so results are safe to cache across turns and games.
@@ -162,6 +168,7 @@ function init() {
     const die = () => {
       finish(false); // no-op once ready; fails the handshake if still loading
       if (worker === w) { worker = null; readyPromise = null; }
+      failAllPending(); // an in-flight search will never complete now
     };
     w.on('error', die);
     w.on('exit', die);
@@ -179,6 +186,7 @@ export function available() { return init(); }
 export function quit() {
   const w = worker;
   worker = null; readyPromise = null; listeners = [];
+  failAllPending();
   if (w) { w.removeAllListeners(); w.terminate().catch(() => {}); }
 }
 
@@ -204,19 +212,21 @@ function request(commands, isDone, timeoutMs) {
     callsSinceLoad++;
     return new Promise((resolve) => {
       let settled = false;
-      const handler = (line) => {
-        const r = isDone(line);
-        if (r !== undefined && !settled) {
-          settled = true;
-          listeners = listeners.filter(x => x !== handler);
-          resolve(r);
-        }
+      let timer;
+      const done = (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        listeners = listeners.filter(x => x !== handler);
+        pending.delete(abort);
+        resolve(result);
       };
+      const handler = (line) => { const r = isDone(line); if (r !== undefined) done(r); };
+      const abort = () => done(null); // worker died — give up now, don't wait for the timeout
       listeners.push(handler);
+      pending.add(abort);
       try { for (const c of commands) send(c); } catch { /* fall through to timeout */ }
-      setTimeout(() => {
-        if (!settled) { settled = true; listeners = listeners.filter(x => x !== handler); resolve(null); }
-      }, timeoutMs);
+      timer = setTimeout(() => done(null), timeoutMs);
     });
   };
   const p = queue.then(run);
