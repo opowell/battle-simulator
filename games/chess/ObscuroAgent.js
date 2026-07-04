@@ -44,7 +44,7 @@ import {
 } from './ChessAgent.js';
 import { solveMatrixGame } from './cfr.js';
 import { toFEN, uciToAction } from './fen.js';
-import { difficultyToNumber, available as stockfishAvailable, multiPV } from './stockfish.js';
+import { stockfishBestAction, sfOptsForDifficulty, difficultyToNumber, available as stockfishAvailable, multiPV } from './stockfish.js';
 
 const otherColor = c => (c === 'white' ? 'black' : 'white');
 
@@ -676,10 +676,17 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     const us = state.activePlayers[0];
     const { board, gameSpecific } = state;
 
-    // One path for every information model. With fog off nothing is hidden, so
-    // the belief collapses to a single fully-known world (the true board) and
-    // the same Stockfish-CFR subgame reduces to ordinary perfect-information
-    // play — no special-cased perfect-info branch.
+    // Perfect information (fog off): play Stockfish directly. The fog CFR subgame
+    // scores leaves with a *bounded* value, which collapses every winning move to
+    // the same score — so routing perfect-information play through it cannot
+    // convert won positions (it shuffles instead of delivering mate). With
+    // nothing hidden there is no belief to reason over, so the full engine is
+    // both correct and far stronger. (This is an information-model distinction,
+    // not a per-difficulty branch.)
+    if (!gameSpecific.fogOfWar) {
+      return this._chooseWithoutFog(state, legalActions, us);
+    }
+
     const cfg = configForDifficulty(gameSpecific.difficulty);
     const belief = getBelief(state, us);
     belief.beginTurn(board);
@@ -689,6 +696,11 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     const action = await this._chooseWithFog(state, legalActions, cfg, us, particles);
     belief.commitOurMove(action, board);
     return action;
+  }
+
+  async _chooseWithoutFog(state, legalActions) {
+    const sf = await stockfishBestAction(state, legalActions, sfOptsForDifficulty(state.gameSpecific.difficulty));
+    return sf ?? obscuroStrategy(state, legalActions).action;
   }
 
   async _chooseWithFog(state, legalActions, cfg, us, particles) {
