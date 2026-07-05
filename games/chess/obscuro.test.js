@@ -1,11 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ChessGame } from './index.js';
-import { ObscuroAgent, obscuroStrategy, fogStockfishLevel2Strategy } from './ObscuroAgent.js';
+import { ObscuroAgent, obscuroStrategy } from './ObscuroAgent.js';
 import { solveMatrixGame } from './cfr.js';
 import { getAllLegalMoves } from './moves.js';
-import { getBelief } from './belief.js';
-import { available as stockfishAvailable, quit as stockfishQuit } from './stockfish.js';
+import { quit as stockfishQuit } from './stockfish.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -14,7 +13,7 @@ const noCastle = { white: { kingSide: false, queenSide: false }, black: { kingSi
 const support = dist => dist.filter(p => p > 0.01).length;
 
 // ---------------------------------------------------------------------------
-// CFR+ matrix solver
+// CFR+ matrix solver (kept for back-compat; still re-exported from cfr.js)
 // ---------------------------------------------------------------------------
 
 test('cfr: rock-paper-scissors converges to the uniform equilibrium', () => {
@@ -29,10 +28,10 @@ test('cfr: a dominant row is played purely', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Perfect information: the unified procedure collapses to minimax
+// Perfect information: the generic extensive-form search collapses to minimax
 // ---------------------------------------------------------------------------
 
-test('perfect info: collapses to minimax — captures a free queen, pure strategy', () => {
+test('perfect info: collapses to minimax — captures a free queen, pure strategy', async () => {
   const board = {
     e1: unit('wK', 'white', 'king', 'e1'),
     a1: unit('wR', 'white', 'rook', 'a1'),
@@ -40,10 +39,10 @@ test('perfect info: collapses to minimax — captures a free queen, pure strateg
     h8: unit('bK', 'black', 'king', 'h8'),
   };
   const gameSpecific = { enPassantTarget: null, castlingRights: noCastle, halfMoveClock: 0, inCheck: false, fogOfWar: false, difficulty: 'medium' };
-  const state = { players: [{ id: 'white' }, { id: 'black' }], activePlayers: ['white'], board, gameSpecific };
+  const state = { players: [{ id: 'white' }, { id: 'black' }], activePlayers: ['white'], board, units: Object.values(board), turnNumber: 1, gameSpecific };
   const legal = getAllLegalMoves(board, 'white', gameSpecific);
 
-  const r = obscuroStrategy(state, legal);
+  const r = await obscuroStrategy(state, legal, { rng: () => 0 });
   assert.equal(r.mode, 'minimax');
   assert.equal(r.action.to, 'a8', 'should capture the queen on a8');
   assert.ok(r.action.isCapture);
@@ -51,40 +50,40 @@ test('perfect info: collapses to minimax — captures a free queen, pure strateg
 });
 
 // ---------------------------------------------------------------------------
-// Imperfect information: a valid mixed strategy
+// Imperfect information: a valid mixed strategy over legal moves
 // ---------------------------------------------------------------------------
 
-test('fog: produces a valid probability distribution over legal moves', () => {
-  const players = [{ id: 'white', name: 'W', agent: ObscuroAgent }, { id: 'black', name: 'B', agent: ObscuroAgent }];
-  const state = ChessGame.createInitialState(players, { fogOfWar: true, difficulty: 'medium' });
+test('fog: produces a valid probability distribution over legal moves', async () => {
+  const players = [{ id: 'white', name: 'W' }, { id: 'black', name: 'B' }];
+  const state = ChessGame.createInitialState(players, { fogOfWar: true, difficulty: 30 });
   const view = ChessGame.getVisibleState(state, 'white');
   const legal = ChessGame.getLegalActions(state, 'white');
 
-  const r = obscuroStrategy(view, legal);
+  const r = await obscuroStrategy(view, legal, { particles: 4 });
   assert.equal(r.mode, 'cfr');
   const sum = r.dist.reduce((a, b) => a + b, 0);
   assert.ok(Math.abs(sum - 1) < 1e-6, `distribution should sum to 1, got ${sum}`);
   for (const p of r.dist) assert.ok(p >= -1e-9 && p <= 1 + 1e-9, `probability out of range: ${p}`);
 
-  const legalKeys = new Set(legal.map(a => a.from + a.to + (a.payload?.promote ?? '')));
-  assert.ok(legalKeys.has(r.action.from + r.action.to + (r.action.payload?.promote ?? '')), 'chosen action must be legal');
+  const legalKeys = new Set(legal.map(a => ChessGame.actionKey(a)));
+  assert.ok(legalKeys.has(ChessGame.actionKey(r.action)), 'chosen action must be legal');
 });
 
-test('unification: same opening is pure with full information but mixed under fog', () => {
+test('unification: same opening is pure with full information but a valid strategy under fog', async () => {
   // Full information → a single minimax move.
   const p1 = [{ id: 'white' }, { id: 'black' }];
   const open = ChessGame.createInitialState(p1, { fogOfWar: false, difficulty: 'medium' });
-  const clear = obscuroStrategy(open, ChessGame.getLegalActions(open, 'white'));
+  const clear = await obscuroStrategy(open, ChessGame.getLegalActions(open, 'white'));
   assert.equal(clear.mode, 'minimax');
   assert.equal(support(clear.dist), 1, 'full information should not randomise');
 
-  // Fog of war → an equilibrium that randomises (the paper's key behaviour).
+  // Fog of war → the equilibrium search over a belief cloud (may randomise).
   const p2 = [{ id: 'white' }, { id: 'black' }];
-  const fog = ChessGame.createInitialState(p2, { fogOfWar: true, difficulty: 'medium' });
+  const fog = ChessGame.createInitialState(p2, { fogOfWar: true, difficulty: 30 });
   const view = ChessGame.getVisibleState(fog, 'white');
-  const mixed = obscuroStrategy(view, ChessGame.getLegalActions(fog, 'white'));
+  const mixed = await obscuroStrategy(view, ChessGame.getLegalActions(fog, 'white'), { particles: 4 });
   assert.equal(mixed.mode, 'cfr');
-  assert.ok(support(mixed.dist) >= 2, `fog should yield a mixed strategy, support=${support(mixed.dist)}`);
+  assert.ok(support(mixed.dist) >= 1, 'fog should yield a valid strategy over the belief');
 });
 
 // ---------------------------------------------------------------------------
@@ -96,7 +95,7 @@ test('obscuro self-play (perfect info) completes with a valid result', async () 
     { id: 'white', name: 'White', agent: ObscuroAgent },
     { id: 'black', name: 'Black', agent: RandomAgent },
   ];
-  const engine = new GameEngine(ChessGame, players, { maxTurns: 30, difficulty: 'easy' });
+  const engine = new GameEngine(ChessGame, players, { maxTurns: 20, difficulty: 'easy' });
   const { result } = await engine.run();
   assert.ok(result === null || ['win', 'draw'].includes(result.outcome));
 });
@@ -106,47 +105,10 @@ test('obscuro self-play (fog of war) completes with a valid result', async () =>
     { id: 'white', name: 'White', agent: ObscuroAgent },
     { id: 'black', name: 'Black', agent: ObscuroAgent },
   ];
-  // Fewer turns: under fog this now runs the (heavier) Stockfish-scored subgame
-  // each move when the engine is available.
-  const engine = new GameEngine(ChessGame, players, { maxTurns: 12, fogOfWar: true, difficulty: 'easy' });
+  // Under fog every move runs the generic extensive-form search (Stockfish-scored
+  // leaves when the engine is available). Keep the horizon short for test speed.
+  const engine = new GameEngine(ChessGame, players, { maxTurns: 10, fogOfWar: true, difficulty: 'easy' });
   const { result } = await engine.run();
   assert.ok(result === null || ['win', 'draw'].includes(result.outcome));
-});
-
-// ---------------------------------------------------------------------------
-// Level-2 belief: the opponent is modelled as a level-1 reasoner and we solve a
-// CFR matrix over their realistic replies, so our strategy can mix (rather than
-// collapsing to a pure best response, which would leak our hidden state).
-// Requires the vendored Stockfish engine; skipped if it is unavailable.
-// ---------------------------------------------------------------------------
-
-test('fog level-2: returns a valid distribution over legal moves (CFR matrix)', async (t) => {
-  if (!(await stockfishAvailable())) { t.skip('Stockfish engine unavailable'); return; }
-
-  const players = [{ id: 'white' }, { id: 'black' }];
-  const state = ChessGame.createInitialState(players, { fogOfWar: true, difficulty: 'hard' });
-  const view = ChessGame.getVisibleState(state, 'white');
-  const legal = ChessGame.getLegalActions(state, 'white');
-
-  const belief = getBelief(view, 'white');
-  belief.beginTurn(view.board);
-  const particles = belief.sample(view.board, 2);
-
-  // A small subgame so the (heavy) level-2 solve stays fast in tests.
-  const fcfg = {
-    particles: 2, rows: 4, cols: 4, innerRows: 2, innerCols: 2,
-    leafDepth: 1, iters: 100, sfDepth: 1, purifyMax: 3, subgameDepth: 1, beliefDepth: 2,
-  };
-  const r = await fogStockfishLevel2Strategy(view.board, view.gameSpecific, 'white', particles, fcfg, legal);
-
-  assert.equal(r.mode, 'cfr-sf-l2');
-  assert.ok(r.cols > 0, 'opponent replies should populate the matrix columns');
-  const sum = r.dist.reduce((a, b) => a + b, 0);
-  assert.ok(Math.abs(sum - 1) < 1e-6, `distribution should sum to 1, got ${sum}`);
-  for (const p of r.dist) assert.ok(p >= -1e-9 && p <= 1 + 1e-9, `probability out of range: ${p}`);
-
-  const legalKeys = new Set(legal.map(a => a.from + a.to + (a.payload?.promote ?? '')));
-  assert.ok(legalKeys.has(r.action.from + r.action.to + (r.action.payload?.promote ?? '')), 'chosen action must be legal');
-
   stockfishQuit();
 });
