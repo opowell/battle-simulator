@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
+import AiDifficultyField from './AiDifficultyField.vue';
 
 const props = defineProps({
   sessions:  { type: Array,  default: () => [] },
@@ -36,7 +37,15 @@ const slots    = ref([]);
 function initGameOpts(g) {
   const opts = {};
   for (const opt of g.gameOptions ?? []) {
-    opts[opt.id] = opt.default ?? (opt.type === 'boolean' ? false : opt.type === 'range' ? (opt.min ?? 0) : opt.options?.[0]?.value ?? '');
+    if (opt.type === 'ai-difficulty') {
+      // Two exclusive values: a power level and a time limit. Default to power
+      // mode with the time value null (so only `difficulty` is sent).
+      opts[opt.id] = opt.default ?? 25;
+      opts[opt.timeKey ?? 'aiTimeMs'] = null;
+      opts[opt.id + 'Mode'] = 'power';
+    } else {
+      opts[opt.id] = opt.default ?? (opt.type === 'boolean' ? false : opt.type === 'range' ? (opt.min ?? 0) : opt.options?.[0]?.value ?? '');
+    }
   }
   gameOpts.value = opts;
 }
@@ -334,6 +343,10 @@ function sessionStatusColor(s) {
                 <label>{{opt.label}} · {{gameOpts[opt.id]}}</label>
                 <input type="range" :min="opt.min ?? 0" :max="opt.max ?? 100" :step="opt.step ?? 1" v-model.number="gameOpts[opt.id]"/>
               </div>
+              <AiDifficultyField v-else-if="opt.type === 'ai-difficulty'" :opt="opt"
+                v-model:power="gameOpts[opt.id]"
+                v-model:time="gameOpts[opt.timeKey ?? 'aiTimeMs']"
+                v-model:mode="gameOpts[opt.id + 'Mode']"/>
             </template>
             <div class="field">
               <label>Max turns · {{maxTurns}}</label>
