@@ -1,13 +1,10 @@
 const BASE = '/images/civ2';
 
+// Only the base `${name}.png` tiles are finished art; the `_variantN` files are mostly
+// unfinished placeholders (terrain-name text, stray resource overlays), which rendered as
+// text/gaps across the map. Use the base tile alone so every square shows real terrain.
 function t(name) {
-  return [
-    `${BASE}/terrain/${name}`,
-    `${BASE}/terrain/${name}_variant1`,
-    `${BASE}/terrain/${name}_variant2`,
-    `${BASE}/terrain/${name}_variant3`,
-    `${BASE}/terrain/${name}_variant4`,
-  ];
+  return [`${BASE}/terrain/${name}`];
 }
 
 const ERA_THRESHOLDS = [

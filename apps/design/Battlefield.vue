@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import SchematicLayer    from './SchematicLayer.vue';
+import IsoLayer          from './IsoLayer.vue';
 import GameHeader        from './battlefield/GameHeader.vue';
 import SelectedUnitDetail from './battlefield/SelectedUnitDetail.vue';
 import SelectedSquareDetail from './battlefield/SelectedSquareDetail.vue';
@@ -18,6 +19,7 @@ import AbilityInfoOverlay from './battlefield/AbilityInfoOverlay.vue';
 const props = defineProps({
   liveState:     Object,
   field:         Object,
+  unitFx:        { type: Object, default: () => ({}) },
   historyFields: { type: Array, default: () => [] },
   revealFields:  { type: Array, default: () => [] },
   revealLog:     { type: Array, default: () => [] },
@@ -447,10 +449,20 @@ onUnmounted(() => {
 
       <!-- Stage -->
       <div ref="stageEl" style="flex:1;position:relative;overflow:hidden">
-        <SchematicLayer
+        <IsoLayer v-if="ui.isometric"
+          :field="displayField" :fit="fit" :units="displayUnits"
+          :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
+          :rdr="rdr"
+          :legalSquares="unitMoves"
+          :lastMoveSquares="lastMoveSquares"
+          :revealAll="revealAll" :viewerTeam="viewerTeam"
+          @select="selectUnit"
+          @sq-click="handleSqClick"/>
+        <SchematicLayer v-else
           :field="displayField" :fit="fit" :units="displayUnits"
           :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
           :showRuler="showRuler" :rdr="rdr"
+          :unitFx="(atLatest && !revealAll) ? unitFx : {}"
           :legalSquares="unitMoves"
           :lastMoveSquares="lastMoveSquares"
           :dragToMove="ui.dragToMove ?? false"

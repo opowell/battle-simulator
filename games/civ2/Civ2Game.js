@@ -79,13 +79,20 @@ function getLegalActions(state, playerId) {
   const myUnits = units.filter(u => u.alive && u.ownerId === playerId && u.movesLeft > 0);
   const actions = [];
 
+  // toGrid() flips y for display (row 0 at the south); mirror that here so the
+  // battlefield UI's move highlights land on the same squares as the rendered units.
+  const toGridCoord = pos => [pos.x, board.height - 1 - pos.y];
+
   for (const unit of myUnits) {
     const stats = UNITS[unit.type];
 
     // Movement
     const reachable = getReachableTiles(unit, board, units, playerId);
     for (const to of reachable) {
-      actions.push({ type: 'move', unitId: unit.id, from: unit.position, to });
+      actions.push({
+        type: 'move', unitId: unit.id, from: unit.position, to,
+        gridFrom: toGridCoord(unit.position), gridTo: toGridCoord(to),
+      });
     }
 
     // Attack: enemies in adjacent squares (Chebyshev distance ≤ 1)
@@ -428,6 +435,10 @@ export const Civ2Game = {
     { id: 'large',    name: 'Large World', description: '32×18 world — longer campaign',    config: { width: 32, height: 18 } },
   ],
   colors: { ocean: '#1a5a8a', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
+  // The terrain art is pre-drawn 64×32 isometric diamond tiles, so render the board
+  // isometrically: blit each tile centred on its diamond ('sprite' mode, no skew/cliffs),
+  // units/cities as owner-tinted tokens. See apps/design/IsoLayer.vue.
+  ui: { isometric: true, isoTileMode: 'sprite', isoUnitStyle: 'token', freeSelection: true },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: false },
   ],
@@ -464,8 +475,9 @@ export const Civ2Game = {
         const imagePath = ua?.img
           ?? (city ? cityImg(state.turnNumber, city.size) : null);
         cells.push({
-          x, y: height - 1 - y,
+          x, y,
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
+          unitId: u?.id ?? null,
           emoji: ua?.emoji ?? null,
           imagePath,
           bgImage,

@@ -37,6 +37,10 @@ export const XComGame = {
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
   ],
   colors: { floor: '#9a8c7a', wall: '#2a2018', 'cover-low': '#c8943a', 'cover-high': '#8a5a18' },
+  // Render isometrically: cover and walls extrude into blocks (see toGrid's height), so
+  // cover reads as physical objects. Units are full-body sprites standing on their tile;
+  // no facing (X-Com units don't track heading), so the facing chevron is off. IsoLayer.vue.
+  ui: { isometric: true, showFacing: false },
 
   createInitialState(players, config = {}) {
     const units = defaultUnits(players.map(p => p.id));
@@ -238,6 +242,9 @@ export const XComGame = {
     const umap = {};
     for (const u of units ?? []) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
     const CH = { '.': 'floor', '#': 'wall', c: 'cover-low', C: 'cover-high' };
+    // Extrusion height per terrain, so the isometric renderer stands cover and walls up
+    // as blocks (low cover = a short crate, high cover = chest-high, walls = tall).
+    const TERRAIN_H = { floor: 0, 'cover-low': 0.35, 'cover-high': 0.8, wall: 1.4 };
     const TERRAIN_INFO = {
       floor:        { name: 'Floor',      description: 'No cover.' },
       wall:         { name: 'Wall',       description: 'Impassable. Blocks line of sight.' },
@@ -253,8 +260,10 @@ export const XComGame = {
         cells.push({
           x, y,
           glyph: u ? (u.attrs?.symbol ?? u.type?.[0]?.toUpperCase() ?? '?') : '',
+          imagePath: u ? `/images/xcom/${u.type}` : null,
           owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color: this.colors[t] ?? '#808070',
+          height: TERRAIN_H[t] ?? 0,
           terrain: TERRAIN_INFO[t] ?? TERRAIN_INFO.floor,
           hp: u?.hp, maxHp: u?.maxHp,
         });

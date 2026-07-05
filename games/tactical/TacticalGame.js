@@ -297,7 +297,7 @@ export const TacticalGame = {
         const u = umap[`${x},${y}`];
         const t = tmap[`${x},${y}`] ?? 'plains';
         cells.push({
-          x, y: height - 1 - y,
+          x, y,
           glyph: u ? u.type[0].toUpperCase() : '',
           owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color: this.colors[t] ?? this.colors.plains ?? '#808070',

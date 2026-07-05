@@ -1,10 +1,14 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue';
+import UnitFx from './battlefield/UnitFx.vue';
 
 const props = defineProps({
   field:        Object,
   fit:          Object,
   units:        Array,
+  // Transient combat flashes keyed by unit id (see App.vue's unitFx). Drawn at a
+  // captured board square so a killing blow still flashes after its victim is gone.
+  unitFx:       { type: Object, default: () => ({}) },
   selectedId:   String,
   activeUnitId: { type: String, default: null },
   fog:          Boolean,
@@ -385,6 +389,14 @@ function facingArrow(u) {
   const ry2 = by - Math.sin(ang + Math.PI / 2) * half;
   return `${tx},${ty} ${lx},${ly} ${rx2},${ry2}`;
 }
+
+// ── combat flashes ──────────────────────────────────────────────────────────────
+// Sized to sit just outside a token; drawn from captured board squares (not the
+// live unit list) so a fatal hit still flashes at the victim's last position.
+const fxList = computed(() => Object.entries(props.unitFx ?? {}).map(([id, fx]) => ({ id, ...fx })));
+const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'square'
+  ? (props.field.world.w <= 10 ? 0.42 : 0.5)
+  : 2.8)));
 </script>
 
 <template>
@@ -405,7 +417,7 @@ function facingArrow(u) {
                :width="fit.len(1)" :height="fit.len(1)"
                :href="tileBgImage(tile)"
                preserveAspectRatio="xMidYMid slice"
-               style="pointer-events:none"/>
+               style="pointer-events:none;image-rendering:pixelated"/>
       </template>
 
       <!-- Board squares (alternating pattern for small square grids) -->
@@ -575,6 +587,12 @@ function facingArrow(u) {
         </g>
       </g>
       </template>
+
+      <!-- Combat flashes (damage / heal numbers, action pulse) drawn above units -->
+      <g v-for="fx in fxList" :key="'fx'+fx.key"
+         :style="{ transform: `translate(${fit.x(fx.x)}px, ${fit.y(fx.y)}px)` }">
+        <UnitFx :fx="fx" :r="fxR"/>
+      </g>
 
       <!-- Ruler labels -->
       <template v-if="showRuler">

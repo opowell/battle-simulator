@@ -552,6 +552,16 @@ const DIRECTIONS = {
   W: { dx: -1, dy: 0,  angle: Math.PI },
 };
 
+// Units only ever face strictly N/S/E/W. When facing is inferred from a
+// movement or aim vector (which can be diagonal), snap it to the dominant axis
+// so we land on one of the four DIRECTIONS angles — never a diagonal heading.
+// Horizontal wins ties; a zero vector returns null so callers keep prior facing.
+function cardinalAngle(dx, dy) {
+  if (dx === 0 && dy === 0) return null;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 0 : Math.PI; // E / W
+  return dy > 0 ? Math.PI / 2 : -Math.PI / 2;                     // S / N
+}
+
 // ── Legal actions ─────────────────────────────────────────────────────────────
 
 function getLegalActions(state, playerId) {
@@ -662,7 +672,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       if (u.id !== action.unitId) return u;
       const dx = action.to.x - u.position.x;
       const dy = action.to.y - u.position.y;
-      const facing = (dx !== 0 || dy !== 0) ? Math.atan2(dy, dx) : u.facing;
+      const facing = cardinalAngle(dx, dy) ?? u.facing;
       return { ...u, position: action.to, facing, moved: true, preMovedPosition: u.position };
     });
     return { ...state, units, lastActions: playerActions };
@@ -685,7 +695,7 @@ function applyActions(state, playerActions, rng = Math.random) {
         if (u.id !== action.unitId) return u;
         const shouldFace = caster && aimPos && (action.targetPos || action.unitId !== action.targetId);
         const facing = shouldFace
-          ? Math.atan2(aimPos.y - caster.position.y, aimPos.x - caster.position.x)
+          ? (cardinalAngle(aimPos.x - caster.position.x, aimPos.y - caster.position.y) ?? u.facing)
           : u.facing;
         return { ...u, facing, preMovedPosition: null };
       });
@@ -847,6 +857,23 @@ function getActionDuration(state, action) {
 
 const TERRAIN_NAMES = { floor: 'Floor', elevated: 'Elevated Ground', 'elevated-high': 'High Ground', wall: 'Wall' };
 
+// Real FFTA battlefield textures (ripped from the Giza Plains map, spriters-resource.com),
+// resliced into small *seamless* terrain tiles (edge-blended, water speckles removed, then
+// baked 4×4 at native GBA density) so each grid square renders a fine, continuous field
+// rather than one magnified stamp. Height reads as a grass→dirt→rock progression, with an
+// impassable dark-rock wall. Served by api-server from games/ffta/images/terrain/.
+const TERRAIN_TILES = {
+  floor:           'terrain/grass',
+  elevated:        'terrain/dirt',
+  'elevated-high': 'terrain/rock',
+  wall:            'terrain/wall',
+};
+
+function terrainBgImage(t) {
+  const tile = TERRAIN_TILES[t];
+  return tile ? `/images/ffta/${tile}` : null;
+}
+
 function terrainInfo(tile) {
   if (!tile.passable) return { name: TERRAIN_NAMES.wall, description: 'Impassable.' };
   const name = tile.height === 2 ? TERRAIN_NAMES['elevated-high'] : tile.height === 1 ? TERRAIN_NAMES.elevated : TERRAIN_NAMES.floor;
@@ -873,7 +900,9 @@ export const FFTAGame = {
     { id: 'grandMelee',      name: 'Grand Melee',           description: '5v5 clash featuring all-new job classes across the full tactical map', config: { scenario: 'grandMelee' } },
   ],
   colors: { floor: '#8a9c70', elevated: '#a07858', 'elevated-high': '#b89060', wall: '#2a2018' },
-  ui: { moveAnimation: 'hop' },
+  // combatFx: flash the acting unit white, blink struck units red with a floating
+  // "-N", glow healed units green with "+N" — see apps/design UnitFx / App.vue.
+  ui: { moveAnimation: 'hop', combatFx: true, isometric: true },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
   ],
@@ -934,6 +963,8 @@ export const FFTAGame = {
           glyph:    u ? (u.symbol ?? u.job?.[0]?.toUpperCase() ?? '?') : '',
           owner:    u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color:    this.colors[t] ?? '#808070',
+          bgImage:  terrainBgImage(t),
+          height:   tile.passable ? (tile.height ?? 0) : 0,
           terrain:  terrainInfo(tile),
           hp: u?.hp, maxHp: u?.maxHp,
           unitId:        u?.id,

@@ -25,7 +25,7 @@ function fmtAction(action) {
   }
   if (t === 'castle')    return action.side === 'kingside' ? 'O-O' : 'O-O-O';
   if (t === 'attack')    return `Attack ${action.targetId ?? ''}`;
-  if (t === 'end-turn')  return 'End Turn';
+  if (t === 'end-turn')  return action.direction ? `End Turn · Face ${action.direction}` : 'End Turn';
   if (t === 'end-phase') return 'End Phase';
   if (t === 'pass')      return 'Pass';
   if (t === 'ability') {

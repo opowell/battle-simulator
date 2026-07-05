@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SC1 unit team colors</title>
+<style>
+  body { background:#111; color:#ddd; font:13px system-ui, sans-serif; margin:0; padding:16px; }
+  h1 { font-size:15px; font-weight:600; margin:0 0 4px; }
+  p  { color:#888; margin:0 0 14px; }
+  #swatches { margin-bottom:14px; }
+  #swatches button { border:1px solid #333; background:#1c1c22; color:#ccc; padding:4px 9px;
+    margin:0 4px 4px 0; border-radius:4px; cursor:pointer; }
+  #swatches button.on { outline:2px solid #fff; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:10px; }
+  .cell { background:#17171c; border:1px solid #26262e; border-radius:6px; padding:8px 4px 4px;
+    text-align:center; }
+  .cell canvas { image-rendering:pixelated; height:64px; width:auto; }
+  .cell span { display:block; color:#9a9aa6; font-size:11px; margin-top:4px; }
+</style>
+<h1>StarCraft 1 units — runtime team recolor</h1>
+<p>Each sprite is one PNG with a magenta player-color ramp; the color is applied live in the browser via <code>teamColor.js</code>. Click a color.</p>
+<div id="swatches"></div>
+<div id="grid"></div>
+<script type="module">
+import { TEAM_COLORS, loadRecolored } from './teamColor.js';
+
+const UNITS = ['marine','scv','ghost','wraith','battlecruiser','firebat','vulture','siege-tank','goliath',
+  'zealot','dark-templar','high-templar','archon','dragoon','probe','corsair','carrier','arbiter','kerrigan',
+  'zergling','hydralisk','lurker','mutalisk','ultralisk','defiler','guardian','devourer','scourge','overlord',
+  'drone','queen','infested-terran','civilian'];
+
+const grid = document.getElementById('grid');
+const cells = {};
+async function draw(colorName) {
+  const color = TEAM_COLORS[colorName];
+  for (const u of UNITS) {
+    try {
+      const cv = await loadRecolored(`./images/units/${u}.png`, color);
+      const cell = cells[u] || (cells[u] = mkCell(u));
+      cell.canvas.replaceWith(cv); cv.className = ''; cell.canvas = cv;
+    } catch (e) { /* sprite not present yet */ }
+  }
+}
+function mkCell(u) {
+  const d = document.createElement('div'); d.className = 'cell';
+  const cv = document.createElement('canvas'); const s = document.createElement('span'); s.textContent = u;
+  d.append(cv, s); grid.append(d); return { el: d, canvas: cv };
+}
+const sw = document.getElementById('swatches');
+Object.keys(TEAM_COLORS).forEach((name, i) => {
+  const b = document.createElement('button'); b.textContent = name;
+  b.onclick = () => { [...sw.children].forEach(c => c.classList.remove('on')); b.classList.add('on'); draw(name); };
+  if (i === 1) b.classList.add('on');
+  sw.append(b);
+});
+draw('blue');
+</script>
