@@ -106,6 +106,10 @@ Items are used as abilities — no MP cost, fixed effect, range 2. Alchemist car
 
 Fixed 12×10 grid. `#` = wall, `.` = grass (height 0), `1` = elevated (height 1), `2` = high ground (height 2). P1 deploys top-left, P2 deploys bottom-right.
 
+Each square is drawn with a real FFTA battlefield texture (sliced from the *Giza Plains* map ripped on [spriters-resource.com](https://www.spriters-resource.com/game_boy_advance/fftacticsadv/)) — a grass→dirt→rock progression by height, with a dark-rock wall. Tiles live in `images/terrain/` (`grass`, `dirt`, `rock`, `wall`) as small patches made **seamless** (edges torus-blended, water speckles removed) then baked 4×4 at native GBA density.
+
+The board renders **isometrically** (`ui.isometric` selects `apps/design/IsoLayer.vue` over the flat `SchematicLayer`). Each tile is a height-extruded diamond: the terrain texture is laid onto the ground plane via a skewed SVG pattern for the top face, plus shaded left/right cliff faces sized to the tile's `height`, so elevation reads as real 3-D steps. `toGrid` exposes each cell's `height` for this; units are depth-sorted and stand on their tile-tops.
+
 ## Win conditions
 
 | Outcome | Reason |

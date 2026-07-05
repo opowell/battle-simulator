@@ -27,15 +27,45 @@ const serverErr   = ref('');
 // Cached player info for sessions we've created (id → [{id, name, agent}])
 const sessionMeta = ref({});
 
-// ── hop animation ─────────────────────────────────────────────
+// ── turn animation queue ──────────────────────────────────────
 // A single server update can bundle several turns (e.g. a human move plus the
-// computer's immediate reply). Each turn gets queued and animated in full
-// before the next one starts, so a later turn never renders ahead of an
-// earlier turn's still-playing animation.
-const hopAnim = ref(null); // { unitId, steps: [{x,y},...], step }
-const hopQueue = ref([]); // [{ unitId, steps: [{x,y},...] }, ...] — not yet started
-let hopTimer = null;
+// computer's immediate reply). Each turn becomes one or more "beats" — a move
+// hop and/or a burst of combat flashes — queued and played in log order, so a
+// later turn never renders (or flashes) ahead of an earlier turn still playing.
+// Beats: { kind:'hop', unitId, steps:[{x,y}] } | { kind:'fx', flashes:[{unitId,fx}] }
+const HOP_STEP_MS = 220;
+const FX_BEAT_MS  = 400; // gap before the next beat; the numeral keeps rising into it
+const hopAnim  = ref(null);  // currently-playing hop { unitId, steps, step } (for pinning)
+const animQueue = ref([]);   // pending beats, not yet started
+let animTimer = null;
 let seenLogLength = 0;
+
+// ── combat flashes ────────────────────────────────────────────
+// Transient hit feedback keyed by unit id: a white flash on the acting unit, a
+// red blink + floating "-N" on a struck unit, a green glow + "+N" on a healed
+// one — mirroring the original's damage/heal numerals and hit-blink. Each flash
+// carries the board square it fires on (captured when the beat is built) so a
+// killing blow still flashes at the victim's last position after it leaves the
+// board. Gated per-game by ui.combatFx (see each game's `ui`).
+const unitFx = ref({}); // unitId -> { type, amount?, died?, key, x, y }
+let fxKey = 0;
+const fxTimers = new Map();
+// Action types (by unit) that should flash the actor white — i.e. "took an
+// action" in the FFTA sense (used a skill), not merely repositioned.
+const FX_ACTION_TYPES = new Set(['ability', 'attack', 'cast', 'skill']);
+
+function triggerFx(unitId, fx) {
+  if (!unitId || fx.x == null) return;
+  fxKey += 1;
+  unitFx.value = { ...unitFx.value, [unitId]: { ...fx, key: fxKey } };
+  clearTimeout(fxTimers.get(unitId));
+  fxTimers.set(unitId, setTimeout(() => {
+    const next = { ...unitFx.value };
+    delete next[unitId];
+    unitFx.value = next;
+    fxTimers.delete(unitId);
+  }, fx.type === 'action' ? 420 : 780));
+}
 
 function buildHopPath(from, to, diagonal = false) {
   const path = [{ x: from.x, y: from.y }];
@@ -53,26 +83,41 @@ function buildHopPath(from, to, diagonal = false) {
   return path;
 }
 
-function playNextHop() {
-  if (hopAnim.value || hopQueue.value.length === 0) return;
-  const { unitId, steps } = hopQueue.value[0];
-  hopQueue.value = hopQueue.value.slice(1);
-  hopAnim.value = { unitId, steps, step: 0 };
-  hopTimer = setTimeout(advanceHop, 220);
+function playNext() {
+  if (hopAnim.value || animQueue.value.length === 0) return;
+  const beat = animQueue.value[0];
+  animQueue.value = animQueue.value.slice(1);
+  if (beat.kind === 'fx') {
+    for (const f of beat.flashes) triggerFx(f.unitId, f.fx);
+    animTimer = setTimeout(playNext, FX_BEAT_MS);
+    return;
+  }
+  hopAnim.value = { unitId: beat.unitId, steps: beat.steps, step: 0 };
+  animTimer = setTimeout(advanceHop, HOP_STEP_MS);
 }
 
 function advanceHop() {
   if (!hopAnim.value) return;
   const next = hopAnim.value.step + 1;
-  if (next >= hopAnim.value.steps.length) { hopAnim.value = null; playNextHop(); return; }
+  if (next >= hopAnim.value.steps.length) { hopAnim.value = null; playNext(); return; }
   hopAnim.value = { ...hopAnim.value, step: next };
-  hopTimer = setTimeout(advanceHop, 220);
+  animTimer = setTimeout(advanceHop, HOP_STEP_MS);
 }
 
 watch(liveState, (newState, oldState) => {
   const log = newState?.log ?? [];
   if (!newState?.grid?.cells || !oldState?.grid?.cells) { seenLogLength = log.length; return; }
 
+  const newEntries = log.slice(seenLogLength);
+  seenLogLength = log.length;
+
+  const ui = activeField.value?.ui ?? {};
+  const hopsOn = (ui.moveAnimation ?? 'hop') !== 'none';
+  const fxOn   = !!ui.combatFx;
+  const diagonal = ui.allowDiagonalHopsWhileMoving ?? false;
+
+  // Net position changes A→B (a unit moved twice in a bundle collapses to one hop —
+  // matching the pre-sequencing behaviour). Each is claimed by the beat it belongs to.
   const moved = new Map(); // unitId -> { from, to }
   for (const newCell of newState.grid.cells) {
     if (!newCell.unitId) continue;
@@ -80,25 +125,50 @@ watch(liveState, (newState, oldState) => {
     if (!oldCell || (oldCell.x === newCell.x && oldCell.y === newCell.y)) continue;
     moved.set(newCell.unitId, { from: { x: oldCell.x, y: oldCell.y }, to: { x: newCell.x, y: newCell.y } });
   }
-  if (moved.size === 0 || (activeField.value?.ui?.moveAnimation ?? 'hop') === 'none') { seenLogLength = log.length; return; }
 
-  // Order queued hops by the turn log so bundled turns play back in the order they happened.
-  const order = [];
-  for (const entry of log.slice(seenLogLength)) {
-    for (const { action } of entry.playerActions ?? []) {
-      if (action?.unitId && moved.has(action.unitId) && !order.includes(action.unitId)) order.push(action.unitId);
+  // Board square of a unit for a flash: its new square if still on the board, else
+  // its last-seen square (a slain unit is gone from newState). Centres sit at
+  // cell + 0.5 (see buildField), matching the SVG fit transform.
+  const fxSquare = (id) => {
+    const c = newState.grid.cells.find(c => c.unitId === id)
+           ?? oldState.grid.cells.find(c => c.unitId === id);
+    return c ? { x: c.x + 0.5, y: c.y + 0.5 } : {};
+  };
+
+  // Build beats in log order: the mover's hop, then this turn's flashes, then any
+  // knockback slide of a struck unit — so a bundled reply plays step by step.
+  const beats = [];
+  const claimed = new Set();
+  const pushHop = (unitId) => {
+    const { from, to } = moved.get(unitId);
+    beats.push({ kind: 'hop', unitId, steps: buildHopPath(from, to, diagonal) });
+    claimed.add(unitId);
+  };
+  for (const entry of newEntries) {
+    const action = entry.playerActions?.[0]?.action;
+    if (hopsOn && action?.unitId && moved.has(action.unitId) && !claimed.has(action.unitId)) pushHop(action.unitId);
+
+    if (fxOn) {
+      const flashes = [];
+      if (action?.unitId && FX_ACTION_TYPES.has(action.type))
+        flashes.push({ unitId: action.unitId, fx: { type: 'action', ...fxSquare(action.unitId) } });
+      for (const ev of entry.events ?? []) {
+        if (ev.type === 'damage')    flashes.push({ unitId: ev.targetId, fx: { type: 'damage', amount: ev.amount, died: ev.died, ...fxSquare(ev.targetId) } });
+        else if (ev.type === 'heal') flashes.push({ unitId: ev.targetId, fx: { type: 'heal',   amount: ev.amount, ...fxSquare(ev.targetId) } });
+      }
+      if (flashes.length) beats.push({ kind: 'fx', flashes });
+      // Knockback: a struck unit that also moved slides after the hit lands.
+      if (hopsOn) for (const ev of entry.events ?? [])
+        if (ev.type === 'damage' && moved.has(ev.targetId) && !claimed.has(ev.targetId)) pushHop(ev.targetId);
     }
   }
-  for (const unitId of moved.keys()) if (!order.includes(unitId)) order.push(unitId);
+  // Any remaining moved units (e.g. fx off, or moves the log didn't attribute) hop last.
+  if (hopsOn) for (const unitId of moved.keys()) if (!claimed.has(unitId)) pushHop(unitId);
 
-  const diagonal = activeField.value?.ui?.allowDiagonalHopsWhileMoving ?? false;
-  const queued = order.map(unitId => {
-    const { from, to } = moved.get(unitId);
-    return { unitId, steps: buildHopPath(from, to, diagonal) };
-  });
-  hopQueue.value = [...hopQueue.value, ...queued];
-  seenLogLength = log.length;
-  playNextHop();
+  if (beats.length) {
+    animQueue.value = [...animQueue.value, ...beats];
+    playNext();
+  }
 });
 
 // ── field for the battlefield ────────────────────────────────
@@ -162,7 +232,7 @@ function buildField(g, s) {
 
   const tiles = g.cells
     .filter(c => c.color)
-    .map(c => ({ x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null, terrain: c.terrain ?? null }));
+    .map(c => ({ x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null, height: c.height ?? 0, terrain: c.terrain ?? null }));
 
   return {
     game:  s.game,
@@ -214,7 +284,7 @@ const activeField = computed(() => {
       const { x, y } = hopAnim.value.steps[hopAnim.value.step];
       return { ...u, path: [[x + 0.5, y + 0.5]] };
     }
-    const queued = hopQueue.value.find(q => q.unitId === u.id);
+    const queued = animQueue.value.find(q => q.kind === 'hop' && q.unitId === u.id);
     if (queued) {
       const { x, y } = queued.steps[0];
       return { ...u, path: [[x + 0.5, y + 0.5]] };
@@ -470,6 +540,7 @@ function exitBattle() {
       <Battlefield v-else-if="activeField"
                    :live-state="liveState"
                    :field="activeField"
+                   :unit-fx="unitFx"
                    :history-fields="historyFields"
                    :reveal-fields="revealFields"
                    :reveal-log="revealLog"

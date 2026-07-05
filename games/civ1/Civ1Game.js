@@ -478,8 +478,9 @@ export const Civ1Game = {
         const u = umap[`${x},${y}`];
         const city = cmap[`${x},${y}`];
         cells.push({
-          x, y: height - 1 - y,
+          x, y,
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
+          unitId: u?.id ?? null,
           imagePath: u ? (UNIT_IMAGES[u.type] ?? null) : null,
           bgImage: tile.terrain ? `${BASE}/terrain/${tile.terrain}` : null,
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,

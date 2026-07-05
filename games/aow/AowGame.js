@@ -347,7 +347,7 @@ export const AowGame = {
         const tile = tiles[`${x},${y}`] ?? {};
         const u = umap[`${x},${y}`];
         cells.push({
-          x, y: height - 1 - y,
+          x, y,
           glyph: u ? u.type[0].toUpperCase() : '',
           owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
