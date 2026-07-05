@@ -29,7 +29,7 @@ defineEmits(['select']);
              @click="$emit('select', u.id === selectedId ? null : u.id)">
           <div style="width:100%;aspect-ratio:1;overflow:hidden;background:var(--bg0)">
             <img v-if="u.portraitPath || u.imagePath"
-                 :src="u.portraitPath ?? u.imagePath" :alt="u.name"
+                 :src="teamSpriteHref(u.portraitPath ?? u.imagePath, team.raw, field?.ui?.recolorTeamSprites)" :alt="u.name"
                  style="width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block"/>
             <div v-else style="width:100%;height:100%;display:flex;align-items:center;justify-content:center">
               <BsDot :color="u.dead ? 'var(--faint)' : team.raw" :size="10"/>

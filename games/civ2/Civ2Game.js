@@ -438,7 +438,7 @@ export const Civ2Game = {
   // The terrain art is pre-drawn 64×32 isometric diamond tiles, so render the board
   // isometrically: blit each tile centred on its diamond ('sprite' mode, no skew/cliffs),
   // units/cities as owner-tinted tokens. See apps/design/IsoLayer.vue.
-  ui: { isometric: true, isoTileMode: 'sprite', isoUnitStyle: 'token', freeSelection: true },
+  ui: { isometric: true, isoTileMode: 'sprite', isoUnitStyle: 'token', freeSelection: true, allowDiagonalHopsWhileMoving: true },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: false },
   ],

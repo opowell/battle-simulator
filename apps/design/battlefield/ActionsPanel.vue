@@ -59,7 +59,7 @@ function fmtAction(action) {
          style="font-size:11px;color:var(--accent);background:rgba(66,198,230,.08);border:1px solid rgba(66,198,230,.2);border-radius:var(--r);padding:7px 10px">
       Viewing past state — advance to latest to issue orders.
     </div>
-    <template v-else-if="isPending && selectedId && (ui.freeSelection || selectedId === activeUnitId)">
+    <template v-else-if="isPending && (ui.freeSelection || (selectedId && selectedId === activeUnitId))">
       <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
         Choose action for <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
       </div>

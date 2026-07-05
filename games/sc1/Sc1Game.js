@@ -6,6 +6,17 @@ import { resolveAttack, resolveAttackVsBuilding, inRange, chebyshev } from './co
 import { generateMap, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
 import { getSc1Belief } from './belief.js';
 
+// Unit types with a sprite in images/units/. Each PNG stores its player-color
+// region as a magenta ramp; the design app tints it to the owner's team color at
+// render time (ui.recolorTeamSprites → apps/design/teamSprite.js).
+const UNIT_SPRITES = new Set([
+  'archon', 'battlecruiser', 'carrier', 'corsair', 'dark-templar', 'dragoon',
+  'drone', 'ghost', 'guardian', 'high-templar', 'hydralisk', 'lurker', 'marine',
+  'mutalisk', 'overlord', 'probe', 'scourge', 'scv', 'ultralisk', 'wraith',
+  'zealot', 'zergling', 'defiler', 'devourer', 'queen', 'infested-terran',
+  'civilian', 'kerrigan',
+]);
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeUnit(id, ownerId, type, x, y) {
@@ -732,6 +743,9 @@ export const Sc1Game = {
     + sidesEval(state.buildings, playerId, b =>
         ['command-center', 'hatchery', 'lair', 'hive', 'nexus'].includes(b.type) ? 300 : 80),
   name: 'SC1',
+  // Unit sprites carry a magenta player-color ramp; the design app tints each to
+  // its owner's team color at render time.
+  ui: { recolorTeamSprites: true, hideGrid: true },
   scenarios: [
     { id: 'tvz', name: 'Terran vs Zerg',    description: 'Biomech forces vs the Swarm',          config: { race1: 'terran',   race2: 'zerg' } },
     { id: 'pvt', name: 'Protoss vs Terran', description: 'Psionic warriors vs human marines',    config: { race1: 'protoss',  race2: 'terran' } },
@@ -775,6 +789,13 @@ export const Sc1Game = {
           owner: u ? (pidIdx[u.ownerId] ?? 0) : b ? (pidIdx[b.ownerId] ?? 0) : 0,
           color: this.colors[tile.terrain] ?? this.colors.open ?? '#808070',
           terrain: terrainInfo(tile.terrain),
+          ...(u ? {
+            unitId:    u.id,
+            unitName:  u.type,
+            hp:        u.hp,
+            maxHp:     UNITS[u.type]?.hp ?? u.hp,
+            imagePath: UNIT_SPRITES.has(u.type) ? `/images/sc1/units/${u.type}` : undefined,
+          } : {}),
         });
       }
     }
