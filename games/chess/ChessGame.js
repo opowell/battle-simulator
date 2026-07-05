@@ -260,6 +260,7 @@ export const ChessGame = {
         fogOfWar:    state.gameSpecific.fogOfWar,
         debugAI:     state.gameSpecific.debugAI,
         difficulty:  state.gameSpecific.difficulty,
+        aiTimeMs:    state.gameSpecific.aiTimeMs, // carry the per-move time limit forward
         fogMarkers,
         manualMarkers: state.gameSpecific.manualMarkers,
       },
