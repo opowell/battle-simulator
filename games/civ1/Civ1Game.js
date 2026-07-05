@@ -445,7 +445,7 @@ export const Civ1Game = {
   evaluateState: (state, playerId) =>
     unitStrengthEval(state, playerId) + sidesEval(state.cities, playerId, () => 100),
   name: 'Civ1',
-  ui: { hideGrid: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true },
+  ui: { hideGrid: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true },
   scenarios: [
     { id: 'standard', name: 'Standard',   description: 'Default 20×14 world map',         config: {} },
     { id: 'large',    name: 'Large World', description: '30×20 world — longer campaign',    config: { width: 30, height: 20 } },

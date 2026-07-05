@@ -569,7 +569,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                   fill="transparent" style="pointer-events:all"/>
             <image :x="-unitR(u)" :y="-unitR(u)"
                    :width="unitR(u)*2" :height="unitR(u)*2"
-                   :href="u.imagePath"
+                   :href="teamSpriteHref(u.imagePath, u.teamObj?.raw, field.ui?.recolorTeamSprites)"
                    style="pointer-events:none;image-rendering:pixelated"/>
           </template>
           <text v-else x="0" y="0"

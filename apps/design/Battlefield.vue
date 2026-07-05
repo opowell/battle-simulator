@@ -338,7 +338,8 @@ const lostUnitsTeams = computed(() => {
 
 const displayedActions = computed(() => {
   if (ui.value.freeSelection) {
-    return legalActions.value.filter(a => a.unitId === selectedId.value && !actionGridCoord(a, 'to'));
+    return legalActions.value.filter(a =>
+      a.unitId === '__player__' || (a.unitId === selectedId.value && !actionGridCoord(a, 'to')));
   }
   if (unitMoves.value.length > 0)
     return legalActions.value.filter(a => a.type !== 'move');

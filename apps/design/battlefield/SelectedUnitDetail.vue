@@ -11,7 +11,7 @@ defineEmits(['open-info', 'open-ability-info']);
   <div style="padding:12px 14px;border-bottom:1px solid var(--line)">
     <div v-if="unit.portraitPath || unit.imagePath"
          style="display:flex;justify-content:center;margin-bottom:10px">
-      <img :src="unit.portraitPath ?? unit.imagePath" :alt="unit.name"
+      <img :src="teamSpriteHref(unit.portraitPath ?? unit.imagePath, unit.teamObj?.raw, field?.ui?.recolorTeamSprites)" :alt="unit.name"
            style="width:72px;height:72px;object-fit:contain;image-rendering:pixelated;border-radius:4px;border:1px solid var(--line)"/>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
