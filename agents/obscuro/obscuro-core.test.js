@@ -127,3 +127,54 @@ test('purify: excludes an unstable runner-up from the mix', () => {
   const { dist } = purify([0.5, 0.4, 0.02], acts, { safe: true, infoset: I, rng: () => 0 });
   assert.ok(dist[1] === 0, 'unstable b must be excluded');
 });
+
+// ---------------------------------------------------------------------------
+// KLUSS Resolve/Maxmargin gadget: safety against an opponent that can tell the
+// belief worlds apart.
+// ---------------------------------------------------------------------------
+
+test('gadget: plays the robust move against a distinguishable trap world', async () => {
+  // Two worlds the OPPONENT distinguishes but the searcher cannot. Move A wins in
+  // world 1 (+1) and loses in world 2 (-1); move B is 0 in both. A flat belief is
+  // indifferent (E=0 either way); the gadget's adversarial infoset choice must
+  // steer to the robust B and report the position as unsafe (opponent enters).
+  const mk = (world) => ({ world, value: 0, phase: 'me', turnNumber: 0, activePlayers: ['A'], players: [{ id: 'A' }, { id: 'B' }] });
+  const game = {
+    getVisibleState: (s, p) => ({ board: p === 'B' ? { w: s.world } : { w: 0, phase: s.phase } }),
+    getLegalActions: (s) => s.phase === 'me' ? [{ type: 'm', v: 'A' }, { type: 'm', v: 'B' }] : [],
+    applyActions: (s, [{ action }]) => ({ ...s, value: action.v === 'A' ? (s.world === 1 ? 1 : -1) : 0, phase: 'done', activePlayers: ['B'], turnNumber: s.turnNumber + 1 }),
+    getResult: () => null,
+    evaluateState: (s, p) => (p === 'A' ? s.value : -s.value),
+    actionKey: (a) => a.v,
+  };
+  const worlds = [mk(1), mk(2)];
+  const hooks = makeHooks(game, 'A');
+  const res = await runObscuroSearch(hooks, worlds, { opp: 'B', rootActions: game.getLegalActions(worlds[0]), maxRounds: 50, expandPerRound: 6, cfrPerRound: 6, rng: () => 0.5 });
+  assert.equal(res.tree.gadget.J.length, 2, 'opponent should distinguish the two worlds');
+  assert.equal(res.action.v, 'B', 'should play the robust move, not the trap');
+  assert.equal(res.safe, false, 'opponent enters the trap world → not safe → no mixing');
+});
+
+// ---------------------------------------------------------------------------
+// Chance nodes (optional getChanceOutcomes hook)
+// ---------------------------------------------------------------------------
+
+test('chance: averages a stochastic transition and prefers the sure thing', async () => {
+  // SAFE → +2 for sure; GAMBLE → chance node (50% +10, 50% -10, EV 0).
+  const start = { phase: 'me', value: 0, turnNumber: 0, activePlayers: ['A'], players: [{ id: 'A' }, { id: 'B' }] };
+  const game = {
+    getLegalActions: (s) => s.phase === 'me' ? [{ type: 'safe' }, { type: 'gamble' }] : [],
+    applyActions: (s, [{ action }]) => ({ ...s, phase: 'done', value: action.type === 'safe' ? 2 : 0, activePlayers: ['B'] }),
+    getChanceOutcomes: (s, a) => a.type === 'gamble'
+      ? [{ state: { ...s, phase: 'done', value: 10, activePlayers: ['B'] }, prob: 0.5 },
+         { state: { ...s, phase: 'done', value: -10, activePlayers: ['B'] }, prob: 0.5 }]
+      : null,
+    getResult: () => null,
+    evaluateState: (s, p) => (p === 'A' ? s.value : -s.value),
+    actionKey: (a) => a.type,
+  };
+  const hooks = makeHooks(game, 'A');
+  const res = await runObscuroSearch(hooks, [start], { opp: 'B', rootActions: game.getLegalActions(start), maxRounds: 40, expandPerRound: 6, cfrPerRound: 6, rng: () => 0.5 });
+  assert.equal(res.action.type, 'safe', 'should take the sure +2 over the 0-EV gamble');
+  assert.ok(Math.abs(res.value - 2) < 0.2, `value should reflect the sure +2, got ${res.value}`);
+});

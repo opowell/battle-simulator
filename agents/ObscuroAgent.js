@@ -52,8 +52,10 @@ export class ObscuroAgent {
     this._rng = opts.rng ?? Math.random;
     // KLUSS blueprint: the previous move's solved tree, kept per side (an agent
     // instance may be shared between both players) so each perspective warm-starts
-    // from its own last computation.
+    // from its own last computation. Alongside it, the previous search value v*
+    // (per side) bounds the gadget's alternate values.
     this._blueprints = new Map();
+    this._prevValues = new Map();
   }
 
   _key(a) { return this.game.actionKey ? this.game.actionKey(a) : defaultActionKey(a); }
@@ -116,6 +118,7 @@ export class ObscuroAgent {
       opp: this._oppId(observation, me),
       rootActions: legalActions,
       blueprint: this._blueprints.get(me),
+      prevValue: this._prevValues.get(me),
       rng,
       timeBudgetMs: cfg.timeBudgetMs,
       maxRounds: cfg.maxRounds,
@@ -125,8 +128,10 @@ export class ObscuroAgent {
       finalCfr: cfg.finalCfr,
       purifyMax: cfg.purifyMax,
     });
-    // Save the solved tree as this side's blueprint for the next move.
+    // Save the solved tree as this side's blueprint, and its value as v*, for the
+    // next move's KLUSS reuse and gadget alternate-value bound.
     this._blueprints.set(me, res.tree?.infosets ?? null);
+    this._prevValues.set(me, res.value);
 
     // Map the chosen action back onto the caller's own legalActions array so the
     // returned object is reference-identical, and so an action that is somehow
