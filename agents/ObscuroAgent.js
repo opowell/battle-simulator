@@ -31,6 +31,11 @@ import { makeHooks, runObscuroSearch } from './obscuro/search.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const ri = (a, b, t) => Math.round(lerp(a, b, t));
+// Convex ramp for the expensive knobs: low/mid difficulty stays cheap (fast for
+// the test suite and weak-but-quick play) while only the top of the dial reaches
+// the paper-scale budget. t^2.2 keeps the mid-range near the old linear values
+// and back-loads the whole bump into the high end.
+const rc = (a, b, t) => Math.round(a + (b - a) * Math.pow(t, 2.2));
 
 function defaultActionKey(a) {
   return JSON.stringify([a.type ?? null, a.unitId ?? null, a.from ?? null, a.to ?? null, a.targetId ?? null, a.side ?? null, a.payload ?? null]);
@@ -71,17 +76,48 @@ export class ObscuroAgent {
   // branched per level (repo constraint: difficulty = one scaled algorithm).
   _config(observation) {
     const o = this.opts;
-    const d = observation.gameSpecific?.difficulty;
+    const gs = observation.gameSpecific ?? {};
+
+    // TIME mode: a per-move wall-clock limit (0 = random … up to 10 min) instead
+    // of a power level. The budget IS the limit; the rest of the search is scaled
+    // generously (saturating near a minute) and left for the budget to bound.
+    const timeMs = gs.aiTimeMs;
+    if (typeof timeMs === 'number') {
+      if (timeMs <= 0) return { random: true, purifyMax: 3 };
+      const u = Math.min(1, timeMs / 60000);
+      return {
+        timeMode: true,
+        worlds:         o.particles     ?? Math.max(2, Math.round(4 + u * 44)),
+        timeBudgetMs:   o.timeBudgetMs  ?? timeMs,
+        maxRounds:      o.maxRounds     ?? 100000,
+        maxInfosets:    o.maxInfosets   ?? Math.round(1000 + u * 24000),
+        expandPerRound: o.expandPerRound ?? 24,
+        cfrPerRound:    o.cfrPerRound   ?? 10,
+        finalCfr:       o.finalCfr      ?? 200,
+        purifyMax:      o.purifyMax     ?? 3,
+      };
+    }
+
+    // POWER mode: the 0–100 dial.
+    const d = gs.difficulty;
     const t = (typeof d === 'number' ? Math.max(0, Math.min(100, d)) : 50) / 100;
+    // Scaled toward the paper's regime at the top of the dial (it samples
+    // hundreds of worlds and grows ~10^6-node trees at seconds/move). The wall-
+    // clock timeBudgetMs is the real limiter, so the round/infoset caps can be
+    // generous without runaway; the belief-world count is the dominant per-
+    // iteration cost, so it is raised but kept JS-affordable.
+    // Tops chosen so the convex ramp keeps the mid-range at/below the previous
+    // linear scaling (fast tests, quick weak play) while the top of the dial
+    // reaches roughly the paper's per-move budget.
     return {
       difficulty: d,
-      worlds:         o.particles     ?? Math.max(1, ri(1, 24, t)),
-      timeBudgetMs:   o.timeBudgetMs  ?? ri(20, 600, t),
-      maxRounds:      o.maxRounds     ?? ri(4, 40, t),
-      maxInfosets:    o.maxInfosets   ?? ri(200, 4000, t),
-      expandPerRound: o.expandPerRound ?? ri(4, 12, t),
-      cfrPerRound:    o.cfrPerRound   ?? ri(2, 6, t),
-      finalCfr:       o.finalCfr      ?? ri(10, 60, t),
+      worlds:         o.particles     ?? Math.max(1, rc(1, 48, t)),
+      timeBudgetMs:   o.timeBudgetMs  ?? rc(30, 1200, t),
+      maxRounds:      o.maxRounds     ?? rc(6, 100, t),
+      maxInfosets:    o.maxInfosets   ?? rc(400, 6000, t),
+      expandPerRound: o.expandPerRound ?? ri(6, 24, t),
+      cfrPerRound:    o.cfrPerRound   ?? ri(3, 10, t),
+      finalCfr:       o.finalCfr      ?? rc(15, 100, t),
       purifyMax:      o.purifyMax     ?? 3,
     };
   }
@@ -105,8 +141,8 @@ export class ObscuroAgent {
     const me = observation.activePlayers[0];
     const cfg = this._config(observation);
 
-    // Difficulty 0 means random play (parity with the chess dial).
-    if (cfg.difficulty === 0) return legalActions[Math.floor(rng() * legalActions.length)];
+    // Difficulty 0 (power mode) or a 0 ms time limit means random play.
+    if (cfg.difficulty === 0 || cfg.random) return legalActions[Math.floor(rng() * legalActions.length)];
 
     // Sample the information set. With no belief sampler (or nothing hidden) the
     // observation itself is the single world (perfect information).
