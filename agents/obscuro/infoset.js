@@ -95,33 +95,75 @@ export class Infoset {
   indexOfKey(k) { return this.actionKeys.indexOf(k); }
 }
 
+// Freeze every infoset's current strategy and reset its per-iteration CFR
+// accumulators. Call once at the start of each CFR iteration, before descending.
+export function freezeStrategies(infosets) {
+  for (const I of infosets) {
+    I.strat = I.rm.strategy();
+    I.iterUtil.fill(0);
+    I.qNum.fill(0);
+    I.visitReach = 0;
+  }
+}
+
+// Hand each infoset the utilities its descent accumulated and let its predictive
+// RM+ minimizer update; refresh the conditional action-value estimate uCond.
+export function observeAll(infosets) {
+  for (const I of infosets) {
+    I.rm.observe(I.iterUtil);
+    if (I.visitReach > 0) for (let k = 0; k < I.uCond.length; k++) I.uCond[k] = I.qNum[k] / I.visitReach;
+    I.nodes.forEach(n => { n.fresh = false; });
+  }
+}
+
 // One CFR iteration over the whole tree: freeze each infoset's current strategy,
 // propagate counterfactual values from the leaves, then hand each infoset its
 // action utilities so its predictive-RM+ minimizer can update. Values are always
 // expressed for the max player `me`; the opponent's minimizer maximises `-value`.
+// (Flat-root form: worlds are a uniform-ish chance node. The KLUSS gadget in
+// kluss.js drives the root layer itself and calls the primitives directly.)
 export function runCFR(tree, iterations) {
   const infosets = [...tree.infosets.values()];
   const me = tree.me;
   for (let t = 0; t < iterations; t++) {
-    for (const I of infosets) {
-      I.strat = I.rm.strategy();
-      I.iterUtil.fill(0);
-      I.qNum.fill(0);
-      I.visitReach = 0;
-    }
+    freezeStrategies(infosets);
     for (const w of tree.worlds) cfrDescend(w.node, me, 1, w.prob);
-    for (const I of infosets) {
-      I.rm.observe(I.iterUtil);
-      if (I.visitReach > 0) for (let k = 0; k < I.uCond.length; k++) I.uCond[k] = I.qNum[k] / I.visitReach;
-      I.nodes.forEach(n => { n.fresh = false; });
-    }
+    observeAll(infosets);
   }
+}
+
+// Pure value to `me` at `node` under the frozen strategies — no regret
+// accumulation. Used by the gadget to price each opponent-infoset root (enter vs
+// exit) before it decides the reach with which to accumulate.
+export function evalNode(node, me) {
+  if (node.chance) {
+    let v = 0;
+    for (const oc of node.chanceChildren) v += oc.prob * evalNode(oc.node, me);
+    return v;
+  }
+  if (!node.expanded || node.terminal) return node.leafValue;
+  const I = node.infoset;
+  const s = I.strat;
+  let v = 0;
+  for (let k = 0; k < I.actions.length; k++) {
+    const c = node.children[k];
+    v += s[k] * (c ? evalNode(c, me) : node.leafValue);
+  }
+  return v;
 }
 
 // Recursive counterfactual-value pass. Returns the value to `me` at `node` under
 // the frozen strategies. reachMe / reachOpp are the players' contributions to
 // reaching this node (chance folded into reachOpp).
-function cfrDescend(node, me, reachMe, reachOpp) {
+export function cfrDescend(node, me, reachMe, reachOpp) {
+  // Chance node (an optional getChanceOutcomes transition): value is the
+  // probability-weighted average of its outcomes; chance reach folds into
+  // reachOpp. No regret is accumulated at a chance node.
+  if (node.chance) {
+    let v = 0;
+    for (const oc of node.chanceChildren) v += oc.prob * cfrDescend(oc.node, me, reachMe, reachOpp * oc.prob);
+    return v;
+  }
   if (!node.expanded || node.terminal) return node.leafValue;
   const I = node.infoset;
   const sigma = I.strat;

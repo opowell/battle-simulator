@@ -25,6 +25,18 @@ export function makeLeaf(hooks, state) {
   return new Node(state, player, hooks.heuristicFor(state, hooks.me), false);
 }
 
+// A chance node over a transition's stochastic outcomes: its children are
+// frontier leaves (each expandable), its own value the prob-weighted average.
+function makeChanceNode(hooks, state, outcomes) {
+  const cn = new Node(state, null, 0, false);
+  cn.chance = true;
+  cn.expanded = true;
+  cn.chanceChildren = outcomes.map(o => ({ node: makeLeaf(hooks, o.state), prob: o.prob }));
+  let v = 0; for (const oc of cn.chanceChildren) v += oc.prob * oc.node.leafValue;
+  cn.leafValue = v;
+  return cn;
+}
+
 function getOrCreateInfoset(tree, hooks, node) {
   const p = node.player;
   const key = hooks.obsKey(node.state, p);
@@ -64,9 +76,13 @@ export function warmStartInfoset(tree, I) {
 export async function expandNode(tree, hooks, node) {
   if (node.expanded || node.terminal) return;
   const p = node.player;
+  const myLegal = hooks.legal(node.state, p);
+  // A node with no legal moves is a leaf: keep its heuristic value rather than
+  // expanding into an empty infoset (whose value would collapse to 0).
+  if (!myLegal || myLegal.length === 0) { node.terminal = true; return; }
   const I = getOrCreateInfoset(tree, hooks, node);
   const K = I.actions.length;
-  const myKeys = new Set(hooks.legal(node.state, p).map(hooks.key));
+  const myKeys = new Set(myLegal.map(hooks.key));
 
   const children = new Array(K).fill(null);
   const childStates = new Array(K).fill(null);
@@ -75,6 +91,14 @@ export async function expandNode(tree, hooks, node) {
     if (!myKeys.has(I.actionKeys[k])) continue;      // action illegal in this world
     const cs = hooks.apply(node.state, p, I.actions[k]);
     if (cs == null) continue;
+    // Optional chance node: if the game exposes stochastic outcomes for this
+    // transition, the child is a chance node over them (inert for the games —
+    // like FoW chess — that don't provide getChanceOutcomes).
+    const outcomes = hooks.chanceOutcomes ? hooks.chanceOutcomes(node.state, p, I.actions[k]) : null;
+    if (outcomes && outcomes.length > 1) {
+      children[k] = makeChanceNode(hooks, cs, outcomes);
+      continue;
+    }
     childStates[k] = cs;
     const tv = hooks.terminalValue(cs);
     if (tv !== null) children[k] = new Node(cs, null, tv, true); // terminal child
@@ -174,6 +198,12 @@ export async function doExpansionStep(tree, hooks, exploringPlayer, rng) {
   if (!tree.worlds.length) return;
   let node = sampleWorld(tree, rng);
   while (node.expanded) {
+    if (node.chance) { // descend through a chance node by sampling an outcome
+      let r = rng(), acc = 0, picked = node.chanceChildren[0].node;
+      for (const oc of node.chanceChildren) { acc += oc.prob; if (r <= acc) { picked = oc.node; break; } }
+      node = picked;
+      continue;
+    }
     if (node.terminal || node.fresh) return; // nothing to expand along this line yet
     const I = node.infoset;
     const exploring = node.player === exploringPlayer;

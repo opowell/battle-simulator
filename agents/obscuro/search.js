@@ -13,8 +13,9 @@
 // chess supplies Stockfish, every other game falls back to `evaluateState`).
 // ---------------------------------------------------------------------------
 
-import { runCFR, observationKey, Infoset } from './infoset.js';
+import { observationKey, Infoset } from './infoset.js';
 import { makeLeaf, expandRoot, doExpansionStep, warmStartInfoset } from './gtcfr.js';
+import { buildGadget, runGadgetCFR } from './kluss.js';
 import { purify } from './purify.js';
 
 const DEFAULT_WIN = 1e6;
@@ -48,6 +49,9 @@ export function makeHooks(game, me, opts = {}) {
     apply: (s, p, a) => { try { return game.applyActions(s, [{ playerId: p, action: a }], rng); } catch { return null; } },
     key,
     obsKey: (s, p) => observationKey(game, s, p),
+    // Optional chance-node outcomes for a stochastic transition (most games,
+    // including FoW chess, have none — this stays null and the tree is unchanged).
+    chanceOutcomes: game.getChanceOutcomes ? ((s, p, a) => game.getChanceOutcomes(s, a)) : null,
     terminalValue, heuristicFor, evalChildren, win: WIN,
   };
 }
@@ -86,6 +90,12 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   const root = tree.rootInfoset;
   if (!root) return { action: null, dist: [], rows: [], value: 0, tree };
 
+  // Build the KLUSS Resolve/Maxmargin gadget over the belief's opponent-infoset
+  // partition (the order-2 knowledge-limited subgame root). Built once — the root
+  // worlds are fixed; only the tree below grows.
+  const gadget = buildGadget(tree, hooks, { opp: cfg.opp, prevValue: cfg.prevValue });
+  tree.gadget = gadget;
+
   const expandPerRound = cfg.expandPerRound ?? 8;
   const cfrPerRound = cfg.cfrPerRound ?? 4;
   const maxRounds = cfg.maxRounds ?? 200;
@@ -104,13 +114,13 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
         await doExpansionStep(tree, hooks, exploring, rng);
       }
     }
-    runCFR(tree, cfrPerRound);
+    runGadgetCFR(tree, hooks, gadget, cfrPerRound);
     snapshots.push([...root.rm.lastStrategy()]);
     if (budgetMs && Date.now() - t0 >= budgetMs) break;
   }
   // A final, longer solve so the equilibrium settles on the frozen tree (Fig. 8:
   // expander threads stop first, solver runs on a little longer).
-  runCFR(tree, cfg.finalCfr ?? 40);
+  runGadgetCFR(tree, hooks, gadget, cfg.finalCfr ?? 40);
   snapshots.push([...root.rm.lastStrategy()]);
 
   // An action is "stable" if it stayed in the support of the last iterate for
@@ -123,15 +133,17 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   const strat = [...root.rm.lastStrategy()];
   let value = 0;
   for (let k = 0; k < strat.length; k++) value += strat[k] * root.uCond[k];
-  // Mixing is only worthwhile when there is genuine hidden information for the
-  // opponent to be uncertain about — i.e. more than one belief world. With a
-  // single world (perfect information) there is nothing to hide, so play purely.
-  const safe = cfg.safe ?? (tree.worlds.length > 1);
+  // Safety (App. C.8): mixing is allowed only in the Maxmargin regime — when the
+  // opponent has no incentive to *enter* the Resolve gadget (it always exits, so
+  // p_max ≈ 0), meaning our strategy is safe. When Resolve is entering (a real
+  // threat) we commit to the top move. Perfect information (one world) is always
+  // pure — there is nothing to hide.
+  const safe = cfg.safe ?? (tree.worlds.length > 1 && gadget.pmax < 0.05);
   const { action, dist } = purify(strat, root.actions, {
     maxSupport: cfg.purifyMax ?? 3,
     rng,
     infoset: root,
     safe,
   });
-  return { action, dist, rawDist: strat, rows: root.actions, value, tree };
+  return { action, dist, rawDist: strat, rows: root.actions, value, tree, safe, pmax: gadget.pmax };
 }

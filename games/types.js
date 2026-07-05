@@ -61,6 +61,14 @@
  *   evaluates each child individually via evaluateState (`ctx.childStates` carries
  *   the already-applied child states so a batched evaluator need not re-apply).
  *
+ * @property {(state: GameState, action: Action) => {state: GameState, prob: number}[]} [getChanceOutcomes]
+ *   Optional. For a STOCHASTIC transition, the possible resulting states and their
+ *   probabilities (must sum to 1). When present and returning >1 outcome, the
+ *   ObscuroAgent inserts a chance node into its search tree instead of a single
+ *   deterministic child, so games with mid-game randomness (dice, card draws) are
+ *   modelled exactly rather than via belief resampling. Omit it (the default) for
+ *   deterministic games like chess — the search is unchanged.
+ *
  * @property {(action: Action) => string} [actionKey]
  *   Optional. Canonical identity for an action, so the SAME opponent reply seen
  *   across different sampled worlds maps to the same payoff-matrix column.
