@@ -120,10 +120,17 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     await this._game();
 
     const gs = state.gameSpecific;
-    // Perfect information (fog off): play Stockfish's best move directly, scaled
-    // by difficulty. Difficulty 0 falls through to the generic random branch.
-    if (!gs.fogOfWar && gs.difficulty !== 0) {
-      const sf = await stockfishBestAction(state, legalActions, sfOptsForDifficulty(gs.difficulty));
+    // Perfect information (fog off): play Stockfish's best move directly. In time
+    // mode the per-move limit is the engine's movetime at full strength; in power
+    // mode it is scaled by the dial. A 0 power level / 0 ms limit is random, so
+    // it falls through to the generic random branch.
+    const timeMs = gs.aiTimeMs;
+    const isRandom = timeMs === 0 || (timeMs == null && gs.difficulty === 0);
+    if (!gs.fogOfWar && !isRandom) {
+      const sfOpts = typeof timeMs === 'number'
+        ? { movetime: Math.min(Math.max(timeMs, 1), 600000), skill: 20 }
+        : sfOptsForDifficulty(gs.difficulty);
+      const sf = await stockfishBestAction(state, legalActions, sfOpts);
       if (sf) return this._matchLegal(sf, legalActions) ?? sf;
     }
     return super.chooseAction(state, legalActions);

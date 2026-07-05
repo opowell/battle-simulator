@@ -35,7 +35,11 @@ for (const f of FILES) for (let r = 1; r <= 8; r++) ALL_SQUARES.push(f + r);
 // generator dereferences castlingRights[ownerId], so supply a safe stub.
 const NO_CASTLING = { white: { kingSide: false, queenSide: false }, black: { kingSide: false, queenSide: false } };
 
-const MAX_POSSIBLE = 28; // cap a piece's possible-square set so sampling stays cheap
+// Cap a piece's possible-square set. Larger = closer to the exact information
+// set P (fewer valid placements truncated away), at a modest sampling cost. Kept
+// below the 64-square max so a wildly-uncertain piece late in the game doesn't
+// blow up the candidate lists.
+const MAX_POSSIBLE = 48;
 const THREAT_BIAS = 3;   // how strongly to over-sample placements that attack our pieces
 // At most this many invisible pieces per particle may be placed on a square that
 // attacks one of our pieces. Real positions rarely have the whole hidden army
@@ -255,7 +259,10 @@ export class Belief {
 
     const particles = [];
     const keys = new Set();
-    for (let attempt = 0; attempt < n * 4 && particles.length < n; attempt++) {
+    // More attempts per requested world so a larger belief (now that we sample
+    // more worlds) still yields the distinct particles it asks for rather than
+    // giving up early — a fuller, more representative draw from P.
+    for (let attempt = 0; attempt < n * 6 && particles.length < n; attempt++) {
       const pb = { ...board };
       const used = new Set();
       let lurkers = 0;             // invisible attackers placed so far in this particle
