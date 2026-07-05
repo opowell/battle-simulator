@@ -31,6 +31,11 @@ import { makeHooks, runObscuroSearch } from './obscuro/search.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const ri = (a, b, t) => Math.round(lerp(a, b, t));
+// Convex ramp for the expensive knobs: low/mid difficulty stays cheap (fast for
+// the test suite and weak-but-quick play) while only the top of the dial reaches
+// the paper-scale budget. t^2.2 keeps the mid-range near the old linear values
+// and back-loads the whole bump into the high end.
+const rc = (a, b, t) => Math.round(a + (b - a) * Math.pow(t, 2.2));
 
 function defaultActionKey(a) {
   return JSON.stringify([a.type ?? null, a.unitId ?? null, a.from ?? null, a.to ?? null, a.targetId ?? null, a.side ?? null, a.payload ?? null]);
@@ -73,15 +78,23 @@ export class ObscuroAgent {
     const o = this.opts;
     const d = observation.gameSpecific?.difficulty;
     const t = (typeof d === 'number' ? Math.max(0, Math.min(100, d)) : 50) / 100;
+    // Scaled toward the paper's regime at the top of the dial (it samples
+    // hundreds of worlds and grows ~10^6-node trees at seconds/move). The wall-
+    // clock timeBudgetMs is the real limiter, so the round/infoset caps can be
+    // generous without runaway; the belief-world count is the dominant per-
+    // iteration cost, so it is raised but kept JS-affordable.
+    // Tops chosen so the convex ramp keeps the mid-range at/below the previous
+    // linear scaling (fast tests, quick weak play) while the top of the dial
+    // reaches roughly the paper's per-move budget.
     return {
       difficulty: d,
-      worlds:         o.particles     ?? Math.max(1, ri(1, 24, t)),
-      timeBudgetMs:   o.timeBudgetMs  ?? ri(20, 600, t),
-      maxRounds:      o.maxRounds     ?? ri(4, 40, t),
-      maxInfosets:    o.maxInfosets   ?? ri(200, 4000, t),
-      expandPerRound: o.expandPerRound ?? ri(4, 12, t),
-      cfrPerRound:    o.cfrPerRound   ?? ri(2, 6, t),
-      finalCfr:       o.finalCfr      ?? ri(10, 60, t),
+      worlds:         o.particles     ?? Math.max(1, rc(1, 48, t)),
+      timeBudgetMs:   o.timeBudgetMs  ?? rc(30, 1200, t),
+      maxRounds:      o.maxRounds     ?? rc(6, 100, t),
+      maxInfosets:    o.maxInfosets   ?? rc(400, 6000, t),
+      expandPerRound: o.expandPerRound ?? ri(6, 24, t),
+      cfrPerRound:    o.cfrPerRound   ?? ri(3, 10, t),
+      finalCfr:       o.finalCfr      ?? rc(15, 100, t),
       purifyMax:      o.purifyMax     ?? 3,
     };
   }
