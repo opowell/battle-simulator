@@ -76,7 +76,30 @@ export class ObscuroAgent {
   // branched per level (repo constraint: difficulty = one scaled algorithm).
   _config(observation) {
     const o = this.opts;
-    const d = observation.gameSpecific?.difficulty;
+    const gs = observation.gameSpecific ?? {};
+
+    // TIME mode: a per-move wall-clock limit (0 = random … up to 10 min) instead
+    // of a power level. The budget IS the limit; the rest of the search is scaled
+    // generously (saturating near a minute) and left for the budget to bound.
+    const timeMs = gs.aiTimeMs;
+    if (typeof timeMs === 'number') {
+      if (timeMs <= 0) return { random: true, purifyMax: 3 };
+      const u = Math.min(1, timeMs / 60000);
+      return {
+        timeMode: true,
+        worlds:         o.particles     ?? Math.max(2, Math.round(4 + u * 44)),
+        timeBudgetMs:   o.timeBudgetMs  ?? timeMs,
+        maxRounds:      o.maxRounds     ?? 100000,
+        maxInfosets:    o.maxInfosets   ?? Math.round(1000 + u * 24000),
+        expandPerRound: o.expandPerRound ?? 24,
+        cfrPerRound:    o.cfrPerRound   ?? 10,
+        finalCfr:       o.finalCfr      ?? 200,
+        purifyMax:      o.purifyMax     ?? 3,
+      };
+    }
+
+    // POWER mode: the 0–100 dial.
+    const d = gs.difficulty;
     const t = (typeof d === 'number' ? Math.max(0, Math.min(100, d)) : 50) / 100;
     // Scaled toward the paper's regime at the top of the dial (it samples
     // hundreds of worlds and grows ~10^6-node trees at seconds/move). The wall-
@@ -118,8 +141,8 @@ export class ObscuroAgent {
     const me = observation.activePlayers[0];
     const cfg = this._config(observation);
 
-    // Difficulty 0 means random play (parity with the chess dial).
-    if (cfg.difficulty === 0) return legalActions[Math.floor(rng() * legalActions.length)];
+    // Difficulty 0 (power mode) or a 0 ms time limit means random play.
+    if (cfg.difficulty === 0 || cfg.random) return legalActions[Math.floor(rng() * legalActions.length)];
 
     // Sample the information set. With no belief sampler (or nothing hidden) the
     // observation itself is the single world (perfect information).

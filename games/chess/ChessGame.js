@@ -124,8 +124,9 @@ export const ChessGame = {
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
     { id: 'debugAI',  label: 'Debug AI',   description: 'Show all AI-controlled pieces even through Fog of War', type: 'boolean', default: false },
     {
-      id: 'difficulty', label: 'AI Difficulty', type: 'range', min: 0, max: 100, step: 1, default: 25,
-      description: '0 = random play, 100 = strongest (deeper search, more sampled worlds — slower per move)',
+      id: 'difficulty', label: 'AI Difficulty', type: 'ai-difficulty', default: 25,
+      timeKey: 'aiTimeMs', maxTimeMs: 600000, timeDefault: 5000,
+      description: 'Pick ONE: a power level (0 = random … 100 = strongest), or a per-move time limit (0 = random … 10 min). Higher/longer = deeper search, more sampled worlds.',
     },
   ],
   axisLabels: { x: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] },
@@ -167,7 +168,10 @@ export const ChessGame = {
         inCheck: false,
         fogOfWar:    config.fogOfWar   ?? false,
         debugAI:     config.debugAI    ?? false,
-        difficulty:  config.difficulty ?? 25,
+        // Exactly one of difficulty (power 0–100) / aiTimeMs (per-move ms) is
+        // active; if a time limit is given it wins and difficulty is left null.
+        aiTimeMs:    typeof config.aiTimeMs === 'number' ? config.aiTimeMs : null,
+        difficulty:  typeof config.aiTimeMs === 'number' ? null : (config.difficulty ?? 25),
         fogMarkers:  config.fogOfWar ? seedFogMarkers(board) : undefined,
         // Player-placed guesses on squares with no real sighting yet (e.g. "I think the
         // knight went to f6"). Kept server-side, distinct from `fogMarkers` (which only
