@@ -24,13 +24,13 @@ const fmt = a => (a.type === 'castle'
   : `${a.from}${a.isCapture ? 'x' : '-'}${a.to}${a.payload?.promote ? '=' + a.payload.promote[0].toUpperCase() : ''}`);
 
 // ---- Show the opening strategy with information OFF vs ON --------------------
-function showOpeningStrategy(difficulty) {
+async function showOpeningStrategy(difficulty) {
   for (const fogOn of [false, true]) {
     const players = [{ id: 'white', name: 'W', agent: ObscuroAgent }, { id: 'black', name: 'B', agent: ObscuroAgent }];
     const state = ChessGame.createInitialState(players, { fogOfWar: fogOn, difficulty });
     const view = ChessGame.getVisibleState(state, 'white');
     const legal = ChessGame.getLegalActions(state, 'white');
-    const { mode, dist, rows, action, particles } = obscuroStrategy(view, legal);
+    const { mode, dist, rows, action, particles } = await obscuroStrategy(view, legal);
     const top = rows
       .map((a, i) => ({ a, p: dist[i] ?? 0 }))
       .filter(x => x.p > 0.01)
@@ -42,7 +42,7 @@ function showOpeningStrategy(difficulty) {
 }
 
 console.log('Obscuro opening strategy — same agent, different information levels:');
-showOpeningStrategy('medium');
+await showOpeningStrategy('medium');
 
 // ---- Stockfish backend status + the actual perfect-info move it plays --------
 const sfOn = await stockfishAvailable();

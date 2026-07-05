@@ -52,6 +52,15 @@
  *   that player). Used to score search leaves. Omitting it makes the agent rely
  *   solely on getResult terminals (so it only distinguishes win/draw/loss).
  *
+ * @property {(state: GameState, mover: string, childActions: Action[], ctx?: object) => number[] | Promise<number[]>} [evaluateLeaves]
+ *   Optional. BATCHED node heuristic (the paper's "evaluate all children of a
+ *   node in one call"): the value to `mover` of each child reached by playing the
+ *   corresponding `childActions` from `state`. Returns an array aligned to
+ *   `childActions`. This is the ObscuroAgent's single game-specific search input;
+ *   chess implements it as one Stockfish MultiPV call. Omit it and the agent
+ *   evaluates each child individually via evaluateState (`ctx.childStates` carries
+ *   the already-applied child states so a batched evaluator need not re-apply).
+ *
  * @property {(action: Action) => string} [actionKey]
  *   Optional. Canonical identity for an action, so the SAME opponent reply seen
  *   across different sampled worlds maps to the same payoff-matrix column.
