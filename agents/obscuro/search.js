@@ -112,15 +112,28 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
         // Alternate the exploring player every step (App. C.4).
         const exploring = (step++ % 2 === 0) ? hooks.me : cfg.opp;
         await doExpansionStep(tree, hooks, exploring, rng);
+        if (budgetMs && Date.now() - t0 >= budgetMs) break; // don't overrun mid-round
       }
     }
-    runGadgetCFR(tree, hooks, gadget, cfrPerRound);
+    // Solve one iteration at a time so the wall-clock budget is respected even on
+    // a large tree where a single CFR iteration is not free.
+    for (let c = 0; c < cfrPerRound; c++) {
+      runGadgetCFR(tree, hooks, gadget, 1);
+      if (budgetMs && Date.now() - t0 >= budgetMs) break;
+    }
     snapshots.push([...root.rm.lastStrategy()]);
     if (budgetMs && Date.now() - t0 >= budgetMs) break;
   }
   // A final, longer solve so the equilibrium settles on the frozen tree (Fig. 8:
-  // expander threads stop first, solver runs on a little longer).
-  runGadgetCFR(tree, hooks, gadget, cfg.finalCfr ?? 40);
+  // expander threads stop first, solver runs on a little longer). Bounded by a
+  // small extra time allowance so a large tree can't blow past the budget.
+  const finalCfr = cfg.finalCfr ?? 40;
+  const finalDeadline = budgetMs ? t0 + budgetMs * 1.35 : Infinity;
+  const chunk = Math.max(1, Math.min(finalCfr, 10));
+  for (let done = 0; done < finalCfr; done += chunk) {
+    runGadgetCFR(tree, hooks, gadget, chunk);
+    if (Date.now() > finalDeadline) break;
+  }
   snapshots.push([...root.rm.lastStrategy()]);
 
   // An action is "stable" if it stayed in the support of the last iterate for
