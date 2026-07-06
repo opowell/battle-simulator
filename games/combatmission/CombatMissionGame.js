@@ -1,10 +1,12 @@
 import { unitStrengthEval } from '../evalHelpers.js';
 import { UNIT_DEFS, createUnit } from './units.js';
-import { createMap, renderMap } from './map.js';
+import { createMap, createMapFromShapes, renderMap, TERRAIN } from './map.js';
 import { getReachable } from './grid.js';
 import { hasLOS } from './los.js';
 import { resolveFire } from './combat.js';
 import { getCombatMissionBelief } from './belief.js';
+import { SHAPE_SCENARIOS } from './scenarios.js';
+import { tilesToShapes } from '../terrainShapes.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
 
@@ -32,6 +34,29 @@ function createScenario(players) {
     createUnit(id(), 'panzer-iv',     axis.id,  { x:  5, y: 12 }),
     createUnit(id(), 'tiger',         axis.id,  { x: 11, y:  9 }),
   ];
+}
+
+// Build a units array from a shape scenario's `deploy` table: { allied: [[type,x,y]…],
+// axis: [[type,x,y]…] }. players[0] = allied side, players[1] = axis side.
+function deployScenario(scen, players) {
+  const [allied, axis] = players;
+  let n = 0;
+  const id = () => `u${n++}`;
+  const side = (list, ownerId) => list.map(([type, x, y]) => createUnit(id(), type, ownerId, { x, y }));
+  return [
+    ...side(scen.deploy.allied, allied.id),
+    ...side(scen.deploy.axis,   axis.id),
+  ];
+}
+
+// Resolve a scenario id → { board, units(players) }. The default 'standard' keeps the
+// original hand-laid grid map; the rest are shape-based (non-grid terrain) maps.
+function resolveScenario(scenId, players) {
+  if (scenId && SHAPE_SCENARIOS[scenId]) {
+    const scen = SHAPE_SCENARIOS[scenId];
+    return { board: createMapFromShapes(scen), units: deployScenario(scen, players) };
+  }
+  return { board: createMap(), units: createScenario(players) };
 }
 
 // ── Legal actions ─────────────────────────────────────────────────────────────
@@ -190,8 +215,8 @@ function renderState(state) {
 // ── createInitialState ────────────────────────────────────────────────────────
 
 function createInitialState(players, config = {}) {
-  const board = createMap();
-  const units = config.units ?? createScenario(players);
+  const { board, units: scenUnits } = resolveScenario(config.scenario, players);
+  const units = config.units ?? scenUnits;
   return {
     gameName: 'CombatMission',
     turnNumber: 1,
@@ -231,6 +256,73 @@ function getVisibleState(state, playerId) {
   };
 }
 
+// ── Design UI grid ───────────────────────────────────────────────────────────
+
+const TERRAIN_INFO = {
+  [TERRAIN.FLOOR]: { name: 'Open Ground', description: 'No cover, no movement penalty.' },
+  [TERRAIN.WALL]:  { name: 'Building',    description: 'Impassable, blocks line of sight.' },
+  [TERRAIN.HEDGE]: { name: 'Hedgerow',    description: 'Passable, +30% cover, does not block LOS.' },
+  [TERRAIN.TREE]:  { name: 'Trees',       description: 'Passable, blocks LOS, +20% cover.' },
+  [TERRAIN.ROAD]:  { name: 'Road',        description: 'Passable, no cover.' },
+  [TERRAIN.WATER]: { name: 'Water',       description: 'Impassable, but does not block line of sight.' },
+};
+
+const TERRAIN_COLORS = {
+  [TERRAIN.FLOOR]: '#7d8f5c',
+  [TERRAIN.WALL]:  '#5a5045',
+  [TERRAIN.HEDGE]: '#4d6b3a',
+  [TERRAIN.TREE]:  '#2f5c2f',
+  [TERRAIN.ROAD]:  '#9c8f6b',
+  [TERRAIN.WATER]: '#35617a',
+};
+
+// Ground colour under the map — terrain is drawn by the SVG shapes, so the tile layer
+// stays a uniform open-ground backdrop.
+const SHAPE_GROUND = '#7d8f5c';
+
+// Styles for turning the classic tile map into merged rectangle shapes so it renders as
+// layered SVGs too. Open ground (FLOOR) is left as background.
+const CM_TILE_SHAPE_STYLES = {
+  [TERRAIN.WALL]:  { fill: '#5a5045', stroke: '#6b5f50', name: 'Building', description: 'Impassable, blocks line of sight.' },
+  [TERRAIN.TREE]:  { fill: '#2f5c2f', stroke: '#3f6f3f', name: 'Woods',    description: 'Passable but slow; blocks LOS, +20% cover.' },
+  [TERRAIN.HEDGE]: { fill: '#4d6b3a', stroke: '#5f7d48', name: 'Hedgerow', description: 'Passable but slow; +30% cover, does not block LOS.' },
+  [TERRAIN.ROAD]:  { fill: '#9c8f6b', name: 'Road', description: 'Passable, no cover.' },
+  [TERRAIN.WATER]: { fill: '#35617a', opacity: 0.9, name: 'Water', description: 'Impassable, but does not block line of sight.' },
+};
+
+function toGrid(state) {
+  const { board, units } = state;
+  const { width, height, tiles } = board;
+  const pidIdx = {};
+  (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+  const umap = {};
+  for (const u of units ?? []) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+  const cells = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const u = umap[`${x},${y}`];
+      const t = tiles[y][x];
+      cells.push({
+        x, y,
+        glyph: u ? u.attrs.symbol : '',
+        owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
+        color: SHAPE_GROUND,   // terrain conveyed by the shapes below
+        terrain: TERRAIN_INFO[t] ?? TERRAIN_INFO[TERRAIN.FLOOR],
+        hp: u?.hp, maxHp: u?.maxHp,
+        unitId: u?.id,
+        unitName: u ? UNIT_DEFS[u.type].label : undefined,
+      });
+    }
+  }
+
+  // Shape scenarios supply authored shapes (ovals + rects); the classic map has its tiles
+  // merged into rectangles. Either way CS/CM/War of Dots all render as layered SVGs.
+  const shapes = board.shapes
+    ?? tilesToShapes((x, y) => tiles[y][x], width, height, CM_TILE_SHAPE_STYLES);
+
+  return { width, height, cells, shapes, ui: { hideGrid: true } };
+}
+
 // ── Export ────────────────────────────────────────────────────────────────────
 
 function getActionDuration(state, action) {
@@ -259,7 +351,10 @@ export const CombatMissionGame = {
   evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'CombatMission',
   scenarios: [
-    { id: 'standard', name: 'Ambush', description: 'Platoon-level infantry ambush on mixed terrain', config: {} },
+    { id: 'standard',    name: 'Ambush',        description: 'Platoon-level infantry ambush on mixed terrain', config: {} },
+    { id: 'bocage',      name: 'Bocage',        description: 'Shape terrain — Normandy hedgerow fields, woods and farmhouses', config: { scenario: 'bocage' } },
+    { id: 'river_line',  name: 'River Line',    description: 'Shape terrain — a single bridge crosses an impassable river', config: { scenario: 'river_line' } },
+    { id: 'hill_woods',  name: 'Hill & Woods',  description: 'Shape terrain — scattered oval woods over open hills', config: { scenario: 'hill_woods' } },
   ],
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
@@ -271,6 +366,7 @@ export const CombatMissionGame = {
   renderState,
   getVisibleState,
   getActionDuration,
+  toGrid,
 
   sampleWorlds(observation, playerId, n, rng = Math.random) {
     if (!observation.gameSpecific.fogOfWar) return [];

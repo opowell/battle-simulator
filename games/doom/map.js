@@ -1,7 +1,26 @@
+import { forEachCell } from '../terrainShapes.js';
+
 export const MAP_WIDTH  = 20;
 export const MAP_HEIGHT = 14;
 
 function k(x, y) { return `${x},${y}`; }
+
+// Level authored as an array of shapes (rects + ovals, see games/terrainShapes.js)
+// carved out of solid rock, rather than a hand-typed tile grid — lets the two arena
+// rooms be round instead of every room being a uniform rectangle. Rasterized onto
+// MAP_TILES below for movement/LOS, and reused as-is by DoomGame.toGrid for a smooth
+// non-grid render (same footprints as the original rectangular rooms, so existing
+// monster/item placements all still land on floor).
+export const MAP_ROOMS = [
+  { shape: 'rect', x: 1, y: 1,  w: 5,  h: 4 }, // Room A — marine start
+  { shape: 'rect', x: 6, y: 2,  w: 3,  h: 1 }, // corridor A→B
+  { shape: 'oval', x: 9, y: 1,  w: 10, h: 5 }, // Room B — upper right (first encounter)
+  { shape: 'rect', x: 3, y: 5,  w: 1,  h: 1 }, // corridor A→C
+  { shape: 'rect', x: 1, y: 6,  w: 18, h: 2 }, // Room C — mid corridor
+  { shape: 'oval', x: 1, y: 8,  w: 7,  h: 5 }, // Room D — bottom left (melee brute)
+  { shape: 'rect', x: 8, y: 10, w: 1,  h: 1 }, // corridor D↔E
+  { shape: 'oval', x: 9, y: 8,  w: 10, h: 5 }, // Room E — boss arena
+];
 
 function buildMap() {
   const tiles = {};
@@ -9,29 +28,8 @@ function buildMap() {
     for (let x = 0; x < MAP_WIDTH; x++)
       tiles[k(x, y)] = 'wall';
 
-  // Room A — marine start (top-left)
-  for (let y = 1; y <= 4; y++) for (let x = 1; x <= 5; x++) tiles[k(x, y)] = 'floor';
-
-  // Corridor A→B (horizontal at y=2, cols 6-8)
-  for (let x = 6; x <= 8; x++) tiles[k(x, 2)] = 'floor';
-
-  // Room B — upper right
-  for (let y = 1; y <= 5; y++) for (let x = 9; x <= 18; x++) tiles[k(x, y)] = 'floor';
-
-  // Corridor A→C (single tile at x=3, y=5)
-  tiles[k(3, 5)] = 'floor';
-
-  // Room C — mid horizontal corridor
-  for (let y = 6; y <= 7; y++) for (let x = 1; x <= 18; x++) tiles[k(x, y)] = 'floor';
-
-  // Room D — bottom left
-  for (let y = 8; y <= 12; y++) for (let x = 1; x <= 7; x++) tiles[k(x, y)] = 'floor';
-
-  // Corridor D↔E (single tile at x=8, y=10)
-  tiles[k(8, 10)] = 'floor';
-
-  // Room E — bottom right (boss area)
-  for (let y = 8; y <= 12; y++) for (let x = 9; x <= 18; x++) tiles[k(x, y)] = 'floor';
+  for (const room of MAP_ROOMS)
+    forEachCell(room, MAP_WIDTH, MAP_HEIGHT, (x, y) => { tiles[k(x, y)] = 'floor'; });
 
   return tiles;
 }

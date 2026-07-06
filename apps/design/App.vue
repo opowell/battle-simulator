@@ -115,6 +115,9 @@ watch(liveState, (newState, oldState) => {
   const hopsOn = (ui.moveAnimation ?? 'hop') !== 'none';
   const fxOn   = !!ui.combatFx;
   const diagonal = ui.allowDiagonalHopsWhileMoving ?? false;
+  // Non-grid (shape) maps have no visible grid lines, so stepping axis-by-axis looks
+  // like a stair-stepped hop instead of the straight slide the terrain implies.
+  const slide = (activeField.value?.shapes?.length ?? 0) > 0;
 
   // Net position changes A→B (a unit moved twice in a bundle collapses to one hop —
   // matching the pre-sequencing behaviour). Each is claimed by the beat it belongs to.
@@ -141,7 +144,7 @@ watch(liveState, (newState, oldState) => {
   const claimed = new Set();
   const pushHop = (unitId) => {
     const { from, to } = moved.get(unitId);
-    beats.push({ kind: 'hop', unitId, steps: buildHopPath(from, to, diagonal) });
+    beats.push({ kind: 'hop', unitId, steps: slide ? [from, to] : buildHopPath(from, to, diagonal) });
     claimed.add(unitId);
   };
   for (const entry of newEntries) {
@@ -218,6 +221,7 @@ function buildField(g, s) {
       maxMp:         c.maxMp,
       stats:         c.stats,
       abilities:     c.abilities,
+      equipment:     c.equipment,
       statusEffects: c.statusEffects,
       moved:         c.moved,
       acted:         c.acted,
@@ -249,18 +253,22 @@ function buildField(g, s) {
     // on empty squares and the terrain-info panel (see Battlefield.vue). Games with
     // uniform terrain (chess, etc.) never populate cell.terrain, so this stays false.
     hasTerrain: tiles.some(t => t.terrain),
+    // Non-grid terrain: an array of layered SVG shapes (rectangles + ovals) the game's
+    // toGrid emits instead of colouring tiles (see SchematicLayer.vue). Empty for
+    // ordinary grid games.
+    shapes: g.shapes ?? [],
     units,
-    ui:       apiGame?.ui ?? {},
+    // A game's toGrid may return a per-state `ui` override (e.g. hideGrid for shape
+    // maps); it layers on top of the game's static ui.
+    ui:       { ...(apiGame?.ui ?? {}), ...(g.ui ?? {}) },
     xLabels:  g.xLabels ?? null,
     yLabels:  g.yLabels ?? null,
     // Authoritative fog visibility from the server (computed on the full board). When
     // present the UI must use this rather than re-deriving fog from the filtered board.
     fogVisible: g.visible ? new Set(g.visible.map(([x, y]) => `${x},${y}`)) : null,
-    // Server-persisted last-known sighting of each currently-hidden enemy piece, so a
-    // page reload doesn't forget what this player has already seen this game.
-    fogGhosts: g.ghosts ?? [],
-    // Server-persisted manual fog-square guesses this player has placed themselves.
-    fogManualMarkers: g.manualMarkers ?? [],
+    // Server-persisted per-square fog markers (seeded from the last real sighting,
+    // freely re-cyclable by the player), so a reload doesn't forget them.
+    fogMarkers: g.markers ?? [],
   };
 }
 

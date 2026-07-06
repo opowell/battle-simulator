@@ -1,6 +1,8 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
-import AiDifficultyField from './AiDifficultyField.vue';
+import { ref } from 'vue';
+import GameCard from './GameCard.vue';
+import GameDetailModal from './GameDetailModal.vue';
+import GameConfigureModal from './GameConfigureModal.vue';
 
 const props = defineProps({
   sessions:  { type: Array,  default: () => [] },
@@ -10,135 +12,33 @@ const props = defineProps({
 
 const emit = defineEmits(['open-session', 'create', 'delete-session', 'refresh']);
 
-const TEAM_COLORS = ['var(--teamA)', 'var(--teamB)', 'var(--teamC)', 'var(--teamD)', '#b48cff', '#ff9e64'];
+// Clicking a card opens the gallery/info modal; its "Start…" button hands off
+// to the configure modal, its "Quick start" button fires 'create' immediately.
+const detailGame    = ref(null);
+const configureGame = ref(null);
 
-const previewMode = ref(localStorage.getItem('bs.previewMode') || 'box');
-watch(previewMode, (m) => localStorage.setItem('bs.previewMode', m));
-const brokenPreviews = ref(new Set());
-function previewSrc(gameName) {
-  return `/images/${gameName}/preview_${previewMode.value}`;
-}
-function previewBroken(gameName) {
-  return brokenPreviews.value.has(gameName + ':' + previewMode.value);
-}
-function onPreviewError(gameName) {
-  brokenPreviews.value = new Set(brokenPreviews.value).add(gameName + ':' + previewMode.value);
-}
+function openDetail(g)   { detailGame.value = g; }
+function closeDetail()    { detailGame.value = null; }
+function openConfigure(g) { configureGame.value = g; detailGame.value = null; }
+function closeConfigure() { configureGame.value = null; }
 
-const selGame  = ref('');
-const game     = computed(() => props.apiGames.find(g => g.name === selGame.value) || props.apiGames[0] || null);
-const scens    = computed(() => game.value?.scenarios ?? []);
-const scenKey  = ref('');
-const name     = ref('');
-const maxTurns = ref(300);
-const gameOpts = ref({});
-const slots    = ref([]);
-
-function initGameOpts(g) {
-  const opts = {};
-  for (const opt of g.gameOptions ?? []) {
-    if (opt.type === 'ai-difficulty') {
-      // Two exclusive values: a power level and a time limit. Default to power
-      // mode with the time value null (so only `difficulty` is sent).
-      opts[opt.id] = opt.default ?? 25;
-      opts[opt.timeKey ?? 'aiTimeMs'] = null;
-      opts[opt.id + 'Mode'] = 'power';
-    } else {
-      opts[opt.id] = opt.default ?? (opt.type === 'boolean' ? false : opt.type === 'range' ? (opt.min ?? 0) : opt.options?.[0]?.value ?? '');
-    }
-  }
-  gameOpts.value = opts;
-}
-
-watch(() => props.apiGames, (games) => {
-  if (!games.length) return;
-  if (!selGame.value || !games.find(g => g.name === selGame.value)) {
-    selGame.value = games[0].name;
-    slots.value = makeSlots(games[0]);
-    initGameOpts(games[0]);
-    const sc = games[0].scenarios?.[0];
-    if (sc) { scenKey.value = sc.id; applyScenario(games[0], sc); }
-  }
-}, { immediate: true });
-
-watch(scens, (s) => {
-  if (s.length && !s.find(sc => sc.id === scenKey.value)) {
-    scenKey.value = s[0].id;
-    if (game.value) applyScenario(game.value, s[0]);
-  }
-});
-
-function defaultCpuAgent(g) {
-  const ids = (g?.agents ?? []).map(a => a.id);
-  return ids.includes('obscuro') ? 'obscuro' : (ids[0] ?? 'random');
-}
-
-function makeSlots(g, n) {
-  const count = n || (g?.defaultPlayers?.length ?? 2);
-  return Array.from({ length: count }, (_, i) => ({
-    id:    'slot' + i,
-    name:  i === 0 ? 'You' : `CPU ${i}`,
-    agent: i === 0 ? 'human' : defaultCpuAgent(g),
-    color: TEAM_COLORS[i % TEAM_COLORS.length],
-  }));
-}
-
-function pick(g) {
-  selGame.value = g.name;
-  name.value = '';
-  initGameOpts(g);
+function quickStart(g) {
   const sc = g.scenarios?.[0];
-  if (sc) { scenKey.value = sc.id; applyScenario(g, sc); }
-  else     { slots.value = makeSlots(g); }
-}
-
-function chooseScenario(sc) {
-  scenKey.value = sc.id;
-  applyScenario(game.value, sc);
-}
-
-function applyScenario(g, sc) {
-  maxTurns.value = sc.config?.maxTurns ?? 300;
-  const fog_ = sc.config?.fog ?? sc.config?.fogOfWar;
-  if (fog_ != null) gameOpts.value = { ...gameOpts.value, fogOfWar: fog_ };
-  slots.value = makeSlots(g);
-}
-
-function addSlot() {
-  const max = game.value?.maxPlayers ?? 8;
-  if (slots.value.length >= max) return;
-  slots.value = [...slots.value, {
-    id:    'slot' + slots.value.length,
-    name:  'CPU ' + slots.value.length,
-    agent: defaultCpuAgent(game.value),
-    color: TEAM_COLORS[slots.value.length % TEAM_COLORS.length],
-  }];
-}
-
-function rmSlot(i) {
-  const min = game.value?.minPlayers ?? 2;
-  if (slots.value.length <= min) return;
-  slots.value = slots.value.filter((_, k) => k !== i);
-}
-
-function setSlot(i, patch) {
-  slots.value = slots.value.map((sl, k) => k === i ? { ...sl, ...patch } : sl);
-}
-
-function cycleColor(i) {
-  const idx = TEAM_COLORS.indexOf(slots.value[i].color);
-  setSlot(i, { color: TEAM_COLORS[(idx + 1) % TEAM_COLORS.length] });
-}
-
-function handleCreate() {
+  const ov = gameDefaults.scenarioOverrides(sc);
   emit('create', {
-    game:      selGame.value,
-    name:      name.value || selGame.value,
-    gameOpts:  { ...gameOpts.value },
-    maxTurns:  maxTurns.value,
-    scenario:  scenKey.value,
-    players:   slots.value,
+    game:     g.name,
+    name:     g.name,
+    gameOpts: { ...gameDefaults.initGameOpts(g), ...(ov.fogOfWar != null ? { fogOfWar: ov.fogOfWar } : {}) },
+    maxTurns: ov.maxTurns ?? 300,
+    scenario: sc?.id,
+    players:  gameDefaults.makeSlots(g),
   });
+  detailGame.value = null;
+}
+
+function handleCreate(payload) {
+  emit('create', payload);
+  configureGame.value = null;
 }
 
 function sessionStatusLabel(s) {
@@ -158,7 +58,25 @@ function sessionStatusColor(s) {
 <template>
   <div class="lobby">
 
-    <!-- ── Left: Active Sessions ── -->
+    <!-- ── Left: New Session ── -->
+    <div class="panel" style="min-height:0">
+      <div class="panel-h">
+        <span class="panel-t">New Session</span>
+      </div>
+      <div class="panel-b">
+        <div v-if="serverErr"
+             style="padding:10px 12px;border:1px solid var(--danger);border-radius:var(--r);background:rgba(255,95,86,.07);font-size:12px;color:var(--danger);margin-bottom:12px">
+          ⚠ {{serverErr}}
+        </div>
+        <div class="gamegrid">
+          <GameCard v-for="g in apiGames" :key="g.name"
+                    :game="g"
+                    @click="openDetail(g)"/>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Right: Active Sessions ── -->
     <div class="panel" style="min-height:0">
       <div class="panel-h">
         <span class="panel-t">Active Sessions</span>
@@ -223,150 +141,12 @@ function sessionStatusColor(s) {
       </div>
     </div>
 
-    <!-- ── Right: New Session ── -->
-    <div class="panel" style="min-height:0">
-      <div class="panel-h">
-        <span class="panel-t">New Session</span>
-        <span style="font-size:16px;color:var(--dim);line-height:1">+</span>
-      </div>
-      <div class="panel-b">
-
-        <!-- 1 · Game -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px">
-          <span style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)">
-            1 · Game definition
-          </span>
-          <div class="seg" style="font-size:11px">
-            <button :class="{on: previewMode === 'box'}"   @click="previewMode = 'box'"   style="padding:3px 9px" title="Box art">Cover</button>
-            <button :class="{on: previewMode === 'asset'}" @click="previewMode = 'asset'" style="padding:3px 9px" title="In-game asset">Asset</button>
-          </div>
-        </div>
-        <div class="gamegrid">
-          <div v-for="g in apiGames" :key="g.name"
-               class="gamecard" :class="{sel: g.name === selGame}"
-               @click="pick(g)">
-            <div class="gamecard-thumb" v-if="!previewBroken(g.name)">
-              <img :src="previewSrc(g.name)" :alt="g.name" loading="lazy" @error="onPreviewError(g.name)"/>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:flex-start">
-              <BsIcon :name="g.icon || 'grid'" :size="20" :color="g.name === selGame ? 'var(--accent)' : 'var(--txt)'"/>
-              <span class="mono" style="font-size:9px;color:var(--faint)">{{g.name}}</span>
-            </div>
-            <div>
-              <div style="font-weight:600;font-size:13px">{{g.name}}</div>
-            </div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap">
-              <span class="tag">{{g.minPlayers === g.maxPlayers ? g.minPlayers : g.minPlayers + '–' + g.maxPlayers}}P</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 2 · Scenario -->
-        <div v-if="scens.length" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
-          <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:10px">
-            2 · Scenario
-          </div>
-          <button v-for="sc in scens" :key="sc.id"
-                  class="scenrow" :class="{sel: sc.id === scenKey}"
-                  @click="chooseScenario(sc)">
-            <div class="scenmark">
-              <BsIcon name="flag" :size="14"/>
-            </div>
-            <div style="min-width:0;text-align:left">
-              <div style="font-weight:600;font-size:13px">{{sc.name}}</div>
-              <div style="font-size:11px;color:var(--dim);margin-top:2px">{{sc.description}}</div>
-            </div>
-          </button>
-        </div>
-
-        <!-- Configure -->
-        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <span style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)">
-              {{scens.length ? '3' : '2'}} · Configure
-            </span>
-            <span style="display:flex;align-items:center;gap:8px">
-              <BsIcon :name="game?.icon || 'grid'" :size="15" color="var(--accent)"/>
-              <b style="font-size:13px">{{game?.name ?? ''}}</b>
-            </span>
-          </div>
-
-          <div class="field" style="margin-bottom:14px">
-            <label>Session name</label>
-            <input v-model="name" :placeholder="(game?.name ?? 'game') + ' — ' + new Date().toISOString().slice(5,16).replace('T',' ')"/>
-          </div>
-
-          <!-- Player slots -->
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <label style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)">Players</label>
-            <button v-if="game && game.minPlayers !== game.maxPlayers"
-                    class="btn btn-sm btn-ghost" @click="addSlot" :disabled="slots.length >= (game.maxPlayers ?? 8)">
-              + Add slot
-            </button>
-          </div>
-          <div v-for="(sl, i) in slots" :key="sl.id" class="slot">
-            <button @click="cycleColor(i)" title="Cycle colour"
-                    style="border:none;background:none;padding:0;cursor:pointer;line-height:0">
-              <BsDot :color="sl.color" :size="13"/>
-            </button>
-            <input :value="sl.name" @input="setSlot(i, {name: $event.target.value})"
-                   style="padding:5px 8px;font-size:12px"/>
-            <select :value="sl.agent" @change="setSlot(i, {agent: $event.target.value})"
-                    style="padding:5px 8px;font-size:12px">
-              <option value="human">Human</option>
-              <option v-for="a in (game?.agents ?? [])" :key="a.id" :value="a.id">{{a.name}}</option>
-            </select>
-            <button v-if="game && game.minPlayers !== game.maxPlayers"
-                    class="iconbtn" style="width:30px;height:30px" @click="rmSlot(i)"
-                    :disabled="slots.length <= (game.minPlayers ?? 2)">
-              <BsIcon name="trash" :size="14" color="var(--dim)"/>
-            </button>
-          </div>
-
-          <!-- Game options + engine config -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px">
-            <template v-for="opt in (game?.gameOptions ?? [])" :key="opt.id">
-              <div v-if="opt.type === 'boolean'" class="field">
-                <label>{{opt.label}}</label>
-                <div class="seg" style="font-size:11px">
-                  <button :class="{on: !gameOpts[opt.id]}" @click="gameOpts[opt.id] = false" style="padding:3px 9px">Off</button>
-                  <button :class="{on:  gameOpts[opt.id]}" @click="gameOpts[opt.id] = true"  style="padding:3px 9px">On</button>
-                </div>
-              </div>
-              <div v-else-if="opt.type === 'select'" class="field">
-                <label>{{opt.label}}</label>
-                <select v-model="gameOpts[opt.id]" style="padding:5px 8px;font-size:12px">
-                  <option v-for="o in opt.options" :key="o.value" :value="o.value">{{o.label}}</option>
-                </select>
-              </div>
-              <div v-else-if="opt.type === 'range'" class="field" :title="opt.description">
-                <label>{{opt.label}} · {{gameOpts[opt.id]}}</label>
-                <input type="range" :min="opt.min ?? 0" :max="opt.max ?? 100" :step="opt.step ?? 1" v-model.number="gameOpts[opt.id]"/>
-              </div>
-              <AiDifficultyField v-else-if="opt.type === 'ai-difficulty'" :opt="opt"
-                v-model:power="gameOpts[opt.id]"
-                v-model:time="gameOpts[opt.timeKey ?? 'aiTimeMs']"
-                v-model:mode="gameOpts[opt.id + 'Mode']"/>
-            </template>
-            <div class="field">
-              <label>Max turns · {{maxTurns}}</label>
-              <input type="range" min="50" max="500" step="10" v-model.number="maxTurns"/>
-            </div>
-          </div>
-
-          <button class="btn btn-primary"
-                  style="width:100%;justify-content:center;margin-top:18px;padding:11px"
-                  :disabled="!!serverErr || !game"
-                  @click="handleCreate">
-            <BsIcon name="play" :size="15" color="#04222b" :stroke="2"/>
-            Create &amp; enter battlefield
-          </button>
-          <div v-if="serverErr" style="margin-top:8px;font-size:11px;color:var(--danger);text-align:center">
-            Server offline — start it with: node api-server.js
-          </div>
-        </div>
-
-      </div>
-    </div>
+    <GameDetailModal :game="detailGame"
+                      @close="closeDetail"
+                      @quick-start="quickStart"
+                      @configure="openConfigure"/>
+    <GameConfigureModal :game="configureGame" :disabled="!!serverErr"
+                         @close="closeConfigure"
+                         @create="handleCreate"/>
   </div>
 </template>

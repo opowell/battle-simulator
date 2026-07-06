@@ -99,12 +99,14 @@ input[type=range]{padding:0;width:100%}
 .sessionrow:hover{border-color:var(--line3);background:var(--bg3)}
 .sessionrow+.sessionrow{margin-top:10px}
 .gicon{width:42px;height:42px;border-radius:8px;display:grid;place-items:center;border:1px solid var(--line2);background:var(--bg0);flex:none}
-.gamegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px}
-.gamecard{border:1px solid var(--line);border-radius:var(--r2);background:var(--bg2);padding:12px;cursor:pointer;transition:.12s;display:flex;flex-direction:column;gap:9px}
-.gamecard:hover{border-color:var(--line3);background:var(--bg3);transform:translateY(-1px)}
-.gamecard.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 8px 24px -12px var(--accent)}
-.gamecard-thumb{margin:-12px -12px 0;aspect-ratio:16/9;overflow:hidden;background:var(--bg0);border-radius:var(--r2) var(--r2) 0 0}
-.gamecard-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.gamegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.gamecard{position:relative;aspect-ratio:4/3;border:1px solid var(--line);border-radius:var(--r2);background:var(--bg2);overflow:hidden;cursor:pointer;transition:.12s}
+.gamecard:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 10px 26px -12px rgba(0,0,0,.6)}
+.gamecard-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.gamecard-scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 42%,rgba(0,0,0,.85) 100%)}
+.gamecard-info{position:absolute;left:10px;right:10px;bottom:9px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.gamecard-name{font-weight:700;font-size:13px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gamecard-tag{font-family:var(--mono);font-size:9.5px;padding:2px 6px;border-radius:3px;background:rgba(6,9,12,.55);color:#e8ecef;letter-spacing:.04em;flex:none;backdrop-filter:blur(3px)}
 .tag{font-family:var(--mono);font-size:9.5px;padding:1px 5px;border-radius:3px;border:1px solid var(--line2);color:var(--dim);letter-spacing:.04em}
 .scenrow{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:center;text-align:left;width:100%;border:1px solid var(--line);border-radius:var(--r2);background:var(--bg2);padding:10px 12px;transition:.12s;cursor:pointer}
 .scenrow:hover{border-color:var(--line3);background:var(--bg3)}
@@ -115,6 +117,12 @@ input[type=range]{padding:0;width:100%}
 .slot{display:grid;grid-template-columns:auto 1fr auto auto;gap:9px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg2)}
 .slot+.slot{margin-top:8px}
 .slot input,.slot select{width:auto}
+
+/* modals (game detail / configure overlays) */
+.modal-scrim{position:fixed;inset:0;z-index:1000;background:rgba(4,7,10,.78);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:24px}
+.modal-panel{position:relative;background:var(--bg1);border:1px solid var(--line2);border-radius:var(--r2);box-shadow:0 24px 64px -12px rgba(0,0,0,.85);max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-close{position:absolute;top:10px;right:10px;z-index:2;width:28px;height:28px;display:grid;place-items:center;border:1px solid var(--line2);border-radius:var(--r);background:rgba(8,12,16,.6);color:#fff;font-size:16px;cursor:pointer;line-height:1}
+.modal-close:hover{background:rgba(8,12,16,.85)}
 
 /* battlefield */
 .bf{height:100%;display:grid;grid-template-rows:auto 1fr auto;grid-template-columns:1fr 296px;grid-template-areas:"bar bar" "stage side" "time side";overflow:hidden}
@@ -158,7 +166,9 @@ input[type=range]{padding:0;width:100%}
 [data-theme="retro"] input,[data-theme="retro"] select,[data-theme="retro"] .slot,
 [data-theme="retro"] .iconbtn,[data-theme="retro"] .statuschip,[data-theme="retro"] .badge,
 [data-theme="retro"] .gicon,[data-theme="retro"] .action-btn,[data-theme="retro"] .hpbar,
-[data-theme="retro"] .tag,[data-theme="retro"] .scenrow,[data-theme="retro"] .scenmark{border-radius:0!important}
+[data-theme="retro"] .tag,[data-theme="retro"] .scenrow,[data-theme="retro"] .scenmark,
+[data-theme="retro"] .gamecard-tag,
+[data-theme="retro"] .modal-panel,[data-theme="retro"] .modal-close{border-radius:0!important}
 [data-theme="retro"] .brand,[data-theme="retro"] .btn-primary,[data-theme="retro"] .panel-t{text-shadow:0 0 6px rgba(57,255,136,.45)}
 [data-theme="retro"] .topbar{background:#04140a}
 [data-theme="retro"] .scanline{background:repeating-linear-gradient(0deg,rgba(0,0,0,.20) 0 1px,transparent 1px 3px);mix-blend-mode:normal}
@@ -173,6 +183,7 @@ input[type=range]{padding:0;width:100%}
 <script src="./vue-router.global.js"></script>
 <script src="./data.js"></script>
 <script src="./api.js"></script>
+<script src="./gameDefaults.js"></script>
 <script src="./teamSprite.js"></script>
 <script>
 (function () {

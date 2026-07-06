@@ -1,5 +1,5 @@
 import { unitStrengthEval } from '../evalHelpers.js';
-import { MAP_WIDTH, MAP_HEIGHT, hasLOS, getReachable, manhattan, renderMap } from './map.js';
+import { MAP_WIDTH, MAP_HEIGHT, MAP_ROOMS, hasLOS, getReachable, manhattan, renderMap } from './map.js';
 import { WEAPONS, AMMO_CAPS, WEAPON_RANK } from './weapons.js';
 import { createMarine, createMonster } from './units.js';
 import { getDoomBelief } from './belief.js';
@@ -322,6 +322,44 @@ function createInitialState(players, config = {}) {
   };
 }
 
+// ── toGrid (design UI) ──────────────────────────────────────────────────────────
+// Non-grid terrain like CsGame/CombatMissionGame: rooms are authored as shapes
+// (MAP_ROOMS, rects + ovals — see map.js), drawn directly as floor-coloured shapes
+// over a uniform rock backdrop, so the two arena rooms render round rather than
+// every room looking like a blocky rectangle.
+
+const FLOOR_FILL = '#c8c0a8';
+const ROOM_SHAPES = MAP_ROOMS.map(r => ({ ...r, fill: FLOOR_FILL }));
+
+function toGrid(state) {
+  const { units, gameSpecific: gs } = state;
+  const pidIdx = {};
+  state.players.forEach((p, i) => { pidIdx[p.id] = i + 1; });
+
+  const posMap = {};
+  for (const u of units) if (u.alive) posMap[`${u.position.x},${u.position.y}`] = u;
+
+  const cells = [];
+  for (let y = 0; y < MAP_HEIGHT; y++) {
+    for (let x = 0; x < MAP_WIDTH; x++) {
+      const u = posMap[`${x},${y}`];
+      cells.push({
+        x, y,
+        glyph:    u ? u.attrs.symbol : '',
+        unitId:   u?.id,
+        unitName: u?.type,
+        owner:    u ? (pidIdx[gs.teamPlayerMap[u.ownerId]] ?? 0) : 0,
+        color:    '#23262b',
+        hp:       u?.hp,
+        maxHp:    u?.maxHp,
+        job:      u?.weapon,
+      });
+    }
+  }
+
+  return { width: MAP_WIDTH, height: MAP_HEIGHT, cells, shapes: ROOM_SHAPES, ui: { hideGrid: true } };
+}
+
 // ── Export ────────────────────────────────────────────────────────────────────
 
 function getVisibleState(state, teamId) {
@@ -369,6 +407,7 @@ export const DoomGame = {
   applyActions:     withTeam(applyActions),
   getResult,
   renderState,
+  toGrid,
   getVisibleState:  withTeam(getVisibleState),
   sampleWorlds:     withTeam(sampleWorlds),
 };

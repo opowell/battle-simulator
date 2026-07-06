@@ -83,6 +83,16 @@ defineEmits(['open-info', 'open-ability-info']);
           {{fx}}
         </span>
       </div>
+      <div v-if="unit.equipment?.length" style="margin-bottom:8px">
+        <div style="font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Equipment</div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div v-for="eq in unit.equipment" :key="eq.label"
+               style="display:flex;justify-content:space-between;font-size:10px">
+            <span style="color:var(--faint)">{{eq.label}}</span>
+            <span class="mono" style="color:var(--txt)">{{eq.value}}</span>
+          </div>
+        </div>
+      </div>
       <div v-if="unit.abilities?.length">
         <div style="font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Abilities</div>
         <div style="display:flex;flex-wrap:wrap;gap:3px">

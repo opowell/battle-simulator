@@ -219,9 +219,9 @@ function createInitialState(players, config = {}) {
   const p1Camp = { x: 3,           y: cy };
   const p2Camp = { x: width - 4,   y: cy };
 
-  const rng   = mulberry32(seed);
-  const tiles = generateMap(width, height, rng, [p1Camp, p2Camp]);
-  const board = { width, height, tiles };
+  const rng = mulberry32(seed);
+  const { tiles, shapes } = generateMap(width, height, rng, [p1Camp, p2Camp]);
+  const board = { width, height, tiles, shapes };
 
   const [p1, p2] = players;
 
@@ -305,11 +305,10 @@ function getActionDuration(state, action) {
 
 function terrainInfo(key) {
   const t = TERRAIN[key] ?? TERRAIN.plains;
-  const name = key ? key[0].toUpperCase() + key.slice(1) : 'Plains';
-  if (!t.passable) return { name, description: 'Impassable.' };
+  if (!t.passable) return { name: t.name, description: t.description };
   const parts = [`Move cost ${t.moveCost}`];
   if (t.defBonus) parts.push(`+${Math.round(t.defBonus * 100)}% defense`);
-  return { name, description: parts.join(' · ') };
+  return { name: t.name, description: parts.join(' · ') };
 }
 
 export const AowGame = {
@@ -321,7 +320,6 @@ export const AowGame = {
     { id: 'conquest',     name: 'Conquest',      description: 'Default 22×12 fantasy map',        config: {} },
     { id: 'epic',         name: 'Epic Campaign',  description: '30×18 expanded world to conquer',  config: { width: 30, height: 18 } },
   ],
-  colors: { plains: '#b8a860', forest: '#2a6830', hills: '#9a8050', mountains: '#706050' },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
   ],
@@ -334,9 +332,12 @@ export const AowGame = {
   sampleWorlds,
   getActionDuration,
 
+  // Terrain is authored as shapes (see map.js generateMap), not per-cell colour,
+  // so cells fall back to a uniform ground colour and the client draws the
+  // shapes layer instead of a blocky grid (ui.hideGrid).
   toGrid(state) {
     const { board, units = [] } = state;
-    const { width, height, tiles } = board;
+    const { width, height, tiles, shapes } = board;
     const pidIdx = {};
     (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
     const umap = {};
@@ -350,12 +351,12 @@ export const AowGame = {
           x, y,
           glyph: u ? u.type[0].toUpperCase() : '',
           owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
-          color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
+          color: TERRAIN.plains.color,
           terrain: terrainInfo(tile.terrain),
           hp: u?.hp, maxHp: u?.maxHp,
         });
       }
     }
-    return { width, height, cells };
+    return { width, height, cells, shapes, ui: { hideGrid: true } };
   },
 };
