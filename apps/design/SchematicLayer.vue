@@ -24,6 +24,8 @@ const props = defineProps({
   // Empty square selected for its terrain info (see Battlefield.vue's selectedSquare).
   // Distinct from `selectedSquare` below, which tints a *unit's* square.
   selectedEmptySquare: { type: Object, default: null },
+  // Selected terrain shape (non-grid maps) — outlined to show what the info panel describes.
+  selectedShape: { type: Object, default: null },
 });
 const emit = defineEmits(['select', 'sq-click', 'set-marker']);
 
@@ -44,6 +46,20 @@ const selectedSquare = computed(() => {
   if (!props.field.ui?.highlightSelectedSquare || !props.selectedId) return null;
   const u = props.units.find(u => u.id === props.selectedId);
   return u ? { x: Math.floor(u.x), y: Math.floor(u.y) } : null;
+});
+
+// Non-grid (shape) maps have no tile grid visually, so showing legal moves as a lattice
+// of unit-cell squares looks wrong — draw the reachable area as a single movement-radius
+// circle around the selected unit instead (the underlying moves are still per-cell).
+const legalMoveCircle = computed(() => {
+  if (!props.field.shapes?.length || !props.legalSquares.length) return null;
+  const u = props.units.find(u => u.id === props.selectedId);
+  if (!u) return null;
+  let r = 0;
+  for (const [lc, lr] of props.legalSquares) {
+    r = Math.max(r, Math.hypot((lc + 0.5) - u.x, (lr + 0.5) - u.y));
+  }
+  return { cx: u.x, cy: u.y, r };
 });
 
 const gridX = computed(() => {
@@ -228,10 +244,16 @@ function isFogSquare(col, row) {
   return false;
 }
 
-// Server-persisted manual guesses (see ChessGame.js `manualMarkers`/`fogManualMarkers`),
-// kept in game state so a reload or another viewer sees the same guesses immediately —
-// there's no local copy here, `field.fogManualMarkers` is the only source of truth.
-const squareMarkerList = computed(() => (props.field.fogManualMarkers ?? []).map(m => ({ col: m.x, row: m.y, type: m.type })));
+// Server-persisted fog markers (see ChessGame.js `markers`/`fogMarkers`): one value per
+// currently-hidden square, seeded from the last real sighting the instant it went out of
+// view and freely re-cyclable by the viewer from there — there's no separate "confirmed"
+// vs "guessed" state. Kept in game state so a reload or another viewer sees the same
+// markers immediately — there's no local copy here, `field.fogMarkers` is the only
+// source of truth.
+const squareMarkerList = computed(() => {
+  if (!props.fog || props.revealAll) return [];
+  return (props.field.fogMarkers ?? []).map(m => ({ col: m.x, row: m.y, type: m.type, img: m.imagePath }));
+});
 
 // Reveal mode: every piece the viewer can't see is drawn as a translucent marker at its
 // true square (using its own colour's sprite), so hidden positions are exposed.
@@ -248,22 +270,7 @@ const revealMarkerList = computed(() => {
   return out;
 });
 
-// Server-persisted ghosts: the game's authoritative last-known sighting of every
-// currently-hidden enemy piece (seeded at the starting position, then updated once per
-// real move as pieces are seen or lost — see ChessGame.js `fogMarkers`/`fogGhosts`).
-// Living server-side, this survives a page reload, unlike a client-only cache.
-const serverGhostList = computed(() => {
-  if (!props.fog || props.revealAll) return [];
-  return (props.field.fogGhosts ?? []).map(g => ({ col: g.x, row: g.y, type: g.type, img: g.imagePath }));
-});
-
-const displayMarkers = computed(() => {
-  if (props.revealAll) return revealMarkerList.value;
-  // A server-confirmed last-known position is more trustworthy than a manual guess, so
-  // it wins when both land on the same square.
-  const ghostKeys = new Set(serverGhostList.value.map(g => `${g.col},${g.row}`));
-  return [...squareMarkerList.value.filter(m => !ghostKeys.has(`${m.col},${m.row}`)), ...serverGhostList.value];
-});
+const displayMarkers = computed(() => props.revealAll ? revealMarkerList.value : squareMarkerList.value);
 
 // ── drag-to-move ──────────────────────────────────────────────────────────────
 const svgEl       = ref(null);
@@ -393,6 +400,26 @@ function facingArrow(u) {
 // ── combat flashes ──────────────────────────────────────────────────────────────
 // Sized to sit just outside a token; drawn from captured board squares (not the
 // live unit list) so a fatal hit still flashes at the victim's last position.
+// Shapes are drawn in array order, so later entries sit visually on top of earlier
+// ones (e.g. the mountain border strips drawn after — and over — interior forest/hill
+// ovals). The selected shape's outline must follow that same stacking: its own edge
+// where nothing covers it, plus the covering shapes' edges where they cut into it —
+// otherwise the dashed outline draws a full oval/rect that ignores the terrain actually
+// visible on screen.
+const selectedShapeIndex = computed(() => {
+  const s = props.selectedShape;
+  if (!s || !props.field.shapes) return -1;
+  return props.field.shapes.findIndex(sh =>
+    sh.shape === s.shape && sh.x === s.x && sh.y === s.y && sh.w === s.w && sh.h === s.h);
+});
+const coveringShapes = computed(() => {
+  const idx = selectedShapeIndex.value;
+  if (idx < 0) return [];
+  const s = props.selectedShape;
+  return props.field.shapes.slice(idx + 1)
+    .filter(cs => s.x < cs.x + cs.w && s.x + s.w > cs.x && s.y < cs.y + cs.h && s.y + s.h > cs.y);
+});
+
 const fxList = computed(() => Object.entries(props.unitFx ?? {}).map(([id, fx]) => ({ id, ...fx })));
 const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'square'
   ? (props.field.world.w <= 10 ? 0.42 : 0.5)
@@ -405,19 +432,111 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
          :style="{ display:'block', position:'absolute', inset:0, cursor: dragUnit ? 'grabbing' : '' }"
          @click="handleBoardClick">
 
-      <!-- Terrain tiles (per-cell color from game toGrid; fog applied per-tile) -->
-      <rect v-for="(tile, i) in (field.tiles ?? [])" :key="'t'+i"
-            :x="fit.x(tile.x)" :y="fit.y(tile.y)"
-            :width="fit.len(1)" :height="fit.len(1)"
-            :fill="tileColor(tile)"/>
-      <!-- Terrain images (overlaid on color; absent when fogged) -->
-      <template v-for="(tile, i) in (field.tiles ?? [])" :key="'ti'+i">
-        <image v-if="tileBgImage(tile)"
-               :x="fit.x(tile.x)" :y="fit.y(tile.y)"
-               :width="fit.len(1)" :height="fit.len(1)"
-               :href="tileBgImage(tile)"
-               preserveAspectRatio="xMidYMid slice"
-               style="pointer-events:none;image-rendering:pixelated"/>
+      <!-- Terrain: on ordinary tile-grid maps, one <rect> per cell (per-cell color from
+           game toGrid; fog applied per-tile). Non-grid (shape) maps have no real tile grid
+           to show — every cell shares one uniform ground color there (terrain is conveyed
+           by the shapes below instead), so draw that as a single backdrop rect rather than
+           a lattice of unit-cell squares. -->
+      <rect v-if="field.shapes?.length && field.tiles?.length"
+            :x="fit.x(0)" :y="fit.y(0)"
+            :width="fit.len(field.world.w)" :height="fit.len(field.world.h)"
+            :fill="tileColor(field.tiles[0])"/>
+      <template v-else>
+        <rect v-for="(tile, i) in (field.tiles ?? [])" :key="'t'+i"
+              :x="fit.x(tile.x)" :y="fit.y(tile.y)"
+              :width="fit.len(1)" :height="fit.len(1)"
+              shape-rendering="crispEdges"
+              :fill="tileColor(tile)"/>
+        <!-- Terrain images (overlaid on color; absent when fogged) -->
+        <template v-for="(tile, i) in (field.tiles ?? [])" :key="'ti'+i">
+          <image v-if="tileBgImage(tile)"
+                 :x="fit.x(tile.x)" :y="fit.y(tile.y)"
+                 :width="fit.len(1)" :height="fit.len(1)"
+                 :href="tileBgImage(tile)"
+                 preserveAspectRatio="xMidYMid slice"
+                 style="pointer-events:none;image-rendering:pixelated"/>
+        </template>
+      </template>
+
+      <!-- Non-grid terrain: layered shapes (rectangles + ovals) drawn as the map itself.
+           Emitted by a game's toGrid instead of per-tile colours (see field.shapes). -->
+      <template v-for="(s, i) in (field.shapes ?? [])" :key="'shp'+i">
+        <ellipse v-if="s.shape === 'oval'"
+                 :cx="fit.x(s.x + s.w/2)" :cy="fit.y(s.y + s.h/2)"
+                 :rx="fit.len(s.w/2)" :ry="fit.len(s.h/2)"
+                 :fill="s.fill" :fill-opacity="s.opacity ?? 1"
+                 :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? 1.5 : 0"
+                 style="pointer-events:none"/>
+        <rect v-else
+              :x="fit.x(s.x)" :y="fit.y(s.y)"
+              :width="fit.len(s.w)" :height="fit.len(s.h)"
+              :rx="s.round ? fit.len(0.25) : 0"
+              :fill="s.fill" :fill-opacity="s.opacity ?? 1"
+              :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? 1.5 : 0"
+              style="pointer-events:none"/>
+        <text v-if="s.label"
+              :x="fit.x(s.x + s.w/2)" :y="fit.y(s.y + s.h/2)"
+              :fill="s.labelColor ?? 'rgba(255,255,255,0.85)'"
+              :font-family="rdr.font" font-size="13" font-weight="700"
+              text-anchor="middle" dominant-baseline="central"
+              style="pointer-events:none;user-select:none">{{s.label}}</text>
+      </template>
+
+      <!-- Selected terrain shape outline (non-grid maps). Punched by any higher-layer
+           shapes drawn over it (see coveringShapes) so the dashed line follows the
+           actually-visible edge instead of the shape's full, possibly-covered bounds. -->
+      <template v-if="selectedShape">
+        <defs>
+          <mask id="selShapeMask" maskUnits="userSpaceOnUse" x="-100%" y="-100%" width="300%" height="300%">
+            <ellipse v-if="selectedShape.shape === 'oval'"
+                     :cx="fit.x(selectedShape.x + selectedShape.w/2)" :cy="fit.y(selectedShape.y + selectedShape.h/2)"
+                     :rx="fit.len(selectedShape.w/2)" :ry="fit.len(selectedShape.h/2)" fill="white"/>
+            <rect v-else
+                  :x="fit.x(selectedShape.x)" :y="fit.y(selectedShape.y)"
+                  :width="fit.len(selectedShape.w)" :height="fit.len(selectedShape.h)" fill="white"/>
+            <template v-for="(cs, ci) in coveringShapes" :key="'covm'+ci">
+              <ellipse v-if="cs.shape === 'oval'"
+                       :cx="fit.x(cs.x + cs.w/2)" :cy="fit.y(cs.y + cs.h/2)"
+                       :rx="fit.len(cs.w/2)" :ry="fit.len(cs.h/2)" fill="black"/>
+              <rect v-else
+                    :x="fit.x(cs.x)" :y="fit.y(cs.y)"
+                    :width="fit.len(cs.w)" :height="fit.len(cs.h)" fill="black"/>
+            </template>
+          </mask>
+          <clipPath id="selShapeClip" clipPathUnits="userSpaceOnUse">
+            <ellipse v-if="selectedShape.shape === 'oval'"
+                     :cx="fit.x(selectedShape.x + selectedShape.w/2)" :cy="fit.y(selectedShape.y + selectedShape.h/2)"
+                     :rx="fit.len(selectedShape.w/2)" :ry="fit.len(selectedShape.h/2)"/>
+            <rect v-else
+                  :x="fit.x(selectedShape.x)" :y="fit.y(selectedShape.y)"
+                  :width="fit.len(selectedShape.w)" :height="fit.len(selectedShape.h)"/>
+          </clipPath>
+        </defs>
+        <!-- The shape's own edge, hidden wherever a covering shape sits on top of it -->
+        <ellipse v-if="selectedShape.shape === 'oval'"
+                 :cx="fit.x(selectedShape.x + selectedShape.w/2)" :cy="fit.y(selectedShape.y + selectedShape.h/2)"
+                 :rx="fit.len(selectedShape.w/2)" :ry="fit.len(selectedShape.h/2)"
+                 fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
+                 mask="url(#selShapeMask)" style="pointer-events:none"/>
+        <rect v-else
+              :x="fit.x(selectedShape.x)" :y="fit.y(selectedShape.y)"
+              :width="fit.len(selectedShape.w)" :height="fit.len(selectedShape.h)"
+              fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
+              mask="url(#selShapeMask)" style="pointer-events:none"/>
+        <!-- Each covering shape's own edge, kept only where it cuts across the selected
+             shape — this is the "new" boundary the selection now traces there. -->
+        <template v-for="(cs, ci) in coveringShapes" :key="'covo'+ci">
+          <ellipse v-if="cs.shape === 'oval'"
+                   :cx="fit.x(cs.x + cs.w/2)" :cy="fit.y(cs.y + cs.h/2)"
+                   :rx="fit.len(cs.w/2)" :ry="fit.len(cs.h/2)"
+                   fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
+                   clip-path="url(#selShapeClip)" style="pointer-events:none"/>
+          <rect v-else
+                :x="fit.x(cs.x)" :y="fit.y(cs.y)"
+                :width="fit.len(cs.w)" :height="fit.len(cs.h)"
+                fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
+                clip-path="url(#selShapeClip)" style="pointer-events:none"/>
+        </template>
       </template>
 
       <!-- Board squares (alternating pattern for small square grids) -->
@@ -462,8 +581,13 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             fill="rgba(242,180,65,0.35)"
             style="pointer-events:none"/>
 
-      <!-- Legal move highlights -->
-      <rect v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
+      <!-- Legal move highlights: a single radius circle on non-grid (shape) maps, or
+           per-cell squares on ordinary tile-grid maps. -->
+      <circle v-if="legalMoveCircle"
+              :cx="fit.x(legalMoveCircle.cx)" :cy="fit.y(legalMoveCircle.cy)" :r="fit.len(legalMoveCircle.r)"
+              fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
+              style="cursor:pointer"/>
+      <rect v-else v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
             :x="fit.x(lc)" :y="fit.y(lr)"
             :width="fit.len(1)" :height="fit.len(1)"
             fill="rgba(66,198,230,0.28)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"

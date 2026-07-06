@@ -47,9 +47,24 @@ const selectedId = ref(null);
 // unit always clears this, and vice versa.
 const selectedSquare = ref(null);
 
+// Terrain-shape selection: on non-grid (shape) maps only the terrain shapes are
+// selectable — clicking hit-tests the shapes rather than picking an arbitrary grid cell.
+// Holds the hit shape plus the clicked cell (atX/atY) for the info panel + highlight.
+const selectedShape = ref(null);
+
+function pointInShape(s, px, py) {
+  if (s.shape === 'oval') {
+    const rx = s.w / 2, ry = s.h / 2;
+    if (rx <= 0 || ry <= 0) return false;
+    const nx = (px - (s.x + rx)) / rx, ny = (py - (s.y + ry)) / ry;
+    return nx * nx + ny * ny <= 1;
+  }
+  return px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h;
+}
+
 function selectUnit(id) {
   selectedId.value = id;
-  if (id) selectedSquare.value = null;
+  if (id) { selectedSquare.value = null; selectedShape.value = null; }
 }
 
 // ── game-over overlay ─────────────────────────────────────────
@@ -74,6 +89,7 @@ watch(() => props.liveState?.id, () => {
   dismissedResult.value = false;
   revealAll.value = false;
   selectedSquare.value = null;
+  selectedShape.value = null;
 }, { immediate: true });
 
 watch(() => props.historyFields, (h) => {
@@ -130,6 +146,7 @@ function toggleReveal() {
   revealAll.value = !revealAll.value;
   selectedId.value = null;
   selectedSquare.value = null;
+  selectedShape.value = null;
   histPos.value = Math.max(0, histLength.value - 1);
 }
 
@@ -276,14 +293,37 @@ function handleSetMarker(col, row, type) {
 
 function handleSqClick(col, row) {
   if (isPending.value && selectedId.value) {
-    const action = legalActions.value.find(a => {
+    let action = legalActions.value.find(a => {
       if (a.unitId !== selectedId.value) return false;
       const coords = actionGridCoord(a, 'to');
       return coords && coords[0] === col && coords[1] === row;
     });
-    if (action) { submitAction(action); selectedSquare.value = null; return; }
+    // Non-grid (shape) maps have no visible grid lines, so a click a hair off the
+    // intended cell shouldn't silently fail — snap to the nearest legal
+    // destination for the selected unit instead of requiring an exact hit.
+    if (!action && props.field.shapes?.length) {
+      let best = null, bestDist = Infinity;
+      for (const a of legalActions.value) {
+        if (a.unitId !== selectedId.value) continue;
+        const coords = actionGridCoord(a, 'to');
+        if (!coords) continue;
+        const d = Math.hypot(coords[0] - col, coords[1] - row);
+        if (d < bestDist) { bestDist = d; best = a; }
+      }
+      if (best && bestDist <= 1.5) action = best;
+    }
+    if (action) { submitAction(action); selectedSquare.value = null; selectedShape.value = null; return; }
   }
   selectedId.value = null;
+  // Non-grid (shape) maps: select the topmost terrain shape under the click, not a grid
+  // cell. Clicking bare ground (no shape) clears the selection.
+  if (props.field.shapes?.length) {
+    const cx = col + 0.5, cy = row + 0.5;
+    const hit = [...props.field.shapes].reverse().find(s => s.name && pointInShape(s, cx, cy));
+    selectedShape.value = hit ? { ...hit, atX: col, atY: row } : null;
+    selectedSquare.value = null;
+    return;
+  }
   const occupied = displayUnits.value.some(u => !u.dead && Math.floor(u.x) === col && Math.floor(u.y) === row);
   selectedSquare.value = (props.field.hasTerrain && !occupied) ? { x: col, y: row } : null;
 }
@@ -291,6 +331,10 @@ function handleSqClick(col, row) {
 const selectedUnit = computed(() => displayUnits.value.find(u => u.id === selectedId.value) || null);
 
 const selectedTerrain = computed(() => {
+  if (selectedShape.value) {
+    const s = selectedShape.value;
+    return { x: s.atX, y: s.atY, name: s.name, description: s.description };
+  }
   if (!selectedSquare.value) return null;
   const { x, y } = selectedSquare.value;
   const tile = displayField.value?.tiles?.find(t => t.x === x && t.y === y);
@@ -437,7 +481,7 @@ onUnmounted(() => {
           @open-ability-info="openAbilityInfo"/>
         <SelectedSquareDetail v-else-if="selectedTerrain" :terrain="selectedTerrain"/>
         <div v-else style="padding:12px 14px;font-size:11px;color:var(--faint)">
-          Select a unit{{ field.hasTerrain ? ' or square' : '' }} to view details.
+          Select a unit{{ field.shapes?.length ? ' or terrain feature' : (field.hasTerrain ? ' or square' : '') }} to view details.
         </div>
 
         <ActionsPanel v-if="isLive"
@@ -469,6 +513,7 @@ onUnmounted(() => {
           :dragToMove="ui.dragToMove ?? false"
           :revealAll="revealAll" :viewerTeam="viewerTeam"
           :selectedEmptySquare="selectedSquare"
+          :selectedShape="selectedShape"
           @select="selectUnit"
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>

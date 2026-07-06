@@ -46,7 +46,7 @@ Each side fields up to 7 units placed around the camp (some may be omitted if te
 - **Camp capture** — each side has a camp tile; occupying the enemy camp wins the game
 - **Fog of war** — vision radius 2 (Chebyshev); enemies outside vision are hidden
 - **Movement** — Dijkstra pathfinding, 8-directional; terrain move cost applied; cannot pass through or stack with other units
-- **Map generation** — multi-scale value noise; border tiles are always mountains; camp surroundings (Chebyshev radius 3) are guaranteed plains
+- **Map generation** — multi-scale value noise classifies each cell, then connected regions are merged into oval terrain shapes (non-grid rendering, see `games/terrainShapes.js`) which are rasterized back onto the tile grid for movement/combat; border is always mountains (drawn as strips); camp surroundings (Chebyshev radius 3) are guaranteed plains
 
 ## Win conditions
 

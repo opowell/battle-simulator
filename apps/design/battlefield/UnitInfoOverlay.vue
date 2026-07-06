@@ -83,6 +83,16 @@ function abilityTypeMeta(type) {
             </div>
           </div>
         </div>
+        <div v-if="unit.equipment?.length" style="padding:14px 18px;border-bottom:1px solid var(--line)">
+          <div class="panel-t" style="margin-bottom:10px">Equipment</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div v-for="eq in unit.equipment" :key="eq.label"
+                 style="display:flex;justify-content:space-between;padding:7px 10px;border-radius:var(--r);background:var(--bg2);border:1px solid var(--line)">
+              <span style="font-size:11px;color:var(--dim)">{{eq.label}}</span>
+              <span class="mono" style="font-size:11px;font-weight:600">{{eq.value}}</span>
+            </div>
+          </div>
+        </div>
         <div v-if="unit.abilities?.length" style="padding:14px 18px;border-bottom:1px solid var(--line)">
           <div class="panel-t" style="margin-bottom:10px">Abilities</div>
           <div style="display:flex;flex-direction:column;gap:4px">

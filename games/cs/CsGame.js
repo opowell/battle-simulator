@@ -48,6 +48,11 @@ function buildFireSet(fireZones) {
 
 // ── Unit factory ──────────────────────────────────────────────────────────────
 
+function fullAmmo(weaponId) {
+  const w = WEAPONS[weaponId];
+  return { mag: w.magSize, reserve: w.reserve };
+}
+
 function makeUnit(id, ownerId, pos) {
   return {
     id, ownerId, type: 'player',
@@ -56,6 +61,7 @@ function makeUnit(id, ownerId, pos) {
     hp: 100, maxHp: 100,
     armor: 0, helmet: false, hasKit: false,
     weapon: 'pistol',
+    ammo: fullAmmo('pistol'),
     grenades: {},
     blinded: 0,
     perTurn: { hasMoved: false, hasActed: false },
@@ -119,8 +125,8 @@ function actionPhaseActions(state, teamId) {
     }
 
     if (!u.perTurn.hasActed) {
-      // Shoot (not available while blinded)
-      if (!u.blinded) {
+      // Shoot (not available while blinded or out of ammo in the magazine)
+      if (!u.blinded && u.ammo.mag > 0) {
         const enemies = state.units.filter(e => e.alive && e.ownerId !== teamId);
         const wpn     = WEAPONS[u.weapon];
         for (const e of enemies) {
@@ -128,6 +134,13 @@ function actionPhaseActions(state, teamId) {
               hasLOS(tiles, u.position.x, u.position.y, e.position.x, e.position.y, smokeSet))
             actions.push({ type: 'shoot', unitId: u.id, targetId: e.id });
         }
+      }
+
+      // Reload (usable even while blinded)
+      {
+        const wpn = WEAPONS[u.weapon];
+        if (u.ammo.mag < wpn.magSize && u.ammo.reserve > 0)
+          actions.push({ type: 'reload', unitId: u.id });
       }
 
       // Throw grenades (usable even while blinded)
@@ -245,7 +258,7 @@ function applyActions(state, playerActions, rng = Math.random) {
           ? { ...u, grenades: { ...u.grenades, [item]: (u.grenades[item] ?? 0) + 1 } } : u);
         deduct(GRENADES[item].cost);
       } else if (WEAPONS[item]) {
-        units = units.map(u => u.id === unitId ? { ...u, weapon: item } : u);
+        units = units.map(u => u.id === unitId ? { ...u, weapon: item, ammo: fullAmmo(item) } : u);
         deduct(WEAPONS[item].cost);
       }
 
@@ -289,7 +302,8 @@ function applyActions(state, playerActions, rng = Math.random) {
       const d        = euclidean(attacker.position, defender.position);
       const accuracy = 0.90 - 0.40 * (d / wpn.range);
 
-      units = units.map(u => u.id === action.unitId ? { ...u, perTurn: { ...u.perTurn, hasActed: true } } : u);
+      units = units.map(u => u.id === action.unitId
+        ? { ...u, ammo: { ...u.ammo, mag: u.ammo.mag - 1 }, perTurn: { ...u.perTurn, hasActed: true } } : u);
 
       if (rng() > accuracy) {
         return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
@@ -387,6 +401,19 @@ function applyActions(state, playerActions, rng = Math.random) {
       return s3;
     }
 
+    if (action.type === 'reload') {
+      units = units.map(u => {
+        if (u.id !== action.unitId) return u;
+        const wpn    = WEAPONS[u.weapon];
+        const needed = wpn.magSize - u.ammo.mag;
+        const drawn  = Math.min(needed, u.ammo.reserve);
+        return { ...u,
+          ammo: { mag: u.ammo.mag + drawn, reserve: u.ammo.reserve - drawn },
+          perTurn: { ...u.perTurn, hasActed: true } };
+      });
+      return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
+    }
+
     if (action.type === 'skip-unit') {
       units = units.map(u => u.id === action.unitId
         ? { ...u, perTurn: { hasMoved: true, hasActed: true } } : u);
@@ -478,7 +505,7 @@ function renderState(state) {
   const teamSummary = (tid) => {
     const alive = state.units.filter(u => u.ownerId === tid && u.alive);
     const uStr  = alive.map(u => {
-      let s = `${u.id}:${u.weapon}`;
+      let s = `${u.id}:${u.weapon}(${u.ammo.mag}/${u.ammo.reserve})`;
       if (u.armor)  s += '+vest';
       if (u.helmet) s += '+helm';
       if (u.hasKit) s += '+kit';
@@ -514,12 +541,100 @@ function renderState(state) {
   ].join('\n');
 }
 
+// ── toGrid (design UI) ──────────────────────────────────────────────────────────
+
+const TERRAIN_INFO = {
+  wall:      { name: 'Wall',       description: 'Impassable, blocks line of sight.' },
+  floor:     { name: 'Floor',      description: 'Open ground.' },
+  bombsiteA: { name: 'Bombsite A', description: 'Bomb can be planted or defused here.' },
+  bombsiteB: { name: 'Bombsite B', description: 'Bomb can be planted or defused here.' },
+  ctSpawn:   { name: 'CT Spawn',   description: 'Counter-Terrorist starting area.' },
+  tSpawn:    { name: 'T Spawn',    description: 'Terrorist starting area.' },
+};
+
+const SHAPE_FLOOR = '#c8c0a8';
+
+// Dynamic effects (smoke/fire/bomb) as render shapes, so they layer above the terrain
+// rather than recolouring the flat tile backdrop.
+function effectShapes(gs) {
+  const out = [];
+  for (const sz of gs.smokeZones ?? [])
+    out.push({ shape: 'oval', x: sz.x - SMOKE_RADIUS, y: sz.y - SMOKE_RADIUS,
+               w: SMOKE_RADIUS * 2 + 1, h: SMOKE_RADIUS * 2 + 1, fill: '#9098a0', opacity: 0.6 });
+  for (const fz of gs.fireZones ?? [])
+    out.push({ shape: 'oval', x: fz.x - FIRE_RADIUS, y: fz.y - FIRE_RADIUS,
+               w: FIRE_RADIUS * 2 + 1, h: FIRE_RADIUS * 2 + 1, fill: '#c85a2a', opacity: 0.6 });
+  if (gs.bomb?.planted)
+    out.push({ shape: 'oval', x: gs.bomb.plantedAt.x - 0.1, y: gs.bomb.plantedAt.y - 0.1,
+               w: 1.2, h: 1.2, fill: '#e04040' });
+  return out;
+}
+
+function equipmentList(u) {
+  const grenadeStr = Object.entries(u.grenades ?? {})
+    .filter(([, c]) => c > 0)
+    .map(([g, c]) => `${GRENADES[g]?.name ?? g}${c > 1 ? ` ×${c}` : ''}`)
+    .join(', ');
+  return [
+    { label: 'Weapon',  value: WEAPONS[u.weapon]?.name ?? u.weapon },
+    { label: 'Ammo',    value: `${u.ammo.mag} / ${u.ammo.reserve}` },
+    { label: 'Armor',   value: u.armor ? (u.helmet ? 'Vest + Helmet' : 'Vest') : 'None' },
+    { label: 'Grenades', value: grenadeStr || 'None' },
+    ...(u.ownerId === 'CT' ? [{ label: 'Defuse Kit', value: u.hasKit ? 'Yes' : 'No' }] : []),
+  ];
+}
+
+function toGrid(state) {
+  const { units, gameSpecific: gs } = state;
+  const { tiles, width, height }    = gs.map;
+  const playerIdx = {};
+  (state.players ?? []).forEach((p, i) => { playerIdx[p.id] = i + 1; });
+
+  const posMap = {};
+  for (const u of units) if (u.alive) posMap[`${u.position.x},${u.position.y}`] = u;
+
+  // Every CS map renders as layered SVG shapes: shape-authored maps supply their own
+  // (ovals + rects), classic tile maps get their walls/sites/spawns merged into rects.
+  // The tile layer is a uniform floor and effects (smoke/fire/bomb) draw as shapes on top.
+  const cells = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const kk = `${x},${y}`;
+      const u  = posMap[kk];
+      const t  = tiles[kk] ?? 'floor';
+
+      cells.push({
+        x, y,
+        glyph:         u ? 'P' : '',
+        unitId:        u?.id,
+        unitName:      u?.id,
+        owner:         u ? (playerIdx[gs.teamPlayerMap[u.ownerId]] ?? 0) : 0,
+        color:         SHAPE_FLOOR,
+        terrain:       TERRAIN_INFO[t] ?? TERRAIN_INFO.floor,
+        hp:            u?.hp,
+        maxHp:         u?.maxHp,
+        job:           u?.weapon,
+        equipment:     u ? equipmentList(u) : undefined,
+        statusEffects: u?.blinded ? ['blinded'] : undefined,
+        moved:         u?.perTurn?.hasMoved,
+        acted:         u?.perTurn?.hasActed,
+      });
+    }
+  }
+
+  return {
+    width, height, cells,
+    shapes: [...(gs.map.shapes ?? []), ...effectShapes(gs)],
+    ui: { hideGrid: true },
+  };
+}
+
 // ── createInitialState ────────────────────────────────────────────────────────
 
 export function createInitialState(players, config = {}) {
   const winRounds = config.winRounds ?? 8;
   const maxRounds = config.maxRounds ?? 15;
-  const map       = MAPS[config.mapId ?? 'dust2'];
+  const map       = MAPS[config.mapId ?? config.scenario ?? 'dust2'] ?? MAPS.dust2;
 
   const [p1, p2] = players;
   const teamMap       = { [p1.id]: 'T', [p2.id]: 'CT' };
@@ -601,6 +716,7 @@ function getActionDuration(state, action) {
   if (action.type === 'throw')  return 1.5;
   if (action.type === 'plant')  return 2;
   if (action.type === 'defuse') return 5;
+  if (action.type === 'reload') return 2.5;
   return 1;
 }
 
@@ -636,12 +752,16 @@ export const CsGame = {
     { id: 'de_dust',  name: 'de_dust',   description: 'Original Dust — linear corridors, symmetric sites', config: { mapId: 'de_dust' } },
     { id: 'cs_siege', name: 'cs_siege',  description: 'T storms a CT-held compound; bombsites inside', config: { mapId: 'cs_siege' } },
     { id: 'cs_italy', name: 'cs_italy',  description: 'Village map — winding streets, market and wine cellar', config: { mapId: 'cs_italy' } },
+    { id: 'de_forge', name: 'de_forge',  description: 'Shape terrain — foundry split by a central oval furnace pit', config: { mapId: 'de_forge' } },
+    { id: 'de_pond',  name: 'de_pond',   description: 'Shape terrain — waterfront routed around two oval ponds', config: { mapId: 'de_pond' } },
+    { id: 'de_plaza', name: 'de_plaza',  description: 'Shape terrain — open oval plaza with a central fountain', config: { mapId: 'de_plaza' } },
   ],
   createInitialState,
   getLegalActions:  withTeam(getLegalActions),
   applyActions:     withTeam(applyActions),
   getResult,
   renderState,
+  toGrid,
   getVisibleState:  withTeam(getVisibleState),
   getActionDuration,
 };

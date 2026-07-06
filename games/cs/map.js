@@ -2,13 +2,9 @@
 // y increases upward (y=0 = bottom row, y=H-1 = top row)
 // All utility functions accept `tiles` as first argument.
 
-function k(x, y) { return `${x},${y}`; }
+import { forEachCell } from '../terrainShapes.js';
 
-function fillRect(t, x1, y1, x2, y2, type) {
-  for (let y = y1; y <= y2; y++)
-    for (let x = x1; x <= x2; x++)
-      t[k(x, y)] = type;
-}
+function k(x, y) { return `${x},${y}`; }
 
 function buildBase(w, h) {
   const t = {};
@@ -18,278 +14,200 @@ function buildBase(w, h) {
   return t;
 }
 
-// ── Dust II (improved) ────────────────────────────────────────────────────────
+// ── Shape-based (non-grid) maps ─────────────────────────────────────────────────
 //
-//  11 ####################
-//  10 #.AAAA.####.####...#   A site (upper-left), long-A wall, T catwalk
-//   9 #.AAAA.............#
-//   8 #.AAAA.##.......##.#   A site cover + T-side entry wall
-//   7 #.cc..............t.#
-//   6 #.cc....##......tt.#   mid boxes
-//   5 #.cc....##......tt.#
-//   4 #.cc..............t.#
-//   3 #.BBBB.##.......##.#   B site cover + T-side entry wall
-//   2 #.BBBB.............#
-//   1 #.BBBB.####.####...#   B tunnels wall
-//   0 ####################
-//      01234567890123456789
+// These maps author terrain as an array of shapes (rectangles + ovals) rather than a
+// hand-drawn tile grid. Each shape carries a `kind` that decides both how it rasterizes
+// onto the mechanics grid (below) and how the client draws it as a layered SVG. Ovals
+// give organic obstacles (pits, ponds, fountains) that a tile grid can only approximate.
+//
+// kind → { tile: what to stamp (null = leave floor), render: SVG style }
 
-function buildDust2() {
-  const W = 20, H = 12;
+const CS_SHAPE_STYLES = {
+  wall:      { tile: 'wall',      render: { fill: '#23262b', stroke: '#3a3f47' },                            name: 'Wall',       description: 'Impassable, blocks line of sight.' },
+  building:  { tile: 'wall',      render: { fill: '#33373d', stroke: '#4a4f57' },                            name: 'Building',   description: 'Impassable, blocks line of sight.' },
+  crate:     { tile: 'wall',      render: { fill: '#6f5533', stroke: '#8a6a3f', round: true },               name: 'Crates',     description: 'Impassable hard cover, blocks line of sight.' },
+  pit:       { tile: 'wall',      render: { fill: '#7a3b1f', opacity: 0.9 },                                 name: 'Furnace pit',description: 'Impassable, blocks line of sight.' },
+  water:     { tile: 'wall',      render: { fill: '#2f6d8f', opacity: 0.85 },                                name: 'Water',      description: 'Impassable, blocks line of sight.' },
+  plaza:     { tile: null,        render: { fill: '#b8b09a', opacity: 0.55 },                                name: 'Plaza',      description: 'Open pavement.' },
+  floor:     { tile: 'floor',     render: { fill: '#c8c0a8' },                                               name: 'Floor',      description: 'Open ground.' },
+  bombsiteA: { tile: 'bombsiteA', render: { fill: '#d4a03a', opacity: 0.26, stroke: '#e0b24a' }, label: 'A', name: 'Bombsite A', description: 'Bomb can be planted or defused here.' },
+  bombsiteB: { tile: 'bombsiteB', render: { fill: '#d4a03a', opacity: 0.26, stroke: '#e0b24a' }, label: 'B', name: 'Bombsite B', description: 'Bomb can be planted or defused here.' },
+  ctSpawn:   { tile: null,        render: { fill: '#4a8fd4', opacity: 0.16 }, label: 'CT',                   name: 'CT Spawn',   description: 'Counter-Terrorist starting area.' },
+  tSpawn:    { tile: null,        render: { fill: '#d4713a', opacity: 0.16 }, label: 'T',                    name: 'T Spawn',    description: 'Terrorist starting area.' },
+};
+
+// Floor colour used for the (uniform) tile layer under a shape map — the terrain is
+// conveyed entirely by the shapes, so the raster grid stays a plain backdrop.
+export const CS_SHAPE_FLOOR = '#c8c0a8';
+
+function buildFromShapes(def) {
+  const { width: W, height: H, terrain, tSpawns, ctSpawns } = def;
   const t = buildBase(W, H);
+  const shapes = [];
 
-  fillRect(t, 1, 5, 2, 7, 'ctSpawn');
-  fillRect(t, 17, 5, 18, 7, 'tSpawn');
-  fillRect(t, 2, 8, 5, 10, 'bombsiteA');
-  fillRect(t, 2, 1, 5, 3, 'bombsiteB');
+  for (const s of terrain) {
+    const style = CS_SHAPE_STYLES[s.kind] ?? CS_SHAPE_STYLES.wall;
+    if (style.tile) forEachCell(s, W, H, (x, y) => { t[k(x, y)] = style.tile; });
+    shapes.push({
+      shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h,
+      ...style.render,
+      label: s.label ?? style.label ?? null,
+      name: style.name, description: style.description,
+    });
+  }
 
-  // Mid boxes (simulate dust2 mid barrels)
-  [[9,5],[9,6],[10,5],[10,6]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // A site — car and platform cover
-  [[6,9],[6,10],[7,10]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-  // Long-A wall (upper sightline break)
-  for (let x = 8; x <= 11; x++) t[k(x,10)] = 'wall';
-  // Short A entry corner
-  [[7,8],[8,8]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // B site — tunnel entry walls
-  [[6,1],[6,2],[7,1]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-  // Long-B lower wall
-  for (let x = 8; x <= 11; x++) t[k(x,1)] = 'wall';
-  // Short B entry corner
-  [[7,3],[8,3]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // T-side upper and lower approach cover
-  [[14,8],[14,9],[15,8]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-  [[14,2],[14,3],[15,3]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // T catwalk wall
-  for (let x = 13; x <= 16; x++) t[k(x,10)] = 'wall';
-  for (let x = 13; x <= 16; x++) t[k(x,1)] = 'wall';
-
-  return {
-    width: W, height: H, tiles: t,
-    tSpawns:  [{ x:17,y:6 },{ x:18,y:6 },{ x:17,y:5 },{ x:18,y:5 },{ x:17,y:7 }],
-    ctSpawns: [{ x:1,y:6  },{ x:2,y:6  },{ x:1,y:5  },{ x:2,y:5  },{ x:1,y:7  }],
-  };
+  return { width: W, height: H, tiles: t, tSpawns, ctSpawns, shapes };
 }
 
-// ── de_dust ───────────────────────────────────────────────────────────────────
-//
-//  Original Dust: symmetric, linear corridors connecting two bombsites.
-//  CTs start left-center; Ts start right-center.
-//  Two mid corridors (upper/lower) funnel into A (top) and B (bottom).
-//
-//  11 ####################
-//  10 #..AAAA...........##
-//   9 #..AAAA..#####....##   A site + upper corridor walls
-//   8 #..AAAA...........##
-//   7 #ccc...##.....###..#   upper passage
-//   6 #ccc...##.....###..#   mid
-//   5 #ccc...##.....###..#   lower passage
-//   4 #ccc...##.....###..#
-//   3 #..BBBB...........##
-//   2 #..BBBB..#####....##   B site + lower corridor walls
-//   1 #..BBBB...........##
-//   0 ####################
-//      01234567890123456789
+// de_forge — a foundry split by a central oval furnace pit; two sites on opposite corners.
+const DE_FORGE = {
+  width: 22, height: 14,
+  terrain: [
+    { shape: 'rect', x:  1, y:  5, w: 3, h: 4, kind: 'ctSpawn' },
+    { shape: 'rect', x: 18, y:  5, w: 3, h: 4, kind: 'tSpawn'  },
+    { shape: 'oval', x:  9, y:  5, w: 4, h: 4, kind: 'pit'     },
+    { shape: 'rect', x:  7, y:  2, w: 2, h: 2, kind: 'crate'   },
+    { shape: 'rect', x: 13, y: 10, w: 2, h: 2, kind: 'crate'   },
+    { shape: 'rect', x:  7, y: 10, w: 2, h: 2, kind: 'crate'   },
+    { shape: 'rect', x: 13, y:  2, w: 2, h: 2, kind: 'crate'   },
+    { shape: 'rect', x:  4, y: 10, w: 4, h: 2, kind: 'bombsiteA' },
+    { shape: 'rect', x: 14, y:  2, w: 4, h: 2, kind: 'bombsiteB' },
+  ],
+  ctSpawns: [{ x: 1, y: 6 }, { x: 2, y: 6 }, { x: 3, y: 6 }, { x: 2, y: 7 }, { x: 2, y: 8 }],
+  tSpawns:  [{ x: 20, y: 6 }, { x: 19, y: 6 }, { x: 18, y: 6 }, { x: 19, y: 7 }, { x: 19, y: 8 }],
+};
 
-function buildDeDust() {
-  const W = 20, H = 12;
-  const t = buildBase(W, H);
+// de_pond — waterfront with two impassable oval ponds routing play around buildings.
+const DE_POND = {
+  width: 22, height: 14,
+  terrain: [
+    { shape: 'rect', x:  1, y: 10, w: 3, h: 3, kind: 'ctSpawn' },
+    { shape: 'rect', x: 18, y:  1, w: 3, h: 3, kind: 'tSpawn'  },
+    { shape: 'oval', x:  5, y:  3, w: 5, h: 3, kind: 'water'   },
+    { shape: 'oval', x: 13, y:  8, w: 5, h: 3, kind: 'water'   },
+    { shape: 'rect', x:  9, y:  2, w: 3, h: 2, kind: 'building' },
+    { shape: 'rect', x: 10, y: 10, w: 3, h: 2, kind: 'building' },
+    { shape: 'rect', x:  7, y:  7, w: 1, h: 1, kind: 'crate'   },
+    { shape: 'rect', x: 14, y:  4, w: 1, h: 1, kind: 'crate'   },
+    { shape: 'rect', x:  2, y:  2, w: 3, h: 2, kind: 'bombsiteA' },
+    { shape: 'rect', x: 17, y: 10, w: 3, h: 2, kind: 'bombsiteB' },
+  ],
+  ctSpawns: [{ x: 1, y: 11 }, { x: 2, y: 11 }, { x: 3, y: 11 }, { x: 2, y: 12 }, { x: 1, y: 12 }],
+  tSpawns:  [{ x: 20, y: 2 }, { x: 19, y: 2 }, { x: 18, y: 2 }, { x: 19, y: 3 }, { x: 20, y: 3 }],
+};
 
-  fillRect(t, 1, 4, 3, 7, 'ctSpawn');
-  fillRect(t, 16, 4, 18, 7, 'tSpawn');
-  fillRect(t, 2, 8, 5, 10, 'bombsiteA');
-  fillRect(t, 2, 1, 5, 3, 'bombsiteB');
+// de_plaza — an open oval plaza with a central fountain and market stalls; both sites
+// sit on the pavement. Shows layered ovals: a walkable plaza under an impassable fountain.
+const DE_PLAZA = {
+  width: 22, height: 14,
+  terrain: [
+    { shape: 'rect', x:  1, y:  5, w: 3, h: 4, kind: 'ctSpawn' },
+    { shape: 'rect', x: 18, y:  5, w: 3, h: 4, kind: 'tSpawn'  },
+    { shape: 'oval', x:  6, y:  3, w: 10, h: 8, kind: 'plaza'  },
+    { shape: 'oval', x: 10, y:  6, w: 2,  h: 2, kind: 'water'  },
+    { shape: 'rect', x:  9, y:  1, w: 4, h: 1, kind: 'building' },
+    { shape: 'rect', x:  9, y: 12, w: 4, h: 1, kind: 'building' },
+    { shape: 'rect', x:  7, y:  4, w: 1, h: 1, kind: 'crate'   },
+    { shape: 'rect', x: 14, y:  4, w: 1, h: 1, kind: 'crate'   },
+    { shape: 'rect', x:  7, y:  9, w: 1, h: 1, kind: 'crate'   },
+    { shape: 'rect', x: 14, y:  9, w: 1, h: 1, kind: 'crate'   },
+    { shape: 'rect', x:  7, y: 10, w: 3, h: 2, kind: 'bombsiteA' },
+    { shape: 'rect', x: 12, y:  2, w: 3, h: 2, kind: 'bombsiteB' },
+  ],
+  ctSpawns: [{ x: 1, y: 6 }, { x: 2, y: 6 }, { x: 3, y: 6 }, { x: 2, y: 7 }, { x: 2, y: 8 }],
+  tSpawns:  [{ x: 20, y: 6 }, { x: 19, y: 6 }, { x: 18, y: 6 }, { x: 19, y: 7 }, { x: 19, y: 8 }],
+};
 
-  // Mid corridor walls — force players through two passages
-  fillRect(t, 7, 4, 7, 7, 'wall');
-  fillRect(t, 14, 4, 14, 7, 'wall');
+// ── Classic maps, re-authored as shapes ──────────────────────────────────────────
+// The originals were hand-laid tile grids; here they're rebuilt from rectangles and
+// ovals so they render as clean layered SVGs (rounded crates, oval barrel stacks and
+// courtyards) instead of one-cell blocks, while keeping their site/spawn layout.
 
-  // Mid center boxes
-  [[9,5],[9,6],[10,5],[10,6]].forEach(([x,y]) => t[k(x,y)] = 'wall');
+// dust2 — two sites on the left, mid barrels, T-side cover; CT centre-left, T centre-right.
+const DUST2 = {
+  width: 22, height: 14,
+  terrain: [
+    { shape: 'rect', x:  1, y:  6, w: 3, h: 3, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 18, y:  6, w: 3, h: 3, kind: 'tSpawn'    },
+    { shape: 'rect', x:  2, y:  9, w: 4, h: 3, kind: 'bombsiteA' },
+    { shape: 'rect', x:  2, y:  2, w: 4, h: 3, kind: 'bombsiteB' },
+    { shape: 'rect', x:  8, y: 11, w: 5, h: 1, kind: 'building'  }, // long-A wall
+    { shape: 'rect', x:  8, y:  2, w: 5, h: 1, kind: 'building'  }, // long-B wall
+    { shape: 'oval', x:  9, y:  5, w: 4, h: 4, kind: 'crate'     }, // mid barrels
+    { shape: 'oval', x: 14, y:  8, w: 3, h: 3, kind: 'crate'     }, // upper T cover
+    { shape: 'oval', x: 14, y:  3, w: 3, h: 3, kind: 'crate'     }, // lower T cover
+  ],
+  ctSpawns: [{ x: 1, y: 7 }, { x: 2, y: 7 }, { x: 3, y: 7 }, { x: 2, y: 8 }, { x: 2, y: 6 }],
+  tSpawns:  [{ x: 20, y: 7 }, { x: 19, y: 7 }, { x: 18, y: 7 }, { x: 19, y: 8 }, { x: 19, y: 6 }],
+};
 
-  // Upper arch (A entrance)
-  for (let x = 5; x <= 7; x++) t[k(x,9)] = 'wall';
-  for (let x = 11; x <= 13; x++) t[k(x,9)] = 'wall';
+// de_dust — symmetric: two mid corridor walls funnel play past an oval barrel stack.
+const DE_DUST = {
+  width: 22, height: 14,
+  terrain: [
+    { shape: 'rect', x:  1, y:  5, w: 3, h: 4, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 18, y:  5, w: 3, h: 4, kind: 'tSpawn'    },
+    { shape: 'rect', x:  2, y:  9, w: 4, h: 3, kind: 'bombsiteA' },
+    { shape: 'rect', x:  2, y:  2, w: 4, h: 3, kind: 'bombsiteB' },
+    { shape: 'rect', x:  8, y:  4, w: 1, h: 6, kind: 'building'  }, // west corridor wall
+    { shape: 'rect', x: 14, y:  4, w: 1, h: 6, kind: 'building'  }, // east corridor wall
+    { shape: 'oval', x: 10, y:  5, w: 3, h: 4, kind: 'crate'     }, // mid stack
+    { shape: 'rect', x:  6, y: 10, w: 3, h: 1, kind: 'building'  }, // upper arch
+    { shape: 'rect', x:  6, y:  3, w: 3, h: 1, kind: 'building'  }, // lower arch
+  ],
+  ctSpawns: [{ x: 2, y: 6 }, { x: 1, y: 6 }, { x: 2, y: 7 }, { x: 3, y: 6 }, { x: 2, y: 5 }],
+  tSpawns:  [{ x: 19, y: 6 }, { x: 20, y: 6 }, { x: 19, y: 7 }, { x: 18, y: 6 }, { x: 19, y: 5 }],
+};
 
-  // Lower arch (B entrance)
-  for (let x = 5; x <= 7; x++) t[k(x,2)] = 'wall';
-  for (let x = 11; x <= 13; x++) t[k(x,2)] = 'wall';
+// cs_siege — a walled compound (solid block with an oval courtyard carved out) holds both
+// sites and the CTs; a single east gate lets the storming Ts in. Cover ovals sit outside.
+const CS_SIEGE = {
+  width: 22, height: 14,
+  terrain: [
+    { shape: 'rect', x:  2, y:  2, w: 8, h: 10, kind: 'building'  }, // compound block
+    { shape: 'oval', x:  3, y:  3, w: 6, h:  8, kind: 'floor'     }, // carved courtyard
+    { shape: 'rect', x:  9, y:  6, w: 2, h:  2, kind: 'floor'     }, // east gate
+    { shape: 'rect', x:  4, y:  8, w: 3, h:  2, kind: 'bombsiteA' },
+    { shape: 'rect', x:  4, y:  4, w: 3, h:  2, kind: 'bombsiteB' },
+    { shape: 'rect', x:  4, y:  6, w: 2, h:  2, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 17, y:  6, w: 3, h:  3, kind: 'tSpawn'    },
+    { shape: 'oval', x: 12, y:  3, w: 3, h:  3, kind: 'crate'     },
+    { shape: 'oval', x: 12, y:  9, w: 3, h:  3, kind: 'crate'     },
+  ],
+  ctSpawns: [{ x: 4, y: 6 }, { x: 5, y: 6 }, { x: 4, y: 7 }, { x: 5, y: 7 }, { x: 4, y: 5 }],
+  tSpawns:  [{ x: 18, y: 7 }, { x: 19, y: 7 }, { x: 17, y: 7 }, { x: 18, y: 8 }, { x: 18, y: 6 }],
+};
 
-  // A-site entry cover
-  [[6,8],[6,7]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-  [[13,8],[13,7]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // B-site entry cover
-  [[6,3],[6,4]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-  [[13,3],[13,4]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // Far wall (T side) so there is cover on approach
-  for (let y = 8; y <= 10; y++) t[k(18,y)] = 'wall';
-  for (let y = 1; y <= 3; y++) t[k(18,y)] = 'wall';
-
-  return {
-    width: W, height: H, tiles: t,
-    tSpawns:  [{ x:17,y:5 },{ x:16,y:5 },{ x:17,y:6 },{ x:16,y:6 },{ x:18,y:5 }],
-    ctSpawns: [{ x:2,y:5  },{ x:1,y:5  },{ x:2,y:6  },{ x:3,y:5  },{ x:2,y:4  }],
-  };
-}
-
-// ── cs_siege ──────────────────────────────────────────────────────────────────
-//
-//  T must storm a CT-held fortified building (center-left compound).
-//  Three breach points: east gate and two roof/floor openings.
-//  Bombsites A and B are inside the compound.
-//
-//  11 ####################
-//  10 #.####..##.........#
-//   9 #.#AA#..##.........#   A site inside compound (north room)
-//   8 #.#AA#..##...###...#
-//   7 #.####.........#...#   east gate passage (y=5-6 in compound wall)
-//   6 #.#..........#.#tt.#
-//   5 #.#..........#.#tt.#
-//   4 #.####.........#...#
-//   3 #.#BB#..##...###...#   B site inside compound (south room)
-//   2 #.#BB#..##.........#
-//   1 #.####..##.........#
-//   0 ####################
-//      01234567890123456789
-
-function buildCsSiege() {
-  const W = 20, H = 12;
-  const t = buildBase(W, H);
-
-  // T spawn — right side, outside compound
-  fillRect(t, 16, 5, 18, 6, 'tSpawn');
-  // CTs hold compound interior; Ts storm from right.
-  fillRect(t, 4, 5, 5, 6, 'ctSpawn');
-
-  // Compound outer walls (x=2-8, y=1-10)
-  for (let x = 2; x <= 8; x++) { t[k(x,1)] = 'wall'; t[k(x,10)] = 'wall'; }
-  for (let y = 1; y <= 10; y++) { t[k(2,y)] = 'wall'; t[k(8,y)] = 'wall'; }
-
-  // Compound interior (carve out floor)
-  fillRect(t, 3, 2, 7, 9, 'floor');
-
-  // Re-stamp CT spawn inside
-  fillRect(t, 4, 5, 5, 6, 'ctSpawn');
-
-  // Bombsite A — north room
-  fillRect(t, 3, 7, 5, 9, 'bombsiteA');
-  // Bombsite B — south room
-  fillRect(t, 3, 2, 5, 4, 'bombsiteB');
-
-  // Internal divider (between A/B rooms and east half of compound)
-  for (let y = 5; y <= 6; y++) t[k(7,y)] = 'wall';
-
-  // East gate — breach opening in x=8 wall
-  t[k(8,5)] = 'floor'; t[k(8,6)] = 'floor';
-
-  // North breach — opening in y=10 wall
-  t[k(4,10)] = 'floor'; t[k(5,10)] = 'floor';
-
-  // South breach — opening in y=1 wall
-  t[k(4,1)] = 'floor'; t[k(5,1)] = 'floor';
-
-  // External cover for T's approaching from east
-  [[10,4],[10,7],[11,5],[11,6],[12,4],[12,7]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // Northern T approach corridor walls
-  for (let x = 9; x <= 13; x++) t[k(x,9)] = 'wall';
-  // Southern T approach corridor walls
-  for (let x = 9; x <= 13; x++) t[k(x,2)] = 'wall';
-
-  // T-side boxes near spawn
-  [[14,5],[14,6],[15,4],[15,7]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  return {
-    width: W, height: H, tiles: t,
-    tSpawns:  [{ x:17,y:5 },{ x:16,y:5 },{ x:17,y:6 },{ x:16,y:6 },{ x:18,y:5 }],
-    ctSpawns: [{ x:4,y:5  },{ x:5,y:5  },{ x:4,y:6  },{ x:5,y:6  },{ x:4,y:4  }],
-  };
-}
-
-// ── cs_italy ──────────────────────────────────────────────────────────────────
-//
-//  Village map: CTs top-left (police station), Ts bottom-right (warehouse).
-//  Multiple winding routes through buildings and alleyways.
-//  Bombsite A: upper-right market. Bombsite B: lower-left wine cellar.
-//
-//  11 ####################
-//  10 #ccc.......######..#
-//   9 #ccc.......#....#..#   CT spawn + upper building
-//   8 #ccc.......#AAAA#..#   A site (market, upper-right)
-//   7 #....######.AAAA...#
-//   6 #....#....#.AAAA...#   mid building blocks routes
-//   5 #....#....#.......##
-//   4 #..##......######.##
-//   3 #.BB##.....#....#.##   B site (wine cellar, lower-left)
-//   2 #.BB.......#....#ttt   T spawn + lower building
-//   1 #.BB........####.ttt
-//   0 ####################
-//      01234567890123456789
-
-function buildCsItaly() {
-  const W = 20, H = 12;
-  const t = buildBase(W, H);
-
-  // CT spawn — upper-left (police station)
-  fillRect(t, 1, 8, 3, 10, 'ctSpawn');
-  // T spawn — lower-right (warehouse)
-  fillRect(t, 16, 1, 18, 3, 'tSpawn');
-
-  // Bombsite A — market (upper-right)
-  fillRect(t, 13, 7, 16, 9, 'bombsiteA');
-  // Bombsite B — wine cellar (lower-left)
-  fillRect(t, 2, 1, 4, 3, 'bombsiteB');
-
-  // Upper building (blocks direct CT→A, forces detour)
-  fillRect(t, 5, 7, 10, 10, 'wall');
-  // Door on south face
-  t[k(7,7)] = 'floor'; t[k(8,7)] = 'floor';
-  // Door on east face
-  t[k(10,9)] = 'floor'; t[k(10,8)] = 'floor';
-
-  // Lower building (blocks direct T→B, forces detour)
-  fillRect(t, 9, 1, 14, 4, 'wall');
-  // Door on north face
-  t[k(11,4)] = 'floor'; t[k(12,4)] = 'floor';
-  // Door on west face
-  t[k(9,2)] = 'floor'; t[k(9,3)] = 'floor';
-
-  // Alley walls — narrow mid passages
-  for (let y = 5; y <= 6; y++) t[k(5,y)] = 'wall';  // left alley
-  for (let y = 5; y <= 6; y++) t[k(14,y)] = 'wall'; // right alley
-
-  // Mid cover boxes
-  [[7,5],[7,6],[8,5],[8,6]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // A-site approach cover (from west)
-  [[11,7],[11,8],[12,6]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // B-site approach cover (from east)
-  [[5,3],[5,4],[6,2]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  // T-side upper passage blocker
-  [[15,5],[15,6],[16,5]].forEach(([x,y]) => t[k(x,y)] = 'wall');
-
-  return {
-    width: W, height: H, tiles: t,
-    tSpawns:  [{ x:17,y:2 },{ x:16,y:2 },{ x:17,y:3 },{ x:16,y:3 },{ x:18,y:2 }],
-    ctSpawns: [{ x:2,y:9  },{ x:1,y:9  },{ x:2,y:10 },{ x:3,y:9  },{ x:2,y:8  }],
-  };
-}
+// cs_italy — village: CTs top-left, Ts bottom-right, two market buildings dividing the
+// middle with an oval stall stack; A market (upper-right), B cellar (lower-left).
+const CS_ITALY = {
+  width: 22, height: 14,
+  terrain: [
+    { shape: 'rect', x:  1, y: 10, w: 3, h: 3, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 18, y:  1, w: 3, h: 3, kind: 'tSpawn'    },
+    { shape: 'rect', x: 15, y: 10, w: 4, h: 3, kind: 'bombsiteA' }, // market
+    { shape: 'rect', x:  2, y:  2, w: 4, h: 3, kind: 'bombsiteB' }, // wine cellar
+    { shape: 'rect', x:  6, y:  8, w: 6, h: 3, kind: 'building'  }, // upper building
+    { shape: 'rect', x: 11, y:  3, w: 6, h: 3, kind: 'building'  }, // lower building
+    { shape: 'oval', x:  8, y:  5, w: 3, h: 3, kind: 'crate'     }, // stall stack
+    { shape: 'rect', x:  5, y:  5, w: 1, h: 3, kind: 'building'  }, // left alley wall
+    { shape: 'rect', x: 16, y:  6, w: 1, h: 3, kind: 'building'  }, // right alley wall
+  ],
+  ctSpawns: [{ x: 2, y: 11 }, { x: 1, y: 11 }, { x: 3, y: 11 }, { x: 2, y: 12 }, { x: 2, y: 10 }],
+  tSpawns:  [{ x: 19, y: 2 }, { x: 20, y: 2 }, { x: 18, y: 2 }, { x: 19, y: 3 }, { x: 19, y: 1 }],
+};
 
 // ── Map registry ──────────────────────────────────────────────────────────────
 
 export const MAPS = {
-  dust2:    buildDust2(),
-  de_dust:  buildDeDust(),
-  cs_siege: buildCsSiege(),
-  cs_italy: buildCsItaly(),
+  dust2:    buildFromShapes(DUST2),
+  de_dust:  buildFromShapes(DE_DUST),
+  cs_siege: buildFromShapes(CS_SIEGE),
+  cs_italy: buildFromShapes(CS_ITALY),
+  de_forge: buildFromShapes(DE_FORGE),
+  de_pond:  buildFromShapes(DE_POND),
+  de_plaza: buildFromShapes(DE_PLAZA),
 };
 
 // ── Utility functions (all take tiles as first argument) ──────────────────────

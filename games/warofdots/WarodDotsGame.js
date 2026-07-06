@@ -1,4 +1,5 @@
 import { getWarodDotsBelief } from './belief.js';
+import { forEachCell } from '../terrainShapes.js';
 
 const T = 28;
 const COLS = 40;
@@ -151,6 +152,119 @@ function generateMap(players, rng) {
 
   return { grid, cities };
 }
+
+// ── Shape-based (non-grid) maps ─────────────────────────────────────────────────
+//
+// Instead of the random tile generator, a scenario can author terrain as an array of
+// shapes (rectangles + ovals) — see games/terrainShapes.js. Each shape's `kind` decides
+// the terrain it stamps onto the grid, so it feeds straight into the existing simulation
+// (speedMod / dmgMod / getTerrainAt): oval lakes slow and drown units, forests and hills
+// slow them and blunt heavy fire, mountains are impassable. The same shapes are handed to
+// the client to draw as layered SVGs. Cities are placed at authored positions.
+
+const WOD_SHAPE_STYLES = {
+  water:     { terrain: TERRAIN.WATER,     render: { fill: '#0e3d5c' },              name: 'Water',     description: 'Slows units and drowns them over time.' },
+  forest:    { terrain: TERRAIN.FOREST,    render: { fill: '#1e4010' },              name: 'Forest',    description: 'Slows movement; cover from heavy fire.' },
+  hills:     { terrain: TERRAIN.HILLS,     render: { fill: '#7a6040', opacity: 0.9 },name: 'Hills',     description: 'Slows movement; cover from heavy fire.' },
+  mountains: { terrain: TERRAIN.MOUNTAINS, render: { fill: '#50504a' },              name: 'Mountains', description: 'Impassable.' },
+  sand:      { terrain: TERRAIN.SAND,      render: { fill: '#b09050', opacity: 0.85 },name: 'Sand',     description: 'Slows light units.' },
+  bridge:    { terrain: TERRAIN.BRIDGE,    render: { fill: '#5a4a30' },              name: 'Bridge',    description: 'Fast crossing over water.' },
+};
+
+function buildShapeMap(def, players) {
+  const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(TERRAIN.PLAINS));
+
+  for (const s of def.terrain) {
+    const terrain = WOD_SHAPE_STYLES[s.kind]?.terrain;
+    if (terrain == null) continue;
+    forEachCell(s, COLS, ROWS, (c, r) => { grid[r][c] = terrain; });
+  }
+
+  const clearForCity = (row, col) => {
+    for (let dr = -1; dr <= 1; dr++)
+      for (let dc = -1; dc <= 1; dc++) {
+        const r = row + dr, c = col + dc;
+        if (r >= 0 && r < ROWS && c >= 0 && c < COLS) grid[r][c] = TERRAIN.PLAINS;
+      }
+  };
+
+  const cityDefs = def.cities.map(c => {
+    const owner = c.role === 'capL' ? players[0].id
+                : c.role === 'capR' ? players[1].id
+                : 'neutral';
+    const isCapital = c.role === 'capL' || c.role === 'capR';
+    clearForCity(c.row, c.col);
+    grid[c.row][c.col] = isCapital ? TERRAIN.CAPITAL : TERRAIN.CITY;
+    return { col: c.col, row: c.row, owner, isCapital };
+  });
+
+  const cities = cityDefs.map((cp, i) => ({
+    id: i,
+    col: cp.col, row: cp.row,
+    cx: cp.col * T + T / 2, cy: cp.row * T + T / 2,
+    owner: cp.owner,
+    isCapital: cp.isCapital,
+    captureProgress: 0,
+    capturer: null,
+    queue: [],
+    buildTimer: 0,
+  }));
+
+  const shapes = def.terrain.map(s => {
+    const style = WOD_SHAPE_STYLES[s.kind];
+    return {
+      shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h,
+      ...style.render, name: style.name, description: style.description,
+    };
+  });
+
+  return { grid, cities, shapes };
+}
+
+// lakelands — open plains broken by two oval lakes, forest and hill masses, and a small
+// impassable mountain. Cities ring the map with a contested one at centre.
+const WOD_LAKELANDS = {
+  cities: [
+    { col:  3, row: 13, role: 'capL' },
+    { col: 36, row: 13, role: 'capR' },
+    { col: 12, row:  5, role: 'neutral' }, { col: 20, row:  4, role: 'neutral' },
+    { col: 28, row:  5, role: 'neutral' }, { col: 12, row: 21, role: 'neutral' },
+    { col: 20, row: 22, role: 'neutral' }, { col: 28, row: 21, role: 'neutral' },
+    { col: 20, row: 13, role: 'neutral' },
+  ],
+  terrain: [
+    { shape: 'oval', x:  7, y:  8, w:  8, h:  6, kind: 'water'     },
+    { shape: 'oval', x: 25, y: 12, w:  9, h:  6, kind: 'water'     },
+    { shape: 'oval', x: 21, y:  1, w:  9, h:  5, kind: 'forest'    },
+    { shape: 'oval', x:  5, y: 16, w:  9, h:  6, kind: 'forest'    },
+    { shape: 'oval', x: 29, y:  6, w:  7, h:  6, kind: 'hills'     },
+    { shape: 'oval', x:  4, y:  4, w:  6, h:  5, kind: 'hills'     },
+    { shape: 'oval', x: 17, y: 17, w:  5, h:  4, kind: 'mountains' },
+  ],
+};
+
+// divide — a north-south river splits the map; two bridges are the only fast crossings
+// (units can wade the river but take damage). Forests and hills cluster on each bank.
+const WOD_DIVIDE = {
+  cities: [
+    { col:  3, row: 13, role: 'capL' },
+    { col: 36, row: 13, role: 'capR' },
+    { col: 10, row:  4, role: 'neutral' }, { col: 10, row: 13, role: 'neutral' },
+    { col: 10, row: 21, role: 'neutral' }, { col: 29, row:  4, role: 'neutral' },
+    { col: 29, row: 13, role: 'neutral' }, { col: 29, row: 21, role: 'neutral' },
+  ],
+  terrain: [
+    { shape: 'rect', x: 19, y:  0, w:  2, h: 26, kind: 'water'  },
+    { shape: 'rect', x: 18, y:  6, w:  4, h:  2, kind: 'bridge' },
+    { shape: 'rect', x: 18, y: 18, w:  4, h:  2, kind: 'bridge' },
+    { shape: 'oval', x:  5, y:  8, w:  7, h:  5, kind: 'forest' },
+    { shape: 'oval', x: 28, y: 14, w:  7, h:  5, kind: 'forest' },
+    { shape: 'oval', x: 13, y: 18, w:  6, h:  5, kind: 'hills'  },
+    { shape: 'oval', x: 22, y:  3, w:  6, h:  5, kind: 'hills'  },
+  ],
+};
+
+const WOD_SHAPE_SCENARIOS = { lakelands: WOD_LAKELANDS, divide: WOD_DIVIDE };
 
 // ── Unit / terrain helpers ────────────────────────────────────────────────────
 
@@ -394,12 +508,16 @@ export const WarodDotsGame = {
   },
 
   scenarios: [
-    { id: 'standard', name: 'Standard', description: '40×26 map — capture the capital + 80% of cities', config: {} },
+    { id: 'standard',  name: 'Standard',  description: '40×26 map — capture the capital + 80% of cities', config: {} },
+    { id: 'lakelands', name: 'Lakelands', description: 'Shape terrain — oval lakes, forests and hills; a contested centre city', config: { scenario: 'lakelands' } },
+    { id: 'divide',    name: 'The Divide', description: 'Shape terrain — a river splits the map; two bridges are the only fast crossings', config: { scenario: 'divide' } },
   ],
 
   createInitialState(players, config = {}) {
     const rng = config.rng ?? mulberry32((Date.now() ^ 0xdeadbeef) >>> 0);
-    const { grid, cities } = generateMap(players, rng);
+    const shapeScen = config.scenario && WOD_SHAPE_SCENARIOS[config.scenario];
+    const mapData = shapeScen ? buildShapeMap(shapeScen, players) : generateMap(players, rng);
+    const { grid, cities, shapes } = mapData;
 
     let nextId = 1;
     const units = [];
@@ -421,7 +539,7 @@ export const WarodDotsGame = {
       activePlayers: [players[0].id],
       players: players.map(p => ({ ...p, gold: 300 })),
       units,
-      board: { grid, cities, cols: COLS, rows: ROWS },
+      board: { grid, cities, cols: COLS, rows: ROWS, ...(shapes ? { shapes } : {}) },
       lastActions: [],
       gameSpecific: {
         nextUnitId: nextId,
@@ -578,7 +696,8 @@ export const WarodDotsGame = {
   },
 
   toGrid(state) {
-    const { board: { grid, cities }, units } = state;
+    const { board: { grid, cities, shapes }, units } = state;
+    const shapeMap = !!shapes;
     const pidIdx = {};
     state.players.forEach((p, i) => { pidIdx[p.id] = i + 1; });
 
@@ -615,10 +734,18 @@ export const WarodDotsGame = {
           owner = pidIdx[city.owner] ?? 0;
         }
 
-        cells.push({ x: col, y: row, glyph, owner, color: TERRAIN_COLOR[terrain] ?? '#3a6e28', hp, maxHp, unitId, unitName, isActive });
+        // On a shape map the terrain is drawn by the SVG shapes below, so the tile layer
+        // stays a uniform plains backdrop; the random-generator map keeps per-tile colours.
+        const color = shapeMap ? TERRAIN_COLOR[TERRAIN.PLAINS] : (TERRAIN_COLOR[terrain] ?? '#3a6e28');
+        cells.push({ x: col, y: row, glyph, owner, color, hp, maxHp, unitId, unitName, isActive });
       }
     }
 
-    return { width: COLS, height: ROWS, cells };
+    const gridOut = { width: COLS, height: ROWS, cells };
+    if (shapeMap) {
+      gridOut.shapes = shapes;
+      gridOut.ui = { hideGrid: true };
+    }
+    return gridOut;
   },
 };

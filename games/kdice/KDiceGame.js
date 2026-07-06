@@ -297,6 +297,38 @@ function getActionDuration(_state, action) {
   return 1;
 }
 
+// Territories double as the "units": each cell shows its owner's colour and
+// the current dice count (as both the token glyph/name and an HP-style bar
+// filled to MAX_DICE), matching the convention used by other territory games
+// (see WarodDotsGame.toGrid).
+function toGrid(state) {
+  const { territories, cols, rows } = state.board;
+  const pidIdx = {};
+  state.players.forEach((p, i) => { pidIdx[p.id] = i + 1; });
+
+  const cells = [];
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const t = territories[`${x},${y}`];
+      if (!t) continue;
+      // Fog-of-war hides owner/dice on distant territories (see getVisibleState) —
+      // render those as an empty tile rather than a token with a "null" label.
+      const hidden = t.owner == null;
+      cells.push({
+        x, y,
+        color: '#2b2f38',
+        glyph: hidden ? '' : String(t.dice),
+        unitId: t.id,
+        unitName: hidden ? '' : String(t.dice),
+        owner: hidden ? 0 : (pidIdx[t.owner] ?? 0),
+        hp: hidden ? undefined : t.dice,
+        maxHp: MAX_DICE,
+      });
+    }
+  }
+  return { width: cols, height: rows, cells };
+}
+
 export const KDiceGame = {
   // Territory control: each owned territory plus its dice, minus opponents'.
   // Heuristic leaf for the generic ObscuroAgent; see games/evalHelpers.js.
@@ -312,6 +344,7 @@ export const KDiceGame = {
   applyActions,
   getResult,
   renderState,
+  toGrid,
   getVisibleState,
   sampleWorlds,
   getActionDuration,

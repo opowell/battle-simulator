@@ -1,9 +1,12 @@
+import { forEachCell } from '../terrainShapes.js';
+
 export const TERRAIN = {
   FLOOR:  '.',
   WALL:   '#',  // building / border — impassable, blocks LOS
   HEDGE:  'w',  // wall/hedge — passable, cover, transparent
   TREE:   'T',  // trees — passable, blocks LOS, light cover
   ROAD:   'r',  // road — passable
+  WATER:  '~',  // pond / stream — impassable, but does NOT block LOS
 };
 
 export const MAP_WIDTH  = 20;
@@ -43,13 +46,58 @@ export function createMap() {
   return { width: MAP_WIDTH, height: MAP_HEIGHT, tiles };
 }
 
+// ── Shape-based (non-grid) maps ─────────────────────────────────────────────────
+//
+// Terrain authored as an array of shapes (rectangles + ovals) instead of a hand-laid
+// tile grid. Each shape's `kind` decides how it rasterizes onto the tile grid (for
+// movement/LOS) and how the client draws it as a layered SVG. See games/terrainShapes.js.
+
+const CM_SHAPE_STYLES = {
+  building: { tile: TERRAIN.WALL,  render: { fill: '#5a5045', stroke: '#6b5f50' }, name: 'Building', description: 'Impassable, blocks line of sight.' },
+  wall:     { tile: TERRAIN.WALL,  render: { fill: '#5a5045', stroke: '#6b5f50' }, name: 'Building', description: 'Impassable, blocks line of sight.' },
+  woods:    { tile: TERRAIN.TREE,  render: { fill: '#2f5c2f', stroke: '#3f6f3f' }, name: 'Woods',    description: 'Passable but slow; blocks LOS, +20% cover.' },
+  trees:    { tile: TERRAIN.TREE,  render: { fill: '#2f5c2f', stroke: '#3f6f3f' }, name: 'Woods',    description: 'Passable but slow; blocks LOS, +20% cover.' },
+  hedge:    { tile: TERRAIN.HEDGE, render: { fill: '#4d6b3a', stroke: '#5f7d48' }, name: 'Hedgerow', description: 'Passable but slow; +30% cover, does not block LOS.' },
+  road:     { tile: TERRAIN.ROAD,  render: { fill: '#9c8f6b' },                    name: 'Road',     description: 'Passable, no cover.' },
+  water:    { tile: TERRAIN.WATER, render: { fill: '#35617a', opacity: 0.9 },       name: 'Water',    description: 'Impassable, but does not block line of sight.' },
+  pond:     { tile: TERRAIN.WATER, render: { fill: '#35617a', opacity: 0.9 },       name: 'Water',    description: 'Impassable, but does not block line of sight.' },
+  field:    { tile: TERRAIN.FLOOR, render: { fill: '#c2b34e', opacity: 0.4 },       name: 'Field',    description: 'Open ground.' },
+};
+
+// Base ground colour under a shape map (open ground), matching TERRAIN.FLOOR.
+export const CM_SHAPE_GROUND = '#7d8f5c';
+
+export function createMapFromShapes(def) {
+  const { width: W, height: H, terrain } = def;
+  const tiles = Array.from({ length: H }, (_, y) =>
+    Array.from({ length: W }, (_, x) =>
+      (x === 0 || x === W - 1 || y === 0 || y === H - 1) ? TERRAIN.WALL : TERRAIN.FLOOR
+    )
+  );
+
+  const shapes = [];
+  for (const s of terrain) {
+    const style = CM_SHAPE_STYLES[s.kind] ?? CM_SHAPE_STYLES.building;
+    forEachCell(s, W, H, (x, y) => {
+      if (x > 0 && x < W - 1 && y > 0 && y < H - 1) tiles[y][x] = style.tile;
+    });
+    shapes.push({
+      shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h,
+      ...style.render, name: style.name, description: style.description,
+    });
+  }
+
+  return { width: W, height: H, tiles, shapes };
+}
+
 export function getTile(board, x, y) {
   if (x < 0 || x >= board.width || y < 0 || y >= board.height) return TERRAIN.WALL;
   return board.tiles[y][x];
 }
 
 export function isPassable(board, x, y) {
-  return getTile(board, x, y) !== TERRAIN.WALL;
+  const t = getTile(board, x, y);
+  return t !== TERRAIN.WALL && t !== TERRAIN.WATER;
 }
 
 export function blocksLOS(tile) {
@@ -62,6 +110,14 @@ export function getCoverBonus(board, x, y) {
   if (t === TERRAIN.HEDGE) return 30;
   if (t === TERRAIN.TREE)  return 20;
   return 0;
+}
+
+// Movement points needed to enter a tile. Difficult terrain (woods, hedgerows) costs
+// more than open ground/road, so units cross it more slowly (see grid.js getReachable).
+export function getMoveCost(board, x, y) {
+  const t = getTile(board, x, y);
+  if (t === TERRAIN.TREE || t === TERRAIN.HEDGE) return 2;
+  return 1; // open ground, road
 }
 
 export function renderMap(board, units) {
