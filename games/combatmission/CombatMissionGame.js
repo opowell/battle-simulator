@@ -7,7 +7,7 @@ import { resolveFire } from './combat.js';
 import { getCombatMissionBelief } from './belief.js';
 import { SHAPE_SCENARIOS } from './scenarios.js';
 import { tilesToShapes } from '../terrainShapes.js';
-import { lineCost, isClearOfUnits, continuousSearchActions } from '../continuousMove.js';
+import { lineCost, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { parsePos, num, posToWire } from '../coord.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
@@ -131,12 +131,12 @@ function isActionLegal(state, playerId, action) {
 // moves are replaced by a lattice of exact reachable points (see games/continuousMove.js),
 // so the AI positions freely like a human. Fire/skip/end-turn pass through unchanged.
 function getSearchActions(state, playerId, res) {
-  return continuousSearchActions(
-    getLegalActions(state, playerId), state.units,
-    u => UNIT_DEFS[u.type].moveRange,
-    (uid, x, y) => isMoveLegal(state, playerId, { unitId: uid, to: { x, y } }),
-    res,
-  );
+  const units = state.units;
+  return latticeActions(getLegalActions(state, playerId), {
+    type: 'move', point: 'to',
+    origin: a => { const u = units.find(x => x.id === a.unitId); return u ? { x: num(u.position.x), y: num(u.position.y), range: UNIT_DEFS[u.type].moveRange } : null; },
+    isLegal: (a, x, y) => isMoveLegal(state, playerId, { unitId: a.unitId, to: { x, y } }),
+  }, res);
 }
 
 // ── Apply actions ─────────────────────────────────────────────────────────────
