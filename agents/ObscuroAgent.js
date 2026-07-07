@@ -95,6 +95,10 @@ export class ObscuroAgent {
         cfrPerRound:    o.cfrPerRound   ?? 10,
         finalCfr:       o.finalCfr      ?? 200,
         purifyMax:      o.purifyMax     ?? 3,
+        // Continuous action resolution (games with getSearchActions): rings×spokes of
+        // exact move points per unit. More budget → finer positioning.
+        moveRings:      o.moveRings     ?? ri(1, 3, u),
+        moveSpokes:     o.moveSpokes    ?? ri(6, 12, u),
       };
     }
 
@@ -119,6 +123,10 @@ export class ObscuroAgent {
       cfrPerRound:    o.cfrPerRound   ?? ri(3, 10, t),
       finalCfr:       o.finalCfr      ?? rc(15, 100, t),
       purifyMax:      o.purifyMax     ?? 3,
+      // Continuous action resolution (games with getSearchActions): rings×spokes of
+      // exact move points per unit, from coarse (weak/fast) to fine at the top of the dial.
+      moveRings:      o.moveRings     ?? ri(1, 3, t),
+      moveSpokes:     o.moveSpokes    ?? ri(4, 12, t),
     };
   }
 
@@ -149,10 +157,18 @@ export class ObscuroAgent {
     let worlds = game.sampleWorlds ? game.sampleWorlds(observation, me, cfg.worlds, rng) : null;
     if (!worlds || worlds.length === 0) worlds = [observation];
 
-    const hooks = makeHooks(game, me, { rng, leafEval: this._leafEval(observation, me) });
+    // Continuous-location games reason over exact points: the search action set (root
+    // and every tree node) is the difficulty-scaled continuous lattice, not the discrete
+    // getLegalActions tiles. searchRes must be deterministic so the tree stays consistent.
+    const searchRes = { rings: cfg.moveRings, spokes: cfg.moveSpokes };
+    const rootActions = game.getSearchActions
+      ? game.getSearchActions(observation, me, searchRes)
+      : legalActions;
+
+    const hooks = makeHooks(game, me, { rng, leafEval: this._leafEval(observation, me), searchRes });
     const res = await runObscuroSearch(hooks, worlds, {
       opp: this._oppId(observation, me),
-      rootActions: legalActions,
+      rootActions,
       blueprint: this._blueprints.get(me),
       prevValue: this._prevValues.get(me),
       rng,
@@ -172,7 +188,13 @@ export class ObscuroAgent {
     // Map the chosen action back onto the caller's own legalActions array so the
     // returned object is reference-identical, and so an action that is somehow
     // illegal in the true position can never escape (falls back to a legal move).
-    const action = this._matchLegal(res.action, legalActions) ?? legalActions[0];
+    // Continuous games choose an exact point that is deliberately NOT in the discrete
+    // legalActions set, so accept it directly when the game validates it geometrically
+    // (engine/ActionValidator.js accepts it the same way); still fall back to a real
+    // legal action if it somehow fails.
+    let action = this._matchLegal(res.action, legalActions);
+    if (!action && res.action && game.isActionLegal?.(observation, me, res.action)) action = res.action;
+    action = action ?? legalActions[0];
     if (game.onActionCommitted) game.onActionCommitted(observation, me, action);
     return action;
   }

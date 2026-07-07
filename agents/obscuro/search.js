@@ -43,9 +43,18 @@ export function makeHooks(game, me, opts = {}) {
     ?? (game.evaluateLeaves
       ? ((state, mover, actions, childStates) => game.evaluateLeaves(state, mover, actions, { childStates, rng }))
       : defaultEval);
+  // A continuous-location game (games/coord.js) exposes getSearchActions: a
+  // deterministic action set whose moves are exact continuous points rather than the
+  // discrete tile candidates getLegalActions enumerates, so the tree search reasons
+  // over the real continuous action space. `searchRes = { rings, spokes }` is the
+  // difficulty-scaled resolution. It MUST be deterministic in (state, player): an
+  // infoset's action set is fixed at creation and re-derived per world to filter
+  // (gtcfr.js expandNode), so an rng-sampled set would desync.
   return {
     me,
-    legal: (s, p) => game.getLegalActions(s, p),
+    legal: game.getSearchActions
+      ? ((s, p) => game.getSearchActions(s, p, opts.searchRes ?? {}))
+      : ((s, p) => game.getLegalActions(s, p)),
     apply: (s, p, a) => { try { return game.applyActions(s, [{ playerId: p, action: a }], rng); } catch { return null; } },
     key,
     obsKey: (s, p) => observationKey(game, s, p),
