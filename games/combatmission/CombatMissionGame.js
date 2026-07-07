@@ -7,7 +7,7 @@ import { resolveFire } from './combat.js';
 import { getCombatMissionBelief } from './belief.js';
 import { SHAPE_SCENARIOS } from './scenarios.js';
 import { tilesToShapes } from '../terrainShapes.js';
-import { lineCost, isClearOfUnits } from '../continuousMove.js';
+import { lineCost, isClearOfUnits, continuousSearchActions } from '../continuousMove.js';
 import { parsePos, num, posToWire } from '../coord.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
@@ -125,6 +125,18 @@ function isMoveLegal(state, playerId, action) {
 // only 'move' carries a continuous, not-pre-enumerated destination in Combat Mission.
 function isActionLegal(state, playerId, action) {
   return action.type === 'move' ? isMoveLegal(state, playerId, action) : false;
+}
+
+// Continuous action set for the ObscuroAgent's tree search: each mover's discrete tile
+// moves are replaced by a lattice of exact reachable points (see games/continuousMove.js),
+// so the AI positions freely like a human. Fire/skip/end-turn pass through unchanged.
+function getSearchActions(state, playerId, res) {
+  return continuousSearchActions(
+    getLegalActions(state, playerId), state.units,
+    u => UNIT_DEFS[u.type].moveRange,
+    (uid, x, y) => isMoveLegal(state, playerId, { unitId: uid, to: { x, y } }),
+    res,
+  );
 }
 
 // ── Apply actions ─────────────────────────────────────────────────────────────
@@ -408,6 +420,7 @@ export const CombatMissionGame = {
   createInitialState,
   getLegalActions,
   isActionLegal,
+  getSearchActions,
   applyActions,
   getResult,
   renderState,

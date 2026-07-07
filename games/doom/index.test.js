@@ -82,6 +82,28 @@ test('doom: move updates unit position and spends 1 AP', () => {
   assert.equal(moved.perTurn.ap, marine.perTurn.ap - 1);
 });
 
+test('doom: getSearchActions yields continuous (non-integer) move points that are all engine-legal', () => {
+  const state = DoomGame.createInitialState(players());
+  const set = DoomGame.getSearchActions(state, 'p1', { rings: 3, spokes: 10 });
+  const moves = set.filter(a => a.type === 'move');
+  assert.ok(moves.length > 0, 'has move candidates');
+  // At least one destination is a genuinely non-integer (continuous) point.
+  assert.ok(moves.some(a => !Number.isInteger(a.to.x) || !Number.isInteger(a.to.y)), 'has a continuous point');
+  // Every generated move must pass the engine's geometric legality check, and every
+  // non-move action is preserved from getLegalActions.
+  for (const a of moves) assert.ok(DoomGame.isActionLegal(state, 'p1', a), `legal: ${JSON.stringify(a.to)}`);
+  const legal = DoomGame.getLegalActions(state, 'p1');
+  const nonMove = legal.filter(a => a.type !== 'move').length;
+  assert.equal(set.filter(a => a.type !== 'move').length, nonMove, 'non-move actions preserved');
+});
+
+test('doom: getSearchActions is deterministic (search re-derives an infoset action set per world)', () => {
+  const state = DoomGame.createInitialState(players());
+  const a = DoomGame.getSearchActions(state, 'p1', { rings: 2, spokes: 8 }).map(x => JSON.stringify(x));
+  const b = DoomGame.getSearchActions(state, 'p1', { rings: 2, spokes: 8 }).map(x => JSON.stringify(x));
+  assert.deepEqual(a, b);
+});
+
 // ---------------------------------------------------------------------------
 // getResult
 // ---------------------------------------------------------------------------

@@ -14,7 +14,7 @@ import {
   isWalkableContinuous,
 } from './map.js';
 import { getCsBelief } from './belief.js';
-import { hasClearLine, isClearOfUnits } from '../continuousMove.js';
+import { hasClearLine, isClearOfUnits, continuousSearchActions } from '../continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 
 
@@ -220,6 +220,20 @@ function isActionLegal(state, teamId, action) {
   if (action.type === 'move')  return isMoveLegal(state, teamId, action);
   if (action.type === 'throw') return isThrowLegal(state, teamId, action);
   return false;
+}
+
+// Continuous action set for the ObscuroAgent's tree search: each mover's discrete tile
+// moves are replaced by a lattice of exact reachable points (see games/continuousMove.js),
+// so the AI positions freely like a human. Non-move actions — including the discrete
+// grenade-throw candidates — pass through unchanged.
+function getSearchActions(state, teamId, res) {
+  // getLegalActions is phase-aware (buy phase has no moves → base passes through).
+  return continuousSearchActions(
+    getLegalActions(state, teamId), state.units,
+    () => MOVE_RANGE,
+    (uid, x, y) => isMoveLegal(state, teamId, { unitId: uid, to: { x, y } }),
+    res,
+  );
 }
 
 // ── Round result check ────────────────────────────────────────────────────────
@@ -822,6 +836,7 @@ export const CsGame = {
   createInitialState,
   getLegalActions:  withTeam(getLegalActions),
   isActionLegal:    withTeam(isActionLegal),
+  getSearchActions: withTeam(getSearchActions),
   applyActions:     withTeam(applyActions),
   getResult,
   renderState,
