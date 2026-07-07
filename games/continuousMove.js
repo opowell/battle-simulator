@@ -57,31 +57,41 @@ export function movePointLattice(ox, oy, range, isLegal, rings = 2, spokes = 8) 
   return out;
 }
 
-// Build a continuous-game action set for game-tree search: replace each mover's discrete
-// tile moves with a continuous point lattice (straight-line-legal destinations), keeping
-// every non-move action untouched. So the AI plays by the same free-form movement rules
-// as a human clicking the board — it can position at exact points, not just tile centres
-// — while the discrete getLegalActions stays the engine/human-facing enumerator. If the
-// lattice finds nothing legal for a unit (boxed in), its discrete moves are kept so the
-// unit is never made immobile. `moveRangeOf(unit)` and `isLegalMove(unitId, x, y)` carry
-// the game's geometry; `res = { rings, spokes }` is the difficulty-scaled resolution.
-export function continuousSearchActions(baseActions, units, moveRangeOf, isLegalMove, res = {}) {
-  const moves = baseActions.filter(a => a.type === 'move');
-  if (!moves.length) return baseActions;
+// Replace one family of discrete point-target actions (a move's `to`, a grenade throw's
+// `target` — any action whose destination is a continuous board point) with a lattice of
+// exact continuous candidates, for game-tree search. So the AI plays by the same free-form
+// rules as a human clicking the board — positioning / aiming at exact points, not just tile
+// centres — while the discrete getLegalActions stays the engine/human-facing enumerator.
+// Non-matching actions pass through untouched, and if the lattice finds nothing legal for a
+// group (e.g. a boxed-in unit) its discrete candidates are kept so no option is lost.
+//
+// `family` describes the action family:
+//   type    — action.type to replace ('move', 'throw', …)
+//   point   — the field holding the destination point ('to', 'target', …)
+//   origin(action) -> { x, y, range } | null   Number-space centre + reach for the lattice
+//   isLegal(action, x, y) -> boolean            geometric legality of that point
+// Actions are grouped by their identity minus the point field, so each distinct thrower /
+// grenade / mover gets its own lattice. Deterministic (no rng): the search fixes an
+// infoset's action set once and re-derives it per world to filter (agents/obscuro/gtcfr.js).
+export function latticeActions(baseActions, family, res = {}) {
+  const matched = baseActions.filter(a => a.type === family.type);
+  if (!matched.length) return baseActions;
   const { rings = 2, spokes = 8 } = res;
-  const out = baseActions.filter(a => a.type !== 'move');
-  const byUnit = new Map();
-  for (const a of moves) {
-    if (!byUnit.has(a.unitId)) byUnit.set(a.unitId, []);
-    byUnit.get(a.unitId).push(a);
+  const out = baseActions.filter(a => a.type !== family.type);
+  const groups = new Map(); // identity (all fields but the point) -> { rep, discrete[] }
+  for (const a of matched) {
+    const { [family.point]: _pt, ...id } = a;
+    const key = JSON.stringify(id);
+    let g = groups.get(key);
+    if (!g) { g = { rep: a, discrete: [] }; groups.set(key, g); }
+    g.discrete.push(a);
   }
-  for (const [uid, discrete] of byUnit) {
-    const u = units.find(x => x.id === uid);
-    const pts = u
-      ? movePointLattice(num(u.position.x), num(u.position.y), moveRangeOf(u),
-          (x, y) => isLegalMove(uid, x, y), rings, spokes)
+  for (const { rep, discrete } of groups.values()) {
+    const o = family.origin(rep);
+    const pts = o
+      ? movePointLattice(o.x, o.y, o.range, (x, y) => family.isLegal(rep, x, y), rings, spokes)
       : [];
-    if (pts.length) for (const to of pts) out.push({ type: 'move', unitId: uid, to });
+    if (pts.length) for (const p of pts) out.push({ ...rep, [family.point]: p });
     else out.push(...discrete);
   }
   return out;

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CsGame } from './index.js';
+import { num } from '../coord.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -125,4 +126,27 @@ test('cs: self-play completes with a valid result', async () => {
   const engine = new GameEngine(CsGame, players(), { maxTurns: 400 });
   const { result } = await engine.run();
   assert.ok(['win', 'draw'].includes(result.outcome));
+});
+
+// ---------------------------------------------------------------------------
+// Continuous search actions (ObscuroAgent): moves AND grenade throws
+// ---------------------------------------------------------------------------
+
+test('cs: getSearchActions replaces discrete move+throw candidates with continuous lattices', () => {
+  let state = CsGame.createInitialState(players(), { mapId: 'dust2' });
+  // Enter the action phase and give a T unit two grenade types.
+  state = { ...state, currentPhase: 'action', gameSpecific: { ...state.gameSpecific, buyPhase: 'done' } };
+  state = { ...state, units: state.units.map(u => u.id === 'T-0' ? { ...u, grenades: { he: 1, smoke: 1 } } : u) };
+
+  const set   = CsGame.getSearchActions(state, 'p1', { rings: 2, spokes: 8 });
+  const moves  = set.filter(a => a.type === 'move');
+  const throws = set.filter(a => a.type === 'throw');
+
+  assert.ok(moves.length > 0 && throws.length > 0, 'has continuous moves and throws');
+  // Both action families carry genuinely non-integer (continuous) points.
+  assert.ok(moves.some(a => !Number.isInteger(a.to.x) || !Number.isInteger(a.to.y)), 'continuous move point');
+  assert.ok(throws.some(a => !Number.isInteger(a.target.x) || !Number.isInteger(a.target.y)), 'continuous throw point');
+  assert.deepEqual([...new Set(throws.map(t => t.grenade))].sort(), ['he', 'smoke'], 'every grenade type is aimed');
+  // Every generated point-action must pass the engine's geometric legality check.
+  for (const a of [...moves, ...throws]) assert.ok(CsGame.isActionLegal(state, 'p1', a), `legal: ${JSON.stringify(a)}`);
 });

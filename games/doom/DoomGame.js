@@ -3,7 +3,7 @@ import { MAP_WIDTH, MAP_HEIGHT, MAP_ROOMS, hasLOS, getReachable, manhattan, rend
 import { WEAPONS, AMMO_CAPS, WEAPON_RANK } from './weapons.js';
 import { createMarine, createMonster } from './units.js';
 import { getDoomBelief } from './belief.js';
-import { hasClearLine, isClearOfUnits, continuousSearchActions } from '../continuousMove.js';
+import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { parsePos, num, tileNum, posToWire } from '../coord.js';
 
 // ── Default item placement ─────────────────────────────────────────────────────
@@ -136,12 +136,12 @@ function isActionLegal(state, teamId, action) {
 // like a human clicking the board (see games/continuousMove.js). Non-move actions
 // (shoot/skip/end-turn) pass through unchanged.
 function getSearchActions(state, teamId, res) {
-  return continuousSearchActions(
-    getLegalActions(state, teamId), state.units,
-    u => u.attrs.moveRange,
-    (uid, x, y) => isMoveLegal(state, teamId, { unitId: uid, to: { x, y } }),
-    res,
-  );
+  const units = state.units;
+  return latticeActions(getLegalActions(state, teamId), {
+    type: 'move', point: 'to',
+    origin: a => { const u = units.find(x => x.id === a.unitId); return u ? { x: num(u.position.x), y: num(u.position.y), range: u.attrs.moveRange } : null; },
+    isLegal: (a, x, y) => isMoveLegal(state, teamId, { unitId: a.unitId, to: { x, y } }),
+  }, res);
 }
 
 // ── applyActions (internal, called with team ID in playerActions) ──────────────

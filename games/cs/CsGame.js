@@ -14,7 +14,7 @@ import {
   isWalkableContinuous,
 } from './map.js';
 import { getCsBelief } from './belief.js';
-import { hasClearLine, isClearOfUnits, continuousSearchActions } from '../continuousMove.js';
+import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 
 
@@ -223,17 +223,24 @@ function isActionLegal(state, teamId, action) {
 }
 
 // Continuous action set for the ObscuroAgent's tree search: each mover's discrete tile
-// moves are replaced by a lattice of exact reachable points (see games/continuousMove.js),
-// so the AI positions freely like a human. Non-move actions — including the discrete
-// grenade-throw candidates — pass through unchanged.
+// moves AND each thrower's discrete grenade targets are replaced by a lattice of exact
+// continuous points (see games/continuousMove.js), so the AI positions and aims freely
+// like a human. Other actions (shoot/reload/plant/defuse/skip/end-turn) pass through.
 function getSearchActions(state, teamId, res) {
-  // getLegalActions is phase-aware (buy phase has no moves → base passes through).
-  return continuousSearchActions(
-    getLegalActions(state, teamId), state.units,
-    () => MOVE_RANGE,
-    (uid, x, y) => isMoveLegal(state, teamId, { unitId: uid, to: { x, y } }),
-    res,
-  );
+  const units = state.units;
+  const originOf = a => { const u = units.find(x => x.id === a.unitId); return u ? { x: num(u.position.x), y: num(u.position.y) } : null; };
+  // getLegalActions is phase-aware (buy phase has no moves/throws → base passes through).
+  let out = latticeActions(getLegalActions(state, teamId), {
+    type: 'move', point: 'to',
+    origin: a => { const o = originOf(a); return o && { ...o, range: MOVE_RANGE }; },
+    isLegal: (a, x, y) => isMoveLegal(state, teamId, { unitId: a.unitId, to: { x, y } }),
+  }, res);
+  out = latticeActions(out, {
+    type: 'throw', point: 'target',
+    origin: a => { const o = originOf(a); return o && { ...o, range: GRENADE_THROW_RANGE }; },
+    isLegal: (a, x, y) => isThrowLegal(state, teamId, { unitId: a.unitId, grenade: a.grenade, target: { x, y } }),
+  }, res);
+  return out;
 }
 
 // ── Round result check ────────────────────────────────────────────────────────
