@@ -1,12 +1,14 @@
 import { unitStrengthEval } from '../evalHelpers.js';
 import { UNIT_DEFS, createUnit } from './units.js';
-import { createMap, createMapFromShapes, renderMap, TERRAIN } from './map.js';
+import { createMap, createMapFromShapes, renderMap, TERRAIN, isPassableContinuous, getMoveCostContinuous } from './map.js';
 import { getReachable } from './grid.js';
 import { hasLOS } from './los.js';
 import { resolveFire } from './combat.js';
 import { getCombatMissionBelief } from './belief.js';
 import { SHAPE_SCENARIOS } from './scenarios.js';
 import { tilesToShapes } from '../terrainShapes.js';
+import { lineCost, isClearOfUnits } from '../continuousMove.js';
+import { parsePos, num, posToWire } from '../coord.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
 
@@ -79,8 +81,8 @@ function getLegalActions(state, playerId) {
     const enemies = units.filter(u => u.alive && u.ownerId !== playerId);
     for (const enemy of enemies) {
       const dist = Math.sqrt(
-        (enemy.position.x - unit.position.x) ** 2 +
-        (enemy.position.y - unit.position.y) ** 2
+        (num(enemy.position.x) - num(unit.position.x)) ** 2 +
+        (num(enemy.position.y) - num(unit.position.y)) ** 2
       );
       if (dist <= def.range && hasLOS(board, unit.position, enemy.position)) {
         actions.push({ type: 'fire', unitId: unit.id, targetId: enemy.id });
@@ -92,6 +94,37 @@ function getLegalActions(state, playerId) {
 
   actions.push({ type: 'end-turn', unitId: '__player__' });
   return actions;
+}
+
+// ── isMoveLegal ───────────────────────────────────────────────────────────────
+// Geometric fallback for the human UI's continuous click-to-move (see the doom
+// equivalent in DoomGame.js and engine/ActionValidator.js): getLegalActions above
+// still enumerates a discrete candidate set for AI search (grid.js's weighted
+// Dijkstra), but a player's move can target any point their click resolves to —
+// legality here is a straight-line movement-cost/wall/occupancy check (still
+// respecting woods/hedgerow slowdown via getMoveCostContinuous) instead of exact
+// membership in that candidate set.
+function isMoveLegal(state, playerId, action) {
+  const { units, board } = state;
+  const unit = units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== playerId || unit.perTurn.ap <= 0) return false;
+  const def = UNIT_DEFS[unit.type];
+  // Continuous geometry runs in float64; convert the authoritative BigNumber position
+  // and the incoming wire coordinate to Number here (see games/coord.js §2).
+  const px = num(unit.position.x), py = num(unit.position.y);
+  const x = num(action.to.x), y = num(action.to.y);
+  if (!isPassableContinuous(board, x, y)) return false;
+  const cost = lineCost(px, py, x, y,
+    (qx, qy) => isPassableContinuous(board, qx, qy) ? getMoveCostContinuous(board, qx, qy) : Infinity);
+  if (cost > def.moveRange) return false;
+  if (!isClearOfUnits(x, y, units, unit.id)) return false;
+  return true;
+}
+
+// Dispatcher for the engine's continuous-action fallback (engine/ActionValidator.js):
+// only 'move' carries a continuous, not-pre-enumerated destination in Combat Mission.
+function isActionLegal(state, playerId, action) {
+  return action.type === 'move' ? isMoveLegal(state, playerId, action) : false;
 }
 
 // ── Apply actions ─────────────────────────────────────────────────────────────
@@ -126,9 +159,12 @@ function applyActions(state, playerActions, rng = Math.random) {
   }
 
   if (action.type === 'move') {
+    // action.to: decimal strings (human continuous click) or integer tile (AI); store
+    // as the authoritative BigNumber position (see games/coord.js).
+    const to = parsePos(action.to);
     units = units.map(u =>
       u.id === action.unitId
-        ? { ...u, position: action.to, perTurn: { ...u.perTurn, ap: u.perTurn.ap - 1 } }
+        ? { ...u, position: to, perTurn: { ...u.perTurn, ap: u.perTurn.ap - 1 } }
         : u
     );
     return { ...state, units, lastActions: playerActions };
@@ -249,7 +285,7 @@ function getVisibleState(state, playerId) {
     units: state.units.filter(u =>
       u.ownerId === playerId ||
       myUnits.some(m =>
-        Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= VISION &&
+        Math.max(Math.abs(num(m.position.x) - num(u.position.x)), Math.abs(num(m.position.y) - num(u.position.y))) <= VISION &&
         hasLOS(state.board, m.position, u.position)
       )
     ),
@@ -295,32 +331,42 @@ function toGrid(state) {
   const { width, height, tiles } = board;
   const pidIdx = {};
   (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
-  const umap = {};
-  for (const u of units ?? []) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+
+  // Terrain-only cells (terrain conveyed by the shapes below). Unit positions travel in
+  // the continuous `units` channel, not by exact-match into this integer grid.
   const cells = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const u = umap[`${x},${y}`];
       const t = tiles[y][x];
       cells.push({
         x, y,
-        glyph: u ? u.attrs.symbol : '',
-        owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
-        color: SHAPE_GROUND,   // terrain conveyed by the shapes below
+        color: SHAPE_GROUND,
         terrain: TERRAIN_INFO[t] ?? TERRAIN_INFO[TERRAIN.FLOOR],
-        hp: u?.hp, maxHp: u?.maxHp,
-        unitId: u?.id,
-        unitName: u ? UNIT_DEFS[u.type].label : undefined,
       });
     }
   }
+
+  // Continuous unit channel: real (possibly non-integer) positions as decimal strings
+  // (see games/coord.js), built directly from state.units.
+  const unitList = (units ?? []).filter(u => u.alive).map(u => {
+    const p = posToWire(u.position);
+    return {
+      id: u.id, x: p.x, y: p.y,
+      glyph:     u.attrs.symbol,
+      owner:     pidIdx[u.ownerId] ?? 0,
+      hp:        u.hp,
+      maxHp:     u.maxHp,
+      unitName:  UNIT_DEFS[u.type].label,
+      moveRange: UNIT_DEFS[u.type].moveRange,
+    };
+  });
 
   // Shape scenarios supply authored shapes (ovals + rects); the classic map has its tiles
   // merged into rectangles. Either way CS/CM/War of Dots all render as layered SVGs.
   const shapes = board.shapes
     ?? tilesToShapes((x, y) => tiles[y][x], width, height, CM_TILE_SHAPE_STYLES);
 
-  return { width, height, cells, shapes, ui: { hideGrid: true } };
+  return { width, height, locationType: 'continuous', cells, units: unitList, shapes, ui: { hideGrid: true } };
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────
@@ -330,15 +376,15 @@ function getActionDuration(state, action) {
     const unit = state.units.find(u => u.id === action.unitId);
     if (!unit) return 1;
     const from = unit.position;
-    const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+    const dist = Math.max(Math.abs(num(action.to.x) - num(from.x)), Math.abs(num(action.to.y) - num(from.y)));
     return dist / (UNIT_DEFS[unit.type]?.moveRange ?? 2);
   }
   if (action.type === 'fire') {
     const unit   = state.units.find(u => u.id === action.unitId);
     const target = state.units.find(u => u.id === action.targetId);
     if (!unit || !target) return 1;
-    const dx = target.position.x - unit.position.x;
-    const dy = target.position.y - unit.position.y;
+    const dx = num(target.position.x) - num(unit.position.x);
+    const dy = num(target.position.y) - num(unit.position.y);
     const dist = Math.sqrt(dx * dx + dy * dy);
     return dist / 15;  // bullet travel at 15 tiles/sec
   }
@@ -361,6 +407,7 @@ export const CombatMissionGame = {
   ],
   createInitialState,
   getLegalActions,
+  isActionLegal,
   applyActions,
   getResult,
   renderState,

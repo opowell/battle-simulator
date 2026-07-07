@@ -56,5 +56,7 @@
     "test": "node --test $(find games engine -name '*.test.js')",
     "kill:port:3333": "lsof -i tcp:3333 | awk 'NR!=1 {print $2}' | xargs kill -9"
   },
-  "dependencies": {}
+  "dependencies": {
+    "bignumber.js": "^11.1.5"
+  }
 }

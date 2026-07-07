@@ -103,7 +103,7 @@ export class GameEngine {
         ? this.game.getVisibleState(this._state, playerId)
         : this._state;
       const action = await player.agent.chooseAction(visibleState, legalActions);
-      validate(action, legalActions);
+      validate(action, legalActions, this.game, this._state, playerId);
       playerActions.push({ playerId, action });
     }
 
@@ -143,7 +143,7 @@ export class GameEngine {
         ? this.game.getVisibleState(this._state, playerId)
         : this._state;
       const action = await player.agent.chooseAction(visibleState, legalActions);
-      validate(action, legalActions);
+      validate(action, legalActions, this.game, this._state, playerId);
       const duration = this.game.getActionDuration
         ? this.game.getActionDuration(this._state, action)
         : 1;

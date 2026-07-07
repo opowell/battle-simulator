@@ -5,13 +5,20 @@ import { isPassable, getMoveCost } from './map.js';
 // getMoveCost). Dijkstra over small integer costs; the map is small so an O(n²) queue
 // is fine. A unit may always take at least one step onto an adjacent passable tile, so
 // costly terrain slows movement without ever trapping a low-movement unit.
+// Still builds the AI's discrete candidate set even once positions are continuous
+// (free-form movement), so it operates on the integer tile the unit's real position
+// sits in.
 export function getReachable(board, from, range, units) {
   const key = (x, y) => `${x},${y}`;
-  const blocked = new Set(units.filter(u => u.alive).map(u => key(u.position.x, u.position.y)));
-  blocked.delete(key(from.x, from.y));
+  const startX = Math.floor(from.x), startY = Math.floor(from.y);
+  const startKey = key(startX, startY);
+  const blocked = new Set(
+    units.filter(u => u.alive).map(u => key(Math.floor(u.position.x), Math.floor(u.position.y)))
+  );
+  blocked.delete(startKey);
 
-  const dist = new Map([[key(from.x, from.y), 0]]);
-  const pq = [{ x: from.x, y: from.y, cost: 0 }];
+  const dist = new Map([[startKey, 0]]);
+  const pq = [{ x: startX, y: startY, cost: 0 }];
 
   while (pq.length) {
     let mi = 0;
@@ -31,7 +38,7 @@ export function getReachable(board, from, range, units) {
   }
 
   const result = [];
-  const seen = new Set([key(from.x, from.y)]);
+  const seen = new Set([startKey]);
   for (const [kk, d] of dist) {
     if (d === 0 || d > range) continue;
     const [x, y] = kk.split(',').map(Number);
@@ -42,7 +49,7 @@ export function getReachable(board, from, range, units) {
   // Guarantee at least one step: an adjacent passable, unoccupied tile is always a legal
   // destination even if its terrain cost exceeds the unit's movement budget.
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-    const nx = from.x + dx, ny = from.y + dy, kk = key(nx, ny);
+    const nx = startX + dx, ny = startY + dy, kk = key(nx, ny);
     if (!seen.has(kk) && isPassable(board, nx, ny) && !blocked.has(kk)) {
       result.push({ x: nx, y: ny });
       seen.add(kk);

@@ -1,3 +1,5 @@
+import { makePos } from '../coord.js';
+
 export const UNIT_DEFS = {
   // Allied (US)
   'rifle-squad':   { hp: 10, attack:  5, range:  5, moveRange: 2, ap: 2, armor: 0, symbol: 'R', label: 'Rifle Sqd' },
@@ -23,7 +25,7 @@ export function createUnit(id, type, ownerId, position) {
     id,
     ownerId,
     type,
-    position,
+    position: makePos(position.x, position.y),
     alive: true,
     hp: def.hp,
     maxHp: def.hp,

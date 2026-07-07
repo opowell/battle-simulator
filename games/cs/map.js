@@ -2,7 +2,8 @@
 // y increases upward (y=0 = bottom row, y=H-1 = top row)
 // All utility functions accept `tiles` as first argument.
 
-import { forEachCell } from '../terrainShapes.js';
+import { forEachCell, pointInShape } from '../terrainShapes.js';
+import { num, tileNum } from '../coord.js';
 
 function k(x, y) { return `${x},${y}`; }
 
@@ -45,10 +46,16 @@ function buildFromShapes(def) {
   const { width: W, height: H, terrain, tSpawns, ctSpawns } = def;
   const t = buildBase(W, H);
   const shapes = [];
+  // Continuous-movement lookup: the authored shapes themselves (float x/y/w/h), each
+  // tagged with the mechanics tile they rasterize to — used by isWalkableContinuous
+  // below instead of the rasterized `tiles` dict, so free-form movement isn't limited
+  // to the tile grid's precision.
+  const terrainShapes = [];
 
   for (const s of terrain) {
     const style = CS_SHAPE_STYLES[s.kind] ?? CS_SHAPE_STYLES.wall;
     if (style.tile) forEachCell(s, W, H, (x, y) => { t[k(x, y)] = style.tile; });
+    terrainShapes.push({ shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h, tile: style.tile });
     shapes.push({
       shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h,
       ...style.render,
@@ -57,7 +64,19 @@ function buildFromShapes(def) {
     });
   }
 
-  return { width: W, height: H, tiles: t, tSpawns, ctSpawns, shapes };
+  return { width: W, height: H, tiles: t, tSpawns, ctSpawns, shapes, terrainShapes };
+}
+
+// Continuous (non-rasterized) walkability — walls/crates/pits/water are tested
+// directly against their authored shape geometry (later shapes win ties, matching
+// the rasterization order above) rather than the tile grid.
+export function isWalkableContinuous(map, x, y) {
+  if (x <= 0 || y <= 0 || x >= map.width - 1 || y >= map.height - 1) return false;
+  for (let i = map.terrainShapes.length - 1; i >= 0; i--) {
+    const s = map.terrainShapes[i];
+    if (pointInShape(s, x, y)) return s.tile !== 'wall';
+  }
+  return true;
 }
 
 // de_forge — a foundry split by a central oval furnace pit; two sites on opposite corners.
@@ -212,18 +231,25 @@ export const MAPS = {
 
 // ── Utility functions (all take tiles as first argument) ──────────────────────
 
+// Positions can be continuous (free-form movement); the discrete tile map is only
+// keyed by integers, so snap to the tile a point sits in.
 export function isBombsite(tiles, x, y) {
-  const t = tiles[k(x, y)];
+  const t = tiles[k(Math.floor(x), Math.floor(y))];
   return t === 'bombsiteA' || t === 'bombsiteB';
 }
 
+// Positions can be continuous (free-form movement); the discrete tile map is only
+// keyed by integers, so snap to the tile a point sits in.
 export function isWalkable(tiles, x, y) {
-  const t = tiles[k(x, y)];
+  const t = tiles[k(Math.floor(x), Math.floor(y))];
   return t !== undefined && t !== 'wall';
 }
 
-// Bresenham LOS — returns false if any intermediate tile is a wall or in extraBlocked
+// Bresenham LOS — returns false if any intermediate tile is a wall or in extraBlocked.
+// Needs integer endpoints to terminate — unit positions can now be continuous
+// (free-form movement), so snap to the tile each endpoint sits in.
 export function hasLOS(tiles, x0, y0, x1, y1, extraBlocked = null) {
+  x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.floor(x1); y1 = Math.floor(y1);
   let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
   let sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   let err = dx - dy;
@@ -240,17 +266,22 @@ export function hasLOS(tiles, x0, y0, x1, y1, extraBlocked = null) {
 }
 
 export function euclidean(a, b) {
-  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+  return Math.sqrt((num(a.x) - num(b.x)) ** 2 + (num(a.y) - num(b.y)) ** 2);
 }
 
-// BFS reachable positions (4-directional, excludes occupied tiles)
+// BFS reachable positions (4-directional, excludes occupied tiles). Still builds the
+// AI's discrete candidate set even once positions are continuous (free-form
+// movement), so it operates on the integer tile the unit's real position sits in.
 export function getReachable(tiles, pos, range, units) {
+  const startX = Math.floor(pos.x), startY = Math.floor(pos.y);
+  const startKey = k(startX, startY);
   const occupied = new Set(
-    units.filter(u => u.alive && !(u.position.x === pos.x && u.position.y === pos.y))
-         .map(u => k(u.position.x, u.position.y))
+    units.filter(u => u.alive)
+         .map(u => k(Math.floor(u.position.x), Math.floor(u.position.y)))
+         .filter(uk => uk !== startKey)
   );
-  const visited = new Set([k(pos.x, pos.y)]);
-  const queue   = [{ x: pos.x, y: pos.y, rem: range }];
+  const visited = new Set([startKey]);
+  const queue   = [{ x: startX, y: startY, rem: range }];
   const result  = [];
   while (queue.length) {
     const { x, y, rem } = queue.shift();
@@ -273,7 +304,7 @@ export function getThrowTargets(tiles, width, height, pos, range) {
   const result = [];
   for (let y = 0; y < height; y++)
     for (let x = 0; x < width; x++)
-      if (isWalkable(tiles, x, y) && (x - pos.x) ** 2 + (y - pos.y) ** 2 <= r2)
+      if (isWalkable(tiles, x, y) && (x - num(pos.x)) ** 2 + (y - num(pos.y)) ** 2 <= r2)
         result.push({ x, y });
   return result;
 }
@@ -284,19 +315,23 @@ export function renderMap(state) {
   const { units, gameSpecific: { bomb, smokeZones = [], fireZones = [], map } } = state;
   const { tiles, width, height } = map;
   const posMap = {};
-  for (const u of units) if (u.alive) posMap[k(u.position.x, u.position.y)] = u;
+  for (const u of units) if (u.alive) posMap[k(tileNum(u.position.x), tileNum(u.position.y))] = u;
 
   const smokeSet = new Set();
-  for (const sz of smokeZones)
+  for (const sz of smokeZones) {
+    const cx = tileNum(sz.x), cy = tileNum(sz.y);
     for (let dy = -1; dy <= 1; dy++)
       for (let dx = -1; dx <= 1; dx++)
-        smokeSet.add(k(sz.x + dx, sz.y + dy));
+        smokeSet.add(k(cx + dx, cy + dy));
+  }
 
   const fireSet = new Set();
-  for (const fz of fireZones)
+  for (const fz of fireZones) {
+    const cx = tileNum(fz.x), cy = tileNum(fz.y);
     for (let dy = -1; dy <= 1; dy++)
       for (let dx = -1; dx <= 1; dx++)
-        fireSet.add(k(fz.x + dx, fz.y + dy));
+        fireSet.add(k(cx + dx, cy + dy));
+  }
 
   const rows = [];
   for (let y = height - 1; y >= 0; y--) {
@@ -306,7 +341,7 @@ export function renderMap(state) {
       const u = posMap[kk];
       if (u) {
         row += u.ownerId === 'T' ? 'T' : 'C';
-      } else if (bomb?.planted && bomb.plantedAt.x === x && bomb.plantedAt.y === y) {
+      } else if (bomb?.planted && tileNum(bomb.plantedAt.x) === x && tileNum(bomb.plantedAt.y) === y) {
         row += '!';
       } else if (fireSet.has(kk)) {
         row += '*';

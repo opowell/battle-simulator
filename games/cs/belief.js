@@ -26,6 +26,7 @@
 // ---------------------------------------------------------------------------
 
 import { isWalkable, getReachable } from './map.js';
+import { num, tilePos } from '../coord.js';
 
 const FOG_VISION  = 4;   // matches getVisibleState
 const MOVE_RANGE   = 4;  // a unit moves up to this far per turn
@@ -34,7 +35,9 @@ const THREAT_BIAS  = 3;  // over-sample tiles near our players
 
 const k = (x, y) => `${x},${y}`;
 const coords = key => key.split(',').map(Number);
-const cheby = (x, y, p) => Math.max(Math.abs(x - p.x), Math.abs(y - p.y));
+// `p` may be a belief tile ({x,y} Numbers) or a live unit position (BigNumbers), so
+// read both coordinates in Number-space (see games/coord.js).
+const cheby = (x, y, p) => Math.max(Math.abs(x - num(p.x)), Math.abs(y - num(p.y)));
 
 function weightedPick(items, weights, rng) {
   let total = 0;
@@ -70,9 +73,10 @@ export class CsBelief {
     const vis = new Set();
     for (const m of observation.units) {
       if (!m.alive || m.ownerId !== this.myTeam) continue;
+      const mt = tilePos(m.position);
       for (let dy = -FOG_VISION; dy <= FOG_VISION; dy++)
         for (let dx = -FOG_VISION; dx <= FOG_VISION; dx++)
-          vis.add(k(m.position.x + dx, m.position.y + dy));
+          vis.add(k(mt.x + dx, mt.y + dy));
     }
     return vis;
   }
@@ -103,10 +107,11 @@ export class CsBelief {
     for (const u of observation.units) {
       if (u.ownerId !== this.enemyTeam) continue;
       seenNow.add(u.id);
-      const pc = this.pieces.get(u.id) ?? { possible: new Set(), anchor: { ...u.position }, alive: true, seen: false };
+      const ut = tilePos(u.position); // belief lives in integer tile-space
+      const pc = this.pieces.get(u.id) ?? { possible: new Set(), anchor: ut, alive: true, seen: false };
       pc.alive = u.alive;                                // we see it live or dead
-      pc.anchor = { ...u.position };
-      pc.possible = new Set([k(u.position.x, u.position.y)]); // pinned exactly
+      pc.anchor = ut;
+      pc.possible = new Set([k(ut.x, ut.y)]);            // pinned to its tile
       pc.seen = true;
       this.pieces.set(u.id, pc);
     }
@@ -159,7 +164,7 @@ export class CsBelief {
     for (const [id, pc] of this.pieces) if (pc.alive && !seenIds.has(id)) hidden.push({ id, pc });
     if (hidden.length === 0) return [];
 
-    const occupiedBase = new Set(observation.units.filter(u => u.alive).map(u => k(u.position.x, u.position.y)));
+    const occupiedBase = new Set(observation.units.filter(u => u.alive).map(u => { const t = tilePos(u.position); return k(t.x, t.y); }));
     const worlds = [];
     for (let p = 0; p < n; p++) {
       const used = new Set(occupiedBase);

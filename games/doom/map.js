@@ -1,4 +1,5 @@
-import { forEachCell } from '../terrainShapes.js';
+import { forEachCell, pointInShape } from '../terrainShapes.js';
+import { num, tileNum } from '../coord.js';
 
 export const MAP_WIDTH  = 20;
 export const MAP_HEIGHT = 14;
@@ -36,12 +37,26 @@ function buildMap() {
 
 export const MAP_TILES = buildMap();
 
+// Continuous (non-rasterized) walkability, tested directly against the authored room
+// geometry — used for free-form (click-anywhere) movement, so precision is bounded
+// only by float64, not by the MAP_TILES rasterization used for the AI's discrete
+// candidate moves.
+export function isWalkableContinuous(x, y) {
+  if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) return false;
+  return MAP_ROOMS.some(r => pointInShape(r, x, y));
+}
+
+// Positions can be continuous (free-form movement); the discrete tile map is only
+// keyed by integers, so snap to the tile a point sits in.
 export function isWalkable(x, y) {
-  return MAP_TILES[k(x, y)] === 'floor';
+  return MAP_TILES[k(tileNum(x), tileNum(y))] === 'floor';
 }
 
 // Bresenham LOS — returns false if any intermediate tile is a wall
+// Bresenham needs integer endpoints to terminate — unit positions can now be
+// continuous (free-form movement), so snap to the tile each endpoint sits in.
 export function hasLOS(x0, y0, x1, y1) {
+  x0 = tileNum(x0); y0 = tileNum(y0); x1 = tileNum(x1); y1 = tileNum(y1);
   const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   let err = dx - dy, cx = x0, cy = y0;
@@ -55,14 +70,19 @@ export function hasLOS(x0, y0, x1, y1) {
   return true;
 }
 
-// BFS movement — returns reachable floor tiles within range steps
+// BFS movement — returns reachable floor tiles within range steps. This still builds
+// the AI's discrete candidate set even once positions are continuous (free-form
+// movement), so it operates on the integer tile the unit's real position sits in.
 export function getReachable(pos, range, units) {
+  const startX = tileNum(pos.x), startY = tileNum(pos.y);
+  const startKey = k(startX, startY);
   const occupied = new Set(
-    units.filter(u => u.alive && !(u.position.x === pos.x && u.position.y === pos.y))
-         .map(u => k(u.position.x, u.position.y))
+    units.filter(u => u.alive)
+         .map(u => k(tileNum(u.position.x), tileNum(u.position.y)))
+         .filter(uk => uk !== startKey)
   );
-  const visited = new Set([k(pos.x, pos.y)]);
-  const queue   = [{ x: pos.x, y: pos.y, rem: range }];
+  const visited = new Set([startKey]);
+  const queue   = [{ x: startX, y: startY, rem: range }];
   const result  = [];
   while (queue.length) {
     const { x, y, rem } = queue.shift();
@@ -80,7 +100,7 @@ export function getReachable(pos, range, units) {
 }
 
 export function manhattan(a, b) {
-  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  return Math.abs(num(a.x) - num(b.x)) + Math.abs(num(a.y) - num(b.y));
 }
 
 function itemChar(type) {
@@ -97,7 +117,7 @@ export function renderMap(state) {
   const { units, gameSpecific: { items } } = state;
   const posMap  = {};
   const itemMap = {};
-  for (const u of units) if (u.alive) posMap[k(u.position.x, u.position.y)] = u;
+  for (const u of units) if (u.alive) posMap[k(tileNum(u.position.x), tileNum(u.position.y))] = u;
   for (const it of items) if (!it.pickedUp) itemMap[k(it.x, it.y)] = it;
 
   const rows = [];

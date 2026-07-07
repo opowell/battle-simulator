@@ -19,6 +19,7 @@
 // ---------------------------------------------------------------------------
 
 import { getReachable, hasLOS } from './map.js';
+import { tilePos } from '../coord.js';
 
 const VISION       = 6;   // matches getVisibleState
 const MAX_POSSIBLE = 40;  // cap a unit's possible-tile set so sampling stays cheap
@@ -41,10 +42,13 @@ export class DoomBelief {
     this.myTeam = myTeam;
     this.pieces = new Map(); // id -> { ownerId, type, possible:Set, anchor, alive, seen, hp, reach }
     for (const u of enemyRoster) {
+      // Belief lives in integer tile-space; a unit's position may be continuous, so
+      // pin it to the tile it sits in (see games/coord.js).
+      const tp = tilePos(u.position);
       this.pieces.set(u.id, {
         ownerId: u.ownerId, type: u.type,
-        possible: new Set([k(u.position.x, u.position.y)]),
-        anchor: { ...u.position }, alive: true, seen: false,
+        possible: new Set([k(tp.x, tp.y)]),
+        anchor: tp, alive: true, seen: false,
         hp: u.hp ?? 1,
         reach: Math.max(1, (u.moveRange ?? 3) * (u.maxAP ?? 1)),
       });
@@ -87,8 +91,9 @@ export class DoomBelief {
       seenNow.add(u.id);
       pc.alive = u.alive;
       pc.hp = u.hp ?? pc.hp;
-      pc.anchor = { ...u.position };
-      pc.possible = new Set([k(u.position.x, u.position.y)]);
+      const tp = tilePos(u.position);
+      pc.anchor = tp;
+      pc.possible = new Set([k(tp.x, tp.y)]);
       pc.seen = true;
     }
     for (const [id, pc] of this.pieces) {
@@ -129,7 +134,7 @@ export class DoomBelief {
     for (const [id, pc] of this.pieces) if (pc.alive && !seenIds.has(id)) hidden.push({ id, pc });
     if (hidden.length === 0) return [];
 
-    const occupiedBase = new Set(observation.units.filter(u => u.alive).map(u => k(u.position.x, u.position.y)));
+    const occupiedBase = new Set(observation.units.filter(u => u.alive).map(u => { const tp = tilePos(u.position); return k(tp.x, tp.y); }));
     const worlds = [];
     for (let p = 0; p < n; p++) {
       const used = new Set(occupiedBase);
