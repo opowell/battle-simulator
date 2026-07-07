@@ -11,8 +11,11 @@ import {
 import {
   MAPS,
   isBombsite, hasLOS, euclidean, getReachable, getThrowTargets, renderMap,
+  isWalkableContinuous,
 } from './map.js';
 import { getCsBelief } from './belief.js';
+import { hasClearLine, isClearOfUnits } from '../continuousMove.js';
+import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 
 
 const MOVE_RANGE     = 4;
@@ -28,21 +31,27 @@ function calcDamage(raw, unit) {
   return Math.round(raw * (1 - reduction));
 }
 
+// Zone centres can be continuous (a grenade thrown to an exact point); the tile-key
+// membership sets they feed are integer-keyed, so snap each centre to its tile.
 function buildSmokeSet(smokeZones) {
   const s = new Set();
-  for (const sz of smokeZones)
+  for (const sz of smokeZones) {
+    const cx = tileNum(sz.x), cy = tileNum(sz.y);
     for (let dy = -SMOKE_RADIUS; dy <= SMOKE_RADIUS; dy++)
       for (let dx = -SMOKE_RADIUS; dx <= SMOKE_RADIUS; dx++)
-        s.add(`${sz.x + dx},${sz.y + dy}`);
+        s.add(`${cx + dx},${cy + dy}`);
+  }
   return s;
 }
 
 function buildFireSet(fireZones) {
   const s = new Set();
-  for (const fz of fireZones)
+  for (const fz of fireZones) {
+    const cx = tileNum(fz.x), cy = tileNum(fz.y);
     for (let dy = -FIRE_RADIUS; dy <= FIRE_RADIUS; dy++)
       for (let dx = -FIRE_RADIUS; dx <= FIRE_RADIUS; dx++)
-        s.add(`${fz.x + dx},${fz.y + dy}`);
+        s.add(`${cx + dx},${cy + dy}`);
+  }
   return s;
 }
 
@@ -56,7 +65,7 @@ function fullAmmo(weaponId) {
 function makeUnit(id, ownerId, pos) {
   return {
     id, ownerId, type: 'player',
-    position: { ...pos },
+    position: makePos(pos.x, pos.y),
     alive: true,
     hp: 100, maxHp: 100,
     armor: 0, helmet: false, hasKit: false,
@@ -154,9 +163,9 @@ function actionPhaseActions(state, teamId) {
       if (teamId === 'T' && !bomb?.planted && isBombsite(tiles, u.position.x, u.position.y))
         actions.push({ type: 'plant', unitId: u.id });
 
-      // Defuse bomb (CT only, standing on bomb)
-      if (teamId === 'CT' && bomb?.planted &&
-          u.position.x === bomb.plantedAt.x && u.position.y === bomb.plantedAt.y)
+      // Defuse bomb (CT only, standing on bomb). Positions can be continuous
+      // (free-form movement), so "standing on" is a proximity check, not exact equality.
+      if (teamId === 'CT' && bomb?.planted && euclidean(u.position, bomb.plantedAt) < 0.5)
         actions.push({ type: 'defuse', unitId: u.id });
     }
 
@@ -166,6 +175,51 @@ function actionPhaseActions(state, teamId) {
 
   actions.push({ type: 'end-turn', unitId: '__player__' });
   return actions;
+}
+
+// ── isMoveLegal (internal, called with team ID) ─────────────────────────────────
+// Geometric fallback for the human UI's continuous click-to-move (see the doom
+// equivalent in DoomGame.js and engine/ActionValidator.js): actionPhaseActions above
+// still enumerates a discrete candidate set for AI search, but a player's move can
+// target any point their click resolves to.
+function isMoveLegal(state, teamId, action) {
+  if (state.currentPhase !== 'action') return false; // no free-form moves during the buy phase
+  const map  = state.gameSpecific.map;
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.hasMoved) return false;
+  // Continuous geometry runs in float64; convert the authoritative BigNumber position
+  // and the incoming wire coordinate to Number here (see games/coord.js §2).
+  const px = num(unit.position.x), py = num(unit.position.y);
+  const x = num(action.to.x), y = num(action.to.y);
+  if (!isWalkableContinuous(map, x, y)) return false;
+  if (Math.hypot(px - x, py - y) > MOVE_RANGE) return false;
+  if (!hasClearLine(px, py, x, y, (qx, qy) => !isWalkableContinuous(map, qx, qy))) return false;
+  if (!isClearOfUnits(x, y, state.units, unit.id)) return false;
+  return true;
+}
+
+// Geometric fallback for a human continuous grenade throw (see engine/ActionValidator.js).
+// actionPhaseActions enumerates a discrete tile candidate set (getThrowTargets) for AI
+// search; a player may throw to any exact point within range on a walkable tile (no LOS
+// required, matching getThrowTargets). Consuming the grenade is validated at apply time.
+function isThrowLegal(state, teamId, action) {
+  if (state.currentPhase !== 'action') return false; // grenades are thrown in the action phase
+  const map  = state.gameSpecific.map;
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.hasActed) return false;
+  if (!(unit.grenades?.[action.grenade] > 0)) return false;
+  const x = num(action.target.x), y = num(action.target.y);
+  if (!isWalkableContinuous(map, x, y)) return false;
+  if (Math.hypot(num(unit.position.x) - x, num(unit.position.y) - y) > GRENADE_THROW_RANGE) return false;
+  return true;
+}
+
+// Dispatcher for the engine's continuous-action fallback: 'move' and 'throw' carry
+// continuous points a player clicked, so they can't be pre-enumerated for exact match.
+function isActionLegal(state, teamId, action) {
+  if (action.type === 'move')  return isMoveLegal(state, teamId, action);
+  if (action.type === 'throw') return isThrowLegal(state, teamId, action);
+  return false;
 }
 
 // ── Round result check ────────────────────────────────────────────────────────
@@ -287,8 +341,11 @@ function applyActions(state, playerActions, rng = Math.random) {
       if (playerId === 'CT' && bomb.planted && bomb.defusingUnitId === action.unitId)
         bomb = { ...bomb, defuseProgress: 0, defusingUnitId: null };
 
+      // action.to: decimal strings (human continuous click) or integer tile (AI); store
+      // as the authoritative BigNumber position (see games/coord.js).
+      const to = parsePos(action.to);
       units = units.map(u => u.id === action.unitId
-        ? { ...u, position: action.to, perTurn: { ...u.perTurn, hasMoved: true } } : u);
+        ? { ...u, position: to, perTurn: { ...u.perTurn, hasMoved: true } } : u);
       const s0 = { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
       const rr = getRoundResult(s0);
       if (rr) return startNewRound(s0, rr);
@@ -329,7 +386,9 @@ function applyActions(state, playerActions, rng = Math.random) {
     }
 
     if (action.type === 'throw') {
-      const { grenade, target } = action;
+      const { grenade } = action;
+      // target: decimal strings (human continuous click) or integer tile (AI candidate).
+      const target = parsePos(action.target);
       const smokeSet = buildSmokeSet(smokeZones);
 
       // Consume grenade and mark hasActed
@@ -362,10 +421,10 @@ function applyActions(state, playerActions, rng = Math.random) {
         });
 
       } else if (grenade === 'smoke') {
-        smokeZones = [...smokeZones, { x: target.x, y: target.y, turnsLeft: SMOKE_TURNS }];
+        smokeZones = [...smokeZones, { x: num(target.x), y: num(target.y), turnsLeft: SMOKE_TURNS }];
 
       } else if (grenade === 'molotov' || grenade === 'incendiary') {
-        fireZones = [...fireZones, { x: target.x, y: target.y, turnsLeft: FIRE_TURNS }];
+        fireZones = [...fireZones, { x: num(target.x), y: num(target.y), turnsLeft: FIRE_TURNS }];
       }
       // decoy: no mechanical effect
 
@@ -438,7 +497,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       if (fireZones.length > 0) {
         const fireSet = buildFireSet(fireZones);
         units = units.map(u => {
-          if (!u.alive || !fireSet.has(`${u.position.x},${u.position.y}`)) return u;
+          if (!u.alive || !fireSet.has(`${tileNum(u.position.x)},${tileNum(u.position.y)}`)) return u;
           const newHp = Math.max(0, u.hp - calcDamage(FIRE_DAMAGE, u));
           return { ...u, hp: newHp, alive: newHp > 0, armor: newHp > 0 ? u.armor : 0 };
         });
@@ -565,7 +624,7 @@ function effectShapes(gs) {
     out.push({ shape: 'oval', x: fz.x - FIRE_RADIUS, y: fz.y - FIRE_RADIUS,
                w: FIRE_RADIUS * 2 + 1, h: FIRE_RADIUS * 2 + 1, fill: '#c85a2a', opacity: 0.6 });
   if (gs.bomb?.planted)
-    out.push({ shape: 'oval', x: gs.bomb.plantedAt.x - 0.1, y: gs.bomb.plantedAt.y - 0.1,
+    out.push({ shape: 'oval', x: num(gs.bomb.plantedAt.x) - 0.1, y: num(gs.bomb.plantedAt.y) - 0.1,
                w: 1.2, h: 1.2, fill: '#e04040' });
   return out;
 }
@@ -590,40 +649,44 @@ function toGrid(state) {
   const playerIdx = {};
   (state.players ?? []).forEach((p, i) => { playerIdx[p.id] = i + 1; });
 
-  const posMap = {};
-  for (const u of units) if (u.alive) posMap[`${u.position.x},${u.position.y}`] = u;
-
-  // Every CS map renders as layered SVG shapes: shape-authored maps supply their own
-  // (ovals + rects), classic tile maps get their walls/sites/spawns merged into rects.
-  // The tile layer is a uniform floor and effects (smoke/fire/bomb) draw as shapes on top.
+  // Terrain-only cells (uniform floor; walls/sites drawn as the SVG shapes below).
+  // Unit positions travel in the continuous `units` channel, not by exact-match into
+  // this integer grid — every CS map renders as layered SVG shapes and effects
+  // (smoke/fire/bomb) draw on top.
   const cells = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const kk = `${x},${y}`;
-      const u  = posMap[kk];
-      const t  = tiles[kk] ?? 'floor';
-
+      const t = tiles[`${x},${y}`] ?? 'floor';
       cells.push({
         x, y,
-        glyph:         u ? 'P' : '',
-        unitId:        u?.id,
-        unitName:      u?.id,
-        owner:         u ? (playerIdx[gs.teamPlayerMap[u.ownerId]] ?? 0) : 0,
-        color:         SHAPE_FLOOR,
-        terrain:       TERRAIN_INFO[t] ?? TERRAIN_INFO.floor,
-        hp:            u?.hp,
-        maxHp:         u?.maxHp,
-        job:           u?.weapon,
-        equipment:     u ? equipmentList(u) : undefined,
-        statusEffects: u?.blinded ? ['blinded'] : undefined,
-        moved:         u?.perTurn?.hasMoved,
-        acted:         u?.perTurn?.hasActed,
+        color:   SHAPE_FLOOR,
+        terrain: TERRAIN_INFO[t] ?? TERRAIN_INFO.floor,
       });
     }
   }
 
+  // Continuous unit channel: real (possibly non-integer) positions as decimal strings
+  // (see games/coord.js), built directly from state.units.
+  const unitList = units.filter(u => u.alive).map(u => {
+    const p = posToWire(u.position);
+    return {
+      id: u.id, x: p.x, y: p.y,
+      glyph:         'P',
+      unitName:      u.id,
+      owner:         playerIdx[gs.teamPlayerMap[u.ownerId]] ?? 0,
+      hp:            u.hp,
+      maxHp:         u.maxHp,
+      job:           u.weapon,
+      moveRange:     MOVE_RANGE,
+      equipment:     equipmentList(u),
+      statusEffects: u.blinded ? ['blinded'] : undefined,
+      moved:         u.perTurn?.hasMoved,
+      acted:         u.perTurn?.hasActed,
+    };
+  });
+
   return {
-    width, height, cells,
+    width, height, locationType: 'continuous', cells, units: unitList,
     shapes: [...(gs.map.shapes ?? []), ...effectShapes(gs)],
     ui: { hideGrid: true },
   };
@@ -689,7 +752,7 @@ function getVisibleState(state, teamId) {
     ...state,
     units: state.units.filter(u =>
       u.ownerId === teamId ||
-      myUnits.some(m => Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= VISION)
+      myUnits.some(m => Math.max(Math.abs(num(m.position.x) - num(u.position.x)), Math.abs(num(m.position.y) - num(u.position.y))) <= VISION)
     ),
   };
 }
@@ -702,15 +765,15 @@ function getActionDuration(state, action) {
     const unit = state.units.find(u => u.id === action.unitId);
     if (!unit) return 1;
     const from = action.from ?? unit.position;
-    const dx = action.to.x - from.x, dy = action.to.y - from.y;
+    const dx = num(action.to.x) - num(from.x), dy = num(action.to.y) - num(from.y);
     return Math.sqrt(dx * dx + dy * dy) / PLAYER_SPEED;
   }
   if (action.type === 'shoot') {
     const shooter = state.units.find(u => u.id === action.unitId);
     const target  = state.units.find(u => u.id === action.targetId);
     if (!shooter || !target) return 1;
-    const dx = target.position.x - shooter.position.x;
-    const dy = target.position.y - shooter.position.y;
+    const dx = num(target.position.x) - num(shooter.position.x);
+    const dy = num(target.position.y) - num(shooter.position.y);
     return Math.sqrt(dx * dx + dy * dy) / BULLET_SPEED;
   }
   if (action.type === 'throw')  return 1.5;
@@ -758,6 +821,7 @@ export const CsGame = {
   ],
   createInitialState,
   getLegalActions:  withTeam(getLegalActions),
+  isActionLegal:    withTeam(isActionLegal),
   applyActions:     withTeam(applyActions),
   getResult,
   renderState,

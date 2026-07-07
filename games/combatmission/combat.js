@@ -1,13 +1,14 @@
 import { UNIT_DEFS } from './units.js';
 import { getCoverBonus } from './map.js';
+import { num } from '../coord.js';
 
 // Base hit chance before modifiers
 const BASE_HIT = 65;
 
 export function calcHitChance(shooter, target, board) {
   const dist = Math.sqrt(
-    (shooter.position.x - target.position.x) ** 2 +
-    (shooter.position.y - target.position.y) ** 2
+    (num(shooter.position.x) - num(target.position.x)) ** 2 +
+    (num(shooter.position.y) - num(target.position.y)) ** 2
   );
   let chance = BASE_HIT;
   chance -= Math.max(0, dist - 1) * 5;                    // range penalty

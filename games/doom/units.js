@@ -1,3 +1,5 @@
+import { makePos } from '../coord.js';
+
 // accuracy, damage [min,max], range: intrinsic demon attack stats
 export const MONSTER_DEFS = {
   zombieman: { hp: 20,  maxAP: 2, moveRange: 3, damage: [5,10],   range: 6,  accuracy: 55, pellets: 1, symbol: 'z' },
@@ -13,7 +15,7 @@ export function createMarine(id, position) {
     id,
     ownerId: 'marine',
     type: 'doomguy',
-    position,
+    position: makePos(position.x, position.y),
     alive: true,
     hp: 100, maxHp: 100,
     armor: 50,
@@ -30,7 +32,7 @@ export function createMonster(id, type, position) {
     id,
     ownerId: 'demon',
     type,
-    position,
+    position: makePos(position.x, position.y),
     alive: true,
     hp: def.hp, maxHp: def.hp,
     attrs: {

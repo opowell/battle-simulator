@@ -115,24 +115,42 @@ watch(liveState, (newState, oldState) => {
   const hopsOn = (ui.moveAnimation ?? 'hop') !== 'none';
   const fxOn   = !!ui.combatFx;
   const diagonal = ui.allowDiagonalHopsWhileMoving ?? false;
-  // Non-grid (shape) maps have no visible grid lines, so stepping axis-by-axis looks
-  // like a stair-stepped hop instead of the straight slide the terrain implies.
-  const slide = (activeField.value?.shapes?.length ?? 0) > 0;
+  // Continuous-location maps (doom/cs/combatmission — see games/coord.js) have no grid
+  // to hop across: a unit slides in a straight line to the exact point clicked. Their
+  // per-unit positions travel in newState.grid.units (real points), not by cell index.
+  const continuous = newState.grid.locationType === 'continuous';
+  const slide = continuous;
 
   // Net position changes A→B (a unit moved twice in a bundle collapses to one hop —
   // matching the pre-sequencing behaviour). Each is claimed by the beat it belongs to.
   const moved = new Map(); // unitId -> { from, to }
-  for (const newCell of newState.grid.cells) {
-    if (!newCell.unitId) continue;
-    const oldCell = oldState.grid.cells.find(c => c.unitId === newCell.unitId);
-    if (!oldCell || (oldCell.x === newCell.x && oldCell.y === newCell.y)) continue;
-    moved.set(newCell.unitId, { from: { x: oldCell.x, y: oldCell.y }, to: { x: newCell.x, y: newCell.y } });
+  if (continuous) {
+    const oldUnits = new Map((oldState.grid.units ?? []).map(u => [u.id, u]));
+    for (const nu of newState.grid.units ?? []) {
+      const ou = oldUnits.get(nu.id);
+      if (!ou) continue;
+      const from = { x: Number(ou.x), y: Number(ou.y) }, to = { x: Number(nu.x), y: Number(nu.y) };
+      if (from.x === to.x && from.y === to.y) continue;
+      moved.set(nu.id, { from, to });
+    }
+  } else {
+    for (const newCell of newState.grid.cells) {
+      if (!newCell.unitId) continue;
+      const oldCell = oldState.grid.cells.find(c => c.unitId === newCell.unitId);
+      if (!oldCell || (oldCell.x === newCell.x && oldCell.y === newCell.y)) continue;
+      moved.set(newCell.unitId, { from: { x: oldCell.x, y: oldCell.y }, to: { x: newCell.x, y: newCell.y } });
+    }
   }
 
-  // Board square of a unit for a flash: its new square if still on the board, else
-  // its last-seen square (a slain unit is gone from newState). Centres sit at
-  // cell + 0.5 (see buildField), matching the SVG fit transform.
+  // Board point of a unit for a flash: its new point if still on the board, else its
+  // last-seen point (a slain unit is gone from newState). Discrete units centre at
+  // cell + 0.5 (see buildField); continuous positions are already exact points.
   const fxSquare = (id) => {
+    if (continuous) {
+      const u = (newState.grid.units ?? []).find(u => u.id === id)
+             ?? (oldState.grid.units ?? []).find(u => u.id === id);
+      return u ? { x: Number(u.x), y: Number(u.y) } : {};
+    }
     const c = newState.grid.cells.find(c => c.unitId === id)
            ?? oldState.grid.cells.find(c => c.unitId === id);
     return c ? { x: c.x + 0.5, y: c.y + 0.5 } : {};
@@ -205,16 +223,25 @@ function buildField(g, s) {
   const ownerTeam = {};
   teams.forEach((t, i) => { ownerTeam[i + 1] = t.id; });
 
-  const units = g.cells
-    .filter(c => c.glyph)
-    .map(c => ({
-      id:        c.unitId ?? `u_${c.x}_${c.y}`,
+  const locationType = g.locationType ?? 'discrete';
+
+  // Discrete games locate a unit by an integer cell, rendered at the cell centre (hence
+  // +0.5). Continuous games (doom/cs/combatmission — see games/coord.js) carry real
+  // positions in a parallel `g.units` channel as decimal strings; a position is already
+  // the exact point, so it renders directly with no cell-centre offset.
+  const unitSource = locationType === 'continuous'
+    ? (g.units ?? []).map(u => ({ src: u, x: Number(u.x), y: Number(u.y), id: u.id }))
+    : g.cells.filter(c => c.glyph).map(c => ({ src: c, x: c.x + 0.5, y: c.y + 0.5, id: c.unitId ?? `u_${c.x}_${c.y}` }));
+
+  const units = unitSource
+    .map(({ src: c, x, y, id }) => ({
+      id,
       team:      ownerTeam[c.owner] ?? (teams[0]?.id ?? 'p1'),
       type:      c.glyph.toLowerCase(),
       name:      c.unitName ?? c.glyph,
       hp:        c.maxHp ?? c.hp ?? 1,
       currentHp: c.hp,
-      path:      [[c.x + 0.5, c.y + 0.5]],
+      path:      [[x, y]],
       facing:    c.facing,
       deathTurn: null,
       mp:            c.mp,
@@ -245,6 +272,10 @@ function buildField(g, s) {
     world: { w: g.width, h: g.height },
     turns: 1,
     grid:  'square',
+    // 'discrete' (integer tile grid) vs 'continuous' (real click-to-point positions,
+    // see games/coord.js). Gates the straight-line slide animation, the move-radius
+    // circle, and exact-point move submission — replaces the old shapes?.length proxy.
+    locationType,
     teams,
     walls: [],
     zones: [],
@@ -287,15 +318,18 @@ const activeField = computed(() => {
 
   // Units already queued to hop later must stay put at their pre-move square — otherwise
   // they'd render at their (already-applied) final grid position while waiting their turn.
+  // Discrete hop steps are cell indices (centre at +0.5); continuous steps are already
+  // exact board points (see the move watcher above), so no offset.
+  const off = field.locationType === 'continuous' ? 0 : 0.5;
   field.units = field.units.map(u => {
     if (hopAnim.value?.unitId === u.id) {
       const { x, y } = hopAnim.value.steps[hopAnim.value.step];
-      return { ...u, path: [[x + 0.5, y + 0.5]] };
+      return { ...u, path: [[x + off, y + off]] };
     }
     const queued = animQueue.value.find(q => q.kind === 'hop' && q.unitId === u.id);
     if (queued) {
       const { x, y } = queued.steps[0];
-      return { ...u, path: [[x + 0.5, y + 0.5]] };
+      return { ...u, path: [[x + off, y + off]] };
     }
     return u;
   });

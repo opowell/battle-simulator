@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CombatMissionGame } from './index.js';
+import { num } from '../coord.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -86,7 +87,10 @@ test('combatmission: move updates unit position', () => {
   if (!move) return;
   const next  = CombatMissionGame.applyActions(state, [{ playerId: 'allied', action: move }]);
   const moved = next.units.find(u => u.id === move.unitId);
-  assert.deepEqual(moved.position, move.to);
+  // Positions are authoritative BigNumbers now (continuous coordinates); compare in
+  // Number-space (see games/coord.js).
+  assert.equal(num(moved.position.x), move.to.x);
+  assert.equal(num(moved.position.y), move.to.y);
 });
 
 test('combatmission: skip-unit zeroes AP for that unit', () => {

@@ -1,4 +1,5 @@
-import { forEachCell } from '../terrainShapes.js';
+import { forEachCell, pointInShape } from '../terrainShapes.js';
+import { tileNum } from '../coord.js';
 
 export const TERRAIN = {
   FLOOR:  '.',
@@ -76,21 +77,56 @@ export function createMapFromShapes(def) {
   );
 
   const shapes = [];
+  // Continuous-movement lookup: the authored shapes (float x/y/w/h) tagged with the
+  // terrain they rasterize to — used by getTileContinuous below so free-form movement
+  // cost/wall checks aren't limited to the tile grid's precision.
+  const terrainShapes = [];
   for (const s of terrain) {
     const style = CM_SHAPE_STYLES[s.kind] ?? CM_SHAPE_STYLES.building;
     forEachCell(s, W, H, (x, y) => {
       if (x > 0 && x < W - 1 && y > 0 && y < H - 1) tiles[y][x] = style.tile;
     });
+    terrainShapes.push({ shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h, tile: style.tile });
     shapes.push({
       shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h,
       ...style.render, name: style.name, description: style.description,
     });
   }
 
-  return { width: W, height: H, tiles, shapes };
+  return { width: W, height: H, tiles, shapes, terrainShapes };
 }
 
+// Continuous (non-rasterized) terrain lookup, tested directly against the authored
+// shape geometry (later shapes win ties, matching the rasterization order above).
+// Falls back to the rasterized tile grid for hand-laid boards (createMap) that have
+// no continuous shape source — there, the tile grid *is* the ground truth.
+export function getTileContinuous(board, x, y) {
+  if (x <= 0 || y <= 0 || x >= board.width - 1 || y >= board.height - 1) return TERRAIN.WALL;
+  if (board.terrainShapes) {
+    for (let i = board.terrainShapes.length - 1; i >= 0; i--) {
+      const s = board.terrainShapes[i];
+      if (pointInShape(s, x, y)) return s.tile;
+    }
+    return TERRAIN.FLOOR;
+  }
+  return getTile(board, Math.floor(x), Math.floor(y));
+}
+
+export function isPassableContinuous(board, x, y) {
+  const t = getTileContinuous(board, x, y);
+  return t !== TERRAIN.WALL && t !== TERRAIN.WATER;
+}
+
+export function getMoveCostContinuous(board, x, y) {
+  const t = getTileContinuous(board, x, y);
+  return (t === TERRAIN.TREE || t === TERRAIN.HEDGE) ? 2 : 1;
+}
+
+// Snap to the containing tile: positions can be continuous (free-form movement), and
+// callers (cover, passability, LOS) key the integer tile grid — a raw float/BigNumber
+// coordinate would index `undefined`.
 export function getTile(board, x, y) {
+  x = tileNum(x); y = tileNum(y);
   if (x < 0 || x >= board.width || y < 0 || y >= board.height) return TERRAIN.WALL;
   return board.tiles[y][x];
 }
@@ -123,7 +159,7 @@ export function getMoveCost(board, x, y) {
 export function renderMap(board, units) {
   const posMap = {};
   for (const u of units) {
-    if (u.alive) posMap[`${u.position.x},${u.position.y}`] = u;
+    if (u.alive) posMap[`${tileNum(u.position.x)},${tileNum(u.position.y)}`] = u;
   }
   const rows = [];
   for (let y = 0; y < board.height; y++) {

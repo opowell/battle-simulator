@@ -48,13 +48,16 @@ const selectedSquare = computed(() => {
   return u ? { x: Math.floor(u.x), y: Math.floor(u.y) } : null;
 });
 
-// Non-grid (shape) maps have no tile grid visually, so showing legal moves as a lattice
-// of unit-cell squares looks wrong — draw the reachable area as a single movement-radius
-// circle around the selected unit instead (the underlying moves are still per-cell).
+// Continuous-location maps (see games/coord.js) have no tile grid visually, so showing
+// legal moves as a lattice of unit-cell squares looks wrong — draw the reachable area as
+// a single movement-radius circle around the selected unit instead. On these maps
+// movement is a continuous straight-line slide to wherever's clicked (see Battlefield.vue's
+// handleSqClick), so the radius is the unit's real move budget.
 const legalMoveCircle = computed(() => {
-  if (!props.field.shapes?.length || !props.legalSquares.length) return null;
+  if (props.field.locationType !== 'continuous' || !props.legalSquares.length) return null;
   const u = props.units.find(u => u.id === props.selectedId);
   if (!u) return null;
+  if (u.moveRange != null) return { cx: u.x, cy: u.y, r: u.moveRange };
   let r = 0;
   for (const [lc, lr] of props.legalSquares) {
     r = Math.max(r, Math.hypot((lc + 0.5) - u.x, (lr + 0.5) - u.y));
@@ -294,11 +297,15 @@ function _onDragMove(e)  { _updateDragPos(e.clientX, e.clientY); }
 function _onDragEnd(e) {
   window.removeEventListener('mousemove', _onDragMove);
   window.removeEventListener('mouseup',   _onDragEnd);
-  if (dragUnit.value && dragHoverSq.value) {
+  if (dragUnit.value && dragHoverSq.value && dragSvgPos.value) {
     const [col, row] = dragHoverSq.value;
     const unitCol = Math.floor(dragUnit.value.x);
     const unitRow = Math.floor(dragUnit.value.y);
-    if (col !== unitCol || row !== unitRow) emit('sq-click', col, row);
+    if (col !== unitCol || row !== unitRow) {
+      const x = (dragSvgPos.value.x - props.fit.x(0)) / props.fit.s;
+      const y = (dragSvgPos.value.y - props.fit.y(0)) / props.fit.s;
+      emit('sq-click', col, row, x, y);
+    }
   }
   dragUnit.value   = null;
   dragSvgPos.value = null;
@@ -328,8 +335,9 @@ function handleBoardClick(e) {
   if (dragUnit.value) return; // drag ended; sq-click already emitted in _onDragEnd
   if (props.field.grid !== 'square') { emit('select', null); return; }
   const rect = e.currentTarget.getBoundingClientRect();
-  const col = Math.floor((e.clientX - rect.left - props.fit.x(0)) / props.fit.s);
-  const row = Math.floor((e.clientY - rect.top  - props.fit.y(0)) / props.fit.s);
+  const x = (e.clientX - rect.left - props.fit.x(0)) / props.fit.s;
+  const y = (e.clientY - rect.top  - props.fit.y(0)) / props.fit.s;
+  const col = Math.floor(x), row = Math.floor(y);
   if (col >= 0 && col < props.field.world.w && row >= 0 && row < props.field.world.h) {
     if (!props.revealAll && !props.selectedId && isFogSquare(col, row)) {
       const current = squareMarkerList.value.find(m => m.col === col && m.row === row)?.type ?? null;
@@ -338,7 +346,10 @@ function handleBoardClick(e) {
       emit('set-marker', col, row, next);
       return;
     }
-    emit('sq-click', col, row);
+    // For shape (non-grid) maps, also pass the exact continuous click point (x, y) —
+    // Battlefield.vue uses it as the literal move destination instead of snapping to
+    // a grid cell (see handleSqClick).
+    emit('sq-click', col, row, x, y);
   } else {
     emit('select', null);
   }

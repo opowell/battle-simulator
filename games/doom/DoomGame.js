@@ -1,8 +1,10 @@
 import { unitStrengthEval } from '../evalHelpers.js';
-import { MAP_WIDTH, MAP_HEIGHT, MAP_ROOMS, hasLOS, getReachable, manhattan, renderMap } from './map.js';
+import { MAP_WIDTH, MAP_HEIGHT, MAP_ROOMS, hasLOS, getReachable, manhattan, renderMap, isWalkableContinuous } from './map.js';
 import { WEAPONS, AMMO_CAPS, WEAPON_RANK } from './weapons.js';
 import { createMarine, createMonster } from './units.js';
 import { getDoomBelief } from './belief.js';
+import { hasClearLine, isClearOfUnits } from '../continuousMove.js';
+import { parsePos, num, tileNum, posToWire } from '../coord.js';
 
 // ── Default item placement ─────────────────────────────────────────────────────
 
@@ -103,6 +105,32 @@ function getLegalActions(state, teamId) {
   return actions;
 }
 
+// ── isMoveLegal (internal, called with team ID) ─────────────────────────────────
+// Geometric fallback for the human UI's continuous click-to-move (see
+// engine/ActionValidator.js): getLegalActions above still enumerates a discrete
+// candidate set for AI search, but a player's move can target any point their click
+// resolves to — legality here is a straight-line range/wall/occupancy check against
+// the real room geometry instead of exact membership in that candidate set.
+function isMoveLegal(state, teamId, action) {
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.ap <= 0) return false;
+  // The continuous geometry runs in float64 (see games/coord.js §2): convert the
+  // authoritative BigNumber position and the incoming wire coordinate to Number here.
+  const px = num(unit.position.x), py = num(unit.position.y);
+  const x = num(action.to.x), y = num(action.to.y);
+  if (!isWalkableContinuous(x, y)) return false;
+  if (Math.hypot(px - x, py - y) > unit.attrs.moveRange) return false;
+  if (!hasClearLine(px, py, x, y, (qx, qy) => !isWalkableContinuous(qx, qy))) return false;
+  if (!isClearOfUnits(x, y, state.units, unit.id)) return false;
+  return true;
+}
+
+// Dispatcher for the engine's continuous-action fallback (engine/ActionValidator.js):
+// only 'move' carries a continuous, not-pre-enumerated destination in Doom.
+function isActionLegal(state, teamId, action) {
+  return action.type === 'move' ? isMoveLegal(state, teamId, action) : false;
+}
+
 // ── applyActions (internal, called with team ID in playerActions) ──────────────
 
 function applyActions(state, playerActions, rng = Math.random) {
@@ -128,13 +156,17 @@ function applyActions(state, playerActions, rng = Math.random) {
 
   // ── move ─────────────────────────────────────────────────────────────────────
   if (action.type === 'move') {
+    // action.to arrives from the wire as decimal strings (human continuous click) or
+    // integer tiles (AI candidate); store it as the authoritative BigNumber position.
+    const to = parsePos(action.to);
     units = units.map(u => u.id === action.unitId
-      ? { ...u, position: action.to, perTurn: { ap: u.perTurn.ap - 1 } }
+      ? { ...u, position: to, perTurn: { ap: u.perTurn.ap - 1 } }
       : u);
 
-    // Marines auto-collect items when they step on them
+    // Marines auto-collect an item when they end their move on its tile.
     if (playerId === 'marine') {
-      const item = gs.items.find(it => !it.pickedUp && it.x === action.to.x && it.y === action.to.y);
+      const tx = tileNum(to.x), ty = tileNum(to.y);
+      const item = gs.items.find(it => !it.pickedUp && it.x === tx && it.y === ty);
       if (item) {
         units = units.map(u => u.id === action.unitId ? applyPickup(u, item) : u);
         gs = { ...gs, items: gs.items.map(it => it.id === item.id ? { ...it, pickedUp: true } : it) };
@@ -185,10 +217,10 @@ function applyActions(state, playerActions, rng = Math.random) {
 
     // Splash damage (rocket launcher) — half damage to adjacent units
     if (isSplash) {
-      const tp = target.position;
+      const tpx = num(target.position.x), tpy = num(target.position.y);
       const splashUnits = units.filter(u =>
         u.alive && u.id !== target.id &&
-        Math.abs(u.position.x - tp.x) <= 1 && Math.abs(u.position.y - tp.y) <= 1
+        Math.abs(num(u.position.x) - tpx) <= 1 && Math.abs(num(u.position.y) - tpy) <= 1
       );
       for (const su of splashUnits) {
         const splashDmg = Math.floor((dmgRange[0] + Math.floor(rng() * (dmgRange[1] - dmgRange[0] + 1))) / 2);
@@ -336,28 +368,34 @@ function toGrid(state) {
   const pidIdx = {};
   state.players.forEach((p, i) => { pidIdx[p.id] = i + 1; });
 
-  const posMap = {};
-  for (const u of units) if (u.alive) posMap[`${u.position.x},${u.position.y}`] = u;
-
+  // Terrain-only cells (uniform rock backdrop). Unit positions travel in the
+  // continuous `units` channel below, not by exact-match into this integer grid.
   const cells = [];
-  for (let y = 0; y < MAP_HEIGHT; y++) {
-    for (let x = 0; x < MAP_WIDTH; x++) {
-      const u = posMap[`${x},${y}`];
-      cells.push({
-        x, y,
-        glyph:    u ? u.attrs.symbol : '',
-        unitId:   u?.id,
-        unitName: u?.type,
-        owner:    u ? (pidIdx[gs.teamPlayerMap[u.ownerId]] ?? 0) : 0,
-        color:    '#23262b',
-        hp:       u?.hp,
-        maxHp:    u?.maxHp,
-        job:      u?.weapon,
-      });
-    }
-  }
+  for (let y = 0; y < MAP_HEIGHT; y++)
+    for (let x = 0; x < MAP_WIDTH; x++)
+      cells.push({ x, y, color: '#23262b' });
 
-  return { width: MAP_WIDTH, height: MAP_HEIGHT, cells, shapes: ROOM_SHAPES, ui: { hideGrid: true } };
+  // Continuous unit channel: real (possibly non-integer) positions as decimal
+  // strings (see games/coord.js), built directly from state.units — no cell-grid
+  // indexing, so a unit's exact point always reaches the client.
+  const unitList = units.filter(u => u.alive).map(u => {
+    const p = posToWire(u.position);
+    return {
+      id: u.id, x: p.x, y: p.y,
+      glyph:     u.attrs.symbol,
+      unitName:  u.type,
+      owner:     pidIdx[gs.teamPlayerMap[u.ownerId]] ?? 0,
+      hp:        u.hp,
+      maxHp:     u.maxHp,
+      job:       u.weapon,
+      moveRange: u.attrs.moveRange,
+    };
+  });
+
+  return {
+    width: MAP_WIDTH, height: MAP_HEIGHT, locationType: 'continuous',
+    cells, units: unitList, shapes: ROOM_SHAPES, ui: { hideGrid: true },
+  };
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────
@@ -370,7 +408,7 @@ function getVisibleState(state, teamId) {
     units: state.units.filter(u =>
       u.ownerId === teamId ||
       myUnits.some(m =>
-        Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= VISION &&
+        Math.max(Math.abs(num(m.position.x) - num(u.position.x)), Math.abs(num(m.position.y) - num(u.position.y))) <= VISION &&
         hasLOS(m.position.x, m.position.y, u.position.x, u.position.y)
       )
     ),
@@ -404,6 +442,7 @@ export const DoomGame = {
   ],
   createInitialState,
   getLegalActions:  withTeam(getLegalActions),
+  isActionLegal:    withTeam(isActionLegal),
   applyActions:     withTeam(applyActions),
   getResult,
   renderState,

@@ -10,6 +10,7 @@
 
 import { getReachable } from './grid.js';
 import { hasLOS } from './los.js';
+import { num, tilePos } from '../coord.js';
 
 const VISION       = 5;
 const MAX_POSSIBLE = 40;
@@ -17,7 +18,9 @@ const THREAT_BIAS  = 3;
 
 const k = (x, y) => `${x},${y}`;
 const coords = key => key.split(',').map(Number);
-const cheby = (x, y, p) => Math.max(Math.abs(x - p.x), Math.abs(y - p.y));
+// `p` may be a belief tile ({x,y} Numbers) or a live unit position (BigNumbers), so
+// read both coordinates in Number-space (see games/coord.js).
+const cheby = (x, y, p) => Math.max(Math.abs(x - num(p.x)), Math.abs(y - num(p.y)));
 
 function weightedPick(items, weights, rng) {
   let total = 0;
@@ -33,10 +36,13 @@ export class CombatMissionBelief {
     this.board = board;
     this.pieces = new Map();
     for (const u of enemyRoster) {
+      // Belief lives in integer tile-space; pin a (possibly continuous) position to
+      // the tile it sits in (see games/coord.js).
+      const tp = tilePos(u.position);
       this.pieces.set(u.id, {
         ownerId: u.ownerId, type: u.type,
-        possible: new Set([k(u.position.x, u.position.y)]),
-        anchor: { ...u.position }, alive: true, seen: false,
+        possible: new Set([k(tp.x, tp.y)]),
+        anchor: tp, alive: true, seen: false,
         hp: u.hp ?? 1,
         reach: Math.max(1, (u.moveRange ?? 2) * (u.maxAP ?? 2)),
       });
@@ -77,8 +83,9 @@ export class CombatMissionBelief {
       seenNow.add(u.id);
       pc.alive = u.alive;
       pc.hp = u.hp ?? pc.hp;
-      pc.anchor = { ...u.position };
-      pc.possible = new Set([k(u.position.x, u.position.y)]);
+      const tp = tilePos(u.position);
+      pc.anchor = tp;
+      pc.possible = new Set([k(tp.x, tp.y)]);
       pc.seen = true;
     }
     for (const [id, pc] of this.pieces) {
@@ -113,7 +120,7 @@ export class CombatMissionBelief {
     for (const [id, pc] of this.pieces) if (pc.alive && !seenIds.has(id)) hidden.push({ id, pc });
     if (hidden.length === 0) return [];
 
-    const occupiedBase = new Set(observation.units.filter(u => u.alive).map(u => k(u.position.x, u.position.y)));
+    const occupiedBase = new Set(observation.units.filter(u => u.alive).map(u => { const t = tilePos(u.position); return k(t.x, t.y); }));
     const worlds = [];
     for (let p = 0; p < n; p++) {
       const used = new Set(occupiedBase);

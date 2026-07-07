@@ -291,28 +291,29 @@ function handleSetMarker(col, row, type) {
   emit('set-marker', { playerId: humanPlayerId.value, col, row, type });
 }
 
-function handleSqClick(col, row) {
+function handleSqClick(col, row, x, y) {
   if (isPending.value && selectedId.value) {
-    let action = legalActions.value.find(a => {
-      if (a.unitId !== selectedId.value) return false;
-      const coords = actionGridCoord(a, 'to');
-      return coords && coords[0] === col && coords[1] === row;
-    });
-    // Non-grid (shape) maps have no visible grid lines, so a click a hair off the
-    // intended cell shouldn't silently fail — snap to the nearest legal
-    // destination for the selected unit instead of requiring an exact hit.
-    if (!action && props.field.shapes?.length) {
-      let best = null, bestDist = Infinity;
-      for (const a of legalActions.value) {
-        if (a.unitId !== selectedId.value) continue;
-        const coords = actionGridCoord(a, 'to');
-        if (!coords) continue;
-        const d = Math.hypot(coords[0] - col, coords[1] - row);
-        if (d < bestDist) { bestDist = d; best = a; }
+    // Continuous-location maps (see games/coord.js): movement is a straight-line slide to
+    // the exact point clicked — no grid to snap to. The server (each game's isActionLegal)
+    // is the real authority on walls/occupancy/cost; here we only gate on the unit's move
+    // radius so an out-of-range click deselects instead of firing off a certain-reject.
+    // The click point goes on the wire as decimal strings (the server parses them to
+    // authoritative BigNumbers, see games/coord.js posToWire/parsePos).
+    if (props.field.locationType === 'continuous' && x != null && y != null) {
+      const u = displayUnits.value.find(un => un.id === selectedId.value);
+      if (u && Math.hypot(x - u.x, y - u.y) <= (u.moveRange ?? Infinity)) {
+        submitAction({ type: 'move', unitId: selectedId.value, to: { x: String(x), y: String(y) } });
+        selectedSquare.value = null; selectedShape.value = null;
+        return;
       }
-      if (best && bestDist <= 1.5) action = best;
+    } else {
+      const action = legalActions.value.find(a => {
+        if (a.unitId !== selectedId.value) return false;
+        const coords = actionGridCoord(a, 'to');
+        return coords && coords[0] === col && coords[1] === row;
+      });
+      if (action) { submitAction(action); selectedSquare.value = null; selectedShape.value = null; return; }
     }
-    if (action) { submitAction(action); selectedSquare.value = null; selectedShape.value = null; return; }
   }
   selectedId.value = null;
   // Non-grid (shape) maps: select the topmost terrain shape under the click, not a grid
