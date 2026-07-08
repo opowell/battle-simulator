@@ -827,7 +827,7 @@ export const CsGame = {
   // Fog of war: each team sees only enemies near its players; the generic
   // ObscuroAgent samples the unseen enemies via sampleWorlds below.
   gameOptions: [
-    { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies near its own players', type: 'boolean', default: false },
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies near its own players', type: 'boolean', default: true },
   ],
   sampleWorlds: withTeam(csSampleWorlds),
   name: 'CS',
