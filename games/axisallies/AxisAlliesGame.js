@@ -548,6 +548,130 @@ function summarizeUnits(units) {
   return Object.entries(counts).map(([k, n]) => `${n}${k.split(':')[1]}(${k[0]})`).join(' ');
 }
 
+// ── toGrid (design UI) ──────────────────────────────────────────────────────────
+// This is a territory board (graph of named regions), not a tile grid, so — like
+// CsGame/DoomGame's non-grid rooms — territories are authored as shapes (rects for
+// land, ovals for sea zones) at hand-picked approximate-geography coordinates, laid
+// out left→right Americas/Atlantic/Europe/USSR/Asia-Pacific (mirrors the region
+// order in renderState above). Units are a continuous per-unit channel (see
+// games/coord.js convention used by doom/cs) so multiple units stacked in one
+// territory — normal in this game — can be spread out as a small cluster instead of
+// only one unit per cell.
+
+const MAP_WIDTH = 16;
+const MAP_HEIGHT = 8;
+
+// { x, y, w, h } — top-left + size, roughly matching real-world relative position.
+// Not to scale; just enough for the territories to read left-to-right sensibly and
+// not overlap under normal garrison sizes.
+const TERRITORY_LAYOUT = {
+  'western-usa':       { x: 0.0,  y: 4.0, w: 1.3, h: 0.9 },
+  'eastern-usa':        { x: 1.6,  y: 4.0, w: 1.3, h: 0.9 },
+  'sz-north-atlantic':  { x: 3.2,  y: 3.9, w: 1.7, h: 1.1 },
+  'uk':                 { x: 5.2,  y: 3.0, w: 1.1, h: 0.8 },
+  'sz-north-sea':       { x: 5.2,  y: 4.0, w: 1.1, h: 0.8 },
+  'north-africa':       { x: 5.2,  y: 5.2, w: 1.1, h: 0.8 },
+  'germany':            { x: 6.5,  y: 3.2, w: 1.1, h: 0.8 },
+  'france':             { x: 6.5,  y: 4.2, w: 1.1, h: 0.8 },
+  'southern-europe':    { x: 6.5,  y: 5.2, w: 1.1, h: 0.8 },
+  'sz-mediterranean':   { x: 6.5,  y: 6.2, w: 1.1, h: 0.8 },
+  'scandinavia':        { x: 6.5,  y: 2.2, w: 1.1, h: 0.8 },
+  'eastern-europe':     { x: 7.8,  y: 3.7, w: 1.1, h: 0.8 },
+  'karelia':            { x: 7.8,  y: 2.2, w: 1.1, h: 0.8 },
+  'moscow':             { x: 9.1,  y: 2.7, w: 1.3, h: 1.0 },
+  'ukraine':            { x: 9.1,  y: 3.9, w: 1.1, h: 0.8 },
+  'caucasus':           { x: 9.1,  y: 5.0, w: 1.1, h: 0.8 },
+  'sz-indian-ocean':    { x: 9.1,  y: 6.2, w: 1.7, h: 1.0 },
+  'india':              { x: 10.9, y: 5.0, w: 1.1, h: 0.8 },
+  'china':              { x: 10.9, y: 3.9, w: 1.1, h: 0.8 },
+  'manchuria':          { x: 10.9, y: 2.7, w: 1.1, h: 0.8 },
+  'japan':              { x: 12.3, y: 2.7, w: 1.1, h: 0.8 },
+  'sz-north-pacific':   { x: 13.6, y: 2.5, w: 1.7, h: 1.0 },
+  'philippines':        { x: 12.3, y: 4.0, w: 1.1, h: 0.8 },
+  'dutch-east-indies':  { x: 12.3, y: 5.2, w: 1.1, h: 0.8 },
+  'sz-south-pacific':   { x: 13.6, y: 4.0, w: 1.7, h: 1.2 },
+  'australia':          { x: 12.3, y: 6.4, w: 1.3, h: 0.9 },
+};
+
+const OCEAN_FILL = '#16324a';
+const LAND_NEUTRAL_FILL = '#6b6b63';
+const LAND_AXIS_FILL = '#7a3b3b';
+const LAND_ALLIES_FILL = '#3b5a7a';
+const SEA_ZONE_FILL = '#234e6e';
+
+function territoryFill(t, owner) {
+  if (!TERRITORIES[t].isLand) return SEA_ZONE_FILL;
+  if (owner === 'axis') return LAND_AXIS_FILL;
+  if (owner === 'allies') return LAND_ALLIES_FILL;
+  return LAND_NEUTRAL_FILL;
+}
+
+// Side-panel portraits (single sprite frame each, sourced from
+// axisandallies.fandom.com — classic plastic-piece style icons, neutral colour
+// since this game doesn't do team sprite recolouring).
+const UNIT_PORTRAITS = new Set([
+  'infantry', 'artillery', 'tank', 'fighter', 'bomber',
+  'battleship', 'carrier', 'destroyer', 'submarine', 'transport',
+]);
+
+function toGrid(state) {
+  const { units, board, players } = state;
+  const { ownership } = board;
+  const pidIdx = {};
+  players.forEach((p, i) => { pidIdx[p.id] = i + 1; });
+
+  const cells = [];
+  for (let y = 0; y < MAP_HEIGHT; y++)
+    for (let x = 0; x < MAP_WIDTH; x++)
+      cells.push({ x, y, color: OCEAN_FILL });
+
+  const shapes = Object.entries(TERRITORY_LAYOUT).map(([t, box]) => ({
+    ...box,
+    shape: TERRITORIES[t].isLand ? 'rect' : 'oval',
+    fill: territoryFill(t, ownership[t] ?? null),
+  }));
+
+  // Group alive units by territory so stacked units (very common — a territory
+  // routinely holds several infantry plus supporting units) can be laid out as a
+  // small non-overlapping cluster instead of piling on one exact point.
+  const byTerritory = new Map();
+  for (const u of units) {
+    if (!u.alive) continue;
+    if (!byTerritory.has(u.territory)) byTerritory.set(u.territory, []);
+    byTerritory.get(u.territory).push(u);
+  }
+
+  const unitList = [];
+  for (const [t, list] of byTerritory) {
+    const box = TERRITORY_LAYOUT[t];
+    if (!box) continue; // unknown territory name — skip defensively
+    const cols = Math.ceil(Math.sqrt(list.length));
+    const rows = Math.ceil(list.length / cols);
+    const stepX = box.w / (cols + 1);
+    const stepY = box.h / (rows + 1);
+    list.forEach((u, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      unitList.push({
+        id: u.id,
+        x: box.x + stepX * (col + 1),
+        y: box.y + stepY * (row + 1),
+        glyph:     UNITS[u.type] ? u.type[0].toUpperCase() : '?',
+        unitName:  u.type,
+        owner:     pidIdx[u.ownerId] ?? 0,
+        hp:        u.hp,
+        maxHp:     u.maxHp,
+        portraitPath: UNIT_PORTRAITS.has(u.type) ? `/images/axisallies/units/${u.type}` : undefined,
+      });
+    });
+  }
+
+  return {
+    width: MAP_WIDTH, height: MAP_HEIGHT, locationType: 'continuous',
+    cells, units: unitList, shapes, ui: { hideGrid: true },
+  };
+}
+
 // ── createInitialState ────────────────────────────────────────────────────────
 
 export function createInitialState(players, config = {}) {
@@ -644,6 +768,7 @@ export const AxisAlliesGame = {
   applyActions,
   getResult,
   renderState,
+  toGrid,
   getVisibleState,
   evaluateState,
   sampleWorlds,

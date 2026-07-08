@@ -8,9 +8,9 @@
 // it could occupy given the common-knowledge starting deployment
 // (gameSpecific.startRoster) and every sighting since.
 //
-//   1. expand   — an unseen enemy may have spent a whole turn moving; with maxAP
-//                 activations of moveRange each, grow its possible set by that
-//                 full reach (over- rather than under-estimate, to stay wary).
+//   1. expand   — an unseen enemy may have spent a whole turn moving; grow its
+//                 possible set by its full maxAP reach (1 AP = 1 tile), over-
+//                 rather than under-estimating, to stay wary.
 //   2. collapse — pin enemies in view (updating hp, marking witnessed deaths),
 //                 and drop from every unseen enemy's set the tiles we can now
 //                 see (VISION + LOS) but don't find it on.
@@ -19,9 +19,14 @@
 // ---------------------------------------------------------------------------
 
 import { getReachable, hasLOS } from './map.js';
-import { tilePos } from '../coord.js';
+import { tilePos, num } from '../coord.js';
+import { chebyshev, anySeesPoint } from '../vision.js';
 
-const VISION       = 6;   // matches getVisibleState
+// Field-of-vision config, shared with DoomGame.getVisibleState (imported there) so the
+// belief hides exactly the tiles the observation hides — see games/vision.js.
+export const DOOM_VISION = { range: 6, fovDegrees: 90, metric: chebyshev, hasLOS };
+
+const VISION       = DOOM_VISION.range;
 const MAX_POSSIBLE = 40;  // cap a unit's possible-tile set so sampling stays cheap
 const THREAT_BIAS  = 3;   // over-sample tiles near our units
 
@@ -50,16 +55,22 @@ export class DoomBelief {
         possible: new Set([k(tp.x, tp.y)]),
         anchor: tp, alive: true, seen: false,
         hp: u.hp ?? 1,
-        reach: Math.max(1, (u.moveRange ?? 3) * (u.maxAP ?? 1)),
+        // maxAP is now a continuous tiles-per-turn budget (1 AP = 1 tile of movement),
+        // so a full turn of movement is just maxAP — no separate moveRange stat.
+        reach: Math.max(1, u.maxAP ?? 3),
       });
     }
     this.lastTurn = null;
   }
 
-  // A tile is visible to us if some live unit is within VISION and has LOS to it.
+  // A tile is visible to us if some live unit sees it (range + LOS + facing cone) — the
+  // same predicate DoomGame.getVisibleState uses (DOOM_VISION), so belief never keeps an
+  // enemy on a tile we can already see, nor hides one we can't.
   _visible(myUnits, x, y) {
-    return myUnits.some(m =>
-      cheby(x, y, m.position) <= VISION && hasLOS(m.position.x, m.position.y, x, y));
+    const viewers = myUnits.map(m => ({
+      x: num(m.position.x), y: num(m.position.y), facing: m.facing, fov: m.fov, visionRange: m.visionRange,
+    }));
+    return anySeesPoint(viewers, x, y, DOOM_VISION);
   }
 
   // 1. Propagation: every unseen enemy may have moved a full turn of reach.
