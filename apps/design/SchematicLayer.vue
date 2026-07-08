@@ -56,17 +56,26 @@ const selectedSquare = computed(() => {
 // a single movement-radius circle around the selected unit instead. On these maps
 // movement is a continuous straight-line slide to wherever's clicked (see Battlefield.vue's
 // handleSqClick), so the radius is the unit's real move budget.
+// A continuous straight-line slide can only reach points on an unobstructed straight
+// line, so on maps with wall blockers (field.los) the reachable area is the exact
+// wall-occluded region (VISION.reachRegion), not a plain circle bleeding through walls —
+// same geometry as omnidirectional vision. Returns a region descriptor ('circle' or
+// 'polyarc'); the template draws a <circle> or a <path> accordingly.
 const legalMoveCircle = computed(() => {
   if (props.field.locationType !== 'continuous' || !props.legalSquares.length) return null;
   const u = props.units.find(u => u.id === props.selectedId);
   if (!u) return null;
-  if (u.moveRange != null) return { cx: u.x, cy: u.y, r: u.moveRange };
-  let r = 0;
-  for (const [lc, lr] of props.legalSquares) {
-    r = Math.max(r, Math.hypot((lc + 0.5) - u.x, (lr + 0.5) - u.y));
+  let r = u.moveRange;
+  if (r == null) {
+    r = 0;
+    for (const [lc, lr] of props.legalSquares)
+      r = Math.max(r, Math.hypot((lc + 0.5) - u.x, (lr + 0.5) - u.y));
   }
-  return { cx: u.x, cy: u.y, r };
+  return VISION.reachRegion(props.field, u.x, u.y, r);
 });
+const legalMovePathD = computed(() =>
+  legalMoveCircle.value && legalMoveCircle.value.kind !== 'circle'
+    ? VISION.regionPath(legalMoveCircle.value, props.fit) : null);
 
 const gridX = computed(() => {
   const step = props.field.grid === 'square' ? 1 : Math.max(1, Math.round(props.field.world.w / 20));
@@ -603,9 +612,13 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             fill="rgba(242,180,65,0.35)"
             style="pointer-events:none"/>
 
-      <!-- Legal move highlights: a single radius circle on non-grid (shape) maps, or
-           per-cell squares on ordinary tile-grid maps. -->
-      <circle v-if="legalMoveCircle"
+      <!-- Legal move highlights: on non-grid (shape) maps a single reachable region —
+           a plain radius circle, or an exact wall-occluded area on maps with walls (so it
+           doesn't promise movement through walls) — else per-cell squares on tile grids. -->
+      <path v-if="legalMovePathD" :d="legalMovePathD"
+            fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
+            style="cursor:pointer"/>
+      <circle v-else-if="legalMoveCircle"
               :cx="fit.x(legalMoveCircle.cx)" :cy="fit.y(legalMoveCircle.cy)" :r="fit.len(legalMoveCircle.r)"
               fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
               style="cursor:pointer"/>

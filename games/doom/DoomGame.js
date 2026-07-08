@@ -429,9 +429,16 @@ function toGrid(state) {
     };
   });
 
+  // Exact occluder geometry for the client's fog/reach renderer: the floor is the union
+  // of the authored room shapes (MAP_ROOMS), walls are the complement. Sending the true
+  // shapes (not a rasterized tile grid) lets vision respect a room's real entrance — e.g.
+  // an oval room whose mouth is a narrow cusp stays almost fully hidden from the hallway.
+  const openShapes = MAP_ROOMS.map(({ shape, x, y, w, h }) => ({ shape, x, y, w, h }));
+
   return {
     width: MAP_WIDTH, height: MAP_HEIGHT, locationType: 'continuous',
     cells, units: unitList, shapes: ROOM_SHAPES, ui: { hideGrid: true },
+    los: { openShapes },
   };
 }
 
@@ -469,7 +476,7 @@ export const DoomGame = {
     { id: 'e1m1', name: 'Hangar (E1M1)', description: 'The UAC hangar — survive waves of hell-spawned demons', config: {} },
   ],
   gameOptions: [
-    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: true },
   ],
   createInitialState,
   getLegalActions:  withTeam(getLegalActions),
