@@ -1,5 +1,6 @@
 # Counter-Strike
-Round-based tactical shooter on a 20×12 grid based on the real Counter-strike game. First team to 8 round wins takes the match (max 15 rounds).
+Round-based tactical shooter on a 20×12 grid based on the original Counter-strike game, released in 2000 by Valve. First team to 8 round wins takes the match (max 15 rounds).
+Ref: https://counterstrike.fandom.com/wiki/Counter-Strike
 
 ## Players
 

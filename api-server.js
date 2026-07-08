@@ -13,6 +13,7 @@
 import { createServer }          from 'node:http';
 import { randomUUID }            from 'node:crypto';
 import { readFile, readdir, writeFile, mkdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { extname, resolve, sep, dirname } from 'node:path';
 import { fileURLToPath }         from 'node:url';
 
@@ -609,7 +610,20 @@ async function handleDeleteSession(res, id) {
 // Server
 // ---------------------------------------------------------------------------
 
-const PORT = process.env.PORT ?? 3333;
+function resolvePort() {
+  const argMatch = process.argv.find(a => a.startsWith('--port='));
+  if (argMatch) return Number(argMatch.slice('--port='.length));
+  const argIdx = process.argv.indexOf('--port');
+  if (argIdx !== -1 && process.argv[argIdx + 1]) return Number(process.argv[argIdx + 1]);
+  if (process.env.PORT) return Number(process.env.PORT);
+  try {
+    const settings = JSON.parse(readFileSync(resolve(ROOT_DIR, 'settings.json'), 'utf8'));
+    if (settings.port) return Number(settings.port);
+  } catch {}
+  return 3333;
+}
+
+const PORT = resolvePort();
 
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {

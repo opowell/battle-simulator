@@ -63,15 +63,15 @@ test('cs: in buy phase, can buy weapons if affordable', () => {
 
 test('cs: T end-buy switches to CT buy', () => {
   const state = CsGame.createInitialState(players());
-  const next = CsGame.applyActions(state, [{ playerId: 'p1', action: { type: 'end-buy', unitId: '__player__' } }]);
-  assert.deepEqual(next.activePlayers, ['p2']);
+  const next = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'end-buy', unitId: '__player__' } }]);
+  assert.deepEqual(next.activePlayers, ['p1']);
   assert.equal(next.currentPhase, 'buy');
 });
 
 test('cs: both end-buy transitions to action phase', () => {
   const state = CsGame.createInitialState(players());
-  const s1 = CsGame.applyActions(state, [{ playerId: 'p1', action: { type: 'end-buy', unitId: '__player__' } }]);
-  const s2 = CsGame.applyActions(s1,    [{ playerId: 'p2', action: { type: 'end-buy', unitId: '__player__' } }]);
+  const s1 = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'end-buy', unitId: '__player__' } }]);
+  const s2 = CsGame.applyActions(s1,    [{ playerId: 'p1', action: { type: 'end-buy', unitId: '__player__' } }]);
   assert.equal(s2.currentPhase, 'action');
 });
 
@@ -106,7 +106,7 @@ test('cs: getResult win when T reaches winRounds', () => {
   const result = CsGame.getResult(winning);
   assert.ok(result !== null);
   assert.equal(result.outcome, 'win');
-  assert.equal(result.winnerId, 'p1');
+  assert.equal(result.winnerId, 'p2');
 });
 
 test('cs: getResult win when CT reaches winRounds', () => {
@@ -115,7 +115,7 @@ test('cs: getResult win when CT reaches winRounds', () => {
   const result = CsGame.getResult(winning);
   assert.ok(result !== null);
   assert.equal(result.outcome, 'win');
-  assert.equal(result.winnerId, 'p2');
+  assert.equal(result.winnerId, 'p1');
 });
 
 // ---------------------------------------------------------------------------
@@ -138,7 +138,7 @@ test('cs: getSearchActions replaces discrete move+throw candidates with continuo
   state = { ...state, currentPhase: 'action', gameSpecific: { ...state.gameSpecific, buyPhase: 'done' } };
   state = { ...state, units: state.units.map(u => u.id === 'T-0' ? { ...u, grenades: { he: 1, smoke: 1 } } : u) };
 
-  const set   = CsGame.getSearchActions(state, 'p1', { rings: 2, spokes: 8 });
+  const set   = CsGame.getSearchActions(state, 'p2', { rings: 2, spokes: 8 });
   const moves  = set.filter(a => a.type === 'move');
   const throws = set.filter(a => a.type === 'throw');
 
@@ -148,5 +148,5 @@ test('cs: getSearchActions replaces discrete move+throw candidates with continuo
   assert.ok(throws.some(a => !Number.isInteger(a.target.x) || !Number.isInteger(a.target.y)), 'continuous throw point');
   assert.deepEqual([...new Set(throws.map(t => t.grenade))].sort(), ['he', 'smoke'], 'every grenade type is aimed');
   // Every generated point-action must pass the engine's geometric legality check.
-  for (const a of [...moves, ...throws]) assert.ok(CsGame.isActionLegal(state, 'p1', a), `legal: ${JSON.stringify(a)}`);
+  for (const a of [...moves, ...throws]) assert.ok(CsGame.isActionLegal(state, 'p2', a), `legal: ${JSON.stringify(a)}`);
 });

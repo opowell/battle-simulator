@@ -292,6 +292,10 @@ function buildField(g, s) {
     // toGrid emits instead of colouring tiles (see SchematicLayer.vue). Empty for
     // ordinary grid games.
     shapes: g.shapes ?? [],
+    // Line-of-sight occluders (opaque tile keys) for the fog renderer — the same wall
+    // grid the engine's LOS blocks on, so the drawn vision veil stops at walls instead
+    // of bleeding through them (see apps/design/vision.js). Absent ⇒ no occlusion.
+    los: g.los ?? null,
     units,
     // A game's toGrid may return a per-state `ui` override (e.g. hideGrid for shape
     // maps); it layers on top of the game's static ui.

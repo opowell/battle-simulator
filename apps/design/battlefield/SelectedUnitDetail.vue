@@ -87,9 +87,13 @@ defineEmits(['open-info', 'open-ability-info']);
         <div style="font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Equipment</div>
         <div style="display:flex;flex-direction:column;gap:2px">
           <div v-for="eq in unit.equipment" :key="eq.label"
-               style="display:flex;justify-content:space-between;font-size:10px">
+               style="display:flex;align-items:center;justify-content:space-between;font-size:10px">
             <span style="color:var(--faint)">{{eq.label}}</span>
-            <span class="mono" style="color:var(--txt)">{{eq.value}}</span>
+            <span style="display:flex;align-items:center;gap:5px">
+              <img v-if="eq.icon" :src="eq.icon" :alt="eq.value"
+                   style="width:18px;height:18px;object-fit:contain"/>
+              <span class="mono" style="color:var(--txt)">{{eq.value}}</span>
+            </span>
           </div>
         </div>
       </div>

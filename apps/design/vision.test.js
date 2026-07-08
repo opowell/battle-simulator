@@ -174,6 +174,123 @@ test('sectorPath: wide cone (>180°) sets the large-arc flag', () => {
   assert.match(d, / A 5 5 0 1 1 /, 'large-arc flag 1');
 });
 
+// ── line-of-sight occlusion (walls) ──────────────────────────────────────────────
+// A vertical wall column at x=5 splits a 10×10 board; a unit at x=2 can't see past it.
+const walled = (ui = {}) => ({
+  world, ui: { showFacing: false, ...ui },
+  los: { blocked: Array.from({ length: 10 }, (_, y) => `5,${y}`) },
+});
+
+test('pointVisibleToUnit: a wall between viewer and target blocks sight', () => {
+  const f = walled({ visionRange: 9 });
+  const u = unit({ x: 2.5, y: 5.5 });
+  assert.equal(pointVisibleToUnit(f, u, 4.5, 5.5), true,  'near side of the wall');
+  assert.equal(pointVisibleToUnit(f, u, 7.5, 5.5), false, 'behind the wall');
+});
+
+test('unitVisionRegion: occluded map returns an exact polyarc that stops at the wall', () => {
+  // East-facing cone so every ray crosses the wall column within the board rows.
+  const f = walled({ showFacing: true, visionRange: 9 });
+  const region = unitVisionRegion(f, unit({ x: 2.5, y: 5.5, ang: 0 }));
+  assert.equal(region.kind, 'polyarc');
+  // No vertex reaches past the wall face at x=5 (allowing float epsilon).
+  const maxX = Math.max(...region.points.map(p => p.x));
+  assert.ok(maxX <= 5 + 1e-6, `polygon should not extend past the wall (got maxX=${maxX})`);
+  // Vertices sit exactly on the wall face x=5 (not near it) — no approximation.
+  assert.ok(region.points.some(p => Math.abs(p.x - 5) < 1e-9), 'a vertex lands exactly on the wall');
+  assert.ok(region.apex && Math.abs(region.apex.x - 2.5) < 1e-12, 'cone apex is the unit');
+});
+
+test('raySegT: exact ray↔segment intersection distance', () => {
+  const { raySegT } = _internal;
+  // ray east from origin, vertical segment x=3 spanning y∈[-1,1] ⇒ hit at distance 3
+  assert.ok(Math.abs(raySegT(0, 0, 1, 0, [3, -1, 3, 1]) - 3) < 1e-12);
+  // parallel / missed ⇒ Infinity
+  assert.equal(raySegT(0, 0, 1, 0, [3, 1, 3, 2]), Infinity);
+});
+
+test('wallSegments: a wall column merges into one segment per exposed face', () => {
+  const { wallSegments } = _internal;
+  const blocked = new Set(Array.from({ length: 10 }, (_, y) => `5,${y}`));
+  const segs = wallSegments(blocked, 2.5, 5.5, 9);
+  // The left face (x=5) and right face (x=6) each merge into a single tall segment.
+  assert.ok(segs.some(s => s[0] === 5 && s[2] === 5 && Math.abs(s[3] - s[1]) >= 6), 'merged left face');
+  assert.ok(segs.some(s => s[0] === 6 && s[2] === 6 && Math.abs(s[3] - s[1]) >= 6), 'merged right face');
+});
+
+test('occludedRegion: shadow vertices are exact tile corners (no epsilon nudge)', () => {
+  const { occludedRegion } = _internal;
+  // A single wall tile at (5,5); viewer due west sees its near face and casts a shadow
+  // past its corners. The silhouette vertices must be the exact corners (5,5)/(5,6),
+  // to full float precision — an epsilon-nudged ray would miss them.
+  const blocked = new Set(['5,5']);
+  const region = occludedRegion(blocked, 2.5, 5.5, 20, true, null, 2 * Math.PI);
+  assert.equal(region.kind, 'polyarc');
+  const onCorner = (cx, cy) => region.points.some(p => Math.abs(p.x - cx) < 1e-12 && Math.abs(p.y - cy) < 1e-12);
+  assert.ok(onCorner(5, 5), 'exact top corner (5,5)');
+  assert.ok(onCorner(5, 6), 'exact bottom corner (5,6)');
+});
+
+// ── exact shape-based occlusion (rects + ovals) ──────────────────────────────────
+test('shapeExit (open/union): ray runs clear inside the floor, stops exactly at its edge', () => {
+  const { shapeExit } = _internal;
+  const shapes = [{ shape: 'rect', x: 0, y: 0, w: 10, h: 4 }];
+  // viewer at (5,2) inside the rect; east exits at x=10 (dist 5), south exits at y=4 (dist 2)
+  assert.ok(Math.abs(shapeExit(5, 2, 0, shapes, 20, 'open').dist - 5) < 1e-9);
+  assert.ok(Math.abs(shapeExit(5, 2, Math.PI / 2, shapes, 20, 'open').dist - 2) < 1e-9);
+});
+
+test('shapeExit (open): two rooms joined by a narrow slit — far room mostly unreachable', () => {
+  const { shapeExit } = _internal;
+  // Room A on top, room B below, joined only by a 1-wide vertical slit at x∈[5,6].
+  const shapes = [
+    { shape: 'rect', x: 0, y: 0, w: 10, h: 4 }, // room A
+    { shape: 'rect', x: 5, y: 4, w: 1, h: 1 },  // slit
+    { shape: 'rect', x: 0, y: 5, w: 10, h: 4 }, // room B
+  ];
+  const O = [5.5, 2]; // directly above the slit
+  // Straight down threads the slit (x=5.5 ∈ [5,6]) → reaches into room B.
+  const thru = shapeExit(O[0], O[1], Math.PI / 2, shapes, 30, 'open');
+  assert.ok(thru.dist > 5, `sight passes through the slit into room B (got ${thru.dist})`);
+  // A steep down-left ray leaves x∈[5,6] before y=4 → blocked at room A's bottom wall.
+  const blocked = shapeExit(O[0], O[1], Math.atan2(2, -3), shapes, 30, 'open');
+  assert.ok(blocked.dist < 4, `blocked at room A bottom edge, not through the wall (got ${blocked.dist})`);
+});
+
+test('unitVisionRegion: shape-occluded map returns a polyarc confined to the floor', () => {
+  const f = { world: { w: 12, h: 12 }, ui: { showFacing: false }, los: { openShapes: [{ shape: 'rect', x: 0, y: 0, w: 10, h: 4 }] } };
+  const region = unitVisionRegion(f, { id: 'u', friendly: true, x: 5, y: 2, ang: 0 });
+  assert.equal(region.kind, 'polyarc');
+  // Every boundary vertex lies within the room rect (vision can't escape the floor).
+  for (const p of region.points) {
+    assert.ok(p.x >= -1e-6 && p.x <= 10 + 1e-6, `x in room (${p.x})`);
+    assert.ok(p.y >= -1e-6 && p.y <= 4 + 1e-6, `y in room (${p.y})`);
+  }
+});
+
+test('reachRegion: plain circle with no walls, wall-occluded polyarc with walls', () => {
+  const { reachRegion, regionPath } = VISION;
+  assert.deepEqual(reachRegion({ world }, 5, 5, 4), { kind: 'circle', cx: 5, cy: 5, r: 4 });
+  const f = walled();
+  const region = reachRegion(f, 2.5, 5.5, 9);
+  assert.equal(region.kind, 'polyarc');
+  assert.equal(region.apex, null, 'movement reach is a full 360° ring, no apex');
+  // The reach is occluded by the wall column: it has vertices exactly on the wall face
+  // x=5 (an unoccluded circle never would).
+  assert.ok(region.points.some(p => Math.abs(p.x - 5) < 1e-9), 'reach clipped exactly at the wall');
+  // regionPath renders it as a closed SVG path (identity fit).
+  const id = { x: v => v, y: v => v, len: v => v };
+  assert.match(regionPath(region, id), /^M .*Z$/);
+});
+
+test('segCircleAngles: a wall crossing the range circle yields the exact crossing angles', () => {
+  const { segCircleAngles } = _internal;
+  // vertical wall at x=3, viewer at origin, range 5 ⇒ crosses circle at (3,±4)
+  const angs = segCircleAngles([3, -10, 3, 10], 0, 0, 5).map(a => a).sort((p, q) => p - q);
+  assert.equal(angs.length, 2);
+  assert.ok(Math.abs(Math.abs(angs[0]) - Math.atan2(4, 3)) < 1e-9);
+});
+
 test('angleDelta wraps around ±PI correctly', () => {
   const { angleDelta } = _internal;
   assert.ok(Math.abs(angleDelta(0.1, -0.1) - 0.2) < 1e-9);

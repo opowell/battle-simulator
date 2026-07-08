@@ -21,9 +21,10 @@ const props = defineProps({
 const regions = computed(() => {
   const sources = VISION.visionSources(props.units, props.viewerId, props.selectedId);
   return VISION.visionRegions(props.field, sources).map(r => {
-    const cx = props.fit.x(r.cx), cy = props.fit.y(r.cy), pr = props.fit.len(r.r);
-    if (r.kind === 'circle') return { kind: 'circle', cx, cy, r: pr };
-    return { kind: 'sector', d: VISION.sectorPath(cx, cy, pr, r.ang, r.fov) };
+    if (r.kind === 'circle')
+      return { kind: 'circle', cx: props.fit.x(r.cx), cy: props.fit.y(r.cy), r: props.fit.len(r.r) };
+    // 'sector' (open cone) or 'polyarc' (exact wall-occluded region) → one SVG path.
+    return { kind: 'path', d: VISION.regionPath(r, props.fit) };
   });
 });
 

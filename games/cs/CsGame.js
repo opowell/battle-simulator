@@ -63,9 +63,22 @@ function fullAmmo(weaponId) {
   return { mag: w.magSize, reserve: w.reserve };
 }
 
-function makeUnit(id, ownerId, pos) {
+// Player-model factions (see counterstrike.fandom.com's "List of factions") — purely
+// cosmetic, cycled deterministically per spawn index so a squad shows visual variety
+// without adding non-determinism to game state.
+const FACTIONS = {
+  T:  ['arctic', 'leet', 'guerilla', 'phoenix'],
+  CT: ['gign', 'gsg9', 'sas', 'seal'],
+};
+
+const FACTION_NAMES = {
+  arctic: 'Arctic Avengers', leet: 'Elite Crew', guerilla: 'Guerilla Warfare', phoenix: 'Phoenix Connexion',
+  gign: 'GIGN', gsg9: 'GSG-9', sas: 'SAS', seal: 'SEAL Team 6',
+};
+
+function makeUnit(id, ownerId, pos, faction) {
   return {
-    id, ownerId, type: WEAPONS.pistol.category,
+    id, ownerId, type: WEAPONS.pistol.category, faction,
     position: makePos(pos.x, pos.y),
     alive: true,
     hp: 100, maxHp: 100,
@@ -82,10 +95,15 @@ function spawnUnits(map) {
   // Orient each side toward the enemy at spawn so vision cones point across the map from
   // turn 1; facing then follows movement (see the move handler and games/vision.js).
   return orientToEnemies([
-    ...map.tSpawns.map((p, i)  => makeUnit(`T-${i}`,  'T',  p)),
-    ...map.ctSpawns.map((p, i) => makeUnit(`CT-${i}`, 'CT', p)),
+    ...map.tSpawns.map((p, i)  => makeUnit(`T-${i}`,  'T',  p,  FACTIONS.T[i % FACTIONS.T.length])),
+    ...map.ctSpawns.map((p, i) => makeUnit(`CT-${i}`, 'CT', p, FACTIONS.CT[i % FACTIONS.CT.length])),
   ], p => [num(p.x), num(p.y)]);
 }
+
+// Weapon/equipment icons (see counterstrike.fandom.com's "List of weapons" and "List
+// of equipment") — every WEAPONS/GRENADES key plus armor/helmet/defusekit has a
+// same-named file in games/cs/images/weapons/.
+const WEAPON_ICON = w => `/images/cs/weapons/${w}`;
 
 // ── Legal actions ─────────────────────────────────────────────────────────────
 
@@ -100,22 +118,22 @@ function buyActions(state, teamId) {
       if (wid === 'pistol') continue;
       if (w.teams && !w.teams.includes(teamId)) continue;
       if (w.cost <= money && u.weapon !== wid)
-        actions.push({ type: 'buy', unitId: u.id, item: wid, name: `${w.name} ($${w.cost})` });
+        actions.push({ type: 'buy', unitId: u.id, item: wid, name: `${w.name} ($${w.cost})`, icon: WEAPON_ICON(wid) });
     }
     // Armor (kevlar)
     if (!u.armor && ARMOR_COST <= money)
-      actions.push({ type: 'buy', unitId: u.id, item: 'armor', name: `Kevlar Armor ($${ARMOR_COST})` });
+      actions.push({ type: 'buy', unitId: u.id, item: 'armor', name: `Kevlar Armor ($${ARMOR_COST})`, icon: WEAPON_ICON('armor') });
     // Helmet (requires armor)
     if (u.armor && !u.helmet && EQUIPMENT.helmet.cost <= money)
-      actions.push({ type: 'buy', unitId: u.id, item: 'helmet', name: `${EQUIPMENT.helmet.name} ($${EQUIPMENT.helmet.cost})` });
+      actions.push({ type: 'buy', unitId: u.id, item: 'helmet', name: `${EQUIPMENT.helmet.name} ($${EQUIPMENT.helmet.cost})`, icon: WEAPON_ICON('helmet') });
     // Defuse kit (CT only)
     if (!u.hasKit && teamId === 'CT' && EQUIPMENT.defusekit.cost <= money)
-      actions.push({ type: 'buy', unitId: u.id, item: 'defusekit', name: `${EQUIPMENT.defusekit.name} ($${EQUIPMENT.defusekit.cost})` });
+      actions.push({ type: 'buy', unitId: u.id, item: 'defusekit', name: `${EQUIPMENT.defusekit.name} ($${EQUIPMENT.defusekit.cost})`, icon: WEAPON_ICON('defusekit') });
     // Grenades
     for (const [gid, g] of Object.entries(GRENADES)) {
       if (g.teams && !g.teams.includes(teamId)) continue;
       if (g.cost <= money && (u.grenades[gid] ?? 0) < g.maxStack)
-        actions.push({ type: 'buy', unitId: u.id, item: gid, name: `${g.name} ($${g.cost})` });
+        actions.push({ type: 'buy', unitId: u.id, item: gid, name: `${g.name} ($${g.cost})`, icon: WEAPON_ICON(gid) });
     }
   }
 
@@ -661,16 +679,19 @@ function effectShapes(gs) {
 }
 
 function equipmentList(u) {
-  const grenadeStr = Object.entries(u.grenades ?? {})
-    .filter(([, c]) => c > 0)
+  const activeGrenades = Object.entries(u.grenades ?? {}).filter(([, c]) => c > 0);
+  const grenadeStr = activeGrenades
     .map(([g, c]) => `${GRENADES[g]?.name ?? g}${c > 1 ? ` ×${c}` : ''}`)
     .join(', ');
   return [
-    { label: 'Weapon',  value: WEAPONS[u.weapon]?.name ?? u.weapon },
+    { label: 'Weapon',  value: WEAPONS[u.weapon]?.name ?? u.weapon, icon: WEAPON_ICON(u.weapon) },
     { label: 'Ammo',    value: `${u.ammo.mag} / ${u.ammo.reserve}` },
-    { label: 'Armor',   value: u.armor ? (u.helmet ? 'Vest + Helmet' : 'Vest') : 'None' },
-    { label: 'Grenades', value: grenadeStr || 'None' },
-    ...(u.ownerId === 'CT' ? [{ label: 'Defuse Kit', value: u.hasKit ? 'Yes' : 'No' }] : []),
+    { label: 'Armor',   value: u.armor ? (u.helmet ? 'Vest + Helmet' : 'Vest') : 'None',
+      icon: u.armor ? WEAPON_ICON(u.helmet ? 'helmet' : 'armor') : undefined },
+    { label: 'Grenades', value: grenadeStr || 'None',
+      icon: activeGrenades.length === 1 ? WEAPON_ICON(activeGrenades[0][0]) : undefined },
+    ...(u.ownerId === 'CT' ? [{ label: 'Defuse Kit', value: u.hasKit ? 'Yes' : 'No',
+      icon: u.hasKit ? WEAPON_ICON('defusekit') : undefined }] : []),
   ];
 }
 
@@ -703,7 +724,7 @@ function toGrid(state) {
     return {
       id: u.id, x: p.x, y: p.y,
       glyph:         'P',
-      unitName:      u.id,
+      unitName:      FACTION_NAMES[u.faction] ?? u.id,
       facing:        u.facing,
       // Weapon category (pistol/smg/shotgun/heavy/rifle/sniper), not just the constant
       // 'player' — feeds the generic per-type marker-shape hash (see data.js's
@@ -713,7 +734,7 @@ function toGrid(state) {
       hp:            u.hp,
       maxHp:         u.maxHp,
       job:           u.weapon,
-      portraitPath:  u.ownerId === 'T' ? '/images/cs/units/t' : '/images/cs/units/ct',
+      portraitPath:  `/images/cs/units/${u.faction}`,
       moveRange:     MOVE_RANGE,
       equipment:     equipmentList(u),
       statusEffects: u.blinded ? ['blinded'] : undefined,
@@ -722,10 +743,27 @@ function toGrid(state) {
     };
   });
 
+  // Occluder geometry for the client's fog/reach renderer, so vision stops at walls
+  // instead of bleeding through them. Shape maps expose their authored wall geometry
+  // (blockShapes) so ovals like the furnace pit occlude exactly; hand-laid grid maps
+  // fall back to the rasterized wall tiles. (Smoke also blocks in-engine but is
+  // transient and drawn as its own effect shape, so it's left out of the static set.)
+  let los;
+  if (gs.map.terrainShapes) {
+    los = { blockShapes: gs.map.terrainShapes.filter(s => s.tile === 'wall').map(({ shape, x, y, w, h }) => ({ shape, x, y, w, h })) };
+  } else {
+    const blocked = [];
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++)
+        if (tiles[`${x},${y}`] === 'wall') blocked.push(`${x},${y}`);
+    los = { blocked };
+  }
+
   return {
     width, height, locationType: 'continuous', cells, units: unitList,
     shapes: [...(gs.map.shapes ?? []), ...effectShapes(gs)],
     ui: { hideGrid: true },
+    los,
   };
 }
 
@@ -737,13 +775,16 @@ export function createInitialState(players, config = {}) {
   const map       = MAPS[config.mapId ?? config.scenario ?? 'dust2'] ?? MAPS.dust2;
 
   const [p1, p2] = players;
-  const teamMap       = { [p1.id]: 'T', [p2.id]: 'CT' };
-  const teamPlayerMap = { T: p1.id, CT: p2.id };
+  // Slot 0 is always colored teamA (blue) and slot 1 teamB (red) by the generic
+  // design-UI slot coloring, so map slot 0 → CT and slot 1 → T to match the
+  // conventional CS colors (CT blue, T red).
+  const teamMap       = { [p1.id]: 'CT', [p2.id]: 'T' };
+  const teamPlayerMap = { CT: p1.id, T: p2.id };
 
   return {
     gameName: 'CS',
     turnNumber: 1,
-    activePlayers: [p1.id],
+    activePlayers: [teamPlayerMap.T],
     currentPhase: 'buy',
     players,
     board: { width: map.width, height: map.height },

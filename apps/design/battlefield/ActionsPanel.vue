@@ -87,8 +87,10 @@ function fmtAction(action) {
       <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
         <button v-for="(action, i) in displayedActions" :key="i"
                 class="action-btn"
-                style="font-size:11px;font-family:var(--mono)"
+                style="font-size:11px;font-family:var(--mono);display:flex;align-items:center;gap:6px"
                 @click="$emit('submit', action)">
+          <img v-if="action.icon" :src="action.icon" alt=""
+               style="width:20px;height:20px;object-fit:contain;flex-shrink:0"/>
           {{fmtAction(action)}}
         </button>
         <div v-if="!displayedActions.length" style="font-size:11px;color:var(--faint)">No actions.</div>
