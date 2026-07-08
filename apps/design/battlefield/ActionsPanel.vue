@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 const props = defineProps({
   isDone:           Boolean,
   atLatest:         Boolean,
@@ -14,6 +15,13 @@ const props = defineProps({
 });
 defineEmits(['submit']);
 
+const teamMoney = computed(() => {
+  const gs = props.liveState?.gameSpecific;
+  if (!gs?.money) return null;
+  const teamId = gs.teamMap?.[props.pendingPlayerId] ?? props.pendingPlayerId;
+  return gs.money[teamId] ?? null;
+});
+
 function fmtAction(action) {
   const t = action.type ?? '';
   if (t === 'move') {
@@ -25,6 +33,14 @@ function fmtAction(action) {
   }
   if (t === 'castle')    return action.side === 'kingside' ? 'O-O' : 'O-O-O';
   if (t === 'attack')    return `Attack ${action.targetId ?? ''}`;
+  if (t === 'shoot') {
+    if (action.targetId == null) return 'Shoot';
+    const target = props.units.find(u => u.id === action.targetId);
+    const label = target ? (target.unitName ?? target.name ?? target.id) : action.targetId;
+    return `Shoot ${label}`;
+  }
+  if (t === 'buy')       return action.name ? `Buy ${action.name} → ${action.unitId}` : `Buy ${action.item ?? ''} → ${action.unitId}`;
+  if (t === 'end-buy')   return 'Done Buying';
   if (t === 'end-turn')  return action.direction ? `End Turn · Face ${action.direction}` : 'End Turn';
   if (t === 'end-phase') return 'End Phase';
   if (t === 'pass')      return 'Pass';
@@ -62,6 +78,7 @@ function fmtAction(action) {
     <template v-else-if="isPending && (ui.freeSelection || (selectedId && selectedId === activeUnitId))">
       <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
         Choose action for <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
+        <span v-if="teamMoney != null" class="mono" style="color:var(--ok)">${{teamMoney}}</span>
       </div>
       <div v-if="unitMoves.length" class="mono"
            style="font-size:10px;color:var(--faint);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">

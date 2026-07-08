@@ -68,7 +68,7 @@ test('doom: end-turn by demon returns to marine and increments turn', () => {
   assert.equal(s2.turnNumber, 2);
 });
 
-test('doom: move updates unit position and spends 1 AP', () => {
+test('doom: move updates unit position and spends AP equal to distance travelled', () => {
   const state = DoomGame.createInitialState(players());
   const marine = state.units.find(u => u.ownerId === 'marine' && u.perTurn.ap > 0);
   const move   = DoomGame.getLegalActions(state, 'p1').find(a => a.type === 'move' && a.unitId === marine.id);
@@ -79,7 +79,8 @@ test('doom: move updates unit position and spends 1 AP', () => {
   // Number-space (see games/coord.js).
   assert.equal(num(moved.position.x), move.to.x);
   assert.equal(num(moved.position.y), move.to.y);
-  assert.equal(moved.perTurn.ap, marine.perTurn.ap - 1);
+  const dist = Math.hypot(num(marine.position.x) - move.to.x, num(marine.position.y) - move.to.y);
+  assert.ok(Math.abs(moved.perTurn.ap - (marine.perTurn.ap - dist)) < 1e-9);
 });
 
 test('doom: getSearchActions yields continuous (non-integer) move points that are all engine-legal', () => {

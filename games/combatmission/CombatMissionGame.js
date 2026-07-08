@@ -338,6 +338,15 @@ const CM_TILE_SHAPE_STYLES = {
   [TERRAIN.WATER]: { fill: '#35617a', opacity: 0.9, name: 'Water', description: 'Impassable, but does not block line of sight.' },
 };
 
+// Side-panel portraits (single image each, sourced from Wikimedia Commons — vehicle
+// line-art/photos for the tanks, weapon product photos for the infantry teams).
+// german-sniper has no clean distinct source (only generic combat-scene archive photos
+// of K98k-with-scope were found) so it's left without a portrait.
+const UNIT_PORTRAITS = new Set([
+  'rifle-squad', 'mg-team', 'sniper', 'bazooka-team', 'mortar-team', 'sherman', 'stuart',
+  'volks-squad', 'mg42-team', 'panzerschreck', 'mortar-ger', 'panzer-iv', 'tiger',
+]);
+
 function toGrid(state) {
   const { board, units } = state;
   const { width, height, tiles } = board;
@@ -370,6 +379,7 @@ function toGrid(state) {
       maxHp:     u.maxHp,
       unitName:  UNIT_DEFS[u.type].label,
       moveRange: UNIT_DEFS[u.type].moveRange,
+      portraitPath: UNIT_PORTRAITS.has(u.type) ? `/images/combatmission/units/${u.type}` : undefined,
     };
   });
 

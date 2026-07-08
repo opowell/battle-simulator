@@ -1,6 +1,7 @@
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
+import { tileNum } from '../coord.js';
 
 // Fast seeded PRNG
 export function mulberry32(seed) {
@@ -101,11 +102,26 @@ export function generateMap(width, height) {
   return tiles;
 }
 
+// Continuous (non-rasterized) terrain lookup for free-form unit movement — positions
+// can now be continuous (see games/coord.js), so snap to the tile they sit in before
+// indexing the tile dictionary.
+export function isPassableContinuous(board, x, y, domain) {
+  const t  = board.tiles[`${tileNum(x)},${tileNum(y)}`];
+  const td = TERRAIN[t?.terrain];
+  if (!td) return false;
+  return domain === 'air' ? td.passable.air : td.passable.ground;
+}
+
+export function getMoveCostContinuous(board, x, y) {
+  const t = board.tiles[`${tileNum(x)},${tileNum(y)}`];
+  return TERRAIN[t?.terrain]?.moveCost ?? 1;
+}
+
 /**
  * Find an unoccupied tile adjacent (including diagonals) to a position.
  */
 export function findAdjacentFree(pos, board, units, buildings) {
-  const unitPos   = new Set(units.filter(u => u.alive).map(u => `${u.position.x},${u.position.y}`));
+  const unitPos   = new Set(units.filter(u => u.alive).map(u => `${tileNum(u.position.x)},${tileNum(u.position.y)}`));
   const buildPos  = new Set(buildings.filter(b => b.alive).map(b => `${b.position.x},${b.position.y}`));
   const dirs = [[0,1],[1,0],[-1,0],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
   for (const [dx, dy] of dirs) {
@@ -129,7 +145,10 @@ export function findAdjacentFree(pos, board, units, buildings) {
 export function getReachableTiles(unit, board, allUnits, allBuildings, playerId) {
   const stats = UNITS[unit.type];
   const { domain } = stats;
-  const key = p => `${p.x},${p.y}`;
+  // Still builds the AI's discrete candidate set even once positions are continuous
+  // (free-form movement, see games/coord.js), so every position is pinned to the
+  // integer tile it sits in before indexing.
+  const key = p => `${tileNum(p.x)},${tileNum(p.y)}`;
 
   const enemyGround = new Set(
     allUnits.filter(u => u.alive && u.ownerId !== playerId && u.domain !== 'air')
@@ -143,8 +162,9 @@ export function getReachableTiles(unit, board, allUnits, allBuildings, playerId)
     allBuildings.filter(b => b.alive).map(b => key(b.position))
   );
 
-  const best = new Map([[key(unit.position), unit.movesLeft]]);
-  const queue = [{ pos: unit.position, ml: unit.movesLeft }];
+  const start = { x: tileNum(unit.position.x), y: tileNum(unit.position.y) };
+  const best = new Map([[key(start), unit.movesLeft]]);
+  const queue = [{ pos: start, ml: unit.movesLeft }];
   const reachable = [];
 
   while (queue.length) {
@@ -224,7 +244,7 @@ export function renderMap(state) {
   const unitMap = {};
   for (const u of units) {
     if (!u.alive) continue;
-    const k = `${u.position.x},${u.position.y}`;
+    const k = `${tileNum(u.position.x)},${tileNum(u.position.y)}`;
     if (!unitMap[k] || u.ownerId === p1Id) unitMap[k] = u;
   }
   const buildMap = {};

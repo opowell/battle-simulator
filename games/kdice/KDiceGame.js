@@ -335,7 +335,10 @@ export const KDiceGame = {
   evaluateState: (state, playerId) =>
     sidesEval(Object.values(state.board.territories), playerId, t => 10 + (t.dice ?? 0), t => t.owner),
   name: 'KDice',
-  ui: { showUnitInfo: false },
+  // Territories double as "units" showing their dice count as the marker letter (see
+  // toGrid) — there's no unit heading to show, and the digit is essential info, so the
+  // facing arrow (which would hide it behind a generic marker, see SchematicLayer) is off.
+  ui: { showUnitInfo: false, showFacing: false },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Distant territories are hidden until you border them', type: 'boolean', default: false },
   ],

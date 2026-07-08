@@ -70,7 +70,7 @@ test('doom fog: belief pins a sighting then keeps it in reach after it hides', (
   const roster = s.gameSpecific.startRoster.filter(u => u.ownerId === 'demon');
   const belief = new DoomBelief('marine', roster);
   const e = roster.find(u => u.type === 'zombieman') ?? roster[0];
-  const reach = e.moveRange * e.maxAP;
+  const reach = e.maxAP;
 
   belief.beginTurn({
     ...s, turnNumber: 1,

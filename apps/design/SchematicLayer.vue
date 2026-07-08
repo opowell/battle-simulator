@@ -228,11 +228,22 @@ function tileBgImage(tile) {
   return tile.bgImage;
 }
 
+// Design rule: grid-based games get a square marker (a game can override per unit
+// type via ui.unitShapes, e.g. chess); non-grid (continuous, see field.locationType)
+// games get a circle, matching there being no cell for a square to align to.
 function unitShape(u) {
   const shapes = props.field.ui?.unitShapes;
-  if (shapes) return shapes[u.type] || 'circle';
-  return 'circle';
+  if (shapes?.[u.type]) return shapes[u.type];
+  return props.field.locationType === 'continuous' ? 'circle' : 'square';
 }
+
+// Design rule: a unit shows either its facing arrow (when ui.showFacing is on) or its
+// type letter — never both. A static letter drawn under a rotating-looking arrow reads
+// as broken, so facing-enabled games get an accent-colored marker instead, shaped per
+// unit type (markerShapeFor/markerGlyph, see data.js) so types stay distinguishable.
+const facingActive = computed(() => props.field.ui?.showFacing !== false);
+function markerR(u) { return Math.max(2, unitR(u) * 0.3); }
+function markerSpec(u) { return markerGlyph(markerShapeFor(u.type), markerR(u)); }
 
 // ── square markers (user annotations on unseen squares) ──────────────────────
 const MARKER_CYCLE = ['p', 'n', 'b', 'r', 'q', 'k', null];
@@ -707,6 +718,19 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                    :href="teamSpriteHref(u.imagePath, u.teamObj?.raw, field.ui?.recolorTeamSprites)"
                    style="pointer-events:none;image-rendering:pixelated"/>
           </template>
+          <template v-else-if="facingActive">
+            <circle v-if="markerSpec(u).kind === 'circle'" cx="0" cy="0" :r="markerSpec(u).r"
+                    :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
+            <template v-else-if="markerSpec(u).kind === 'ring'">
+              <circle cx="0" cy="0" :r="markerSpec(u).rOuter" fill="none"
+                      :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="1.6"
+                      style="pointer-events:none"/>
+              <circle cx="0" cy="0" :r="markerSpec(u).rInner"
+                      :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
+            </template>
+            <polygon v-else :points="markerSpec(u).points"
+                     :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
+          </template>
           <text v-else x="0" y="0"
                 :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" :font-family="rdr.font"
                 :font-size="unitR(u)" font-weight="800"
@@ -772,6 +796,14 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                :width="unitR(dragUnit)*2" :height="unitR(dragUnit)*2"
                :href="dragUnit.imagePath"
                style="image-rendering:pixelated"/>
+        <template v-else-if="facingActive">
+          <circle v-if="markerSpec(dragUnit).kind === 'circle'" cx="0" cy="0" :r="markerSpec(dragUnit).r" fill="white"/>
+          <template v-else-if="markerSpec(dragUnit).kind === 'ring'">
+            <circle cx="0" cy="0" :r="markerSpec(dragUnit).rOuter" fill="none" stroke="white" stroke-width="1.6"/>
+            <circle cx="0" cy="0" :r="markerSpec(dragUnit).rInner" fill="white"/>
+          </template>
+          <polygon v-else :points="markerSpec(dragUnit).points" fill="white"/>
+        </template>
         <text v-else x="0" y="0"
               fill="white" :font-family="rdr.font"
               :font-size="unitR(dragUnit)" font-weight="800"

@@ -1106,6 +1106,99 @@ function evaluateState(state, playerId) {
   return score;
 }
 
+// ── toGrid (design UI) ──────────────────────────────────────────────────────────
+// Discrete tile grid (see games/coord.js) — each cell is either a unit (hero or
+// monster) or dungeon terrain/decoration, mirroring the ffta/xcom pattern of
+// embedding the occupying unit's fields directly on its cell.
+
+const FLOOR_COLOR = '#c8c0a8';
+const WALL_COLOR  = '#23262b';
+
+// Side-panel portraits (single sprite frame each, sourced from nethack.fandom.com —
+// NetHack ported the entire original-Rogue bestiary, and its wiki hosts pre-made
+// transparent classic-tileset icons for most of them keyed off a solid dungeon-floor
+// background color we strip to transparency ourselves; see games/rogue/images/units/).
+// Rogue-only monsters with no surviving NetHack tile art (aquator, emu, flytrap,
+// griffin, ice_monster, kestrel, phantom, quagga, rattlesnake, ur_vile, xeroc) are
+// intentionally left out, same as doom's originally-missing cacodemon.
+const UNIT_PORTRAITS = new Set([
+  'bat', 'centaur', 'dragon', 'hobgoblin', 'jabberwock', 'leprechaun', 'medusa',
+  'nymph', 'orc', 'snake', 'troll', 'vampire', 'wraith', 'yeti', 'zombie',
+]);
+
+function itemGlyph(type) {
+  if (type === 'food')           return '%';
+  if (type.startsWith('potion')) return '!';
+  if (type.startsWith('scroll')) return '?';
+  if (type.startsWith('weapon')) return ')';
+  if (type.startsWith('armor'))  return ']';
+  if (type.startsWith('ring'))   return '=';
+  if (type.startsWith('wand'))   return '/';
+  if (type === 'gold')           return '*';
+  return '?';
+}
+
+function toGrid(state) {
+  const { units, gameSpecific: gs } = state;
+  const tiles = state.board.tiles;
+  const pidIdx = {};
+  state.players.forEach((p, i) => { pidIdx[p.id] = i + 1; });
+
+  const umap = {};
+  for (const u of units) {
+    if (!u.alive) continue;
+    const ability = u.attrs.specialAbility;
+    if (ability === 'mimic' && !u.attrs.revealed) continue; // rendered as its disguise item below
+    umap[`${u.position.x},${u.position.y}`] = u;
+  }
+
+  const itemMap = {};
+  for (const it of (gs.items ?? [])) if (!it.pickedUp) itemMap[`${it.x},${it.y}`] = it;
+
+  const trapMap = {};
+  for (const tr of (gs.traps ?? [])) if (!tr.hidden) trapMap[`${tr.x},${tr.y}`] = tr;
+
+  const sdK = gs.stairsDown ? `${gs.stairsDown.x},${gs.stairsDown.y}` : null;
+  const suK = gs.stairsUp   ? `${gs.stairsUp.x},${gs.stairsUp.y}`     : null;
+  const amK = (gs.amuletPos && !gs.hasAmulet) ? `${gs.amuletPos.x},${gs.amuletPos.y}` : null;
+
+  const cells = [];
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      const key = `${x},${y}`;
+      const walkable = tiles[key] === '.';
+      const u = umap[key];
+      const cell = {
+        x, y,
+        glyph: '',
+        color: walkable ? FLOOR_COLOR : WALL_COLOR,
+      };
+      if (u) {
+        cell.glyph        = u.attrs.symbol;
+        cell.unitId       = u.id;
+        cell.unitName     = u.type;
+        cell.owner        = u.ownerId === 'dungeon' ? 0 : (pidIdx[u.ownerId] ?? 0);
+        cell.hp           = u.hp;
+        cell.maxHp        = u.maxHp;
+        cell.portraitPath = UNIT_PORTRAITS.has(u.type) ? `/images/rogue/units/${u.type}` : undefined;
+      } else if (key === amK) {
+        cell.glyph = '"';
+      } else if (key === sdK) {
+        cell.glyph = '>';
+      } else if (key === suK) {
+        cell.glyph = '<';
+      } else if (itemMap[key]) {
+        cell.glyph = itemGlyph(itemMap[key].type);
+      } else if (trapMap[key]) {
+        cell.glyph = '^';
+      }
+      cells.push(cell);
+    }
+  }
+
+  return { width: MAP_W, height: MAP_H, cells };
+}
+
 export const RogueGame = {
   name: 'Rogue: Dungeons of Doom',
   gameOptions: [
@@ -1120,4 +1213,5 @@ export const RogueGame = {
   getVisibleState,
   sampleWorlds,
   evaluateState,
+  toGrid,
 };
