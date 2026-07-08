@@ -298,17 +298,6 @@ export function getReachable(tiles, pos, range, units) {
   return result;
 }
 
-// All walkable tiles within Euclidean range (for grenade throws — no LOS required)
-export function getThrowTargets(tiles, width, height, pos, range) {
-  const r2 = range * range;
-  const result = [];
-  for (let y = 0; y < height; y++)
-    for (let x = 0; x < width; x++)
-      if (isWalkable(tiles, x, y) && (x - num(pos.x)) ** 2 + (y - num(pos.y)) ** 2 <= r2)
-        result.push({ x, y });
-  return result;
-}
-
 const TILE_CHARS = { wall: '#', floor: '.', bombsiteA: 'A', bombsiteB: 'B', ctSpawn: 'c', tSpawn: 't' };
 
 export function renderMap(state) {

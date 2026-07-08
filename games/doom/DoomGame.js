@@ -437,7 +437,10 @@ function toGrid(state) {
 
   return {
     width: MAP_WIDTH, height: MAP_HEIGHT, locationType: 'continuous',
-    cells, units: unitList, shapes: ROOM_SHAPES, ui: { hideGrid: true },
+    cells, units: unitList, shapes: ROOM_SHAPES,
+    // Hand the veil the SAME sight range + cone the engine reveals with (DOOM_VISION), so
+    // the drawn vision circle/cone matches getVisibleState exactly (both Euclidean now).
+    ui: { hideGrid: true, visionRange: DOOM_VISION.range, fovDegrees: DOOM_VISION.fovDegrees },
     los: { openShapes },
   };
 }

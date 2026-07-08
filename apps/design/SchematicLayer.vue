@@ -29,6 +29,11 @@ const props = defineProps({
   selectedEmptySquare: { type: Object, default: null },
   // Selected terrain shape (non-grid maps) — outlined to show what the info panel describes.
   selectedShape: { type: Object, default: null },
+  // Set while the player is aiming a "button → pick a spot on the map" action (see
+  // Battlefield.vue) — replaces the normal legal-move highlight with a same-shape
+  // reach arc at `aiming.range`, plus a throw's blast-radius preview or a shoot's
+  // aim ray, both following the cursor.
+  aiming: { type: Object, default: null },
 });
 const emit = defineEmits(['select', 'sq-click', 'set-marker']);
 
@@ -76,6 +81,46 @@ const legalMoveCircle = computed(() => {
 const legalMovePathD = computed(() =>
   legalMoveCircle.value && legalMoveCircle.value.kind !== 'circle'
     ? VISION.regionPath(legalMoveCircle.value, props.fit) : null);
+
+// ── aiming overlay (throw/shoot: pick a button, then a spot on the map) ──────────
+// Keyed by aiming.unitId, not selectedId — a squad game (CS) can list every
+// not-yet-acted unit's actions together, so the aimed button's owner isn't
+// necessarily the currently-selected unit (see Battlefield.vue's startAim).
+const aimUnit = computed(() => props.aiming ? props.units.find(u => u.id === props.aiming.unitId) : null);
+
+// Same reach-region geometry as legalMoveCircle (wall-occluded arc, not a plain
+// circle bleeding through walls), just at the aimed action's own range.
+const aimRegion = computed(() => {
+  if (!aimUnit.value || props.aiming?.range == null) return null;
+  return VISION.reachRegion(props.field, aimUnit.value.x, aimUnit.value.y, props.aiming.range);
+});
+const aimRegionPathD = computed(() =>
+  aimRegion.value && aimRegion.value.kind !== 'circle' ? VISION.regionPath(aimRegion.value, props.fit) : null);
+
+// Cursor position in world coordinates while aiming (null off-board or not aiming).
+const hoverWorld = ref(null);
+function handleBoardMouseMove(e) {
+  if (!props.aiming) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  hoverWorld.value = {
+    x: (e.clientX - rect.left - props.fit.x(0)) / props.fit.s,
+    y: (e.clientY - rect.top  - props.fit.y(0)) / props.fit.s,
+  };
+}
+function handleBoardMouseLeave() { hoverWorld.value = null; }
+
+// Shoot's aim ray, clipped to the weapon's range so it reads as the actual reach
+// rather than an arbitrary line to the cursor.
+const shootRayEnd = computed(() => {
+  if (props.aiming?.type !== 'shoot' || !aimUnit.value || !hoverWorld.value) return null;
+  const u = aimUnit.value, h = hoverWorld.value;
+  const dx = h.x - u.x, dy = h.y - u.y;
+  const dist = Math.hypot(dx, dy);
+  const range = props.aiming.range;
+  if (!dist || range == null || dist <= range) return h;
+  const t = range / dist;
+  return { x: u.x + dx * t, y: u.y + dy * t };
+});
 
 const gridX = computed(() => {
   const step = props.field.grid === 'square' ? 1 : Math.max(1, Math.round(props.field.world.w / 20));
@@ -376,6 +421,9 @@ function handleBoardClick(e) {
 }
 
 function handleUnitClick(e, u) {
+  // Aiming mode: clicking any unit token (e.g. the enemy you're shooting at) is just
+  // a click at that point — let it bubble to handleBoardClick like bare ground would.
+  if (props.aiming) return;
   const col = Math.floor(u.x), row = Math.floor(u.y);
   const isLegalTarget = props.legalSquares.some(([lc, lr]) => lc === col && lr === row);
   if (props.dragToMove) {
@@ -460,8 +508,10 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
 <template>
   <div class="bf-layer" :style="{background: rdr.stage}">
     <svg ref="svgEl" width="100%" height="100%"
-         :style="{ display:'block', position:'absolute', inset:0, cursor: dragUnit ? 'grabbing' : '' }"
-         @click="handleBoardClick">
+         :style="{ display:'block', position:'absolute', inset:0, cursor: dragUnit ? 'grabbing' : (aiming ? 'crosshair' : '') }"
+         @click="handleBoardClick"
+         @mousemove="handleBoardMouseMove"
+         @mouseleave="handleBoardMouseLeave">
 
       <!-- Terrain: on ordinary tile-grid maps, one <rect> per cell (per-cell color from
            game toGrid; fog applied per-tile). Non-grid (shape) maps have no real tile grid
@@ -614,19 +664,45 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
 
       <!-- Legal move highlights: on non-grid (shape) maps a single reachable region —
            a plain radius circle, or an exact wall-occluded area on maps with walls (so it
-           doesn't promise movement through walls) — else per-cell squares on tile grids. -->
-      <path v-if="legalMovePathD" :d="legalMovePathD"
-            fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
-            style="cursor:pointer"/>
-      <circle v-else-if="legalMoveCircle"
-              :cx="fit.x(legalMoveCircle.cx)" :cy="fit.y(legalMoveCircle.cy)" :r="fit.len(legalMoveCircle.r)"
+           doesn't promise movement through walls) — else per-cell squares on tile grids.
+           Swapped out for the aiming overlay below while a throw/shoot is being aimed. -->
+      <template v-if="!aiming">
+        <path v-if="legalMovePathD" :d="legalMovePathD"
               fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
               style="cursor:pointer"/>
-      <rect v-else v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
-            :x="fit.x(lc)" :y="fit.y(lr)"
-            :width="fit.len(1)" :height="fit.len(1)"
-            fill="rgba(66,198,230,0.28)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
-            style="cursor:pointer"/>
+        <circle v-else-if="legalMoveCircle"
+                :cx="fit.x(legalMoveCircle.cx)" :cy="fit.y(legalMoveCircle.cy)" :r="fit.len(legalMoveCircle.r)"
+                fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
+                style="cursor:pointer"/>
+        <rect v-else v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
+              :x="fit.x(lc)" :y="fit.y(lr)"
+              :width="fit.len(1)" :height="fit.len(1)"
+              fill="rgba(66,198,230,0.28)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
+              style="cursor:pointer"/>
+      </template>
+
+      <!-- Aiming overlay: same-shape reach arc as the move highlight above, but at the
+           aimed action's own range (throw range / weapon range), colored to read as a
+           distinct mode. A throw adds a blast-radius preview at the cursor; a shoot adds
+           an aim ray from the unit to the cursor, clipped to weapon range. -->
+      <template v-else>
+        <path v-if="aimRegionPathD" :d="aimRegionPathD"
+              fill="rgba(242,180,65,0.16)" stroke="rgba(242,180,65,0.65)" stroke-width="1.5"
+              style="pointer-events:none"/>
+        <circle v-else-if="aimRegion"
+                :cx="fit.x(aimRegion.cx)" :cy="fit.y(aimRegion.cy)" :r="fit.len(aimRegion.r)"
+                fill="rgba(242,180,65,0.16)" stroke="rgba(242,180,65,0.65)" stroke-width="1.5"
+                style="pointer-events:none"/>
+        <circle v-if="aiming.type === 'throw' && hoverWorld"
+                :cx="fit.x(hoverWorld.x)" :cy="fit.y(hoverWorld.y)" :r="fit.len(aiming.blastRadius || 0)"
+                fill="rgba(255,110,40,0.28)" stroke="rgba(255,110,40,0.75)" stroke-width="1.5"
+                style="pointer-events:none"/>
+        <line v-if="aiming.type === 'shoot' && shootRayEnd && aimUnit"
+              :x1="fit.x(aimUnit.x)" :y1="fit.y(aimUnit.y)"
+              :x2="fit.x(shootRayEnd.x)" :y2="fit.y(shootRayEnd.y)"
+              stroke="rgba(255,210,60,0.85)" stroke-width="2" stroke-dasharray="3 3"
+              style="pointer-events:none"/>
+      </template>
 
       <!-- Grid -->
       <template v-if="!field.ui?.hideGrid">
