@@ -1,13 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DoomGame } from './index.js';
-import { DoomBelief } from './belief.js';
-import { hasLOS } from './map.js';
+import { DoomBelief, DOOM_VISION } from './belief.js';
+import { anySeesPoint, viewersOf } from '../vision.js';
+import { num } from '../coord.js';
 import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
 import { RandomAgent } from '../../agents/RandomAgent.js';
 import { GameEngine } from '../../engine/index.js';
 
 const players = () => [{ id: 'p1', name: 'Marine' }, { id: 'p2', name: 'Demons' }];
+// Mirror the game's real visibility (range + LOS + facing cone) so the fog oracle can't
+// drift from getVisibleState — the shared games/vision.js predicate.
+const canSee = (units, owner, pos) =>
+  anySeesPoint(viewersOf(units, owner, DOOM_VISION, p => [num(p.x), num(p.y)]), num(pos.x), num(pos.y), DOOM_VISION);
 
 test('doom fog: getVisibleState hides distant demons and stores a roster', () => {
   const s = DoomGame.createInitialState(players(), { fogOfWar: true });
@@ -23,16 +28,36 @@ test('doom fog: sampleWorlds places demons outside vision+LOS', () => {
   const worlds = DoomGame.sampleWorlds(view, 'p1', 8);
   assert.ok(worlds.length > 0);
   const seen = new Set(view.units.map(u => u.id));
-  const myUnits = view.units.filter(u => u.ownerId === 'marine' && u.alive);
   for (const w of worlds) {
     for (const L of w.units.filter(u => u.ownerId === 'demon' && !seen.has(u.id))) {
-      const visible = myUnits.some(m =>
-        Math.max(Math.abs(m.position.x - L.position.x), Math.abs(m.position.y - L.position.y)) <= 6 &&
-        hasLOS(m.position.x, m.position.y, L.position.x, L.position.y));
-      assert.ok(!visible, 'placed where we could not already see it');
+      assert.ok(!canSee(view.units, 'marine', L.position), 'placed where we could not already see it');
       assert.ok(L.hp > 0, 'placed demon is alive with hp');
     }
   }
+});
+
+test('doom fog: a facing marine sees ahead within its cone but not behind', () => {
+  // Room C (y6-7) is open floor from x1..18, so LOS is clear along the row.
+  const base = DoomGame.createInitialState(players(), { fogOfWar: true });
+  const state = { ...base, units: [
+    { id: 'marine-1', ownerId: 'marine', type: 'marine', alive: true, hp: 100, perTurn: { ap: 4 },
+      position: { x: 10, y: 6 }, facing: 0 }, // faces east
+    { id: 'z-ahead',  ownerId: 'demon', type: 'zombieman', alive: true, hp: 12, perTurn: { ap: 3 }, position: { x: 13, y: 6 } },
+    { id: 'z-behind', ownerId: 'demon', type: 'zombieman', alive: true, hp: 12, perTurn: { ap: 3 }, position: { x: 7,  y: 6 } },
+  ] };
+  const seen = DoomGame.getVisibleState(state, 'p1').units.map(u => u.id);
+  assert.ok(seen.includes('z-ahead'),   'demon ahead within the cone is visible');
+  assert.ok(!seen.includes('z-behind'), 'demon behind the marine is hidden');
+});
+
+test('doom fog: a marine with no heading (unmoved) still sees all around', () => {
+  const base = DoomGame.createInitialState(players(), { fogOfWar: true });
+  const state = { ...base, units: [
+    { id: 'marine-1', ownerId: 'marine', type: 'marine', alive: true, hp: 100, perTurn: { ap: 4 }, position: { x: 10, y: 6 } }, // facing undefined
+    { id: 'z-behind', ownerId: 'demon', type: 'zombieman', alive: true, hp: 12, perTurn: { ap: 3 }, position: { x: 7, y: 6 } },
+  ] };
+  const seen = DoomGame.getVisibleState(state, 'p1').units.map(u => u.id);
+  assert.ok(seen.includes('z-behind'), 'no facing ⇒ omnidirectional (360°)');
 });
 
 test('doom fog: sampleWorlds returns [] when fog is off', () => {

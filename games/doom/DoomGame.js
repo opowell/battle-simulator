@@ -2,8 +2,9 @@ import { unitStrengthEval } from '../evalHelpers.js';
 import { MAP_WIDTH, MAP_HEIGHT, MAP_ROOMS, hasLOS, getReachable, manhattan, renderMap, isWalkableContinuous } from './map.js';
 import { WEAPONS, AMMO_CAPS, WEAPON_RANK } from './weapons.js';
 import { createMarine, createMonster } from './units.js';
-import { getDoomBelief } from './belief.js';
+import { getDoomBelief, DOOM_VISION } from './belief.js';
 import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
+import { filterVisibleUnits, orientToEnemies } from '../vision.js';
 import { parsePos, num, tileNum, posToWire } from '../coord.js';
 
 // ── Default item placement ─────────────────────────────────────────────────────
@@ -172,9 +173,14 @@ function applyActions(state, playerActions, rng = Math.random) {
     // action.to arrives from the wire as decimal strings (human continuous click) or
     // integer tiles (AI candidate); store it as the authoritative BigNumber position.
     const to = parsePos(action.to);
-    units = units.map(u => u.id === action.unitId
-      ? { ...u, position: to, perTurn: { ap: u.perTurn.ap - 1 } }
-      : u);
+    units = units.map(u => {
+      if (u.id !== action.unitId) return u;
+      // Movement-derived heading: a unit faces where it last moved, driving its vision
+      // cone (see games/vision.js). A zero-length move keeps the old facing.
+      const dx = num(to.x) - num(u.position.x), dy = num(to.y) - num(u.position.y);
+      const facing = (dx || dy) ? Math.atan2(dy, dx) : u.facing;
+      return { ...u, position: to, facing, perTurn: { ap: u.perTurn.ap - 1 } };
+    });
 
     // Marines auto-collect an item when they end their move on its tile.
     if (playerId === 'marine') {
@@ -345,6 +351,10 @@ function createInitialState(players, config = {}) {
     createMonster('baron-1',    'baron',     { x: 16, y: 10 }),
   ];
 
+  // Orient each side toward the enemy at spawn so vision cones point at the action from
+  // turn 1 (facing then follows movement — see the move handler and games/vision.js).
+  const units = orientToEnemies([...marines, ...demons], p => [num(p.x), num(p.y)]);
+
   return {
     gameName: 'Doom',
     turnNumber: 1,
@@ -352,14 +362,14 @@ function createInitialState(players, config = {}) {
     currentPhase: 'marine-turn',
     players,
     board: { width: MAP_WIDTH, height: MAP_HEIGHT },
-    units: [...marines, ...demons],
+    units,
     lastActions: null,
     gameSpecific: {
       teamMap, teamPlayerMap, items: defaultItems(),
       fogOfWar: config.fogOfWar ?? false,
       // Common-knowledge starting deployment, used to seed the fog belief
       // tracker (belief.js).
-      startRoster: [...marines, ...demons].map(u => ({
+      startRoster: units.map(u => ({
         id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position },
         hp: u.hp, moveRange: u.attrs.moveRange, maxAP: u.attrs.maxAP,
       })),
@@ -414,17 +424,11 @@ function toGrid(state) {
 // ── Export ────────────────────────────────────────────────────────────────────
 
 function getVisibleState(state, teamId) {
-  const VISION = 6;
-  const myUnits = state.units.filter(u => u.alive && u.ownerId === teamId);
+  // Own units + any enemy an own unit can see (range + LOS + facing cone). DOOM_VISION is
+  // shared with belief.js so the observation and the fog sampler stay in lockstep.
   return {
     ...state,
-    units: state.units.filter(u =>
-      u.ownerId === teamId ||
-      myUnits.some(m =>
-        Math.max(Math.abs(num(m.position.x) - num(u.position.x)), Math.abs(num(m.position.y) - num(u.position.y))) <= VISION &&
-        hasLOS(m.position.x, m.position.y, u.position.x, u.position.y)
-      )
-    ),
+    units: filterVisibleUnits(state.units, teamId, DOOM_VISION, p => [num(p.x), num(p.y)]),
   };
 }
 

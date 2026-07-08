@@ -1,12 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FFTAGame } from './FFTAGame.js';
-import { FftaBelief } from './belief.js';
+import { FftaBelief, FFTA_VISION } from './belief.js';
+import { anySeesPoint, viewersOf } from '../vision.js';
 import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
 import { RandomAgent } from '../../agents/RandomAgent.js';
 import { GameEngine } from '../../engine/index.js';
 
 const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
+// Mirror the game's own visibility (range + facing cone) so the fog oracle can't drift
+// from getVisibleState — the whole point of the shared games/vision.js predicate.
+const canSee = (viewerUnits, myId, pos) =>
+  anySeesPoint(viewersOf(viewerUnits, myId, FFTA_VISION, p => [p.x, p.y]), pos.x, pos.y, FFTA_VISION);
 
 test('ffta fog: getVisibleState hides distant enemies and stores a roster', () => {
   const s = FFTAGame.createInitialState(players(), { fogOfWar: true });
@@ -15,9 +20,22 @@ test('ffta fog: getVisibleState hides distant enemies and stores a roster', () =
   assert.equal(s.gameSpecific.startRoster.length, s.units.length, 'startRoster is common knowledge');
   const myId = s.activePlayers[0];
   assert.equal(view.units.filter(u => u.ownerId !== myId).length,
-    s.units.filter(u => u.ownerId !== myId && u.alive &&
-      s.units.some(m => m.ownerId === myId && Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= 2)).length,
-    'only nearby enemies visible');
+    s.units.filter(u => u.ownerId !== myId && u.alive && canSee(s.units, myId, u.position)).length,
+    'only enemies in a unit\'s vision cone are visible');
+});
+
+test('ffta fog: a unit sees enemies inside its facing cone but not behind it', () => {
+  // getVisibleState only reads unit position/owner/facing, so a hand-built state is enough.
+  const state = { units: [
+    { id: 'me',     ownerId: 'p1', alive: true, position: { x: 5, y: 5 }, facing: 0 }, // faces east
+    { id: 'ahead',  ownerId: 'p2', alive: true, position: { x: 6, y: 5 } },            // 1 tile east
+    { id: 'behind', ownerId: 'p2', alive: true, position: { x: 4, y: 5 } },            // 1 tile west
+    { id: 'flank',  ownerId: 'p2', alive: true, position: { x: 5, y: 4 } },            // 1 tile north
+  ] };
+  const seen = FFTAGame.getVisibleState(state, 'p1').units.map(u => u.id);
+  assert.ok(seen.includes('ahead'),   'enemy ahead is visible');
+  assert.ok(!seen.includes('behind'), 'enemy directly behind is hidden');
+  assert.ok(!seen.includes('flank'),  'enemy 90° to the side is hidden');
 });
 
 test('ffta fog: sampleWorlds places in-bounds, hidden enemies', () => {
@@ -26,12 +44,9 @@ test('ffta fog: sampleWorlds places in-bounds, hidden enemies', () => {
   const view = FFTAGame.getVisibleState(s, myId);
   const worlds = FFTAGame.sampleWorlds(view, myId, 8);
   const seen = new Set(view.units.map(u => u.id));
-  const myUnits = view.units.filter(u => u.ownerId === myId && u.alive);
   for (const w of worlds) {
     for (const L of w.units.filter(u => u.ownerId !== myId && !seen.has(u.id))) {
-      const visible = myUnits.some(m =>
-        Math.max(Math.abs(m.position.x - L.position.x), Math.abs(m.position.y - L.position.y)) <= 2);
-      assert.ok(!visible, 'placed outside our vision');
+      assert.ok(!canSee(view.units, myId, L.position), 'placed outside our vision cone');
     }
   }
 });
