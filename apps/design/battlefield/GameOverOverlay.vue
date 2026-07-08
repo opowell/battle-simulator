@@ -18,15 +18,19 @@ defineEmits(['dismiss', 'exit']);
       <div style="background:var(--bg1);border:1px solid var(--line2);border-radius:var(--r2);width:480px;max-width:92vw;overflow:hidden;box-shadow:0 24px 64px -12px rgba(0,0,0,.85)">
         <div style="padding:32px 28px 20px;text-align:center;border-bottom:1px solid var(--line)">
           <div class="mono up" style="font-size:10px;letter-spacing:.12em;color:var(--faint);margin-bottom:10px">
-            {{ liveState.result?.outcome === 'win' ? 'Victory' : 'Battle Over' }}
+            {{ liveState.status === 'error' ? 'Error' : liveState.result?.outcome === 'win' ? 'Victory' : 'Battle Over' }}
           </div>
-          <div v-if="winnerTeam"
+          <div v-if="liveState.status === 'error'"
+               style="font-size:16px;font-weight:700;letter-spacing:-.01em;color:#ff5f56">
+            {{ liveState.error || 'Something went wrong' }}
+          </div>
+          <div v-else-if="winnerTeam"
                style="font-size:36px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px"
                :style="{color: winnerTeam.raw}">
             {{ winnerTeam.name }}
           </div>
           <div v-else style="font-size:28px;font-weight:700;letter-spacing:-.01em;color:var(--dim)">Draw</div>
-          <div v-if="reasonLabel" class="mono" style="font-size:11px;color:var(--faint);margin-top:10px">
+          <div v-if="liveState.status !== 'error' && reasonLabel" class="mono" style="font-size:11px;color:var(--faint);margin-top:10px">
             {{ reasonLabel }}
           </div>
         </div>

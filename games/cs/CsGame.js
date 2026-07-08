@@ -65,7 +65,7 @@ function fullAmmo(weaponId) {
 
 function makeUnit(id, ownerId, pos) {
   return {
-    id, ownerId, type: 'player',
+    id, ownerId, type: WEAPONS.pistol.category,
     position: makePos(pos.x, pos.y),
     alive: true,
     hp: 100, maxHp: 100,
@@ -100,22 +100,22 @@ function buyActions(state, teamId) {
       if (wid === 'pistol') continue;
       if (w.teams && !w.teams.includes(teamId)) continue;
       if (w.cost <= money && u.weapon !== wid)
-        actions.push({ type: 'buy', unitId: u.id, item: wid });
+        actions.push({ type: 'buy', unitId: u.id, item: wid, name: `${w.name} ($${w.cost})` });
     }
     // Armor (kevlar)
     if (!u.armor && ARMOR_COST <= money)
-      actions.push({ type: 'buy', unitId: u.id, item: 'armor' });
+      actions.push({ type: 'buy', unitId: u.id, item: 'armor', name: `Kevlar Armor ($${ARMOR_COST})` });
     // Helmet (requires armor)
     if (u.armor && !u.helmet && EQUIPMENT.helmet.cost <= money)
-      actions.push({ type: 'buy', unitId: u.id, item: 'helmet' });
+      actions.push({ type: 'buy', unitId: u.id, item: 'helmet', name: `${EQUIPMENT.helmet.name} ($${EQUIPMENT.helmet.cost})` });
     // Defuse kit (CT only)
     if (!u.hasKit && teamId === 'CT' && EQUIPMENT.defusekit.cost <= money)
-      actions.push({ type: 'buy', unitId: u.id, item: 'defusekit' });
+      actions.push({ type: 'buy', unitId: u.id, item: 'defusekit', name: `${EQUIPMENT.defusekit.name} ($${EQUIPMENT.defusekit.cost})` });
     // Grenades
     for (const [gid, g] of Object.entries(GRENADES)) {
       if (g.teams && !g.teams.includes(teamId)) continue;
       if (g.cost <= money && (u.grenades[gid] ?? 0) < g.maxStack)
-        actions.push({ type: 'buy', unitId: u.id, item: gid });
+        actions.push({ type: 'buy', unitId: u.id, item: gid, name: `${g.name} ($${g.cost})` });
     }
   }
 
@@ -336,7 +336,8 @@ function applyActions(state, playerActions, rng = Math.random) {
           ? { ...u, grenades: { ...u.grenades, [item]: (u.grenades[item] ?? 0) + 1 } } : u);
         deduct(GRENADES[item].cost);
       } else if (WEAPONS[item]) {
-        units = units.map(u => u.id === unitId ? { ...u, weapon: item, ammo: fullAmmo(item) } : u);
+        units = units.map(u => u.id === unitId
+          ? { ...u, weapon: item, type: WEAPONS[item].category, ammo: fullAmmo(item) } : u);
         deduct(WEAPONS[item].cost);
       }
 
@@ -703,10 +704,16 @@ function toGrid(state) {
       id: u.id, x: p.x, y: p.y,
       glyph:         'P',
       unitName:      u.id,
+      facing:        u.facing,
+      // Weapon category (pistol/smg/shotgun/heavy/rifle/sniper), not just the constant
+      // 'player' — feeds the generic per-type marker-shape hash (see data.js's
+      // markerShapeFor) so a squad's loadouts stay visually distinguishable on the map.
+      type:          u.type,
       owner:         playerIdx[gs.teamPlayerMap[u.ownerId]] ?? 0,
       hp:            u.hp,
       maxHp:         u.maxHp,
       job:           u.weapon,
+      portraitPath:  u.ownerId === 'T' ? '/images/cs/units/t' : '/images/cs/units/ct',
       moveRange:     MOVE_RANGE,
       equipment:     equipmentList(u),
       statusEffects: u.blinded ? ['blinded'] : undefined,

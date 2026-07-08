@@ -1021,6 +1021,16 @@ function terrainInfo(key) {
   return { name, description: parts.join(' · ') };
 }
 
+// Side-panel portraits (single frame each, sourced from starcraft.fandom.com).
+const UNIT_PORTRAITS = new Set([
+  'scv', 'marine', 'marauder', 'reaper', 'ghost', 'hellion', 'siege-tank', 'thor',
+  'medivac', 'viking', 'banshee', 'battlecruiser',
+  'drone', 'zergling', 'baneling', 'roach', 'ravager', 'hydralisk', 'lurker',
+  'infestor', 'queen', 'swarmhost', 'ultralisk', 'mutalisk', 'corruptor', 'broodlord', 'overlord',
+  'probe', 'zealot', 'stalker', 'sentry', 'adept', 'immortal', 'colossus',
+  'high-templar', 'dark-templar', 'archon', 'phoenix', 'void-ray', 'carrier', 'tempest', 'locust',
+]);
+
 export const Sc2Game = {
   // Units plus buildings, main structures weighted heavily (destroying an
   // enemy's base and army wins). Leaf for the generic ObscuroAgent.
@@ -1070,6 +1080,8 @@ export const Sc2Game = {
           owner: u ? (pidIdx[u.ownerId] ?? 0) : b ? (pidIdx[b.ownerId] ?? 0) : 0,
           color: this.colors[tile.terrain] ?? this.colors.open ?? '#808070',
           terrain: terrainInfo(tile.terrain),
+          unitName: u ? u.type : undefined,
+          portraitPath: u && UNIT_PORTRAITS.has(u.type) ? `/images/sc2/units/${u.type}` : undefined,
         });
       }
     }

@@ -174,6 +174,21 @@ function tileHi(t) {
 
 function hpColor(frac, raw) { return frac > 0.5 ? raw : frac > 0.25 ? '#f2b441' : '#ff5f56'; }
 
+// Design rule (see SchematicLayer's facingActive): a unit shows its facing arrow or its
+// type letter, never both. Only the 'character' style ever draws a facing arrow — 'token'
+// style units always get the letter.
+const facingActive = computed(() => unitStyle.value === 'character' && props.field.ui?.showFacing !== false);
+
+// markerGlyph's polygon points are origin-relative (see data.js); IsoLayer bakes absolute
+// screen coordinates into every shape's attributes instead of using a per-unit <g
+// transform> (see the tile/unit drawing above), so offset them here before use.
+function isoMarkerPolygon(pointsStr, ox, oy) {
+  return pointsStr.split(' ').map(pair => {
+    const [x, y] = pair.split(',').map(Number);
+    return `${(x + ox).toFixed(2)},${(y + oy).toFixed(2)}`;
+  }).join(' ');
+}
+
 // ── click: front-to-back hit-test on tile tops ─────────────────────────────────
 function onClick(e) {
   const s = scene.value;
@@ -238,8 +253,9 @@ function onClick(e) {
                   :stroke="d.u.teamObj.raw" stroke-width="2"/>
           </g>
           <template v-else>
-            <!-- token base marker (civ2) -->
-            <ellipse v-if="d.token" :cx="d.sx" :cy="d.syTop+d.hh*0.12" :rx="d.hw*0.66" :ry="d.hh*0.66"
+            <!-- token base marker (civ2): a diamond, matching the isometric tile shape -->
+            <polygon v-if="d.token"
+                     :points="pts([[d.sx, d.syTop+d.hh*0.12-d.hh*0.66],[d.sx+d.hw*0.66, d.syTop+d.hh*0.12],[d.sx, d.syTop+d.hh*0.12+d.hh*0.66],[d.sx-d.hw*0.66, d.syTop+d.hh*0.12]])"
                      :fill="d.u.teamObj.raw" fill-opacity="0.28" :stroke="d.u.teamObj.raw" stroke-width="1.5"/>
             <!-- character extras (FFTA) -->
             <template v-else>
@@ -261,6 +277,19 @@ function onClick(e) {
             <image v-if="d.u.imagePath" :href="d.u.imagePath"
                    :x="d.imgX" :y="d.imgY" :width="d.spriteW" :height="d.spriteW"
                    preserveAspectRatio="xMidYMax meet" style="image-rendering:pixelated"/>
+            <template v-else-if="facingActive">
+              <circle v-if="markerGlyph(markerShapeFor(d.u.type), d.hw*0.18).kind === 'circle'"
+                      :cx="d.sx" :cy="d.syTop" :r="markerGlyph(markerShapeFor(d.u.type), d.hw*0.18).r"
+                      :fill="d.u.id === activeUnitId ? 'white' : d.u.teamObj.raw"/>
+              <template v-else-if="markerGlyph(markerShapeFor(d.u.type), d.hw*0.18).kind === 'ring'">
+                <circle :cx="d.sx" :cy="d.syTop" :r="markerGlyph(markerShapeFor(d.u.type), d.hw*0.18).rOuter"
+                        fill="none" :stroke="d.u.id === activeUnitId ? 'white' : d.u.teamObj.raw" stroke-width="1.4"/>
+                <circle :cx="d.sx" :cy="d.syTop" :r="markerGlyph(markerShapeFor(d.u.type), d.hw*0.18).rInner"
+                        :fill="d.u.id === activeUnitId ? 'white' : d.u.teamObj.raw"/>
+              </template>
+              <polygon v-else :points="isoMarkerPolygon(markerGlyph(markerShapeFor(d.u.type), d.hw*0.18).points, d.sx, d.syTop)"
+                       :fill="d.u.id === activeUnitId ? 'white' : d.u.teamObj.raw"/>
+            </template>
             <text v-else :x="d.sx" :y="d.syTop" :fill="d.u.teamObj.raw" :font-family="rdr.font"
                   :font-size="d.hw*0.8" font-weight="800" text-anchor="middle" dominant-baseline="central">
               {{ d.u.name[0].toUpperCase() }}

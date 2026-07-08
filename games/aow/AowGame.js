@@ -311,6 +311,9 @@ function terrainInfo(key) {
   return { name: t.name, description: parts.join(' · ') };
 }
 
+// Side-panel portraits (single sprite frame each, sourced from wesnoth.fandom.com).
+const UNIT_PORTRAITS = new Set(['warrior', 'archer', 'cavalry']);
+
 export const AowGame = {
   // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
   // minus the enemy's. See games/evalHelpers.js.
@@ -350,10 +353,12 @@ export const AowGame = {
         cells.push({
           x, y,
           glyph: u ? u.type[0].toUpperCase() : '',
+          unitName: u?.type,
           owner: u ? (pidIdx[u.ownerId] ?? 0) : 0,
           color: TERRAIN.plains.color,
           terrain: terrainInfo(tile.terrain),
           hp: u?.hp, maxHp: u?.maxHp,
+          portraitPath: u && UNIT_PORTRAITS.has(u.type) ? `/images/aow/units/${u.type}` : undefined,
         });
       }
     }

@@ -8,9 +8,9 @@
 // it could occupy given the common-knowledge starting deployment
 // (gameSpecific.startRoster) and every sighting since.
 //
-//   1. expand   — an unseen enemy may have spent a whole turn moving; with maxAP
-//                 activations of moveRange each, grow its possible set by that
-//                 full reach (over- rather than under-estimate, to stay wary).
+//   1. expand   — an unseen enemy may have spent a whole turn moving; grow its
+//                 possible set by its full maxAP reach (1 AP = 1 tile), over-
+//                 rather than under-estimating, to stay wary.
 //   2. collapse — pin enemies in view (updating hp, marking witnessed deaths),
 //                 and drop from every unseen enemy's set the tiles we can now
 //                 see (VISION + LOS) but don't find it on.
@@ -55,7 +55,9 @@ export class DoomBelief {
         possible: new Set([k(tp.x, tp.y)]),
         anchor: tp, alive: true, seen: false,
         hp: u.hp ?? 1,
-        reach: Math.max(1, (u.moveRange ?? 3) * (u.maxAP ?? 1)),
+        // maxAP is now a continuous tiles-per-turn budget (1 AP = 1 tile of movement),
+        // so a full turn of movement is just maxAP — no separate moveRange stat.
+        reach: Math.max(1, u.maxAP ?? 3),
       });
     }
     this.lastTurn = null;

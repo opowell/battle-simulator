@@ -63,9 +63,16 @@ function boardToUnits(board) {
 // whatever just captured them. The marker is otherwise freely user-editable
 // (see setManualMarker) — there is no separate "confirmed" vs "guessed"
 // state, just one square-keyed value that starts out true and can be cycled
-// to a different guess at any time. Kept in sync once per real move (in
-// applyActions) — never inside getVisibleState, which the API re-runs on
-// every poll/reload and must stay a pure function of state.
+// to a different guess at any time. The one exception is when the engine
+// itself can rule a guess out with certainty from information it already
+// has (ground-truth board + the move just played): a newly-revealed piece
+// that's the opponent's only one of its type proves any other same-type
+// marker wrong, and watching a tracked piece slide away from a square (still
+// along the same line of sight) proves it isn't there anymore either — both
+// are pruned/carried forward automatically in updateMarkers. Kept in sync
+// once per real move (in applyActions) — never inside getVisibleState,
+// which the API re-runs on every poll/reload and must stay a pure function
+// of state.
 // ---------------------------------------------------------------------------
 
 // Marker values are the single-letter piece codes used by the UI's marker-cycle
@@ -87,21 +94,52 @@ function seedMarkers(board) {
   return markers;
 }
 
-function updateMarkers(prevMarkers, prevBoard, newBoard) {
+function updateMarkers(prevMarkers, prevBoard, newBoard, moved = []) {
   const next = {};
   for (const viewer of ['white', 'black']) {
+    const opponent = viewer === 'white' ? 'black' : 'white';
     const visibleBefore = getVisibleSquares(prevBoard, viewer);
     const visibleAfter  = getVisibleSquares(newBoard, viewer);
     const updated = { ...(prevMarkers[viewer] ?? {}) };
     for (const sq of visibleAfter) delete updated[sq]; // currently seen — the real board shows through
     for (const sq of visibleBefore) {
       if (visibleAfter.has(sq)) continue; // still visible, not a transition
-      // Seed from what the viewer last actually saw (prevBoard), not the post-move
-      // board — otherwise a piece of ours getting captured there would leak the
-      // capturing piece's identity, which was never actually observed.
       const priorPiece = prevBoard[sq];
-      if (priorPiece && priorPiece.ownerId !== viewer) updated[sq] = TYPE_LETTER[priorPiece.type];
-      else delete updated[sq];
+      if (!priorPiece || priorPiece.ownerId === viewer) { delete updated[sq]; continue; }
+      // If we watched this exact piece move away this turn (e.g. it was visible
+      // sliding along a queen's line and stepped to a square still on that line),
+      // we know for certain it isn't still at sq — don't re-seed a stale marker
+      // there. Instead carry the marker to wherever it actually went, unless that
+      // square is itself visible (then the real board already shows it, no marker
+      // needed at all).
+      const move = moved.find(m => m.from === sq);
+      if (move) {
+        // Use the post-move type (not priorPiece's), so a promotion carries the
+        // marker over as the new piece, not the pawn it used to be.
+        const destType = newBoard[move.to]?.type ?? priorPiece.type;
+        if (!visibleAfter.has(move.to)) updated[move.to] = TYPE_LETTER[destType];
+        continue;
+      }
+      // Otherwise seed from what the viewer last actually saw (prevBoard), not the
+      // post-move board — otherwise a piece of ours getting captured there would
+      // leak the capturing piece's identity, which was never actually observed.
+      updated[sq] = TYPE_LETTER[priorPiece.type];
+    }
+    // A piece newly seen at a square proves it isn't anywhere else. If the opponent
+    // has exactly one surviving piece of that type (always true for the king; often
+    // true for others before any promotion), any other marker of the same type is
+    // now known to be stale and can be dropped rather than left as a ghost.
+    for (const sq of visibleAfter) {
+      if (visibleBefore.has(sq)) continue; // not newly revealed this move
+      const piece = newBoard[sq];
+      if (!piece || piece.ownerId !== opponent) continue;
+      const remaining = Object.values(newBoard)
+        .filter(p => p && p.ownerId === opponent && p.type === piece.type).length;
+      if (remaining !== 1) continue;
+      const letter = TYPE_LETTER[piece.type];
+      for (const markerSq of Object.keys(updated)) {
+        if (markerSq !== sq && updated[markerSq] === letter) delete updated[markerSq];
+      }
     }
     next[viewer] = updated;
   }
@@ -214,6 +252,7 @@ export const ChessGame = {
     let board = { ...state.board };
     let { castlingRights, halfMoveClock } = state.gameSpecific;
     let enPassantTarget = null; // cleared by default
+    let moved; // ground-truth {from,to} pairs for updateMarkers — which piece went where
 
     if (action.type === 'castle') {
       const king = board[action.from];
@@ -224,12 +263,14 @@ export const ChessGame = {
       board[action.rookTo] = { ...rook, position: action.rookTo };
       castlingRights = updateCastlingRights(castlingRights, king, action.from);
       halfMoveClock++;
+      moved = [{ from: action.from, to: action.to }, { from: action.rookFrom, to: action.rookTo }];
     } else {
       // Regular move / capture / en passant / promotion
       const piece = board[action.from];
       board[action.from] = undefined;
       const newType = action.payload?.promote ?? piece.type;
       board[action.to] = { ...piece, position: action.to, type: newType };
+      moved = [{ from: action.from, to: action.to }];
 
       if (action.isEnPassant && action.capturedSquare) {
         board[action.capturedSquare] = undefined;
@@ -260,7 +301,7 @@ export const ChessGame = {
     const inCheck = isKingInCheck(board, opponent);
     const newTurn = playerId === 'black' ? state.turnNumber + 1 : state.turnNumber;
     const markers = state.gameSpecific.markers
-      ? updateMarkers(state.gameSpecific.markers, state.board, board)
+      ? updateMarkers(state.gameSpecific.markers, state.board, board, moved)
       : undefined;
 
     return {

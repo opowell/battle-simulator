@@ -81,17 +81,19 @@ function getLegalActions(state, teamId) {
   const actions  = [];
 
   for (const unit of myUnits) {
-    // Move
-    const reachable = getReachable(unit.position, unit.attrs.moveRange, state.units);
+    // Move — remaining AP is a continuous movement budget (1 AP = 1 tile, spent by
+    // exact distance in applyActions), so the discrete candidate set below — used only
+    // by AI search — is capped at however many whole tiles are left, not a fixed stat.
+    const reachable = getReachable(unit.position, Math.floor(num(unit.perTurn.ap)), state.units);
     for (const to of reachable)
       actions.push({ type: 'move', unitId: unit.id, from: unit.position, to });
 
-    // Shoot / Attack
+    // Shoot / Attack — costs a flat AP amount regardless of distance.
     const [range, hasAmmo] = teamId === 'marine'
       ? [WEAPONS[unit.weapon].range, unit.ammo[WEAPONS[unit.weapon].ammoType] >= WEAPONS[unit.weapon].ammoPerShot]
       : [unit.attrs.range, true];
 
-    if (hasAmmo) {
+    if (hasAmmo && unit.perTurn.ap >= unit.attrs.shootCost) {
       for (const enemy of enemies) {
         if (manhattan(unit.position, enemy.position) <= range &&
             hasLOS(unit.position.x, unit.position.y, enemy.position.x, enemy.position.y))
@@ -120,7 +122,7 @@ function isMoveLegal(state, teamId, action) {
   const px = num(unit.position.x), py = num(unit.position.y);
   const x = num(action.to.x), y = num(action.to.y);
   if (!isWalkableContinuous(x, y)) return false;
-  if (Math.hypot(px - x, py - y) > unit.attrs.moveRange) return false;
+  if (Math.hypot(px - x, py - y) > num(unit.perTurn.ap)) return false;
   if (!hasClearLine(px, py, x, y, (qx, qy) => !isWalkableContinuous(qx, qy))) return false;
   if (!isClearOfUnits(x, y, state.units, unit.id)) return false;
   return true;
@@ -140,7 +142,7 @@ function getSearchActions(state, teamId, res) {
   const units = state.units;
   return latticeActions(getLegalActions(state, teamId), {
     type: 'move', point: 'to',
-    origin: a => { const u = units.find(x => x.id === a.unitId); return u ? { x: num(u.position.x), y: num(u.position.y), range: u.attrs.moveRange } : null; },
+    origin: a => { const u = units.find(x => x.id === a.unitId); return u ? { x: num(u.position.x), y: num(u.position.y), range: num(u.perTurn.ap) } : null; },
     isLegal: (a, x, y) => isMoveLegal(state, teamId, { unitId: a.unitId, to: { x, y } }),
   }, res);
 }
@@ -175,11 +177,15 @@ function applyActions(state, playerActions, rng = Math.random) {
     const to = parsePos(action.to);
     units = units.map(u => {
       if (u.id !== action.unitId) return u;
+      // AP is a continuous budget: moving costs exactly the distance travelled (1 AP
+      // per tile), not a flat per-action price — see units.js for the stat rationale.
+      const dist = Math.hypot(num(u.position.x) - num(to.x), num(u.position.y) - num(to.y));
       // Movement-derived heading: a unit faces where it last moved, driving its vision
       // cone (see games/vision.js). A zero-length move keeps the old facing.
-      const dx = num(to.x) - num(u.position.x), dy = num(to.y) - num(u.position.y);
-      const facing = (dx || dy) ? Math.atan2(dy, dx) : u.facing;
-      return { ...u, position: to, facing, perTurn: { ap: u.perTurn.ap - 1 } };
+      const facing = dist > 0
+        ? Math.atan2(num(to.y) - num(u.position.y), num(to.x) - num(u.position.x))
+        : u.facing;
+      return { ...u, position: to, facing, perTurn: { ap: Math.max(0, u.perTurn.ap - dist) } };
     });
 
     // Marines auto-collect an item when they end their move on its tile.
@@ -210,13 +216,13 @@ function applyActions(state, playerActions, rng = Math.random) {
       dmgRange  = wpn.damage;
       isSplash  = wpn.splash ?? false;
       units = units.map(u => u.id === shooter.id
-        ? { ...u, perTurn: { ap: 0 }, ammo: { ...u.ammo, [wpn.ammoType]: u.ammo[wpn.ammoType] - wpn.ammoPerShot } }
+        ? { ...u, perTurn: { ap: Math.max(0, u.perTurn.ap - u.attrs.shootCost) }, ammo: { ...u.ammo, [wpn.ammoType]: u.ammo[wpn.ammoType] - wpn.ammoPerShot } }
         : u);
     } else {
       accuracy = shooter.attrs.accuracy;
       pellets  = shooter.attrs.pellets;
       dmgRange = shooter.attrs.damage;
-      units    = units.map(u => u.id === shooter.id ? { ...u, perTurn: { ap: 0 } } : u);
+      units    = units.map(u => u.id === shooter.id ? { ...u, perTurn: { ap: Math.max(0, u.perTurn.ap - u.attrs.shootCost) } } : u);
     }
 
     // Roll each pellet
@@ -298,7 +304,7 @@ function renderState(state) {
     if (!u.alive) return '@(dead)';
     const wpn = WEAPONS[u.weapon];
     const ammoStr = `${u.ammo[wpn.ammoType]}${wpn.ammoType[0]}`;
-    return `@(${u.hp}hp${u.armor ? ` ${u.armor}arm` : ''} ${u.weapon}:${ammoStr} AP:${u.perTurn.ap})`;
+    return `@(${u.hp}hp${u.armor ? ` ${u.armor}arm` : ''} ${u.weapon}:${ammoStr} AP:${u.perTurn.ap.toFixed(1)})`;
   }).join(' ');
 
   const demonStr = demons.map(u => `${u.attrs.symbol}[${u.id}](${u.hp}hp)`).join('  ') || '(all dead)';
@@ -371,7 +377,7 @@ function createInitialState(players, config = {}) {
       // tracker (belief.js).
       startRoster: units.map(u => ({
         id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position },
-        hp: u.hp, moveRange: u.attrs.moveRange, maxAP: u.attrs.maxAP,
+        hp: u.hp, maxAP: u.attrs.maxAP,
       })),
     },
   };
@@ -385,6 +391,9 @@ function createInitialState(players, config = {}) {
 
 const FLOOR_FILL = '#c8c0a8';
 const ROOM_SHAPES = MAP_ROOMS.map(r => ({ ...r, fill: FLOOR_FILL }));
+
+// Side-panel portraits (single sprite frame each, sourced from doom.fandom.com).
+const UNIT_PORTRAITS = new Set(['doomguy', 'zombieman', 'shotgunner', 'imp', 'demon', 'cacodemon', 'baron']);
 
 function toGrid(state) {
   const { units, gameSpecific: gs } = state;
@@ -407,11 +416,16 @@ function toGrid(state) {
       id: u.id, x: p.x, y: p.y,
       glyph:     u.attrs.symbol,
       unitName:  u.type,
+      facing:    u.facing,
       owner:     pidIdx[gs.teamPlayerMap[u.ownerId]] ?? 0,
       hp:        u.hp,
       maxHp:     u.maxHp,
       job:       u.weapon,
-      moveRange: u.attrs.moveRange,
+      // Remaining AP *is* the remaining move reach now (1 AP = 1 tile) — sending it
+      // here instead of a fixed stat is what makes the client's move-range circle
+      // actually shrink as AP is spent across a turn.
+      moveRange: num(u.perTurn.ap),
+      portraitPath: UNIT_PORTRAITS.has(u.type) ? `/images/doom/units/${u.type}` : undefined,
     };
   });
 

@@ -387,6 +387,9 @@ export const MudAndBloodGame = {
   },
 
   toGrid(state) {
+    // Side-panel portraits (single sprite frame each, sourced from the URB games
+    // fandom wiki's Mud and Blood 2 unit pages — pre-transparent PNGs, no chroma-keying).
+    const UNIT_PORTRAITS = new Set(['rifleman', 'mg', 'sniper', 'medic', 'grenadier', 'mg42', 'officer']);
     const MNB_COLOR = {
       '.': '#c8b87a', '~': '#5a4530', 'o': '#8a7a6a',
       's': '#b8a040', 'T': '#4a3828', '#': '#1a1208',
@@ -417,6 +420,8 @@ export const MudAndBloodGame = {
           color: MNB_COLOR[ch] ?? MNB_COLOR['.'],
           terrain: MNB_TERRAIN[ch] ?? MNB_TERRAIN['.'],
           hp: u?.hp, maxHp: u?.maxHp,
+          unitName: u?.type,
+          portraitPath: u && UNIT_PORTRAITS.has(u.type) ? `/images/mudandblood/units/${u.type}` : undefined,
         });
       }
     }
