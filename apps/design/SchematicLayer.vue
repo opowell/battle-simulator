@@ -1,6 +1,9 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue';
 import UnitFx from './battlefield/UnitFx.vue';
+import FogOverlay from './battlefield/FogOverlay.vue';
+// Vision/fog helpers come from the classic global VISION (apps/design/vision.js, loaded as
+// a <script> in index.html) — vue3-sfc-loader can't parse an ESM `import` of a plain .js.
 
 const props = defineProps({
   field:        Object,
@@ -202,18 +205,15 @@ const fogSquares = computed(() => {
   return out;
 });
 
-// Visible tile set for distance-based square fog (non-chess square-grid games).
+// Field-of-vision tile set for square-grid fog (non-chess). Facing-aware: a unit sees a
+// full disc (no facing) or a heading-limited cone (see vision.js). When a friendly unit is
+// selected only its own vision is shown; otherwise the player's vision (the union of all
+// their units). Continuous maps have no tiles to shade — they use FogOverlay instead.
 const squareFogVisibleSet = computed(() => {
   if (!props.fog || props.field.ui?.gridFog || props.field.grid !== 'square') return null;
-  const W = props.field.world.w, H = props.field.world.h;
-  const sight = W * 0.22;
-  const friends = props.units.filter(u => u.friendly && !u.dead);
-  const visible = new Set();
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++)
-      if (friends.some(f => Math.hypot(f.x - (x + 0.5), f.y - (y + 0.5)) < sight))
-        visible.add(`${x},${y}`);
-  return visible;
+  if (props.field.locationType === 'continuous') return null;
+  const sel = props.revealAll ? null : props.selectedId;
+  return VISION.visibleTileSet(props.field, VISION.visionSources(props.units, viewerId.value, sel));
 });
 
 function tileColor(tile) {
@@ -722,6 +722,13 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
         </g>
       </g>
       </template>
+
+      <!-- Continuous-map fog: a single semi-transparent veil with each shown unit's vision
+           punched out (base terrain → shapes → units → fog). Square grids shade per-tile
+           instead (fogSquares above), so this only runs for continuous maps. -->
+      <FogOverlay v-if="fog && field.locationType === 'continuous'"
+                  :field="field" :fit="fit" :units="units" :rdr="rdr"
+                  :viewerId="viewerId" :selectedId="revealAll ? null : selectedId"/>
 
       <!-- Combat flashes (damage / heal numbers, action pulse) drawn above units -->
       <g v-for="fx in fxList" :key="'fx'+fx.key"

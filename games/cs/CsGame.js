@@ -13,8 +13,9 @@ import {
   isBombsite, hasLOS, euclidean, getReachable, getThrowTargets, renderMap,
   isWalkableContinuous,
 } from './map.js';
-import { getCsBelief } from './belief.js';
+import { getCsBelief, CS_VISION } from './belief.js';
 import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
+import { filterVisibleUnits, orientToEnemies } from '../vision.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 
 
@@ -78,10 +79,12 @@ function makeUnit(id, ownerId, pos) {
 }
 
 function spawnUnits(map) {
-  return [
+  // Orient each side toward the enemy at spawn so vision cones point across the map from
+  // turn 1; facing then follows movement (see the move handler and games/vision.js).
+  return orientToEnemies([
     ...map.tSpawns.map((p, i)  => makeUnit(`T-${i}`,  'T',  p)),
     ...map.ctSpawns.map((p, i) => makeUnit(`CT-${i}`, 'CT', p)),
-  ];
+  ], p => [num(p.x), num(p.y)]);
 }
 
 // ── Legal actions ─────────────────────────────────────────────────────────────
@@ -365,8 +368,14 @@ function applyActions(state, playerActions, rng = Math.random) {
       // action.to: decimal strings (human continuous click) or integer tile (AI); store
       // as the authoritative BigNumber position (see games/coord.js).
       const to = parsePos(action.to);
-      units = units.map(u => u.id === action.unitId
-        ? { ...u, position: to, perTurn: { ...u.perTurn, hasMoved: true } } : u);
+      units = units.map(u => {
+        if (u.id !== action.unitId) return u;
+        // Movement-derived heading drives the unit's vision cone (games/vision.js); a
+        // zero-length move keeps the prior facing.
+        const dx = num(to.x) - num(u.position.x), dy = num(to.y) - num(u.position.y);
+        const facing = (dx || dy) ? Math.atan2(dy, dx) : u.facing;
+        return { ...u, position: to, facing, perTurn: { ...u.perTurn, hasMoved: true } };
+      });
       const s0 = { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
       const rr = getRoundResult(s0);
       if (rr) return startNewRound(s0, rr);
@@ -767,14 +776,11 @@ function withTeam(fn) {
 }
 
 function getVisibleState(state, teamId) {
-  const VISION  = 4;
-  const myUnits = state.units.filter(u => u.alive && u.ownerId === teamId);
+  // Own units + any enemy within an own unit's range and facing cone (CS_VISION, shared
+  // with belief.js so observation and fog sampler agree — see games/vision.js).
   return {
     ...state,
-    units: state.units.filter(u =>
-      u.ownerId === teamId ||
-      myUnits.some(m => Math.max(Math.abs(num(m.position.x) - num(u.position.x)), Math.abs(num(m.position.y) - num(u.position.y))) <= VISION)
-    ),
+    units: filterVisibleUnits(state.units, teamId, CS_VISION, p => [num(p.x), num(p.y)]),
   };
 }
 

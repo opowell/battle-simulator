@@ -244,6 +244,10 @@ function buildField(g, s) {
       path:      [[x, y]],
       facing:    c.facing,
       deathTurn: null,
+      // Per-unit field-of-vision overrides (see apps/design/vision.js) — a game's toGrid
+      // may set these; absent, the unit falls back to the game/default FoV cone + range.
+      fov:           c.fov,
+      visionRange:   c.visionRange,
       mp:            c.mp,
       maxMp:         c.maxMp,
       stats:         c.stats,

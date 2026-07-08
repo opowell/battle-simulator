@@ -3,7 +3,8 @@ import { ABILITIES } from './abilities.js';
 import { JOB_DEFS, createUnit } from './units.js';
 import { createMap, renderMap, getTile } from './map.js';
 import { getReachable, getInRange, getAoeTiles, manhattan, attackDirection } from './grid.js';
-import { getFftaBelief } from './belief.js';
+import { getFftaBelief, FFTA_VISION } from './belief.js';
+import { filterVisibleUnits } from '../vision.js';
 
 // ── Scenario definitions ──────────────────────────────────────────────────────
 
@@ -800,14 +801,11 @@ function createInitialState(players, config = {}) {
 // ── Fog of war ────────────────────────────────────────────────────────────────
 
 function getVisibleState(state, playerId) {
-  const VISION = 2;
-  const myUnits = state.units.filter(u => u.alive && u.ownerId === playerId);
+  // Own units + any enemy within an own unit's range and facing cone. FFTA_VISION is shared
+  // with belief.js so the observation and fog sampler agree — see games/vision.js.
   return {
     ...state,
-    units: state.units.filter(u =>
-      u.ownerId === playerId ||
-      myUnits.some(m => Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= VISION)
-    ),
+    units: filterVisibleUnits(state.units, playerId, FFTA_VISION, p => [p.x, p.y]),
   };
 }
 

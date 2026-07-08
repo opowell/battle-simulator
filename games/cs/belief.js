@@ -27,8 +27,14 @@
 
 import { isWalkable, getReachable } from './map.js';
 import { num, tilePos } from '../coord.js';
+import { chebyshev, seesPoint } from '../vision.js';
 
-const FOG_VISION  = 4;   // matches getVisibleState
+// Field-of-vision config, shared with CsGame.getVisibleState so the belief's visible set
+// matches the observation exactly (see games/vision.js). No LOS test — CS vision is pure
+// Chebyshev range, as it always has been.
+export const CS_VISION = { range: 4, fovDegrees: 90, metric: chebyshev };
+
+const FOG_VISION  = CS_VISION.range;   // matches getVisibleState
 const MOVE_RANGE   = 4;  // a unit moves up to this far per turn
 const MAX_POSSIBLE = 40; // cap a piece's possible-tile set so sampling stays cheap
 const THREAT_BIAS  = 3;  // over-sample tiles near our players
@@ -68,15 +74,19 @@ export class CsBelief {
     });
   }
 
-  // Tiles our team can currently see (Chebyshev VISION around each live unit).
+  // Tiles our team can currently see: within each live unit's Chebyshev range AND (once a
+  // unit has a heading) its facing cone — the same seesPoint predicate getVisibleState uses.
   _visionSet(observation) {
     const vis = new Set();
     for (const m of observation.units) {
       if (!m.alive || m.ownerId !== this.myTeam) continue;
       const mt = tilePos(m.position);
+      const viewer = { x: mt.x, y: mt.y, facing: m.facing, fov: m.fov, visionRange: m.visionRange };
       for (let dy = -FOG_VISION; dy <= FOG_VISION; dy++)
-        for (let dx = -FOG_VISION; dx <= FOG_VISION; dx++)
-          vis.add(k(mt.x + dx, mt.y + dy));
+        for (let dx = -FOG_VISION; dx <= FOG_VISION; dx++) {
+          const x = mt.x + dx, y = mt.y + dy;
+          if (seesPoint(viewer, x, y, CS_VISION)) vis.add(k(x, y));
+        }
     }
     return vis;
   }
