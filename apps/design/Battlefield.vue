@@ -65,7 +65,29 @@ function pointInShape(s, px, py) {
 function selectUnit(id) {
   selectedId.value = id;
   if (id) { selectedSquare.value = null; selectedShape.value = null; }
+  aiming.value = null;
 }
+
+// ── aiming (throw/shoot: pick a button, then a spot/direction on the map) ───────
+// See ActionsPanel's 'aim' emit (a button for an action type in field.ui.aimedActionTypes)
+// and SchematicLayer's aiming overlay (throw arc + blast preview, or shoot's aim ray).
+const aiming = ref(null);
+
+function startAim(action) {
+  if (action.type === 'throw') {
+    aiming.value = {
+      type: 'throw', unitId: action.unitId, grenade: action.grenade,
+      range: action.range, blastRadius: action.blastRadius,
+    };
+  } else if (action.type === 'shoot') {
+    aiming.value = {
+      type: 'shoot', unitId: action.unitId, range: action.range,
+      candidates: legalActions.value.filter(a => a.type === 'shoot' && a.unitId === action.unitId),
+    };
+  }
+}
+
+function cancelAim() { aiming.value = null; }
 
 // ── game-over overlay ─────────────────────────────────────────
 const dismissedResult = ref(false);
@@ -90,6 +112,7 @@ watch(() => props.liveState?.id, () => {
   revealAll.value = false;
   selectedSquare.value = null;
   selectedShape.value = null;
+  aiming.value = null;
 }, { immediate: true });
 
 watch(() => props.historyFields, (h) => {
@@ -147,6 +170,7 @@ function toggleReveal() {
   selectedId.value = null;
   selectedSquare.value = null;
   selectedShape.value = null;
+  aiming.value = null;
   histPos.value = Math.max(0, histLength.value - 1);
 }
 
@@ -292,6 +316,33 @@ function handleSetMarker(col, row, type) {
 }
 
 function handleSqClick(col, row, x, y) {
+  if (aiming.value && x != null && y != null) {
+    const u = displayUnits.value.find(un => un.id === aiming.value.unitId);
+    if (u) {
+      if (aiming.value.type === 'throw') {
+        // Same continuous-point rule as move above: gate on range client-side so an
+        // out-of-range click just cancels aiming; the server (isThrowLegal) is the
+        // real authority (walls etc.).
+        if (Math.hypot(x - u.x, y - u.y) <= (aiming.value.range ?? Infinity))
+          submitAction({ type: 'throw', unitId: u.id, grenade: aiming.value.grenade, target: { x: String(x), y: String(y) } });
+      } else if (aiming.value.type === 'shoot') {
+        // "Choose a direction": fire at whichever legal target's bearing from the unit
+        // is closest to the clicked point's bearing, not whatever's exactly under the pixel.
+        const ang = Math.atan2(y - u.y, x - u.x);
+        let best = null, bestDiff = Infinity;
+        for (const a of aiming.value.candidates) {
+          const t = displayUnits.value.find(un => un.id === a.targetId);
+          if (!t) continue;
+          let diff = Math.abs(ang - Math.atan2(t.y - u.y, t.x - u.x));
+          if (diff > Math.PI) diff = 2 * Math.PI - diff;
+          if (diff < bestDiff) { bestDiff = diff; best = a; }
+        }
+        if (best) submitAction(best);
+      }
+    }
+    aiming.value = null;
+    return;
+  }
   if (isPending.value && selectedId.value) {
     // Continuous-location maps (see games/coord.js): movement is a straight-line slide to
     // the exact point clicked — no grid to snap to. The server (each game's isActionLegal)
@@ -439,7 +490,8 @@ function scrub(e) {
 function onKeyDown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Escape') {
-    if (infoAbility.value)      infoAbility.value = null;
+    if (aiming.value)           aiming.value = null;
+    else if (infoAbility.value) infoAbility.value = null;
     else if (infoUnit.value)    infoUnit.value = null;
     else if (showHelp.value)    showHelp.value = false;
     else showMenu.value = !showMenu.value;
@@ -490,7 +542,8 @@ onUnmounted(() => {
           :selectedId="selectedId" :activeUnitId="activeUnitId" :ui="ui"
           :unitMoves="unitMoves" :displayedActions="displayedActions"
           :pendingPlayerId="pendingPlayerId" :liveState="liveState" :units="displayUnits"
-          @submit="submitAction"/>
+          :aiming="aiming"
+          @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim"/>
       </div>
 
       <!-- Stage -->
@@ -515,6 +568,7 @@ onUnmounted(() => {
           :revealAll="revealAll" :viewerTeam="viewerTeam"
           :selectedEmptySquare="selectedSquare"
           :selectedShape="selectedShape"
+          :aiming="aiming"
           @select="selectUnit"
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>

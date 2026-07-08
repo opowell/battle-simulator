@@ -20,11 +20,12 @@
 
 import { getReachable, hasLOS } from './map.js';
 import { tilePos, num } from '../coord.js';
-import { chebyshev, anySeesPoint } from '../vision.js';
+import { euclidean, anySeesPoint } from '../vision.js';
 
 // Field-of-vision config, shared with DoomGame.getVisibleState (imported there) so the
-// belief hides exactly the tiles the observation hides — see games/vision.js.
-export const DOOM_VISION = { range: 6, fovDegrees: 90, metric: chebyshev, hasLOS };
+// belief hides exactly the tiles the observation hides — see games/vision.js. Euclidean
+// range (a circle), matching the design UI's fog veil so reveal and veil agree exactly.
+export const DOOM_VISION = { range: 6, fovDegrees: 90, metric: euclidean, hasLOS };
 
 const VISION       = DOOM_VISION.range;
 const MAX_POSSIBLE = 40;  // cap a unit's possible-tile set so sampling stays cheap

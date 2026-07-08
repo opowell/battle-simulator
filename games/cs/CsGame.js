@@ -10,12 +10,13 @@ import {
 } from './weapons.js';
 import {
   MAPS,
-  isBombsite, hasLOS, euclidean, getReachable, getThrowTargets, renderMap,
+  isBombsite, euclidean, getReachable, renderMap,
   isWalkableContinuous,
 } from './map.js';
-import { getCsBelief, CS_VISION } from './belief.js';
+import { getCsBelief, CS_VISION, csVisionCfg, csLosBlockers } from './belief.js';
 import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { filterVisibleUnits, orientToEnemies } from '../vision.js';
+import { segmentClearOf } from '../terrainShapes.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 
 
@@ -32,19 +33,18 @@ function calcDamage(raw, unit) {
   return Math.round(raw * (1 - reduction));
 }
 
-// Zone centres can be continuous (a grenade thrown to an exact point); the tile-key
-// membership sets they feed are integer-keyed, so snap each centre to its tile.
-function buildSmokeSet(smokeZones) {
-  const s = new Set();
-  for (const sz of smokeZones) {
-    const cx = tileNum(sz.x), cy = tileNum(sz.y);
-    for (let dy = -SMOKE_RADIUS; dy <= SMOKE_RADIUS; dy++)
-      for (let dx = -SMOKE_RADIUS; dx <= SMOKE_RADIUS; dx++)
-        s.add(`${cx + dx},${cy + dy}`);
-  }
-  return s;
+// Blast/effect radius shown as an aim preview when throwing (see toGrid's throw
+// action + the design UI's aiming overlay). Decoy has no area effect.
+function grenadeBlastRadius(gid) {
+  if (gid === 'he') return HE_RADIUS;
+  if (gid === 'flash') return FLASH_RADIUS;
+  if (gid === 'smoke') return SMOKE_RADIUS;
+  if (gid === 'molotov' || gid === 'incendiary') return FIRE_RADIUS;
+  return 0;
 }
 
+// Zone centres can be continuous (a grenade thrown to an exact point); the tile-key
+// membership sets they feed are integer-keyed, so snap each centre to its tile.
 function buildFireSet(fireZones) {
   const s = new Set();
   for (const fz of fireZones) {
@@ -142,11 +142,11 @@ function buyActions(state, teamId) {
 }
 
 function actionPhaseActions(state, teamId) {
-  const { map: { tiles, width, height } } = state.gameSpecific;
+  const { map: { tiles } } = state.gameSpecific;
   const myUnits  = state.units.filter(u => u.alive && u.ownerId === teamId);
   const actions  = [];
   const bomb     = state.gameSpecific.bomb;
-  const smokeSet = buildSmokeSet(state.gameSpecific.smokeZones ?? []);
+  const losBlockers = csLosBlockers(state.gameSpecific.map, state.gameSpecific.smokeZones ?? []);
 
   for (const u of myUnits) {
     if (!u.perTurn.hasMoved) {
@@ -155,14 +155,15 @@ function actionPhaseActions(state, teamId) {
     }
 
     if (!u.perTurn.hasActed) {
-      // Shoot (not available while blinded or out of ammo in the magazine)
+      // Shoot (not available while blinded or out of ammo in the magazine). Line of sight
+      // is the exact continuous test against walls + smoke (matches getVisibleState).
       if (!u.blinded && u.ammo.mag > 0) {
         const enemies = state.units.filter(e => e.alive && e.ownerId !== teamId);
         const wpn     = WEAPONS[u.weapon];
         for (const e of enemies) {
           if (euclidean(u.position, e.position) <= wpn.range &&
-              hasLOS(tiles, u.position.x, u.position.y, e.position.x, e.position.y, smokeSet))
-            actions.push({ type: 'shoot', unitId: u.id, targetId: e.id });
+              segmentClearOf(num(u.position.x), num(u.position.y), num(e.position.x), num(e.position.y), losBlockers))
+            actions.push({ type: 'shoot', unitId: u.id, targetId: e.id, range: wpn.range });
         }
       }
 
@@ -173,11 +174,19 @@ function actionPhaseActions(state, teamId) {
           actions.push({ type: 'reload', unitId: u.id });
       }
 
-      // Throw grenades (usable even while blinded)
+      // Throw grenades (usable even while blinded): one representative action per
+      // grenade type held, not a tile lattice — RandomAgent expands this into exact
+      // continuous points itself (see RandomAgent.js's getSearchActions fallback,
+      // same lattice the Obscuro search uses), and the human UI aims freely at any
+      // exact point within range (see isThrowLegal). icon/name/range/blastRadius let
+      // the design UI's aiming overlay describe the throw before a point is chosen.
       for (const [gid, count] of Object.entries(u.grenades ?? {})) {
         if (!count) continue;
-        for (const target of getThrowTargets(tiles, width, height, u.position, GRENADE_THROW_RANGE))
-          actions.push({ type: 'throw', unitId: u.id, grenade: gid, target });
+        actions.push({
+          type: 'throw', unitId: u.id, grenade: gid,
+          icon: WEAPON_ICON(gid), name: GRENADES[gid].name,
+          range: GRENADE_THROW_RANGE, blastRadius: grenadeBlastRadius(gid),
+        });
       }
 
       // Plant bomb (T only, at bombsite)
@@ -438,7 +447,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       const { grenade } = action;
       // target: decimal strings (human continuous click) or integer tile (AI candidate).
       const target = parsePos(action.target);
-      const smokeSet = buildSmokeSet(smokeZones);
+      const losBlockers = csLosBlockers(gs.map, smokeZones);
 
       // Consume grenade and mark hasActed
       units = units.map(u => u.id === action.unitId
@@ -464,7 +473,7 @@ function applyActions(state, playerActions, rng = Math.random) {
         units = units.map(u => {
           if (!u.alive || u.ownerId === playerId) return u;
           if (euclidean(u.position, target) <= FLASH_RADIUS &&
-              hasLOS(tiles, u.position.x, u.position.y, target.x, target.y, smokeSet))
+              segmentClearOf(num(u.position.x), num(u.position.y), num(target.x), num(target.y), losBlockers))
             return { ...u, blinded: FLASH_BLIND_TURNS };
           return u;
         });
@@ -743,14 +752,13 @@ function toGrid(state) {
     };
   });
 
-  // Occluder geometry for the client's fog/reach renderer, so vision stops at walls
-  // instead of bleeding through them. Shape maps expose their authored wall geometry
-  // (blockShapes) so ovals like the furnace pit occlude exactly; hand-laid grid maps
-  // fall back to the rasterized wall tiles. (Smoke also blocks in-engine but is
-  // transient and drawn as its own effect shape, so it's left out of the static set.)
+  // Occluder geometry for the client's fog/reach renderer — the SAME shapes the engine's
+  // getVisibleState blocks sight on (csLosBlockers: authored walls incl. ovals like the
+  // furnace pit, plus active smoke clouds), so the drawn veil hides exactly what the
+  // engine hides. Hand-laid grid maps (none currently) fall back to rasterized wall tiles.
   let los;
   if (gs.map.terrainShapes) {
-    los = { blockShapes: gs.map.terrainShapes.filter(s => s.tile === 'wall').map(({ shape, x, y, w, h }) => ({ shape, x, y, w, h })) };
+    los = { blockShapes: csLosBlockers(gs.map, gs.smokeZones ?? []) };
   } else {
     const blocked = [];
     for (let y = 0; y < height; y++)
@@ -762,7 +770,14 @@ function toGrid(state) {
   return {
     width, height, locationType: 'continuous', cells, units: unitList,
     shapes: [...(gs.map.shapes ?? []), ...effectShapes(gs)],
-    ui: { hideGrid: true },
+    // Hand the veil the SAME sight range + cone the engine reveals with (CS_VISION), so the
+    // drawn vision matches getVisibleState exactly (both Euclidean now).
+    // Shoot/throw pick a button first, then a location/direction on the map itself
+    // (see the design UI's aiming overlay) instead of listing one button per legal
+    // target/tile — those two actions carry continuous aim points or resolve to a
+    // target by click direction, so they don't fit a flat action list.
+    ui: { hideGrid: true, visionRange: CS_VISION.range, fovDegrees: CS_VISION.fovDegrees,
+          aimedActionTypes: ['throw', 'shoot'] },
     los,
   };
 }
@@ -824,11 +839,13 @@ function withTeam(fn) {
 }
 
 function getVisibleState(state, teamId) {
-  // Own units + any enemy within an own unit's range and facing cone (CS_VISION, shared
-  // with belief.js so observation and fog sampler agree — see games/vision.js).
+  // Own units + any enemy within an own unit's range and facing cone AND line of sight
+  // (walls + smoke). csVisionCfg is shared with belief.js so observation and fog sampler
+  // agree — see games/vision.js.
+  const cfg = csVisionCfg(state.gameSpecific.map, state.gameSpecific.smokeZones ?? []);
   return {
     ...state,
-    units: filterVisibleUnits(state.units, teamId, CS_VISION, p => [num(p.x), num(p.y)]),
+    units: filterVisibleUnits(state.units, teamId, cfg, p => [num(p.x), num(p.y)]),
   };
 }
 

@@ -12,8 +12,34 @@ const props = defineProps({
   pendingPlayerId:  { type: String, default: null },
   liveState:        Object,
   units:            { type: Array, default: () => [] },
+  // Set while the player is aiming a "button → pick a spot on the map" action (see
+  // Battlefield.vue's `aiming`) — swaps the action list for a cancel prompt.
+  aiming:           { type: Object, default: null },
 });
-defineEmits(['submit']);
+defineEmits(['submit', 'aim', 'cancel-aim']);
+
+// Action types listed in field.ui.aimedActionTypes resolve their target by clicking
+// the map (see SchematicLayer.vue's aiming overlay) instead of one button per legal
+// instance — collapse each into a single representative button per unit here (CS
+// lists every not-yet-acted unit's legal actions at once, not just the selected
+// one, so the key must include unitId). 'throw' groups by grenade type too (one
+// button per grenade held); 'shoot' collapses every targetId to one button.
+const aimedActions = computed(() => {
+  const types = new Set(props.ui?.aimedActionTypes ?? []);
+  if (!types.size) return props.displayedActions;
+  const seen = new Set();
+  const out = [];
+  for (const action of props.displayedActions) {
+    if (!types.has(action.type)) { out.push(action); continue; }
+    const key = `${action.type}:${action.unitId}:${action.grenade ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(action.type === 'shoot'
+      ? { type: 'shoot', unitId: action.unitId, icon: action.icon, range: action.range, __aim: true }
+      : { ...action, __aim: true });
+  }
+  return out;
+});
 
 const teamMoney = computed(() => {
   const gs = props.liveState?.gameSpecific;
@@ -39,6 +65,7 @@ function fmtAction(action) {
     const label = target ? (target.unitName ?? target.name ?? target.id) : action.targetId;
     return `Shoot ${label}`;
   }
+  if (t === 'throw')     return action.name ? `Throw ${action.name}` : 'Throw Grenade';
   if (t === 'buy')       return action.name ? `Buy ${action.name} → ${action.unitId}` : `Buy ${action.item ?? ''} → ${action.unitId}`;
   if (t === 'end-buy')   return 'Done Buying';
   if (t === 'end-turn')  return action.direction ? `End Turn · Face ${action.direction}` : 'End Turn';
@@ -80,21 +107,31 @@ function fmtAction(action) {
         Choose action for <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
         <span v-if="teamMoney != null" class="mono" style="color:var(--ok)">${{teamMoney}}</span>
       </div>
-      <div v-if="unitMoves.length" class="mono"
-           style="font-size:10px;color:var(--faint);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">
-        Tap a highlighted square to move
-      </div>
-      <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
-        <button v-for="(action, i) in displayedActions" :key="i"
-                class="action-btn"
-                style="font-size:11px;font-family:var(--mono);display:flex;align-items:center;gap:6px"
-                @click="$emit('submit', action)">
-          <img v-if="action.icon" :src="action.icon" alt=""
-               style="width:20px;height:20px;object-fit:contain;flex-shrink:0"/>
-          {{fmtAction(action)}}
-        </button>
-        <div v-if="!displayedActions.length" style="font-size:11px;color:var(--faint)">No actions.</div>
-      </div>
+      <template v-if="aiming">
+        <div class="mono"
+             style="font-size:10px;color:var(--accent);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">
+          {{aiming.type === 'throw' ? 'Click the map to throw' : 'Click the map to aim'}}
+        </div>
+        <button class="action-btn" style="font-size:11px;font-family:var(--mono)"
+                @click="$emit('cancel-aim')">Cancel</button>
+      </template>
+      <template v-else>
+        <div v-if="unitMoves.length" class="mono"
+             style="font-size:10px;color:var(--faint);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">
+          Tap a highlighted square to move
+        </div>
+        <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+          <button v-for="(action, i) in aimedActions" :key="i"
+                  class="action-btn"
+                  style="font-size:11px;font-family:var(--mono);display:flex;align-items:center;gap:6px"
+                  @click="action.__aim ? $emit('aim', action) : $emit('submit', action)">
+            <img v-if="action.icon" :src="action.icon" alt=""
+                 style="width:20px;height:20px;object-fit:contain;flex-shrink:0"/>
+            {{fmtAction(action)}}
+          </button>
+          <div v-if="!aimedActions.length" style="font-size:11px;color:var(--faint)">No actions.</div>
+        </div>
+      </template>
     </template>
     <template v-else-if="isPending">
       <div style="font-size:11px;color:var(--dim)">

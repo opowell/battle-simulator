@@ -1,4 +1,4 @@
-import { forEachCell, pointInShape } from '../terrainShapes.js';
+import { forEachCell, pointInShape, segmentInUnion } from '../terrainShapes.js';
 import { num, tileNum } from '../coord.js';
 
 export const MAP_WIDTH  = 20;
@@ -52,22 +52,12 @@ export function isWalkable(x, y) {
   return MAP_TILES[k(tileNum(x), tileNum(y))] === 'floor';
 }
 
-// Bresenham LOS — returns false if any intermediate tile is a wall
-// Bresenham needs integer endpoints to terminate — unit positions can now be
-// continuous (free-form movement), so snap to the tile each endpoint sits in.
+// Exact continuous LOS: clear iff the straight sight line stays inside the floor (the
+// union of the authored room shapes). Replaces the old tile-Bresenham version so the
+// engine's reveal/shoot checks match the design UI's exact vision veil — e.g. the oval
+// arena's narrow cusp entrance genuinely occludes rather than a rasterized wide opening.
 export function hasLOS(x0, y0, x1, y1) {
-  x0 = tileNum(x0); y0 = tileNum(y0); x1 = tileNum(x1); y1 = tileNum(y1);
-  const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-  let err = dx - dy, cx = x0, cy = y0;
-  while (cx !== x1 || cy !== y1) {
-    const e2 = 2 * err;
-    if (e2 > -dy) { err -= dy; cx += sx; }
-    if (e2 <  dx) { err += dx; cy += sy; }
-    if (cx === x1 && cy === y1) break;
-    if (MAP_TILES[k(cx, cy)] === 'wall') return false;
-  }
-  return true;
+  return segmentInUnion(num(x0), num(y0), num(x1), num(y1), MAP_ROOMS);
 }
 
 // BFS movement — returns reachable floor tiles within range steps. This still builds

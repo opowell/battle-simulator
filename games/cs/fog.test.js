@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CsGame } from './index.js';
 import { isWalkable } from './map.js';
-import { CsBelief, CS_VISION } from './belief.js';
+import { CsBelief, CS_VISION, csVisionCfg } from './belief.js';
 import { anySeesPoint, viewersOf } from '../vision.js';
 import { num } from '../coord.js';
 import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
@@ -10,10 +10,13 @@ import { RandomAgent } from '../../agents/RandomAgent.js';
 import { GameEngine } from '../../engine/index.js';
 
 const players = () => [{ id: 'p1', name: 'T' }, { id: 'p2', name: 'CT' }];
-// Mirror the game's real visibility (Chebyshev range + facing cone) so the fog oracle
-// stays in lockstep with getVisibleState — the shared games/vision.js predicate.
-const canSee = (units, owner, pos) =>
-  anySeesPoint(viewersOf(units, owner, CS_VISION, p => [num(p.x), num(p.y)]), num(pos.x), num(pos.y), CS_VISION);
+// Mirror the game's real visibility (Chebyshev range + facing cone + walls/smoke LOS) so
+// the fog oracle stays in lockstep with getVisibleState — the shared games/vision.js
+// predicate, built from the observation's map/smoke via csVisionCfg.
+const canSee = (obs, owner, pos) => {
+  const cfg = csVisionCfg(obs.gameSpecific.map, obs.gameSpecific.smokeZones ?? []);
+  return anySeesPoint(viewersOf(obs.units, owner, cfg, p => [num(p.x), num(p.y)]), num(pos.x), num(pos.y), cfg);
+};
 
 test('cs fog: getVisibleState hides distant enemies', () => {
   const s = CsGame.createInitialState(players(), { fogOfWar: true, mapId: 'dust2' });
@@ -27,10 +30,11 @@ test('cs fog: a facing player sees ahead within its cone but not behind', () => 
   // Spread a real state for its teamMap (getVisibleState is team-wrapped); swap in a
   // controlled roster. Positions can be plain numbers — num() accepts them.
   const base = CsGame.createInitialState(players(), { fogOfWar: true, mapId: 'dust2' });
+  // Open, line-of-sight-clear row on dust2 so the cone (not a wall) decides visibility.
   const state = { ...base, units: [
-    { id: 'me',     ownerId: 'T',  alive: true, position: { x: 10, y: 5 }, facing: 0 }, // faces east
-    { id: 'ahead',  ownerId: 'CT', alive: true, position: { x: 12, y: 5 } },           // 2 east, in range+cone
-    { id: 'behind', ownerId: 'CT', alive: true, position: { x: 8,  y: 5 } },           // 2 west, behind
+    { id: 'me',     ownerId: 'T',  alive: true, position: { x: 4, y: 7 }, facing: 0 }, // faces east
+    { id: 'ahead',  ownerId: 'CT', alive: true, position: { x: 6, y: 7 } },           // 2 east, in range+cone
+    { id: 'behind', ownerId: 'CT', alive: true, position: { x: 2, y: 7 } },           // 2 west, behind
   ] };
   const seen = CsGame.getVisibleState(state, base.activePlayers[0]).units.map(u => u.id);
   assert.ok(seen.includes('ahead'),   'enemy ahead within the cone is visible');
@@ -50,7 +54,7 @@ test('cs fog: sampleWorlds places walkable, hidden enemies', () => {
     assert.ok(lurkers.length <= 5, 'no more than the enemy roster');
     for (const L of lurkers) {
       assert.ok(isWalkable(tiles, L.position.x, L.position.y), 'lurker on a walkable tile');
-      assert.ok(!canSee(view.units, 'T', L.position), 'lurker is outside our vision (else we would see it)');
+      assert.ok(!canSee(view, 'T', L.position), 'lurker is outside our vision (else we would see it)');
     }
   }
 });

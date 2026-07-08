@@ -27,12 +27,36 @@
 
 import { isWalkable, getReachable } from './map.js';
 import { num, tilePos } from '../coord.js';
-import { chebyshev, seesPoint } from '../vision.js';
+import { euclidean, seesPoint } from '../vision.js';
+import { segmentClearOf } from '../terrainShapes.js';
+import { SMOKE_RADIUS } from './weapons.js';
 
 // Field-of-vision config, shared with CsGame.getVisibleState so the belief's visible set
-// matches the observation exactly (see games/vision.js). No LOS test — CS vision is pure
-// Chebyshev range, as it always has been.
-export const CS_VISION = { range: 4, fovDegrees: 90, metric: chebyshev };
+// matches the observation exactly (see games/vision.js): Euclidean range (a circle,
+// matching the design UI veil) + facing cone + line-of-sight blocked by walls (the
+// authored wall shapes) and smoke clouds.
+export const CS_VISION = { range: 4, fovDegrees: 90, metric: euclidean };
+
+// The opaque shapes that block CS sight: the map's authored walls plus every active smoke
+// cloud (an oval of SMOKE_RADIUS). Used both server-side and by the design UI's fog veil,
+// so what the veil hides is exactly what the engine hides.
+export function csLosBlockers(map, smokeZones = []) {
+  const out = [];
+  for (const s of map.terrainShapes ?? [])
+    if (s.tile === 'wall') out.push({ shape: s.shape, x: s.x, y: s.y, w: s.w, h: s.h });
+  for (const sz of smokeZones) {
+    const cx = num(sz.x), cy = num(sz.y);
+    out.push({ shape: 'oval', x: cx - SMOKE_RADIUS, y: cy - SMOKE_RADIUS, w: 2 * SMOKE_RADIUS, h: 2 * SMOKE_RADIUS });
+  }
+  return out;
+}
+
+// CS_VISION plus a state-specific line-of-sight test (walls + smoke). Both getVisibleState
+// and the belief sampler build this from the same map/smoke so they never drift.
+export function csVisionCfg(map, smokeZones = []) {
+  const blockers = csLosBlockers(map, smokeZones);
+  return { ...CS_VISION, hasLOS: (ax, ay, bx, by) => segmentClearOf(ax, ay, bx, by, blockers) };
+}
 
 const FOG_VISION  = CS_VISION.range;   // matches getVisibleState
 const MOVE_RANGE   = 4;  // a unit moves up to this far per turn
@@ -78,6 +102,7 @@ export class CsBelief {
   // unit has a heading) its facing cone — the same seesPoint predicate getVisibleState uses.
   _visionSet(observation) {
     const vis = new Set();
+    const cfg = csVisionCfg(this.map, observation.gameSpecific?.smokeZones ?? []);
     for (const m of observation.units) {
       if (!m.alive || m.ownerId !== this.myTeam) continue;
       const mt = tilePos(m.position);
@@ -85,7 +110,7 @@ export class CsBelief {
       for (let dy = -FOG_VISION; dy <= FOG_VISION; dy++)
         for (let dx = -FOG_VISION; dx <= FOG_VISION; dx++) {
           const x = mt.x + dx, y = mt.y + dy;
-          if (seesPoint(viewer, x, y, CS_VISION)) vis.add(k(x, y));
+          if (seesPoint(viewer, x, y, cfg)) vis.add(k(x, y));
         }
     }
     return vis;
