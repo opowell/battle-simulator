@@ -20,6 +20,7 @@ import { fileURLToPath }         from 'node:url';
 import { WebSocketServer } from './vendor/ws/wrapper.mjs';
 
 import { GameEngine } from './engine/index.js';
+import { validate as validateAction } from './engine/ActionValidator.js';
 import { RandomAgent } from './agents/index.js';
 import { ApiAgent } from './agents/ApiAgent.js';
 import { ObscuroAgent } from './agents/ObscuroAgent.js';
@@ -529,6 +530,18 @@ async function handleSubmitAction(req, res, id) {
   const agent = session.apiAgents.get(playerId);
   if (!agent) return err(res, 400, `Player ${playerId} is not a human player in this session`);
   if (!agent.pending) return err(res, 409, `Not waiting for player ${playerId} — current pending: ${session.pendingAction()?.playerId ?? 'none'}`);
+
+  // Validate before consuming the pending promise: the engine re-validates this same
+  // action once the agent's chooseAction() resolves, but by then it's too late to reject
+  // gracefully — an illegal action (e.g. a continuous-move click that clips a wall corner)
+  // would throw inside the session's run loop and permanently end the game as an error,
+  // surfacing to players as a bogus "Draw". Rejecting it here as a 400 instead leaves the
+  // agent pending so the player can just try a different action.
+  try {
+    validateAction(action, agent.pending.legalActions, GAMES[session.gameName].game, session.engine.state, playerId);
+  } catch (e) {
+    return err(res, 400, e.message);
+  }
 
   try {
     agent.submit(action);

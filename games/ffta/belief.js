@@ -20,8 +20,14 @@
 
 import { getTile } from './map.js';
 import { JOB_DEFS } from './units.js';
+import { chebyshev, seesPoint } from '../vision.js';
 
-const VISION       = 2;   // matches getVisibleState
+// Field-of-vision config, shared with FFTAGame.getVisibleState. FFTA units always carry a
+// cardinal `facing` (used for attack-direction bonuses too), so vision is a 90° cone by
+// default — see games/vision.js.
+export const FFTA_VISION = { range: 2, fovDegrees: 90, metric: chebyshev };
+
+const VISION       = FFTA_VISION.range;   // matches getVisibleState
 const MAX_POSSIBLE = 30;
 const THREAT_BIAS  = 3;
 const DIRS = [[-1,0],[1,0],[0,-1],[0,1]]; // orthogonal only, matches grid.js
@@ -84,9 +90,12 @@ export class FftaBelief {
     const vis = new Set();
     for (const m of observation.units) {
       if (!m.alive || m.ownerId !== this.myId) continue;
+      const viewer = { x: m.position.x, y: m.position.y, facing: m.facing, fov: m.fov, visionRange: m.visionRange };
       for (let dy = -VISION; dy <= VISION; dy++)
-        for (let dx = -VISION; dx <= VISION; dx++)
-          vis.add(k(m.position.x + dx, m.position.y + dy));
+        for (let dx = -VISION; dx <= VISION; dx++) {
+          const x = m.position.x + dx, y = m.position.y + dy;
+          if (seesPoint(viewer, x, y, FFTA_VISION)) vis.add(k(x, y));
+        }
     }
     return vis;
   }

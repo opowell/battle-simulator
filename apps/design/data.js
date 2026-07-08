@@ -115,6 +115,59 @@ function makeFitter(world, box, pad) {
   return { s, x: (wx) => ox + wx*s, y: (wy) => oy + wy*s, len: (w) => w*s };
 }
 
+/* ==================== UNIT MARKER SHAPES ==================== */
+// Generic markers (see SchematicLayer/IsoLayer's facingActive — shown instead of a letter
+// once a game's facing arrow is on) still need to tell unit types apart at a glance. Hashing
+// the type name into a small shape palette does that with zero per-game configuration,
+// instead of hand-authoring a shape table per game (see feedback_generic_difficulty: prefer
+// one generic algorithm over per-case special-casing).
+const MARKER_SHAPES = ['dot', 'square', 'diamond', 'triangle', 'star', 'ring', 'hex'];
+
+function hashStr(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function markerShapeFor(type) {
+  return MARKER_SHAPES[hashStr(String(type)) % MARKER_SHAPES.length];
+}
+
+// Vertices of a regular polygon centred on the origin, `rotationDeg` pointing the first
+// vertex (default: straight up, matching how a triangle/star/hex "point" reads visually).
+function regularPolygonPoints(r, sides, rotationDeg) {
+  const rot = ((rotationDeg ?? -90) * Math.PI) / 180;
+  const pts = [];
+  for (let i = 0; i < sides; i++) {
+    const a = rot + (i * 2 * Math.PI) / sides;
+    pts.push(`${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`);
+  }
+  return pts.join(' ');
+}
+
+function starPoints(rOuter, rInner, points) {
+  points = points ?? 5;
+  const pts = [];
+  for (let i = 0; i < points * 2; i++) {
+    const r = i % 2 === 0 ? rOuter : rInner;
+    const a = -Math.PI / 2 + (i * Math.PI) / points;
+    pts.push(`${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`);
+  }
+  return pts.join(' ');
+}
+
+// Render spec for a marker shape at bounding radius `r`: a single <circle> ('circle'), an
+// outer ring + inner dot ('ring'), or a single <polygon> ('polygon', points precomputed).
+function markerGlyph(shape, r) {
+  if (shape === 'ring')     return { kind: 'ring', rOuter: r, rInner: r * 0.42 };
+  if (shape === 'square')   return { kind: 'polygon', points: regularPolygonPoints(r * 0.95, 4, 45) };
+  if (shape === 'diamond')  return { kind: 'polygon', points: regularPolygonPoints(r, 4, -90) };
+  if (shape === 'triangle') return { kind: 'polygon', points: regularPolygonPoints(r * 1.05, 3, -90) };
+  if (shape === 'hex')      return { kind: 'polygon', points: regularPolygonPoints(r, 6, -90) };
+  if (shape === 'star')     return { kind: 'polygon', points: starPoints(r * 1.15, r * 0.48, 5) };
+  return { kind: 'circle', r };
+}
+
 /* ==================== UNIT SIMULATION ==================== */
 function computeUnits(field, t) {
   const T = field.turns - 1;
@@ -144,4 +197,5 @@ function computeUnits(field, t) {
 Object.assign(window, {
   ICON_PATHS, RDR,
   computeUnits, makeFitter, samplePath, lerp,
+  markerShapeFor, markerGlyph,
 });

@@ -3,8 +3,10 @@ import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
 import { resolveAttack, resolveAttackVsBuilding, inRange, chebyshev } from './combat.js';
-import { generateMap, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
+import { generateMap, findAdjacentFree, getReachableTiles, renderMap, isPassableContinuous, getMoveCostContinuous } from './map.js';
 import { getSc1Belief } from './belief.js';
+import { lineCost, isClearOfUnits } from '../continuousMove.js';
+import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 
 // Unit types with a sprite in images/units/. Each PNG stores its player-color
 // region as a magenta ramp; the design app tints it to the owner's team color at
@@ -23,7 +25,7 @@ function makeUnit(id, ownerId, type, x, y) {
   const s = UNITS[type];
   return {
     id, ownerId, type,
-    position: { x, y },
+    position: makePos(x, y),
     alive: true,
     hp: s.hp, maxHp: s.hp,
     shields: s.shields ?? 0, maxShields: s.shields ?? 0,
@@ -219,8 +221,9 @@ export function getLegalActions(state, playerId) {
     if (isWorker && unit.movesLeft > 0 && unit.attrs.gathering !== 'minerals') {
       // Adjacent to a mineral tile?
       const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+      const ux = tileNum(unit.position.x), uy = tileNum(unit.position.y);
       const adjMineral = dirs.some(([dx,dy]) => {
-        const k = `${unit.position.x+dx},${unit.position.y+dy}`;
+        const k = `${ux+dx},${uy+dy}`;
         return board.tiles[k]?.terrain === 'minerals';
       });
       if (adjMineral) {
@@ -247,10 +250,10 @@ export function getLegalActions(state, playerId) {
 
     // ── Worker: build ─────────────────────────────────────────────────────────
     if (isWorker && unit.movesLeft > 0) {
-      const k = `${unit.position.x},${unit.position.y}`;
-      const tile = board.tiles[k];
+      const tx = tileNum(unit.position.x), ty = tileNum(unit.position.y);
+      const tile = board.tiles[`${tx},${ty}`];
       const td   = TERRAIN[tile?.terrain];
-      const occupied = buildings.some(b => b.alive && b.position.x === unit.position.x && b.position.y === unit.position.y);
+      const occupied = buildings.some(b => b.alive && b.position.x === tx && b.position.y === ty);
 
       if (!occupied) {
         const race = UNITS[unit.type].race;
@@ -330,6 +333,45 @@ function getUnitRequirements(unitType) {
   return reqs[unitType] ?? [];
 }
 
+// ── isMoveLegal ───────────────────────────────────────────────────────────────
+// Geometric fallback for the human UI's continuous click-to-move (see the doom/combat
+// mission equivalents and engine/ActionValidator.js): getLegalActions above still
+// enumerates a discrete candidate set for AI search (map.js's weighted BFS), but a
+// player's move can target any point their click resolves to — legality here is a
+// straight-line movement-cost/domain/occupancy check (respecting elevated/ramp terrain
+// cost via getMoveCostContinuous) instead of exact membership in that candidate set.
+function isMoveLegal(state, playerId, action) {
+  const { units, buildings, board } = state;
+  const unit = units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== playerId || unit.movesLeft <= 0
+    || unit.attrs.sieged || unit.attrs.burrowed) return false;
+  const stats = UNITS[unit.type];
+  // Continuous geometry runs in float64; convert the authoritative BigNumber position
+  // and the incoming wire coordinate to Number here (see games/coord.js §2).
+  const px = num(unit.position.x), py = num(unit.position.y);
+  const x = num(action.to.x), y = num(action.to.y);
+  if (!isPassableContinuous(board, x, y, stats.domain)) return false;
+  const cost = lineCost(px, py, x, y,
+    (qx, qy) => isPassableContinuous(board, qx, qy, stats.domain) ? getMoveCostContinuous(board, qx, qy) : Infinity);
+  if (cost > unit.movesLeft) return false;
+  // Ground units can't enter a tile held by an enemy ground unit or any building
+  // (matches getReachableTiles' discrete blocking rules).
+  if (stats.domain === 'ground') {
+    const tx = tileNum(x), ty = tileNum(y);
+    if (buildings.some(b => b.alive && b.position.x === tx && b.position.y === ty)) return false;
+    if (units.some(u => u.alive && u.id !== unit.id && u.ownerId !== playerId && u.domain !== 'air'
+      && tileNum(u.position.x) === tx && tileNum(u.position.y) === ty)) return false;
+  }
+  if (!isClearOfUnits(x, y, units, unit.id)) return false; // no stacking with another unit
+  return true;
+}
+
+// Dispatcher for the engine's continuous-action fallback (engine/ActionValidator.js):
+// only 'move' carries a continuous, not-pre-enumerated destination in SC1.
+function isActionLegal(state, playerId, action) {
+  return action.type === 'move' ? isMoveLegal(state, playerId, action) : false;
+}
+
 // ── Apply actions ─────────────────────────────────────────────────────────────
 
 export function applyActions(state, playerActions, rng = Math.random) {
@@ -367,13 +409,18 @@ export function applyActions(state, playerActions, rng = Math.random) {
 
   // ── move ──────────────────────────────────────────────────────────────────
   if (action.type === 'move') {
-    const tile = board.tiles[`${action.to.x},${action.to.y}`];
-    const td   = tile ? TERRAIN[tile.terrain] : null;
+    // action.to arrives from the wire as decimal strings (human continuous click) or
+    // integer tiles (AI candidate); store it as the authoritative BigNumber position.
+    const to   = parsePos(action.to);
     const unit = units.find(u => u.id === action.unitId);
-    const cost = td?.moveCost ?? 1;
+    // Cost integrates terrain moveCost along the actual straight-line path travelled
+    // (see games/continuousMove.js) rather than just the landing tile's cost, so a
+    // long continuous slide across cheap and costly terrain is billed correctly.
+    const cost = lineCost(num(unit.position.x), num(unit.position.y), num(to.x), num(to.y),
+      (qx, qy) => getMoveCostContinuous(board, qx, qy));
     const newMoves = Math.max(0, unit.movesLeft - cost);
     units = units.map(u =>
-      u.id === action.unitId ? { ...u, position: action.to, movesLeft: newMoves, attrs: { ...u.attrs, gathering: undefined } } : u
+      u.id === action.unitId ? { ...u, position: to, movesLeft: newMoves, attrs: { ...u.attrs, gathering: undefined } } : u
     );
     return { ...state, units, lastActions: playerActions };
   }
@@ -478,8 +525,10 @@ export function applyActions(state, playerActions, rng = Math.random) {
     const nextId  = state.gameSpecific.nextId;
     const res     = getResources(state, playerId);
 
+    // A building always sits on a whole tile — pin it to the tile the worker (possibly
+    // at a continuous position, see games/coord.js) is currently standing on.
     const newBuilding = makeBuilding(`b${nextId}`, playerId, action.buildingType,
-                                     worker.position.x, worker.position.y, bdef.buildTime);
+                                     tileNum(worker.position.x), tileNum(worker.position.y), bdef.buildTime);
     buildings = [...buildings, newBuilding];
 
     // Deduct cost
@@ -696,8 +745,8 @@ function getVisibleState(state, playerId) {
   const myUnits     = state.units.filter(u => u.alive && u.ownerId === playerId);
   const myBuildings = state.buildings.filter(b => b.alive && b.ownerId === playerId);
   const canSee = pos =>
-    myUnits.some(m     => Math.max(Math.abs(m.position.x - pos.x), Math.abs(m.position.y - pos.y)) <= VISION_RANGE) ||
-    myBuildings.some(b => Math.max(Math.abs(b.position.x - pos.x), Math.abs(b.position.y - pos.y)) <= VISION_RANGE);
+    myUnits.some(m     => chebyshev(m.position, pos) <= VISION_RANGE) ||
+    myBuildings.some(b => chebyshev(b.position, pos) <= VISION_RANGE);
   return {
     ...state,
     units:     state.units.filter(u     => u.ownerId === playerId || canSee(u.position)),
@@ -710,7 +759,7 @@ function getActionDuration(state, action) {
     const unit = state.units.find(u => u.id === action.unitId);
     if (!unit) return 1;
     const from = action.from ?? unit.position;
-    const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+    const dist = Math.max(Math.abs(num(action.to.x) - num(from.x)), Math.abs(num(action.to.y) - num(from.y)));
     return dist / (UNITS[unit.type]?.moves ?? 2);
   }
   if (action.type === 'attack') {
@@ -743,9 +792,13 @@ export const Sc1Game = {
     + sidesEval(state.buildings, playerId, b =>
         ['command-center', 'hatchery', 'lair', 'hive', 'nexus'].includes(b.type) ? 300 : 80),
   name: 'SC1',
-  // Unit sprites carry a magenta player-color ramp; the design app tints each to
-  // its owner's team color at render time.
-  ui: { recolorTeamSprites: true, hideGrid: true },
+  // Unit sprites carry a magenta player-color ramp; the design app tints each to its
+  // owner's team color at render time — used only for the side-panel portrait now (see
+  // toGrid's portraitPath), not drawn on the map, so the many similarly-shaped unit
+  // types stay distinguishable by their type letter on the board itself. SC1 has no
+  // tracked unit heading, so showFacing is off for the same reason chess/civ1/xcom
+  // disable it: a decorative, meaningless arrow isn't worth losing the letter for.
+  ui: { recolorTeamSprites: true, hideGrid: true, showFacing: false },
   scenarios: [
     { id: 'tvz', name: 'Terran vs Zerg',    description: 'Biomech forces vs the Swarm',          config: { race1: 'terran',   race2: 'zerg' } },
     { id: 'pvt', name: 'Protoss vs Terran', description: 'Psionic warriors vs human marines',    config: { race1: 'protoss',  race2: 'terran' } },
@@ -754,6 +807,7 @@ export const Sc1Game = {
   colors: { open: '#6a7a50', elevated: '#8a7060', ramp: '#9a8868', minerals: '#2060a0', vespene: '#20884a', obstacle: '#3a2818' },
   createInitialState,
   getLegalActions,
+  isActionLegal,
   applyActions,
   getResult,
   renderState,
@@ -774,31 +828,51 @@ export const Sc1Game = {
     const { width, height, tiles } = board;
     const pidIdx = {};
     (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
-    const umap = {}, bmap = {};
-    for (const u of units) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
-    for (const b of buildings) if (b.alive) bmap[`${b.position.x},${b.position.y}`] = b;
+
+    // Terrain-only cells — units and buildings both travel in the `units` channel
+    // below now (see games/coord.js), not by exact-match into this integer grid.
     const cells = [];
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const tile = tiles[`${x},${y}`] ?? {};
-        const u = umap[`${x},${y}`];
-        const b = bmap[`${x},${y}`];
         cells.push({
           x, y,
-          glyph: u ? u.type[0].toUpperCase() : b ? b.type[0].toUpperCase() : '',
-          owner: u ? (pidIdx[u.ownerId] ?? 0) : b ? (pidIdx[b.ownerId] ?? 0) : 0,
           color: this.colors[tile.terrain] ?? this.colors.open ?? '#808070',
           terrain: terrainInfo(tile.terrain),
-          ...(u ? {
-            unitId:    u.id,
-            unitName:  u.type,
-            hp:        u.hp,
-            maxHp:     UNITS[u.type]?.hp ?? u.hp,
-            imagePath: UNIT_SPRITES.has(u.type) ? `/images/sc1/units/${u.type}` : undefined,
-          } : {}),
         });
       }
     }
-    return { width, height, cells };
+
+    // Continuous unit channel: real (possibly non-integer) positions as decimal
+    // strings (see games/coord.js), built directly from state.units.
+    const unitList = units.filter(u => u.alive).map(u => {
+      const p = posToWire(u.position);
+      return {
+        id: u.id, x: p.x, y: p.y,
+        glyph:     u.type[0].toUpperCase(),
+        unitName:  u.type,
+        owner:     pidIdx[u.ownerId] ?? 0,
+        hp:        u.hp,
+        maxHp:     u.maxHp,
+        moveRange: u.movesLeft,
+        // Kept off the map (see the `ui` comment above) — only the side-panel
+        // portrait (App.vue's portraitPath ?? imagePath fallback) uses it.
+        portraitPath: UNIT_SPRITES.has(u.type) ? `/images/sc1/units/${u.type}` : undefined,
+      };
+    });
+
+    // Buildings don't move, so they render as stationary tokens pinned to their
+    // tile centre — the same spot they occupied as a grid cell before this game
+    // went continuous.
+    const buildingList = buildings.filter(b => b.alive).map(b => ({
+      id: b.id, x: String(b.position.x + 0.5), y: String(b.position.y + 0.5),
+      glyph:    b.type[0].toUpperCase(),
+      unitName: b.type,
+      owner:    pidIdx[b.ownerId] ?? 0,
+      hp:       b.hp,
+      maxHp:    b.maxHp,
+    }));
+
+    return { width, height, locationType: 'continuous', cells, units: [...unitList, ...buildingList] };
   },
 };

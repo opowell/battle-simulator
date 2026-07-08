@@ -19,6 +19,7 @@
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
+import { num, tilePos } from '../coord.js';
 
 const VISION       = 3;   // matches getVisibleState (Chebyshev, no LOS)
 const MAX_POSSIBLE = 40;
@@ -26,7 +27,9 @@ const THREAT_BIAS  = 3;
 
 const k      = (x, y) => `${x},${y}`;
 const coords = key   => key.split(',').map(Number);
-const cheby  = (x, y, p) => Math.max(Math.abs(x - p.x), Math.abs(y - p.y));
+// `p` may be a belief tile ({x,y} Numbers) or a live unit/building position (a unit's
+// may be a continuous BigNumber, see games/coord.js) — read both in Number-space.
+const cheby  = (x, y, p) => Math.max(Math.abs(x - num(p.x)), Math.abs(y - num(p.y)));
 
 function weightedPick(items, weights, rng) {
   let total = 0;
@@ -76,10 +79,13 @@ export class Sc1Belief {
     this.bldgPieces = new Map();
 
     for (const u of enemyUnits) {
+      // Belief lives in integer tile-space; a unit's position may be continuous, so
+      // pin it to the tile it sits in (see games/coord.js).
+      const tp = tilePos(u.position);
       this.unitPieces.set(u.id, {
         ownerId: u.ownerId, type: u.type,
-        possible: new Set([k(u.position.x, u.position.y)]),
-        anchor: { ...u.position }, alive: true, seen: false,
+        possible: new Set([k(tp.x, tp.y)]),
+        anchor: tp, alive: true, seen: false,
         hp: u.hp ?? 1,
         moves: UNITS[u.type]?.moves ?? 2,
       });
@@ -134,10 +140,11 @@ export class Sc1Belief {
       if (u.ownerId === this.myId) continue;
       seenUnitIds.add(u.id);
       let pc = this.unitPieces.get(u.id);
+      const tp = tilePos(u.position);
       if (!pc) {
         pc = {
           ownerId: u.ownerId, type: u.type,
-          possible: new Set(), anchor: { ...u.position },
+          possible: new Set(), anchor: tp,
           alive: true, seen: false, hp: u.hp ?? 1,
           moves: UNITS[u.type]?.moves ?? 2,
         };
@@ -145,8 +152,8 @@ export class Sc1Belief {
       }
       pc.alive  = u.alive;
       pc.hp     = u.hp ?? pc.hp;
-      pc.anchor = { ...u.position };
-      pc.possible = new Set([k(u.position.x, u.position.y)]);
+      pc.anchor = tp;
+      pc.possible = new Set([k(tp.x, tp.y)]);
       pc.seen   = true;
     }
     for (const [id, pc] of this.unitPieces) {
@@ -221,7 +228,7 @@ export class Sc1Belief {
 
     if (hidden.length === 0 && hiddenBldgs.length === 0) return [];
 
-    const occupiedBase = new Set(observation.units.filter(u => u.alive).map(u => k(u.position.x, u.position.y)));
+    const occupiedBase = new Set(observation.units.filter(u => u.alive).map(u => { const tp = tilePos(u.position); return k(tp.x, tp.y); }));
     const worlds = [];
 
     for (let p = 0; p < n; p++) {

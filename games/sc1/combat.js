@@ -1,5 +1,6 @@
 import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
+import { num, tileNum } from '../coord.js';
 
 /**
  * Apply one attack from attacker to defender.
@@ -17,8 +18,8 @@ export function resolveAttack(attacker, defender, state, rng) {
 
   // High-ground miss: ranged attacker on low ground shooting at elevated defender
   if (atkStats.range > 1) {
-    const atkTile = state.board.tiles[`${attacker.position.x},${attacker.position.y}`];
-    const defTile = state.board.tiles[`${defender.position.x},${defender.position.y}`];
+    const atkTile = state.board.tiles[`${tileNum(attacker.position.x)},${tileNum(attacker.position.y)}`];
+    const defTile = state.board.tiles[`${tileNum(defender.position.x)},${tileNum(defender.position.y)}`];
     if (atkTile?.terrain !== 'elevated' && defTile?.terrain === 'elevated') {
       if (rng() < 0.30) return { hit: false, shieldDmg: 0, hpDmg: 0, totalDmg: 0, missed: true };
     }
@@ -66,7 +67,7 @@ export function resolveAttackVsBuilding(attacker, building, state, rng) {
 
   // High-ground miss
   if (atkStats.range > 1) {
-    const atkTile = state.board.tiles[`${attacker.position.x},${attacker.position.y}`];
+    const atkTile = state.board.tiles[`${tileNum(attacker.position.x)},${tileNum(attacker.position.y)}`];
     const defTile = state.board.tiles[`${building.position.x},${building.position.y}`];
     if (atkTile?.terrain !== 'elevated' && defTile?.terrain === 'elevated') {
       if (rng() < 0.30) return { hit: false, shieldDmg: 0, hpDmg: 0, totalDmg: 0, missed: true };
@@ -84,10 +85,12 @@ export function resolveAttackVsBuilding(attacker, building, state, rng) {
 }
 
 /**
- * Chebyshev distance between two positions.
+ * Chebyshev distance between two positions. `a`/`b` may be a unit's continuous
+ * position (BigNumber, see games/coord.js) or a building's plain-number position —
+ * read both in Number-space so either shape works.
  */
 export function chebyshev(a, b) {
-  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  return Math.max(Math.abs(num(a.x) - num(b.x)), Math.abs(num(a.y) - num(b.y)));
 }
 
 /**

@@ -565,6 +565,85 @@ test('fog: an empty square a piece can move to is visible', () => {
   assert.ok(visible.has('h4'), 'empty square along the rook ray is visible');
 });
 
+// ---------------------------------------------------------------------------
+// Fog-of-war square markers (updateMarkers, via applyActions)
+// ---------------------------------------------------------------------------
+
+function markerFogState(board, markers) {
+  return {
+    board,
+    units: Object.values(board).filter(Boolean),
+    players: [{ id: 'white' }, { id: 'black' }],
+    turnNumber: 1,
+    gameSpecific: {
+      fogOfWar: true,
+      castlingRights: { white: { kingSide: false, queenSide: false }, black: { kingSide: false, queenSide: false } },
+      halfMoveClock: 0,
+      enPassantTarget: null,
+      markers,
+    },
+  };
+}
+
+test('fog markers: revealing the (unique) king prunes a stale marker at its old square', () => {
+  // White rook on f1 has its view up the f-file blocked by a black pawn on f4, so the
+  // black king sitting on f8 is hidden; a stale marker claims (wrongly, by now) that the
+  // king is still on e8. Once the pawn moves off the f-file, the rook sees all the way to
+  // f8 and the king is revealed there — since a side only ever has one king, the e8 marker
+  // is now known to be false and must be dropped, not left as a ghost.
+  const board = {
+    a1: unit('wK', 'white', 'king', 'a1'),
+    f1: unit('wR', 'white', 'rook', 'f1'),
+    f4: unit('bPf', 'black', 'pawn', 'f4'),
+    f8: unit('bK', 'black', 'king', 'f8'),
+  };
+  const markers = { white: { e8: 'k' }, black: {} };
+  const state = markerFogState(board, markers);
+  const result = ChessGame.applyActions(state, [
+    { playerId: 'black', action: { type: 'move', from: 'f4', to: 'g4', unitId: 'bPf' } },
+  ]);
+  assert.equal(result.gameSpecific.markers.white.e8, undefined, 'stale e8 king marker must be pruned once the real king is seen at f8');
+  assert.equal(result.gameSpecific.markers.white.f8, undefined, 'f8 is now visible — the real board shows through, no marker needed');
+});
+
+test('fog markers: watching a piece slide along a queen\'s line does not leave a ghost at its old square', () => {
+  // White queen on a3 sees straight up the open a-file to the black pawn on a7 (no marker —
+  // it's directly visible). Black plays a7-a6: the pawn is still on the same file, so the
+  // queen watches it the whole way and a6 becomes the new nearer blocker. a7 is now hidden
+  // (behind the a6 blocker), but we watched this exact pawn leave it, so no marker should be
+  // seeded there — and a6 needs none either since it's still visible.
+  const board = {
+    a1: unit('wK', 'white', 'king', 'a1'),
+    a3: unit('wQ', 'white', 'queen', 'a3'),
+    a7: unit('bPa', 'black', 'pawn', 'a7'),
+  };
+  const markers = { white: {}, black: {} };
+  const state = markerFogState(board, markers);
+  const result = ChessGame.applyActions(state, [
+    { playerId: 'black', action: { type: 'move', from: 'a7', to: 'a6', unitId: 'bPa' } },
+  ]);
+  assert.equal(result.gameSpecific.markers.white.a7, undefined, 'a7 must not be re-seeded — we watched the pawn leave it');
+  assert.equal(result.gameSpecific.markers.white.a6, undefined, 'a6 is visible — the real board shows the pawn there, no marker needed');
+});
+
+test('fog markers: revealing a non-unique piece leaves other same-type markers alone', () => {
+  // Same setup, but the revealed piece is a rook and black still has a second rook
+  // elsewhere — so the old marker cannot be ruled out and must survive.
+  const board = {
+    a1: unit('wK', 'white', 'king', 'a1'),
+    f1: unit('wR', 'white', 'rook', 'f1'),
+    f4: unit('bPf', 'black', 'pawn', 'f4'),
+    f8: unit('bR1', 'black', 'rook', 'f8'),
+    a8: unit('bR2', 'black', 'rook', 'a8'), // second black rook still unseen elsewhere
+  };
+  const markers = { white: { e8: 'r' }, black: {} };
+  const state = markerFogState(board, markers);
+  const result = ChessGame.applyActions(state, [
+    { playerId: 'black', action: { type: 'move', from: 'f4', to: 'g4', unitId: 'bPf' } },
+  ]);
+  assert.equal(result.gameSpecific.markers.white.e8, 'r', 'two rooks remain — the e8 marker cannot be ruled out and must stay');
+});
+
 test('chess fog self-play completes with a valid result', async () => {
   const players = [
     { id: 'white', name: 'White', agent: ChessAgent },
