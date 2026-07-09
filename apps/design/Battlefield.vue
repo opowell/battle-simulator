@@ -78,12 +78,16 @@ function startAim(action) {
     aiming.value = {
       type: 'throw', unitId: action.unitId, grenade: action.grenade,
       range: action.range, blastRadius: action.blastRadius,
+      previewKind: action.previewKind, damage: action.damage,
     };
   } else if (action.type === 'shoot') {
     aiming.value = {
       type: 'shoot', unitId: action.unitId, range: action.range,
       candidates: legalActions.value.filter(a => a.type === 'shoot' && a.unitId === action.unitId),
     };
+  } else if (action.type === 'move') {
+    const u = displayUnits.value.find(un => un.id === action.unitId);
+    aiming.value = { type: 'move', unitId: action.unitId, range: u?.moveRange ?? Infinity };
   }
 }
 
@@ -325,19 +329,20 @@ function handleSqClick(col, row, x, y) {
         // real authority (walls etc.).
         if (Math.hypot(x - u.x, y - u.y) <= (aiming.value.range ?? Infinity))
           submitAction({ type: 'throw', unitId: u.id, grenade: aiming.value.grenade, target: { x: String(x), y: String(y) } });
+      } else if (aiming.value.type === 'move') {
+        // Same continuous-point rule as the direct-click move path below.
+        if (Math.hypot(x - u.x, y - u.y) <= (aiming.value.range ?? Infinity))
+          submitAction({ type: 'move', unitId: u.id, to: { x: String(x), y: String(y) } });
       } else if (aiming.value.type === 'shoot') {
-        // "Choose a direction": fire at whichever legal target's bearing from the unit
-        // is closest to the clicked point's bearing, not whatever's exactly under the pixel.
-        const ang = Math.atan2(y - u.y, x - u.x);
-        let best = null, bestDiff = Infinity;
-        for (const a of aiming.value.candidates) {
-          const t = displayUnits.value.find(un => un.id === a.targetId);
-          if (!t) continue;
-          let diff = Math.abs(ang - Math.atan2(t.y - u.y, t.x - u.x));
-          if (diff > Math.PI) diff = 2 * Math.PI - diff;
-          if (diff < bestDiff) { bestDiff = diff; best = a; }
-        }
-        if (best) submitAction(best);
+        // "Choose a direction": fire at whichever legal target's bearing from the unit is
+        // closest to the clicked point's bearing (same resolution SchematicLayer's aiming
+        // overlay previews on hover — see VISION.nearestBearing), not whatever's exactly
+        // under the pixel.
+        const candidates = aiming.value.candidates
+          .map(a => { const t = displayUnits.value.find(un => un.id === a.targetId); return t && { ...a, x: t.x, y: t.y }; })
+          .filter(Boolean);
+        const best = VISION.nearestBearing(u.x, u.y, x, y, candidates);
+        if (best) { const { x: _x, y: _y, ...action } = best; submitAction(action); }
       }
     }
     aiming.value = null;
@@ -350,7 +355,11 @@ function handleSqClick(col, row, x, y) {
     // radius so an out-of-range click deselects instead of firing off a certain-reject.
     // The click point goes on the wire as decimal strings (the server parses them to
     // authoritative BigNumbers, see games/coord.js posToWire/parsePos).
-    if (props.field.locationType === 'continuous' && x != null && y != null) {
+    // Games that list 'move' in field.ui.aimedActionTypes (CS) route this through the
+    // explicit "Move…" button + aim overlay instead (see startAim/aiming above), so a
+    // bare click on a selected unit's own square shouldn't also slide it.
+    if (props.field.locationType === 'continuous' && !ui.value.aimedActionTypes?.includes('move')
+        && x != null && y != null) {
       const u = displayUnits.value.find(un => un.id === selectedId.value);
       if (u && Math.hypot(x - u.x, y - u.y) <= (u.moveRange ?? Infinity)) {
         submitAction({ type: 'move', unitId: selectedId.value, to: { x: String(x), y: String(y) } });
@@ -437,6 +446,11 @@ const displayedActions = computed(() => {
     return legalActions.value.filter(a =>
       a.unitId === '__player__' || (a.unitId === selectedId.value && !actionGridCoord(a, 'to')));
   }
+  // Games that drive movement through the explicit "Move…" button + aim overlay
+  // (field.ui.aimedActionTypes, see ActionsPanel.vue) keep their 'move' actions here so
+  // ActionsPanel can collapse them into one button — the per-cell-square path below is
+  // only for grid games that highlight legal destination squares directly on the map.
+  if (ui.value.aimedActionTypes?.includes('move')) return legalActions.value;
   if (unitMoves.value.length > 0)
     return legalActions.value.filter(a => a.type !== 'move');
   return legalActions.value;

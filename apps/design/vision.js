@@ -581,12 +581,30 @@ function sectorPath(cx, cy, r, ang, fov) {
   return `M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 ${largeArc} 1 ${x1} ${y1} Z`;
 }
 
+// "Choose a direction" target resolution for aimed actions with discrete candidates
+// (see Battlefield.vue's startAim / handleSqClick and SchematicLayer.vue's aiming
+// overlay preview): among `candidates` (each with .x/.y, e.g. legal 'shoot' actions'
+// target units), returns whichever's bearing from (ox,oy) is closest to the bearing
+// of the clicked/hovered (px,py) — "aim toward" rather than "click exactly on".
+// Shared by the click handler and the hover preview so they always agree on the same
+// target; null if candidates is empty.
+function nearestBearing(ox, oy, px, py, candidates) {
+  const ang = Math.atan2(py - oy, px - ox);
+  let best = null, bestDiff = Infinity;
+  for (const c of candidates) {
+    const diff = angleDelta(ang, Math.atan2(c.y - oy, c.x - ox));
+    if (diff < bestDiff) { bestDiff = diff; best = c; }
+  }
+  return best;
+}
+
 // Public API. Attached to the global so both the browser (window.VISION, via the classic
 // <script>) and node (globalThis.VISION, via dynamic import in the test) see the same object.
 const VISION = {
   facingOn, resolveFov, resolveRange, unitHeading,
   pointVisibleToUnit, visionSources, visibleTileSet,
   unitVisionRegion, visionRegions, sectorPath, reachRegion, regionPath,
+  nearestBearing,
   _internal: { angleDelta, TAU, blockedSet, hasLineOfSight, wallSegments, raySegT, segCircleAngles, closestSeg, boundaryPoint, occludedRegion,
     rayShapeIv, shapeExit, shapeOccludedRegion, ovalTangentAngles },
 };

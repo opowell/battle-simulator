@@ -23,7 +23,9 @@ defineEmits(['submit', 'aim', 'cancel-aim']);
 // instance — collapse each into a single representative button per unit here (CS
 // lists every not-yet-acted unit's legal actions at once, not just the selected
 // one, so the key must include unitId). 'throw' groups by grenade type too (one
-// button per grenade held); 'shoot' collapses every targetId to one button.
+// button per grenade held); 'shoot' and 'move' collapse every target/destination
+// to one button — on continuous-location maps 'move' otherwise lists one
+// "Move → (x,y)" button per candidate point, which reads as a huge, arbitrary list.
 const aimedActions = computed(() => {
   const types = new Set(props.ui?.aimedActionTypes ?? []);
   if (!types.size) return props.displayedActions;
@@ -34,9 +36,12 @@ const aimedActions = computed(() => {
     const key = `${action.type}:${action.unitId}:${action.grenade ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(action.type === 'shoot'
-      ? { type: 'shoot', unitId: action.unitId, icon: action.icon, range: action.range, __aim: true }
-      : { ...action, __aim: true });
+    if (action.type === 'shoot')
+      out.push({ type: 'shoot', unitId: action.unitId, icon: action.icon, range: action.range, __aim: true });
+    else if (action.type === 'move')
+      out.push({ type: 'move', unitId: action.unitId, __aim: true });
+    else
+      out.push({ ...action, __aim: true });
   }
   return out;
 });
@@ -51,6 +56,7 @@ const teamMoney = computed(() => {
 function fmtAction(action) {
   const t = action.type ?? '';
   if (t === 'move') {
+    if (action.__aim) return 'Move…';
     if (typeof action.from === 'string' && typeof action.to === 'string')
       return action.from + ' → ' + action.to;
     if (action.to && typeof action.to === 'object')
@@ -110,13 +116,14 @@ function fmtAction(action) {
       <template v-if="aiming">
         <div class="mono"
              style="font-size:10px;color:var(--accent);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">
-          {{aiming.type === 'throw' ? 'Click the map to throw' : 'Click the map to aim'}}
+          {{aiming.type === 'throw' ? 'Click the map to throw'
+            : aiming.type === 'move' ? 'Click the map to move' : 'Click the map to aim'}}
         </div>
         <button class="action-btn" style="font-size:11px;font-family:var(--mono)"
                 @click="$emit('cancel-aim')">Cancel</button>
       </template>
       <template v-else>
-        <div v-if="unitMoves.length" class="mono"
+        <div v-if="unitMoves.length && !ui?.aimedActionTypes?.includes('move')" class="mono"
              style="font-size:10px;color:var(--faint);margin-bottom:8px;padding:5px 8px;border:1px solid var(--line);border-radius:4px">
           Tap a highlighted square to move
         </div>

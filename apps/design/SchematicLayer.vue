@@ -66,8 +66,13 @@ const selectedSquare = computed(() => {
 // wall-occluded region (VISION.reachRegion), not a plain circle bleeding through walls —
 // same geometry as omnidirectional vision. Returns a region descriptor ('circle' or
 // 'polyarc'); the template draws a <circle> or a <path> accordingly.
+// Games that list 'move' in field.ui.aimedActionTypes (CS) drive movement through the
+// explicit "Move…" button + aiming overlay below instead of an always-on ambient
+// circle — the ambient one would make the map look clickable-to-move even before
+// the player has picked the Move action.
 const legalMoveCircle = computed(() => {
   if (props.field.locationType !== 'continuous' || !props.legalSquares.length) return null;
+  if (props.field.ui?.aimedActionTypes?.includes('move')) return null;
   const u = props.units.find(u => u.id === props.selectedId);
   if (!u) return null;
   let r = u.moveRange;
@@ -120,6 +125,46 @@ const shootRayEnd = computed(() => {
   if (!dist || range == null || dist <= range) return h;
   const t = range / dist;
   return { x: u.x + dx * t, y: u.y + dy * t };
+});
+
+// Per-unit outcome preview while aiming — a small "-NN" / "BLIND" badge over each
+// unit the current cursor position would hit, using whatever damage/blind info the
+// game attached to the aimed action (see CsGame.js's grenadePreview/shoot damage
+// fields) and each unit's own damageReduction. Approximate — e.g. it ignores LOS for
+// a flashbang's blind check — the server re-checks everything for real at apply time.
+const aimPreviewList = computed(() => {
+  if (!props.aiming || !hoverWorld.value) return [];
+  const dmgAgainst = (u, raw) => Math.round(raw * (1 - (u.damageReduction ?? 0)));
+
+  if (props.aiming.type === 'throw') {
+    const { previewKind, damage, blastRadius } = props.aiming;
+    if (!previewKind || previewKind === 'none') return [];
+    const h = hoverWorld.value;
+    const out = [];
+    for (const u of props.units) {
+      if (u.dead || Math.hypot(u.x - h.x, u.y - h.y) > (blastRadius ?? 0)) continue;
+      if (previewKind === 'blind') {
+        if (u.friendly) continue; // a flashbang only blinds enemies (see applyActions)
+        out.push({ id: u.id, x: u.x, y: u.y, text: 'BLIND' });
+      } else if (previewKind === 'damage') {
+        out.push({ id: u.id, x: u.x, y: u.y, text: `-${dmgAgainst(u, damage)}` });
+      }
+    }
+    return out;
+  }
+
+  if (props.aiming.type === 'shoot' && aimUnit.value) {
+    const u = aimUnit.value, h = hoverWorld.value;
+    const candidates = props.aiming.candidates
+      .map(c => { const t = props.units.find(un => un.id === c.targetId); return t && { ...c, x: t.x, y: t.y, damageReduction: t.damageReduction }; })
+      .filter(Boolean);
+    const target = VISION.nearestBearing(u.x, u.y, h.x, h.y, candidates);
+    if (!target) return [];
+    const pct = target.accuracy != null ? ` (${Math.round(target.accuracy * 100)}%)` : '';
+    return [{ id: target.targetId, x: target.x, y: target.y, text: `-${dmgAgainst(target, target.damage ?? 0)}${pct}` }];
+  }
+
+  return [];
 });
 
 const gridX = computed(() => {
@@ -674,7 +719,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                 :cx="fit.x(legalMoveCircle.cx)" :cy="fit.y(legalMoveCircle.cy)" :r="fit.len(legalMoveCircle.r)"
                 fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
                 style="cursor:pointer"/>
-        <rect v-else v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
+        <rect v-else-if="!field.ui?.aimedActionTypes?.includes('move')" v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
               :x="fit.x(lc)" :y="fit.y(lr)"
               :width="fit.len(1)" :height="fit.len(1)"
               fill="rgba(66,198,230,0.28)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
@@ -702,6 +747,18 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               :x2="fit.x(shootRayEnd.x)" :y2="fit.y(shootRayEnd.y)"
               stroke="rgba(255,210,60,0.85)" stroke-width="2" stroke-dasharray="3 3"
               style="pointer-events:none"/>
+
+        <!-- Expected-outcome badges: "-NN" damage or "BLIND", over every unit the
+             current cursor position would hit (see aimPreviewList) -->
+        <g v-for="p in aimPreviewList" :key="'aimprev'+p.id"
+           :style="{ transform: `translate(${fit.x(p.x)}px, ${fit.y(p.y) - unitR(units.find(u => u.id === p.id) ?? {}) - 12}px)` }"
+           style="pointer-events:none">
+          <rect :x="-14" y="-9" width="28" height="14" rx="3"
+                fill="rgba(20,10,8,0.8)" :stroke="p.text === 'BLIND' ? '#8ad0e6' : '#ff6b57'" stroke-width="1"/>
+          <text x="0" y="1.5" text-anchor="middle" dominant-baseline="middle"
+                :fill="p.text === 'BLIND' ? '#8ad0e6' : '#ff6b57'"
+                :font-family="rdr.font" font-size="9" font-weight="700">{{p.text}}</text>
+        </g>
       </template>
 
       <!-- Grid -->
