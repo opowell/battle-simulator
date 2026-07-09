@@ -1,6 +1,12 @@
-- how do multiple human players play a game together?
-- scenario editor
-- allow resizing of side panel.
+Import scenarios. 
+Battle mode.
+Games specific State evaluation.
+Simultaneous action phase. 
+Rooms, clients and players.
+Fix scale for all games: most are too small.
+Add map zoom.
+CS: add crouching - better protection, smaller vision, slower movement.
+CS: vision penalty while moving.
 
 Stack:
 - App server (jas)
@@ -17,7 +23,3 @@ Clients connect to the server
   - board
   - piece
 - Chess
-
-Bugs:
-- civ1: turn fog of war on
-- chess: when fog of war on, do not show opponent moves on board or in log.
