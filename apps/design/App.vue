@@ -263,6 +263,10 @@ function buildField(g, s) {
       description:   c.description,
       job:           c.job,
       moveRange:     c.moveRange,
+      // Fraction of incoming damage this unit shrugs off (see CsGame.js's toGrid) —
+      // lets the aiming overlay preview show an estimated "-NN" without the design
+      // UI knowing any particular game's armor model.
+      damageReduction: c.damageReduction,
     }));
 
   const tiles = g.cells

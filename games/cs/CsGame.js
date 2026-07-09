@@ -43,6 +43,17 @@ function grenadeBlastRadius(gid) {
   return 0;
 }
 
+// What the design UI's aiming overlay should preview for each unit caught in the
+// blast, while a throw is being aimed (see the 'throw' action's blastRadius above):
+// 'damage' shows an estimated hp loss (matches applyActions' HE branch, which hits
+// both teams), 'blind' flags the flashbang's blind-the-enemy effect (no damage
+// number), 'none' covers zone effects (smoke/fire) with no instant per-unit outcome.
+function grenadePreview(gid) {
+  if (gid === 'he') return { previewKind: 'damage', damage: HE_DAMAGE };
+  if (gid === 'flash') return { previewKind: 'blind' };
+  return { previewKind: 'none' };
+}
+
 // Zone centres can be continuous (a grenade thrown to an exact point); the tile-key
 // membership sets they feed are integer-keyed, so snap each centre to its tile.
 function buildFireSet(fireZones) {
@@ -161,9 +172,15 @@ function actionPhaseActions(state, teamId) {
         const enemies = state.units.filter(e => e.alive && e.ownerId !== teamId);
         const wpn     = WEAPONS[u.weapon];
         for (const e of enemies) {
-          if (euclidean(u.position, e.position) <= wpn.range &&
+          const d = euclidean(u.position, e.position);
+          if (d <= wpn.range &&
               segmentClearOf(num(u.position.x), num(u.position.y), num(e.position.x), num(e.position.y), losBlockers))
-            actions.push({ type: 'shoot', unitId: u.id, targetId: e.id, range: wpn.range });
+            // damage/accuracy mirror applyActions' shoot formula (see calcDamage there) —
+            // an estimate for the design UI's aiming overlay preview, not itself authoritative.
+            actions.push({
+              type: 'shoot', unitId: u.id, targetId: e.id, range: wpn.range,
+              damage: wpn.damage, accuracy: 0.90 - 0.40 * (d / wpn.range),
+            });
         }
       }
 
@@ -186,6 +203,7 @@ function actionPhaseActions(state, teamId) {
           type: 'throw', unitId: u.id, grenade: gid,
           icon: WEAPON_ICON(gid), name: GRENADES[gid].name,
           range: GRENADE_THROW_RANGE, blastRadius: grenadeBlastRadius(gid),
+          ...grenadePreview(gid),
         });
       }
 
@@ -749,6 +767,10 @@ function toGrid(state) {
       statusEffects: u.blinded ? ['blinded'] : undefined,
       moved:         u.perTurn?.hasMoved,
       acted:         u.perTurn?.hasActed,
+      // Fraction of incoming damage this unit shrugs off — lets the design UI's aiming
+      // overlay show a generic "expected damage" preview (rawDamage * (1 - reduction))
+      // for shoot/throw without knowing CS's armor/helmet model itself.
+      damageReduction: u.armor ? ARMOR_REDUCTION + (u.helmet ? HELMET_EXTRA_REDUCTION : 0) : 0,
     };
   });
 
@@ -772,12 +794,12 @@ function toGrid(state) {
     shapes: [...(gs.map.shapes ?? []), ...effectShapes(gs)],
     // Hand the veil the SAME sight range + cone the engine reveals with (CS_VISION), so the
     // drawn vision matches getVisibleState exactly (both Euclidean now).
-    // Shoot/throw pick a button first, then a location/direction on the map itself
+    // Move/shoot/throw pick a button first, then a location/direction on the map itself
     // (see the design UI's aiming overlay) instead of listing one button per legal
-    // target/tile — those two actions carry continuous aim points or resolve to a
+    // move point/target/tile — these carry continuous aim points or resolve to a
     // target by click direction, so they don't fit a flat action list.
     ui: { hideGrid: true, visionRange: CS_VISION.range, fovDegrees: CS_VISION.fovDegrees,
-          aimedActionTypes: ['throw', 'shoot'] },
+          aimedActionTypes: ['move', 'throw', 'shoot'] },
     los,
   };
 }
