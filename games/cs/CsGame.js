@@ -93,6 +93,7 @@ function makeUnit(id, ownerId, pos, faction) {
     position: makePos(pos.x, pos.y),
     alive: true,
     hp: 100, maxHp: 100,
+    money: STARTING_MONEY,   // per-unit wallet (CS money is per-player, not a team pool)
     armor: 0, helmet: false, hasKit: false,
     weapon: 'pistol',
     ammo: fullAmmo('pistol'),
@@ -119,11 +120,11 @@ const WEAPON_ICON = w => `/images/cs/weapons/${w}`;
 // ── Legal actions ─────────────────────────────────────────────────────────────
 
 function buyActions(state, teamId) {
-  const money   = state.gameSpecific.money[teamId];
   const myUnits = state.units.filter(u => u.alive && u.ownerId === teamId);
   const actions = [];
 
   for (const u of myUnits) {
+    const money = u.money;   // each player buys from their own wallet, not a shared pool
     // Weapons (pistol is free/default, not buyable)
     for (const [wid, w] of Object.entries(WEAPONS)) {
       if (wid === 'pistol') continue;
@@ -322,23 +323,28 @@ function startNewRound(state, roundWinner) {
     CT: roundWinner === 'CT' ? 0 : gs.consecutiveLosses.CT + 1,
   };
 
-  const money = {
-    T:  Math.min(MAX_MONEY, gs.money.T  + (roundWinner === 'T'  ? WIN_REWARD : lossReward(gs.consecutiveLosses.T))),
-    CT: Math.min(MAX_MONEY, gs.money.CT + (roundWinner === 'CT' ? WIN_REWARD : lossReward(gs.consecutiveLosses.CT))),
-  };
+  // Money is per-unit and persists across rounds (dead players keep their cash). Carry
+  // each unit's wallet onto its freshly-respawned self, then add that team's round-end
+  // reward — the win bonus, or a loss bonus that grows with consecutive losses.
+  const roundReward = (team) =>
+    roundWinner === team ? WIN_REWARD : lossReward(gs.consecutiveLosses[team]);
+  const prevMoney = new Map(state.units.map(u => [u.id, u.money]));
+  const units = spawnUnits(gs.map).map(u => ({
+    ...u,
+    money: Math.min(MAX_MONEY, (prevMoney.get(u.id) ?? STARTING_MONEY) + roundReward(u.ownerId)),
+  }));
 
   return {
     ...state,
     turnNumber: state.turnNumber + 1,
     activePlayers: [gs.teamPlayerMap['T']],
     currentPhase: 'buy',
-    units: spawnUnits(gs.map),
+    units,
     lastActions: state.lastActions,
     gameSpecific: {
       ...gs,
       roundNumber: gs.roundNumber + 1,
       tScore, ctScore,
-      money,
       consecutiveLosses: losses,
       buyPhase: 'T',
       bomb: { planted: false, plantedAt: null, timer: BOMB_TIMER,
@@ -363,27 +369,22 @@ function applyActions(state, playerActions, rng = Math.random) {
   if (state.currentPhase === 'buy') {
     if (action.type === 'buy') {
       const { item, unitId } = action;
-      const deduct = (cost) => {
-        gs = { ...gs, money: { ...gs.money, [playerId]: gs.money[playerId] - cost } };
+      // A buy grants the item to `unitId` AND debits that same unit's wallet — money is
+      // per-player, so one CT's purchase never drains the rest of the team's cash.
+      const apply = (cost, grant) => {
+        units = units.map(u => u.id === unitId ? { ...grant(u), money: u.money - cost } : u);
       };
 
       if (item === 'armor') {
-        units = units.map(u => u.id === unitId ? { ...u, armor: ARMOR_HP } : u);
-        deduct(ARMOR_COST);
+        apply(ARMOR_COST, u => ({ ...u, armor: ARMOR_HP }));
       } else if (item === 'helmet') {
-        units = units.map(u => u.id === unitId ? { ...u, helmet: true } : u);
-        deduct(EQUIPMENT.helmet.cost);
+        apply(EQUIPMENT.helmet.cost, u => ({ ...u, helmet: true }));
       } else if (item === 'defusekit') {
-        units = units.map(u => u.id === unitId ? { ...u, hasKit: true } : u);
-        deduct(EQUIPMENT.defusekit.cost);
+        apply(EQUIPMENT.defusekit.cost, u => ({ ...u, hasKit: true }));
       } else if (GRENADES[item]) {
-        units = units.map(u => u.id === unitId
-          ? { ...u, grenades: { ...u.grenades, [item]: (u.grenades[item] ?? 0) + 1 } } : u);
-        deduct(GRENADES[item].cost);
+        apply(GRENADES[item].cost, u => ({ ...u, grenades: { ...u.grenades, [item]: (u.grenades[item] ?? 0) + 1 } }));
       } else if (WEAPONS[item]) {
-        units = units.map(u => u.id === unitId
-          ? { ...u, weapon: item, type: WEAPONS[item].category, ammo: fullAmmo(item) } : u);
-        deduct(WEAPONS[item].cost);
+        apply(WEAPONS[item].cost, u => ({ ...u, weapon: item, type: WEAPONS[item].category, ammo: fullAmmo(item) }));
       }
 
       return { ...state, units, gameSpecific: gs, lastActions: playerActions };
@@ -450,7 +451,8 @@ function applyActions(state, playerActions, rng = Math.random) {
         ? { ...u, hp: newHp, alive: !killed, armor: killed ? 0 : u.armor } : u);
 
       if (killed) {
-        gs = { ...gs, money: { ...gs.money, [playerId]: Math.min(MAX_MONEY, gs.money[playerId] + KILL_REWARD) } };
+        units = units.map(u => u.id === action.unitId
+          ? { ...u, money: Math.min(MAX_MONEY, u.money + KILL_REWARD) } : u);
         if (bomb.defusingUnitId === action.targetId)
           bomb = { ...bomb, defuseProgress: 0, defusingUnitId: null };
       }
@@ -483,7 +485,8 @@ function applyActions(state, playerActions, rng = Math.random) {
         });
         const kills = units.filter(u => !u.alive && enemiesBefore.has(u.id)).length;
         if (kills > 0)
-          gs = { ...gs, money: { ...gs.money, [playerId]: Math.min(MAX_MONEY, gs.money[playerId] + kills * KILL_REWARD) } };
+          units = units.map(u => u.id === action.unitId
+            ? { ...u, money: Math.min(MAX_MONEY, u.money + kills * KILL_REWARD) } : u);
         if (bomb.defusingUnitId && !units.find(u => u.id === bomb.defusingUnitId)?.alive)
           bomb = { ...bomb, defuseProgress: 0, defusingUnitId: null };
 
@@ -638,8 +641,9 @@ function renderState(state) {
     : `ACTION (${activeTeam} to move)`;
 
   const teamSummary = (tid) => {
-    const alive = state.units.filter(u => u.ownerId === tid && u.alive);
-    const uStr  = alive.map(u => {
+    const teamUnits = state.units.filter(u => u.ownerId === tid);
+    const cash  = teamUnits.reduce((a, u) => a + (u.money ?? 0), 0);
+    const uStr  = teamUnits.filter(u => u.alive).map(u => {
       let s = `${u.id}:${u.weapon}(${u.ammo.mag}/${u.ammo.reserve})`;
       if (u.armor)  s += '+vest';
       if (u.helmet) s += '+helm';
@@ -647,9 +651,9 @@ function renderState(state) {
       const gStr = Object.entries(u.grenades ?? {}).filter(([, c]) => c > 0).map(([g, c]) => `${g}×${c}`).join(',');
       if (gStr) s += `[${gStr}]`;
       if (u.blinded) s += '(blind)';
-      return `${s}(${u.hp}hp)`;
+      return `${s}(${u.hp}hp,$${u.money})`;
     }).join(' ');
-    return `  ${tid} $${gs.money[tid]} | ${uStr || '(all dead)'}`;
+    return `  ${tid} $${cash} | ${uStr || '(all dead)'}`;
   };
 
   const defuseNeeded = gs.bomb?.defuseNeeded ?? DEFUSE_NEEDED;
@@ -753,6 +757,7 @@ function toGrid(state) {
       glyph:         'P',
       unitName:      FACTION_NAMES[u.faction] ?? u.id,
       facing:        u.facing,
+      money:         u.money,
       // Weapon category (pistol/smg/shotgun/heavy/rifle/sniper), not just the constant
       // 'player' — feeds the generic per-type marker-shape hash (see data.js's
       // markerShapeFor) so a squad's loadouts stay visually distinguishable on the map.
@@ -832,7 +837,6 @@ export function createInitialState(players, config = {}) {
       tScore: 0, ctScore: 0,
       winRounds, maxRounds,
       buyPhase: 'T',
-      money: { T: STARTING_MONEY, CT: STARTING_MONEY },
       consecutiveLosses: { T: 0, CT: 0 },
       bomb: { planted: false, plantedAt: null, timer: BOMB_TIMER,
               defuseProgress: 0, defusingUnitId: null, defuseNeeded: DEFUSE_NEEDED },

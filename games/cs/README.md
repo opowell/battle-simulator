@@ -116,7 +116,7 @@ Grenades are thrown with a `throw` action to any walkable tile within 8 tiles (n
 ## Special mechanics
 
 - **Buy phase** — both teams alternate buying before the round's main phase
-- **Economy** — start at 800$; round win: +3,250$; round loss: +1,400$ base, +500$ per consecutive loss (max +3,400$); kill reward: +300$; max money: 16,000$
+- **Economy** — money is **per-agent** (each of the 5 players has their own wallet, not a shared team pool), so a side can equip its whole squad. Each agent starts at 800$; round win: +3,250$ each; round loss: +1,400$ base, +500$ per consecutive loss (max +3,400$); kill reward: +300$ to the killer; carries across rounds (dead players keep their cash); max money: 16,000$
 - **Bomb** — planted by T at bombsite A or B; explodes after 8 turns; CTs need 2 sequential `defuse` actions (or 1 with defuse kit) on the bomb tile
 - **Armor** — reduces incoming damage by 40%; helmet adds another 10% (50% total)
 - **Smoke** — blocks line-of-sight for shooting; thrown grenades pass through
