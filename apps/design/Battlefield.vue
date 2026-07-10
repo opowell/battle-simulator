@@ -303,7 +303,12 @@ const unitMoves = computed(() => {
 const activeUnitId = computed(() => {
   if (!isPending.value) return null;
   if (ui.value.freeSelection) return null;
-  return legalActions.value.find(a => a.unitId)?.unitId ?? null;
+  const derived = legalActions.value.find(a => a.unitId)?.unitId ?? null;
+  if (ui.value.strictActiveUnit) return derived;
+  if (selectedId.value && legalActions.value.some(a => a.unitId === selectedId.value)) {
+    return selectedId.value;
+  }
+  return derived;
 });
 
 watch(activeUnitId, (id) => {

@@ -176,8 +176,9 @@ function hpColor(frac, raw) { return frac > 0.5 ? raw : frac > 0.25 ? '#f2b441' 
 
 // Design rule (see SchematicLayer's facingActive): a unit shows its facing arrow or its
 // type letter, never both. Only the 'character' style ever draws a facing arrow — 'token'
-// style units always get the letter.
-const facingActive = computed(() => unitStyle.value === 'character' && props.field.ui?.showFacing !== false);
+// style units always get the letter. Fog games hide the arrow (reappears once a finished
+// game reveals all), same as SchematicLayer.
+const facingActive = computed(() => unitStyle.value === 'character' && props.field.ui?.showFacing !== false && (!props.fog || props.revealAll));
 
 // markerGlyph's polygon points are origin-relative (see data.js); IsoLayer bakes absolute
 // screen coordinates into every shape's attributes instead of using a per-unit <g
@@ -260,7 +261,7 @@ function onClick(e) {
             <!-- character extras (FFTA) -->
             <template v-else>
               <ellipse :cx="d.sx" :cy="d.syTop+d.hh*0.32" :rx="d.hw*0.52" :ry="d.hh*0.52" fill="rgba(0,0,0,0.28)"/>
-              <polygon v-if="field.ui?.showFacing !== false"
+              <polygon v-if="facingActive"
                        :points="`${d.faceTip[0]},${d.faceTip[1]} ${d.faceL[0]},${d.faceL[1]} ${d.faceR[0]},${d.faceR[1]}`"
                        :fill="d.u.id === activeUnitId ? 'white' : d.u.teamObj.raw" :stroke="rdr.stage" stroke-width="0.5"/>
               <ellipse :cx="d.sx" :cy="d.syTop+d.hh*0.30" :rx="d.hw*0.44" :ry="d.hh*0.44"

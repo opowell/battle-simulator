@@ -46,11 +46,13 @@ const aimedActions = computed(() => {
   return out;
 });
 
-const teamMoney = computed(() => {
-  const gs = props.liveState?.gameSpecific;
-  if (!gs?.money) return null;
-  const teamId = gs.teamMap?.[props.pendingPlayerId] ?? props.pendingPlayerId;
-  return gs.money[teamId] ?? null;
+// CS money is per-unit (each player has their own wallet). Show the money of the unit
+// whose buys are currently in focus (the selected/active one); the per-button "→ CT-2"
+// labels disambiguate which wallet each buy actually spends from.
+const activeMoney = computed(() => {
+  const id = props.selectedId ?? props.activeUnitId;
+  const u = props.units.find(x => x.id === id);
+  return u?.money ?? null;
 });
 
 function fmtAction(action) {
@@ -111,7 +113,8 @@ function fmtAction(action) {
     <template v-else-if="isPending && (ui.freeSelection || (selectedId && selectedId === activeUnitId))">
       <div style="font-size:11px;color:var(--dim);margin-bottom:8px">
         Choose action for <b style="color:var(--accent)">{{pendingPlayerId}}</b>:
-        <span v-if="teamMoney != null" class="mono" style="color:var(--ok)">${{teamMoney}}</span>
+        <span v-if="activeMoney != null" class="mono" style="color:var(--ok)">
+          {{selectedId ?? activeUnitId}} ${{activeMoney}}</span>
       </div>
       <template v-if="aiming">
         <div class="mono"
