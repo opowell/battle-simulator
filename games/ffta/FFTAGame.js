@@ -900,7 +900,9 @@ export const FFTAGame = {
   colors: { floor: '#8a9c70', elevated: '#a07858', 'elevated-high': '#b89060', wall: '#2a2018' },
   // combatFx: flash the acting unit white, blink struck units red with a floating
   // "-N", glow healed units green with "+N" — see apps/design UnitFx / App.vue.
-  ui: { moveAnimation: 'hop', combatFx: true, isometric: true },
+  // strictActiveUnit: selecting a different unit does not make it "active" — the
+  // player must click the game-designated active unit to see its actions.
+  ui: { moveAnimation: 'hop', combatFx: true, isometric: true, strictActiveUnit: true },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
   ],
