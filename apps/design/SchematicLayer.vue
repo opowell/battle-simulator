@@ -346,7 +346,9 @@ function unitShape(u) {
 // type letter — never both. A static letter drawn under a rotating-looking arrow reads
 // as broken, so facing-enabled games get an accent-colored marker instead, shaped per
 // unit type (markerShapeFor/markerGlyph, see data.js) so types stay distinguishable.
-const facingActive = computed(() => props.field.ui?.showFacing !== false);
+// Fog games hide the arrow entirely (not even a marker) since facing would leak intel
+// about an enemy's aim through the fog — reappears once a finished game reveals all.
+const facingActive = computed(() => props.field.ui?.showFacing !== false && (!props.fog || props.revealAll));
 function markerR(u) { return Math.max(2, unitR(u) * 0.3); }
 function markerSpec(u) { return markerGlyph(markerShapeFor(u.type), markerR(u)); }
 
@@ -840,8 +842,8 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
           <circle v-if="u.id === selectedId && u.id !== highlightUnitId && !(u.id === blinkTargetId && field.ui?.blinkActiveUnit) && !field.ui?.highlightSelectedSquare"
                   cx="0" cy="0" :r="unitR(u)+6"
                   fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.5" stroke-dasharray="3 3"/>
-          <!-- Facing indicator: filled arrowhead on unit edge -->
-          <polygon v-if="field.ui?.showFacing !== false"
+          <!-- Facing indicator: filled arrowhead on unit edge (hidden under fog) -->
+          <polygon v-if="facingActive"
                    :points="facingArrow(u)"
                    :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw"
                    :stroke="rdr.stage" stroke-width="1"/>
