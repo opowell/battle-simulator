@@ -41,6 +41,7 @@ const showHelp  = ref(false);
 
 // ── selection ─────────────────────────────────────────────────
 const selectedId = ref(null);
+const hoveredId  = ref(null);
 
 // Empty-square selection (terrain info), only meaningful for games whose cells carry
 // `terrain` data (see field.hasTerrain, computed in App.vue's buildField). Selecting a
@@ -300,20 +301,15 @@ const unitMoves = computed(() => {
     .filter(Boolean);
 });
 
+// Selection is click-driven only (see handleSqClick/selectUnit) — nothing here ever
+// reassigns selectedId. activeUnitId just mirrors it, except FFTAGame's strictActiveUnit
+// mode, which has its own server-driven turn queue and ignores what's clicked.
 const activeUnitId = computed(() => {
   if (!isPending.value) return null;
   if (ui.value.freeSelection) return null;
-  const derived = legalActions.value.find(a => a.unitId)?.unitId ?? null;
-  if (ui.value.strictActiveUnit) return derived;
-  if (selectedId.value && legalActions.value.some(a => a.unitId === selectedId.value)) {
-    return selectedId.value;
-  }
-  return derived;
+  if (ui.value.strictActiveUnit) return legalActions.value.find(a => a.unitId)?.unitId ?? null;
+  return selectedId.value;
 });
-
-watch(activeUnitId, (id) => {
-  if (id) selectedId.value = id;
-}, { immediate: true });
 
 // The one human player viewing this session (fog games are always 1 human vs AI/other-human
 // via separate sessions), used to attribute a manual fog marker to the right player.
@@ -455,7 +451,13 @@ const displayedActions = computed(() => {
   // (field.ui.aimedActionTypes, see ActionsPanel.vue) keep their 'move' actions here so
   // ActionsPanel can collapse them into one button — the per-cell-square path below is
   // only for grid games that highlight legal destination squares directly on the map.
-  if (ui.value.aimedActionTypes?.includes('move')) return legalActions.value;
+  // CS lists every not-yet-acted unit's actions in one big legalActions array; only show
+  // the selected unit's own actions (or the global '__player__' ones — end-turn/end-buy —
+  // when nothing is selected) so the list isn't a jumble of every unit's buttons at once.
+  if (ui.value.aimedActionTypes?.includes('move')) {
+    return legalActions.value.filter(a =>
+      selectedId.value ? a.unitId === selectedId.value : a.unitId === '__player__');
+  }
   if (unitMoves.value.length > 0)
     return legalActions.value.filter(a => a.type !== 'move');
   return legalActions.value;
@@ -534,12 +536,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div style="height:100%;display:flex;flex-direction:column;overflow:hidden">
+  <div class="bf-root">
 
-    <div style="flex:1;min-height:0;display:flex;overflow:hidden">
+    <div class="bf-main">
 
       <!-- Left panel -->
-      <div style="width:240px;min-height:0;overflow-y:auto;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--bg1)">
+      <div class="bf-col bf-col--left">
         <GameHeader
           :field="field" :liveState="liveState" :isLive="isLive"
           :isDone="isDone" :isPending="isPending" :pendingPlayerId="pendingPlayerId"
@@ -552,7 +554,7 @@ onUnmounted(() => {
           @open-info="openInfo"
           @open-ability-info="openAbilityInfo"/>
         <SelectedSquareDetail v-else-if="selectedTerrain" :terrain="selectedTerrain"/>
-        <div v-else style="padding:12px 14px;font-size:11px;color:var(--faint)">
+        <div v-else class="bf-empty">
           Select a unit{{ field.shapes?.length ? ' or terrain feature' : (field.hasTerrain ? ' or square' : '') }} to view details.
         </div>
 
@@ -566,7 +568,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Stage -->
-      <div ref="stageEl" style="flex:1;position:relative;overflow:hidden">
+      <div ref="stageEl" class="bf-stage-area">
         <IsoLayer v-if="ui.isometric"
           :field="displayField" :fit="fit" :units="displayUnits"
           :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
@@ -578,7 +580,7 @@ onUnmounted(() => {
           @sq-click="handleSqClick"/>
         <SchematicLayer v-else
           :field="displayField" :fit="fit" :units="displayUnits"
-          :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
+          :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
           :showRuler="showRuler" :rdr="rdr"
           :unitFx="(atLatest && !revealAll) ? unitFx : {}"
           :legalSquares="unitMoves"
@@ -594,10 +596,11 @@ onUnmounted(() => {
       </div>
 
       <!-- Right sidebar -->
-      <div style="width:240px;min-height:0;overflow-y:auto;border-left:1px solid var(--line);display:flex;flex-direction:column;background:var(--bg1)">
+      <div class="bf-col bf-col--right">
         <RosterPanel v-if="ui.showRoster !== false"
           :teams="rosterTeams" :selectedId="selectedId" :rdr="rdr" :field="field"
-          @select="selectUnit"/>
+          @select="selectUnit"
+          @hover="id => hoveredId = id"/>
 
         <UnitsLostPanel v-if="ui.showUnitsLost"
           :teams="lostUnitsTeams"/>
@@ -646,3 +649,13 @@ onUnmounted(() => {
     :ability="infoAbility"
     @close="infoAbility = null"/>
 </template>
+
+<style scoped>
+.bf-root { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.bf-main { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.bf-col { width: 240px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--bg1); }
+.bf-col--left { border-right: 1px solid var(--line); }
+.bf-col--right { border-left: 1px solid var(--line); }
+.bf-stage-area { flex: 1; position: relative; overflow: hidden; }
+.bf-empty { padding: 12px 14px; font-size: 11px; color: var(--faint); }
+</style>

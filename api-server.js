@@ -22,6 +22,7 @@ import { WebSocketServer } from './vendor/ws/wrapper.mjs';
 
 import { GameEngine } from './engine/index.js';
 import { validate as validateAction } from './engine/ActionValidator.js';
+import * as gameEditor from './gameEditor.js';
 import { RandomAgent } from './agents/index.js';
 import { ApiAgent } from './agents/ApiAgent.js';
 import { ObscuroAgent } from './agents/ObscuroAgent.js';
@@ -53,6 +54,7 @@ const ROOT_DIR = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const APPS_DIR = resolve(ROOT_DIR, 'apps');
 const GAMES_DIR = resolve(ROOT_DIR, 'games');
 const SESSIONS_DIR = resolve(ROOT_DIR, 'sessions');
+const SERVER_PATH = resolve(ROOT_DIR, 'api-server.js');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -204,7 +206,7 @@ const GAMES = {
   doom:          { game: DoomGame,          icon: 'flame',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'marine', name: 'Marine' }, { id: 'demons', name: 'Demons' }] },
   mudandblood:   { game: MudAndBloodGame,   icon: 'skull',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
   kdice:         { game: KDiceGame,         icon: 'dice',      minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }] },
-  warofdots:     { game: WarodDotsGame,    icon: 'target',    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'player', name: 'You' }, { id: 'ai', name: 'AI' }] },
+  warofdots:     { game: WarodDotsGame,     icon: 'target',    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'player', name: 'You' }, { id: 'ai', name: 'AI' }] },
 };
 
 // ---------------------------------------------------------------------------
@@ -437,6 +439,64 @@ async function handleGames(res) {
   })));
 }
 
+// ---------------------------------------------------------------------------
+// Game-definition CRUD (for the /ui/game-editor app). These edit api-server.js's
+// GAMES registry and the games/<name>/ source files on disk; metadata / create /
+// delete changes need a server restart to take effect (flagged in the response).
+// ---------------------------------------------------------------------------
+
+async function handleAdminGamesList(res) {
+  try {
+    const src = await readFile(SERVER_PATH, 'utf8');
+    const games = gameEditor.registryList(src);
+    // Attach the editable file list for each game.
+    for (const g of games) {
+      g.files = await gameEditor.listGameFiles(GAMES_DIR, g.name);
+      g.live = Boolean(GAMES[g.name]); // false = registered but needs restart
+    }
+    send(res, 200, { games });
+  } catch (e) { err(res, 500, e.message); }
+}
+
+async function handleAdminUpdateGame(req, res, name) {
+  try {
+    const body = await readBody(req);
+    const meta = await gameEditor.updateGameMeta(SERVER_PATH, name, body);
+    send(res, 200, { ...meta, restartRequired: true });
+  } catch (e) { err(res, 400, e.message); }
+}
+
+async function handleAdminCreateGame(req, res) {
+  try {
+    const body = await readBody(req);
+    const meta = await gameEditor.createGame(SERVER_PATH, GAMES_DIR, body.name, body);
+    send(res, 201, { ...meta, restartRequired: true });
+  } catch (e) { err(res, 400, e.message); }
+}
+
+async function handleAdminDeleteGame(res, name) {
+  try {
+    await gameEditor.deleteGame(SERVER_PATH, GAMES_DIR, name);
+    send(res, 200, { name, restartRequired: true });
+  } catch (e) { err(res, 400, e.message); }
+}
+
+async function handleAdminReadFile(res, name, url) {
+  try {
+    const path = url.searchParams.get('path');
+    const content = await gameEditor.readGameFile(GAMES_DIR, name, path);
+    send(res, 200, { path, content });
+  } catch (e) { err(res, 400, e.message); }
+}
+
+async function handleAdminWriteFile(req, res, name) {
+  try {
+    const body = await readBody(req);
+    const info = await gameEditor.writeGameFile(GAMES_DIR, name, body.path, body.content ?? '');
+    send(res, 200, info);
+  } catch (e) { err(res, 400, e.message); }
+}
+
 async function handleCreateSession(req, res) {
   let body;
   try { body = await readBody(req); }
@@ -627,7 +687,7 @@ const PORT = resolvePort();
 
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
     return res.end();
   }
 
@@ -641,7 +701,7 @@ const server = createServer(async (req, res) => {
     }
 
     // Static UI apps — GET /ui/<name>/* or GET /design/* (legacy)
-    const UI_APPS = ['design'];
+    const UI_APPS = ['design', 'game-editor'];
     if (method === 'GET' && parts[0] === 'ui' && UI_APPS.includes(parts[1])) {
       // Redirect /ui/<name> (no trailing slash) so relative asset paths resolve correctly
       if (parts.length === 2 && !url.pathname.endsWith('/')) {
@@ -687,6 +747,24 @@ const server = createServer(async (req, res) => {
     // GET /games
     if (method === 'GET' && parts[0] === 'games' && parts.length === 1)
       return await handleGames(res);
+
+    // Game-definition CRUD for the editor — /admin/games…
+    if (parts[0] === 'admin' && parts[1] === 'games') {
+      // GET /admin/games
+      if (method === 'GET' && parts.length === 2) return await handleAdminGamesList(res);
+      // POST /admin/games
+      if (method === 'POST' && parts.length === 2) return await handleAdminCreateGame(req, res);
+      // GET/PUT /admin/games/:name/file
+      if (parts.length === 4 && parts[3] === 'file') {
+        if (method === 'GET') return await handleAdminReadFile(res, parts[2], url);
+        if (method === 'PUT') return await handleAdminWriteFile(req, res, parts[2]);
+      }
+      // PUT/DELETE /admin/games/:name
+      if (parts.length === 3) {
+        if (method === 'PUT')    return await handleAdminUpdateGame(req, res, parts[2]);
+        if (method === 'DELETE') return await handleAdminDeleteGame(res, parts[2]);
+      }
+    }
 
     // POST /sessions
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 1)

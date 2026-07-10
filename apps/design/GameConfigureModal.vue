@@ -81,73 +81,70 @@ function handleCreate() {
       <div class="modal-panel gcm">
         <div class="gcm-head">
           <BsIcon :name="game.icon || 'grid'" :size="16" color="var(--accent)"/>
-          <b style="font-size:14px">{{game.name}}</b>
-          <span style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em">Configure</span>
+          <b class="gcm-name">{{game.name}}</b>
+          <span class="gcm-sub">Configure</span>
         </div>
-        <button class="modal-close" style="position:absolute;top:9px;right:10px" @click="$emit('close')">×</button>
+        <button class="modal-close gcm-close" @click="$emit('close')">×</button>
 
         <div class="gcm-body">
           <!-- Scenario -->
-          <div v-if="scens.length" style="margin-bottom:16px">
-            <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:10px">Scenario</div>
+          <div v-if="scens.length" class="gcm-scenario">
+            <div class="gcm-section-label">Scenario</div>
             <button v-for="sc in scens" :key="sc.id"
                     class="scenrow" :class="{sel: sc.id === scenKey}"
                     @click="chooseScenario(sc)">
               <div class="scenmark">
                 <BsIcon name="flag" :size="14"/>
               </div>
-              <div style="min-width:0;text-align:left">
-                <div style="font-weight:600;font-size:13px">{{sc.name}}</div>
-                <div style="font-size:11px;color:var(--dim);margin-top:2px">{{sc.description}}</div>
+              <div class="gcm-scen-text">
+                <div class="gcm-scen-name">{{sc.name}}</div>
+                <div class="gcm-scen-desc">{{sc.description}}</div>
               </div>
             </button>
           </div>
 
-          <div class="field" style="margin-bottom:14px">
+          <div class="field gcm-name-field">
             <label>Session name</label>
             <input v-model="name" :placeholder="(game.name ?? 'game') + ' — ' + new Date().toISOString().slice(5,16).replace('T',' ')"/>
           </div>
 
           <!-- Player slots -->
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <label style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)">Players</label>
+          <div class="gcm-players-head">
+            <label class="gcm-players-label">Players</label>
             <button v-if="game.minPlayers !== game.maxPlayers"
                     class="btn btn-sm btn-ghost" @click="addSlot" :disabled="slots.length >= (game.maxPlayers ?? 8)">
               + Add slot
             </button>
           </div>
           <div v-for="(sl, i) in slots" :key="sl.id" class="slot">
-            <button @click="cycleColor(i)" title="Cycle colour"
-                    style="border:none;background:none;padding:0;cursor:pointer;line-height:0">
+            <button @click="cycleColor(i)" title="Cycle colour" class="gcm-color-btn">
               <BsDot :color="sl.color" :size="13"/>
             </button>
-            <input :value="sl.name" @input="setSlot(i, {name: $event.target.value})"
-                   style="padding:5px 8px;font-size:12px"/>
-            <select :value="sl.agent" @change="setSlot(i, {agent: $event.target.value})"
-                    style="padding:5px 8px;font-size:12px">
+            <input :value="sl.name" @input="setSlot(i, {name: $event.target.value})" class="gcm-input"/>
+            <select :value="sl.agent" @change="setSlot(i, {agent: $event.target.value})" class="gcm-input">
               <option value="human">Human</option>
               <option v-for="a in (game.agents ?? [])" :key="a.id" :value="a.id">{{a.name}}</option>
             </select>
             <button v-if="game.minPlayers !== game.maxPlayers"
-                    class="iconbtn" style="width:30px;height:30px" @click="rmSlot(i)"
+                    class="iconbtn gcm-rm" @click="rmSlot(i)"
                     :disabled="slots.length <= (game.minPlayers ?? 2)">
               <BsIcon name="trash" :size="14" color="var(--dim)"/>
             </button>
           </div>
 
           <!-- Game options + engine config -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px">
+          <div class="gcm-options">
             <template v-for="opt in (game.gameOptions ?? [])" :key="opt.id">
               <div v-if="opt.type === 'boolean'" class="field">
                 <label>{{opt.label}}</label>
-                <div class="seg" style="font-size:11px">
-                  <button :class="{on: !gameOpts[opt.id]}" @click="gameOpts[opt.id] = false" style="padding:3px 9px">Off</button>
-                  <button :class="{on:  gameOpts[opt.id]}" @click="gameOpts[opt.id] = true"  style="padding:3px 9px">On</button>
+                <div class="seg gcm-seg">
+                  <button :class="{on: !gameOpts[opt.id]}" @click="gameOpts[opt.id] = false" class="gcm-seg-btn">Off</button>
+                  <button :class="{on:  gameOpts[opt.id]}" @click="gameOpts[opt.id] = true"  class="gcm-seg-btn">On</button>
                 </div>
               </div>
               <div v-else-if="opt.type === 'select'" class="field">
                 <label>{{opt.label}}</label>
-                <select v-model="gameOpts[opt.id]" style="padding:5px 8px;font-size:12px">
+                <select v-model="gameOpts[opt.id]" class="gcm-input">
                   <option v-for="o in opt.options" :key="o.value" :value="o.value">{{o.label}}</option>
                 </select>
               </div>
@@ -166,8 +163,7 @@ function handleCreate() {
             </div>
           </div>
 
-          <button class="btn btn-primary"
-                  style="width:100%;justify-content:center;margin-top:18px;padding:11px"
+          <button class="btn btn-primary gcm-start"
                   :disabled="disabled"
                   @click="handleCreate">
             <BsIcon name="play" :size="15" color="#04222b" :stroke="2"/>
@@ -183,4 +179,22 @@ function handleCreate() {
 .gcm{width:560px;max-width:92vw;max-height:88vh}
 .gcm-head{display:flex;align-items:center;gap:9px;padding:14px 44px 14px 18px;border-bottom:1px solid var(--line);flex:none}
 .gcm-body{padding:18px 20px;overflow-y:auto}
+.gcm-name{font-size:14px}
+.gcm-sub{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.gcm-close{position:absolute;top:9px;right:10px}
+.gcm-scenario{margin-bottom:16px}
+.gcm-section-label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
+.gcm-scen-text{min-width:0;text-align:left}
+.gcm-scen-name{font-weight:600;font-size:13px}
+.gcm-scen-desc{font-size:11px;color:var(--dim);margin-top:2px}
+.gcm-name-field{margin-bottom:14px}
+.gcm-players-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.gcm-players-label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+.gcm-color-btn{border:none;background:none;padding:0;cursor:pointer;line-height:0}
+.gcm-input{padding:5px 8px;font-size:12px}
+.gcm-rm{width:30px;height:30px}
+.gcm-options{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.gcm-seg{font-size:11px}
+.gcm-seg-btn{padding:3px 9px}
+.gcm-start{width:100%;justify-content:center;margin-top:18px;padding:11px}
 </style>

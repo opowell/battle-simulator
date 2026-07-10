@@ -13,7 +13,7 @@ function fmtAction(action) {
     if (typeof action.from === 'string' && typeof action.to === 'string')
       return action.from + ' → ' + action.to;
     if (action.to && typeof action.to === 'object')
-      return `Move → (${action.to.x},${action.to.y})`;
+      return `Move → (${Number(action.to.x).toFixed(2)},${Number(action.to.y).toFixed(2)})`;
     if (action.unitId) return `Move ${action.unitId}`;
   }
   if (t === 'castle')    return action.side === 'kingside' ? 'O-O' : 'O-O-O';
@@ -34,28 +34,24 @@ function fmtAction(action) {
 </script>
 
 <template>
-  <div style="border-top:1px solid var(--line);display:flex;flex-direction:column;flex:1;min-height:0">
-    <div class="panel-t" style="padding:7px 14px;flex-shrink:0">Log</div>
-    <div style="overflow-y:auto;flex:1">
-      <div v-if="!log.length" style="padding:4px 14px 8px;font-size:11px;color:var(--faint)">
+  <div class="log">
+    <div class="panel-t log-title">Log</div>
+    <div class="log-scroll">
+      <div v-if="!log.length" class="log-empty">
         No moves yet.
       </div>
       <div v-for="(entry, ei) in [...log].reverse()" :key="ei"
-           style="padding:3px 14px;border-bottom:1px solid var(--line);font-size:11px;cursor:pointer;transition:background .1s"
-           :style="{background: ei === historyLength - 1 - histPos ? 'rgba(66,198,230,.08)' : 'transparent'}"
+           class="log-row"
+           :class="{ 'log-row--active': ei === historyLength - 1 - histPos }"
            @click="$emit('seek', Math.max(0, Math.min(historyLength - 1, historyLength - 1 - ei)))">
-        <span class="mono" style="font-size:9px;color:var(--faint);margin-right:6px">T{{entry.turnNumber}}</span>
-        <span v-for="(pa, i) in entry.playerActions" :key="i" style="display:inline;margin-right:8px">
-          <b :style="{color:'var(--accent)'}">{{pa.playerId}}</b>
+        <span class="mono log-turn">T{{entry.turnNumber}}</span>
+        <span v-for="(pa, i) in entry.playerActions" :key="i" class="log-pa">
+          <b class="log-player">{{pa.playerId}}</b>
           {{ fmtAction(pa.action) }}
         </span>
         <span v-for="(ev, evi) in (entry.events ?? [])" :key="'e'+evi"
-              class="mono"
-              :style="{
-                fontSize: '10px',
-                marginRight: '5px',
-                color: ev.type === 'damage' ? 'var(--danger)' : ev.type === 'heal' ? 'var(--ok)' : 'var(--dim)',
-              }">
+              class="mono log-ev"
+              :class="ev.type === 'damage' ? 'log-ev--damage' : ev.type === 'heal' ? 'log-ev--heal' : 'log-ev--other'">
           {{ ev.type === 'damage' ? (ev.died ? '†' : '') + '−' + ev.amount
            : ev.type === 'heal'   ? '+' + ev.amount
            : '†' }}
@@ -64,3 +60,19 @@ function fmtAction(action) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.log { border-top: 1px solid var(--line); display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.log-title { padding: 7px 14px; flex-shrink: 0; }
+.log-scroll { overflow-y: auto; flex: 1; }
+.log-empty { padding: 4px 14px 8px; font-size: 11px; color: var(--faint); }
+.log-row { padding: 3px 14px; border-bottom: 1px solid var(--line); font-size: 11px; cursor: pointer; transition: background .1s; background: transparent; }
+.log-row--active { background: rgba(66,198,230,.08); }
+.log-turn { font-size: 9px; color: var(--faint); margin-right: 6px; }
+.log-pa { display: inline; margin-right: 8px; }
+.log-player { color: var(--accent); }
+.log-ev { font-size: 10px; margin-right: 5px; }
+.log-ev--damage { color: var(--danger); }
+.log-ev--heal { color: var(--ok); }
+.log-ev--other { color: var(--dim); }
+</style>

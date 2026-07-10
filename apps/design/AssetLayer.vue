@@ -88,12 +88,12 @@ function tokenBorderRadius(u) {
 </script>
 
 <template>
-  <div class="bf-layer" style="overflow:hidden"
+  <div class="bf-layer al-root"
        :style="{background: rdr.asset}"
        @click.self="emit('select', null)">
 
     <!-- Terrain (texture + base gradient layered) -->
-    <div class="bf-layer" style="pointer-events:none"
+    <div class="bf-layer al-noevents"
          :style="{
            background: rdr.terrainTex + ',' + rdr.terrain,
            boxShadow: rdr.terrainInset,
@@ -101,7 +101,7 @@ function tokenBorderRadius(u) {
 
     <!-- Board squares (chess / small square grids) -->
     <div v-for="(sq, i) in boardSquares" :key="'bs'+i"
-         style="position:absolute;pointer-events:none"
+         class="al-abs-noevents"
          :style="{
            left:   fit.x(sq.x) + 'px',
            top:    fit.y(sq.y) + 'px',
@@ -112,7 +112,7 @@ function tokenBorderRadius(u) {
 
     <!-- Zones -->
     <div v-for="(z, i) in field.zones" :key="'z'+i"
-         style="position:absolute;pointer-events:none;box-sizing:border-box"
+         class="al-zone"
          :style="{
            left:   fit.x(z.x) + 'px',
            top:    fit.y(z.y) + 'px',
@@ -122,7 +122,7 @@ function tokenBorderRadius(u) {
            borderRadius: '3px',
            background: zoneColor(z.kind) + '18',
          }">
-      <span style="position:absolute;top:3px;left:5px;font-size:9px;letter-spacing:.4px;padding:1px 5px;border-radius:2px"
+      <span class="al-zone-label"
             :style="{background: rdr.chip, color: zoneColor(z.kind), fontFamily: rdr.font}">
         {{z.label}}
       </span>
@@ -130,7 +130,7 @@ function tokenBorderRadius(u) {
 
     <!-- Walls -->
     <div v-for="(w, i) in field.walls" :key="'w'+i"
-         style="position:absolute;box-sizing:border-box"
+         class="al-wall"
          :style="{
            left:   fit.x(w[0]) + 'px',
            top:    fit.y(w[1]) + 'px',
@@ -153,7 +153,7 @@ function tokenBorderRadius(u) {
     <!-- Unit tokens -->
     <template v-for="u in units" :key="u.id">
       <div v-if="isVisible(u)"
-           style="position:absolute;cursor:pointer"
+           class="al-token"
            :style="{
              left:      fit.x(u.x) + 'px',
              top:       fit.y(u.y) + 'px',
@@ -163,37 +163,32 @@ function tokenBorderRadius(u) {
            @click.stop="emit('select', u.id)">
 
         <!-- Relative container (sizing context for chips / bars) -->
-        <div style="position:relative"
+        <div class="al-token-inner"
              :style="{width: tr*2+'px', height: tr*2+'px'}">
 
           <!-- Selection ring -->
           <div v-if="u.id === selectedId"
-               style="position:absolute;border-style:dashed;border-width:1.5px;border-radius:50%;pointer-events:none;z-index:3"
-               :style="{
-                 top:    '-6px', left:   '-6px',
-                 right:  '-6px', bottom: '-6px',
-                 borderColor: u.teamObj.raw,
-               }"/>
+               class="al-ring"
+               :style="{ borderColor: u.teamObj.raw }"/>
 
           <!-- Token body -->
-          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"
+          <div class="al-body"
                :style="{
                  borderRadius: tokenBorderRadius(u),
                  background:   u.dead ? rdr.deadToken : rdr.token,
                  border:       '2px solid ' + u.teamObj.raw,
                  boxShadow:    '0 0 0 1px ' + rdr.tokenRing + ', 0 4px 8px -2px ' + rdr.tokenShadow,
                  opacity:      u.dead ? 0.45 : 1,
-                 overflow:     'hidden',
                }">
             <img v-if="!u.dead && u.imagePath"
                  :src="u.imagePath" :alt="u.name"
-                 style="width:90%;height:90%;object-fit:contain;image-rendering:pixelated;pointer-events:none"/>
+                 class="al-img"/>
             <span v-else-if="!u.dead"
-                  style="font-size:11px;font-weight:700;line-height:1;user-select:none"
+                  class="al-initials"
                   :style="{color: u.teamObj.raw, fontFamily: rdr.font}">
               {{unitInitials(u)}}
             </span>
-            <svg v-else width="55%" height="55%" viewBox="0 0 10 10" style="opacity:0.65">
+            <svg v-else width="55%" height="55%" viewBox="0 0 10 10" class="al-dead">
               <line x1="1" y1="1" x2="9" y2="9" :stroke="u.teamObj.raw" stroke-width="2"/>
               <line x1="9" y1="1" x2="1" y2="9" :stroke="u.teamObj.raw" stroke-width="2"/>
             </svg>
@@ -201,16 +196,16 @@ function tokenBorderRadius(u) {
 
           <!-- Name chip above (hidden for piece-letter units) -->
           <div v-if="!u.dead && u.name.length > 2"
-               style="position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:4px;white-space:nowrap;font-size:9px;letter-spacing:.4px;padding:1px 5px;border-radius:2px;pointer-events:none"
+               class="al-name"
                :style="{background: rdr.chip, color: rdr.label, fontFamily: rdr.font}">
             {{u.name}}
           </div>
 
           <!-- HP bar below (hidden for piece-letter units) -->
           <div v-if="!u.dead && u.name.length > 2"
-               style="position:absolute;top:100%;left:0;right:0;margin-top:3px;height:3px;border-radius:2px;overflow:hidden"
+               class="al-hp"
                :style="{background: rdr.hpTrack}">
-            <div style="height:100%;border-radius:2px;transition:width .3s"
+            <div class="al-hp-fill"
                  :style="{
                    width:      (u.hpNow / u.hpMax * 100) + '%',
                    background: hpColor(u.hpNow / u.hpMax, u.teamObj.raw),
@@ -221,7 +216,7 @@ function tokenBorderRadius(u) {
     </template>
 
     <!-- Fog of war -->
-    <div v-if="fog" class="bf-layer" style="pointer-events:none;z-index:4"
+    <div v-if="fog" class="bf-layer al-fog"
          :style="{
            background:              rdr.fogA,
            WebkitMaskImage:         fogMask,
@@ -231,6 +226,27 @@ function tokenBorderRadius(u) {
          }"/>
 
     <!-- Scanlines (military / retro) -->
-    <div v-if="rdr.scan" class="bf-layer scanline" style="pointer-events:none;z-index:5"/>
+    <div v-if="rdr.scan" class="bf-layer scanline al-scan"/>
   </div>
 </template>
+
+<style scoped>
+.al-root { overflow: hidden; }
+.al-noevents { pointer-events: none; }
+.al-abs-noevents { position: absolute; pointer-events: none; }
+.al-zone { position: absolute; pointer-events: none; box-sizing: border-box; }
+.al-zone-label { position: absolute; top: 3px; left: 5px; font-size: 9px; letter-spacing: .4px; padding: 1px 5px; border-radius: 2px; }
+.al-wall { position: absolute; box-sizing: border-box; }
+.al-token { position: absolute; cursor: pointer; }
+.al-token-inner { position: relative; }
+.al-ring { position: absolute; border-style: dashed; border-width: 1.5px; border-radius: 50%; pointer-events: none; z-index: 3; top: -6px; left: -6px; right: -6px; bottom: -6px; }
+.al-body { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.al-img { width: 90%; height: 90%; object-fit: contain; image-rendering: pixelated; pointer-events: none; }
+.al-initials { font-size: 11px; font-weight: 700; line-height: 1; user-select: none; }
+.al-dead { opacity: 0.65; }
+.al-name { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 4px; white-space: nowrap; font-size: 9px; letter-spacing: .4px; padding: 1px 5px; border-radius: 2px; pointer-events: none; }
+.al-hp { position: absolute; top: 100%; left: 0; right: 0; margin-top: 3px; height: 3px; border-radius: 2px; overflow: hidden; }
+.al-hp-fill { height: 100%; border-radius: 2px; transition: width .3s; }
+.al-fog { pointer-events: none; z-index: 4; }
+.al-scan { pointer-events: none; z-index: 5; }
+</style>

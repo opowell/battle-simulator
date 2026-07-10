@@ -13,6 +13,7 @@ const props = defineProps({
   // captured board square so a killing blow still flashes after its victim is gone.
   unitFx:       { type: Object, default: () => ({}) },
   selectedId:   String,
+  hoveredId:    { type: String, default: null },
   activeUnitId: { type: String, default: null },
   fog:          Boolean,
   showRuler:    Boolean,
@@ -311,14 +312,37 @@ const fogSquares = computed(() => {
 });
 
 // Field-of-vision tile set for square-grid fog (non-chess). Facing-aware: a unit sees a
-// full disc (no facing) or a heading-limited cone (see vision.js). When a friendly unit is
-// selected only its own vision is shown; otherwise the player's vision (the union of all
-// their units). Continuous maps have no tiles to shade — they use FogOverlay instead.
+// full disc (no facing) or a heading-limited cone (see vision.js). Always the whole
+// player's vision (the union of all their units) — selection never narrows it, it only
+// adds a highlight (see selectedVisionTileSet below). Continuous maps have no tiles to
+// shade — they use FogOverlay instead.
 const squareFogVisibleSet = computed(() => {
   if (!props.fog || props.field.ui?.gridFog || props.field.grid !== 'square') return null;
   if (props.field.locationType === 'continuous') return null;
+  return VISION.visibleTileSet(props.field, VISION.visionSources(props.units, viewerId.value, null));
+});
+
+// Tiles seen by the selected unit specifically — rendered as a highlight outline on top
+// of the base fog shading so a player can tell what THAT unit sees within team vision.
+const selectedVisionTileSet = computed(() => {
+  if (!squareFogVisibleSet.value) return null;
   const sel = props.revealAll ? null : props.selectedId;
-  return VISION.visibleTileSet(props.field, VISION.visionSources(props.units, viewerId.value, sel));
+  if (sel == null) return null;
+  const sources = VISION.visionSources(props.units, viewerId.value, sel);
+  if (sources.length !== 1 || sources[0].id !== sel) return null;
+  return VISION.visibleTileSet(props.field, sources);
+});
+
+// Tiles seen by the selected unit specifically, for the highlight outline drawn in the
+// template (square-grid analogue of FogOverlay's continuous-map highlightRegion).
+const selectedVisionTiles = computed(() => {
+  if (!selectedVisionTileSet.value) return [];
+  const W = props.field.world.w, H = props.field.world.h;
+  const out = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (selectedVisionTileSet.value.has(`${x},${y}`)) out.push({ x, y });
+  return out;
 });
 
 function tileColor(tile) {
@@ -588,7 +612,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                  :width="fit.len(1)" :height="fit.len(1)"
                  :href="tileBgImage(tile)"
                  preserveAspectRatio="xMidYMid slice"
-                 style="pointer-events:none;image-rendering:pixelated"/>
+                 class="sl-noevents sl-pixel"/>
         </template>
       </template>
 
@@ -600,20 +624,20 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                  :rx="fit.len(s.w/2)" :ry="fit.len(s.h/2)"
                  :fill="s.fill" :fill-opacity="s.opacity ?? 1"
                  :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? 1.5 : 0"
-                 style="pointer-events:none"/>
+                 class="sl-noevents"/>
         <rect v-else
               :x="fit.x(s.x)" :y="fit.y(s.y)"
               :width="fit.len(s.w)" :height="fit.len(s.h)"
               :rx="s.round ? fit.len(0.25) : 0"
               :fill="s.fill" :fill-opacity="s.opacity ?? 1"
               :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? 1.5 : 0"
-              style="pointer-events:none"/>
+              class="sl-noevents"/>
         <text v-if="s.label"
               :x="fit.x(s.x + s.w/2)" :y="fit.y(s.y + s.h/2)"
               :fill="s.labelColor ?? 'rgba(255,255,255,0.85)'"
               :font-family="rdr.font" font-size="13" font-weight="700"
               text-anchor="middle" dominant-baseline="central"
-              style="pointer-events:none;user-select:none">{{s.label}}</text>
+              class="sl-noevents sl-noselect">{{s.label}}</text>
       </template>
 
       <!-- Selected terrain shape outline (non-grid maps). Punched by any higher-layer
@@ -651,12 +675,12 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                  :cx="fit.x(selectedShape.x + selectedShape.w/2)" :cy="fit.y(selectedShape.y + selectedShape.h/2)"
                  :rx="fit.len(selectedShape.w/2)" :ry="fit.len(selectedShape.h/2)"
                  fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
-                 mask="url(#selShapeMask)" style="pointer-events:none"/>
+                 mask="url(#selShapeMask)" class="sl-noevents"/>
         <rect v-else
               :x="fit.x(selectedShape.x)" :y="fit.y(selectedShape.y)"
               :width="fit.len(selectedShape.w)" :height="fit.len(selectedShape.h)"
               fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
-              mask="url(#selShapeMask)" style="pointer-events:none"/>
+              mask="url(#selShapeMask)" class="sl-noevents"/>
         <!-- Each covering shape's own edge, kept only where it cuts across the selected
              shape — this is the "new" boundary the selection now traces there. -->
         <template v-for="(cs, ci) in coveringShapes" :key="'covo'+ci">
@@ -664,12 +688,12 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                    :cx="fit.x(cs.x + cs.w/2)" :cy="fit.y(cs.y + cs.h/2)"
                    :rx="fit.len(cs.w/2)" :ry="fit.len(cs.h/2)"
                    fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
-                   clip-path="url(#selShapeClip)" style="pointer-events:none"/>
+                   clip-path="url(#selShapeClip)" class="sl-noevents"/>
           <rect v-else
                 :x="fit.x(cs.x)" :y="fit.y(cs.y)"
                 :width="fit.len(cs.w)" :height="fit.len(cs.h)"
                 fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
-                clip-path="url(#selShapeClip)" style="pointer-events:none"/>
+                clip-path="url(#selShapeClip)" class="sl-noevents"/>
         </template>
       </template>
 
@@ -684,7 +708,14 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             :x="fit.x(fs.x)" :y="fit.y(fs.y)"
             :width="fit.len(1)" :height="fit.len(1)"
             :fill="rdr.fogA"
-            style="pointer-events:none"/>
+            class="sl-noevents"/>
+
+      <!-- Selected unit's own vision, traced on top of the team-wide fog shading above -->
+      <rect v-for="(sv, i) in selectedVisionTiles" :key="'sv'+i"
+            :x="fit.x(sv.x)" :y="fit.y(sv.y)"
+            :width="fit.len(1)" :height="fit.len(1)"
+            fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"
+            class="sl-noevents"/>
 
       <!-- Square markers: user annotations on unseen squares, or (reveal mode) true piece positions -->
       <image v-for="m in displayMarkers" :key="'sm'+m.col+','+m.row"
@@ -692,28 +723,28 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
              :width="fit.len(0.8)" :height="fit.len(0.8)"
              :href="m.img ?? markerImg(m.type)"
              opacity="0.55"
-             style="pointer-events:none"/>
+             class="sl-noevents"/>
 
       <!-- Selected square highlight (used instead of a ring on the unit when ui.highlightSelectedSquare is set) -->
       <rect v-if="selectedSquare"
             :x="fit.x(selectedSquare.x)" :y="fit.y(selectedSquare.y)"
             :width="fit.len(1)" :height="fit.len(1)"
             fill="rgba(255,255,255,0.35)"
-            style="pointer-events:none"/>
+            class="sl-noevents"/>
 
       <!-- Selected empty square (terrain info) -->
       <rect v-if="selectedEmptySquare"
             :x="fit.x(selectedEmptySquare.x)" :y="fit.y(selectedEmptySquare.y)"
             :width="fit.len(1)" :height="fit.len(1)"
             fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2" stroke-dasharray="4,3"
-            style="pointer-events:none"/>
+            class="sl-noevents"/>
 
       <!-- Last move highlights -->
       <rect v-for="([lc, lr], i) in lastMoveSquares" :key="'lmv'+i"
             :x="fit.x(lc)" :y="fit.y(lr)"
             :width="fit.len(1)" :height="fit.len(1)"
             fill="rgba(242,180,65,0.35)"
-            style="pointer-events:none"/>
+            class="sl-noevents"/>
 
       <!-- Legal move highlights: on non-grid (shape) maps a single reachable region —
            a plain radius circle, or an exact wall-occluded area on maps with walls (so it
@@ -722,51 +753,16 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
       <template v-if="!aiming">
         <path v-if="legalMovePathD" :d="legalMovePathD"
               fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
-              style="cursor:pointer"/>
+              class="sl-clickable"/>
         <circle v-else-if="legalMoveCircle"
                 :cx="fit.x(legalMoveCircle.cx)" :cy="fit.y(legalMoveCircle.cy)" :r="fit.len(legalMoveCircle.r)"
                 fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
-                style="cursor:pointer"/>
+                class="sl-clickable"/>
         <rect v-else-if="!field.ui?.aimedActionTypes?.includes('move')" v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
               :x="fit.x(lc)" :y="fit.y(lr)"
               :width="fit.len(1)" :height="fit.len(1)"
               fill="rgba(66,198,230,0.28)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
-              style="cursor:pointer"/>
-      </template>
-
-      <!-- Aiming overlay: same-shape reach arc as the move highlight above, but at the
-           aimed action's own range (throw range / weapon range), colored to read as a
-           distinct mode. A throw adds a blast-radius preview at the cursor; a shoot adds
-           an aim ray from the unit to the cursor, clipped to weapon range. -->
-      <template v-else>
-        <path v-if="aimRegionPathD" :d="aimRegionPathD"
-              fill="rgba(242,180,65,0.16)" stroke="rgba(242,180,65,0.65)" stroke-width="1.5"
-              style="pointer-events:none"/>
-        <circle v-else-if="aimRegion"
-                :cx="fit.x(aimRegion.cx)" :cy="fit.y(aimRegion.cy)" :r="fit.len(aimRegion.r)"
-                fill="rgba(242,180,65,0.16)" stroke="rgba(242,180,65,0.65)" stroke-width="1.5"
-                style="pointer-events:none"/>
-        <circle v-if="aiming.type === 'throw' && hoverWorld"
-                :cx="fit.x(hoverWorld.x)" :cy="fit.y(hoverWorld.y)" :r="fit.len(aiming.blastRadius || 0)"
-                fill="rgba(255,110,40,0.28)" stroke="rgba(255,110,40,0.75)" stroke-width="1.5"
-                style="pointer-events:none"/>
-        <line v-if="aiming.type === 'shoot' && shootRayEnd && aimUnit"
-              :x1="fit.x(aimUnit.x)" :y1="fit.y(aimUnit.y)"
-              :x2="fit.x(shootRayEnd.x)" :y2="fit.y(shootRayEnd.y)"
-              stroke="rgba(255,210,60,0.85)" stroke-width="2" stroke-dasharray="3 3"
-              style="pointer-events:none"/>
-
-        <!-- Expected-outcome badges: "-NN" damage or "BLIND", over every unit the
-             current cursor position would hit (see aimPreviewList) -->
-        <g v-for="p in aimPreviewList" :key="'aimprev'+p.id"
-           :style="{ transform: `translate(${fit.x(p.x)}px, ${fit.y(p.y) - unitR(units.find(u => u.id === p.id) ?? {}) - 12}px)` }"
-           style="pointer-events:none">
-          <rect :x="-14" y="-9" width="28" height="14" rx="3"
-                fill="rgba(20,10,8,0.8)" :stroke="p.text === 'BLIND' ? '#8ad0e6' : '#ff6b57'" stroke-width="1"/>
-          <text x="0" y="1.5" text-anchor="middle" dominant-baseline="middle"
-                :fill="p.text === 'BLIND' ? '#8ad0e6' : '#ff6b57'"
-                :font-family="rdr.font" font-size="9" font-weight="700">{{p.text}}</text>
-        </g>
+              class="sl-clickable"/>
       </template>
 
       <!-- Grid -->
@@ -842,6 +838,10 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
           <circle v-if="u.id === selectedId && u.id !== highlightUnitId && !(u.id === blinkTargetId && field.ui?.blinkActiveUnit) && !field.ui?.highlightSelectedSquare"
                   cx="0" cy="0" :r="unitR(u)+6"
                   fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <!-- Roster-hovered unit ring: soft solid ring, hidden once the unit is active/selected -->
+          <circle v-if="u.id === hoveredId && u.id !== highlightUnitId && u.id !== selectedId"
+                  cx="0" cy="0" :r="unitR(u)+6"
+                  fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5"/>
           <!-- Facing indicator: filled arrowhead on unit edge (hidden under fog) -->
           <polygon v-if="facingActive"
                    :points="facingArrow(u)"
@@ -866,30 +866,30 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             <!-- Invisible hit-area: the image itself has pointer-events:none so it doesn't block clicks on what's behind it -->
             <rect :x="-unitR(u)" :y="-unitR(u)"
                   :width="unitR(u)*2" :height="unitR(u)*2"
-                  fill="transparent" style="pointer-events:all"/>
+                  fill="transparent" class="sl-allevents"/>
             <image :x="-unitR(u)" :y="-unitR(u)"
                    :width="unitR(u)*2" :height="unitR(u)*2"
                    :href="teamSpriteHref(u.imagePath, u.teamObj?.raw, field.ui?.recolorTeamSprites)"
-                   style="pointer-events:none;image-rendering:pixelated"/>
+                   class="sl-noevents sl-pixel"/>
           </template>
           <template v-else-if="facingActive">
             <circle v-if="markerSpec(u).kind === 'circle'" cx="0" cy="0" :r="markerSpec(u).r"
-                    :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
+                    :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" class="sl-noevents"/>
             <template v-else-if="markerSpec(u).kind === 'ring'">
               <circle cx="0" cy="0" :r="markerSpec(u).rOuter" fill="none"
                       :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="1.6"
-                      style="pointer-events:none"/>
+                      class="sl-noevents"/>
               <circle cx="0" cy="0" :r="markerSpec(u).rInner"
-                      :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
+                      :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" class="sl-noevents"/>
             </template>
             <polygon v-else :points="markerSpec(u).points"
-                     :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
+                     :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" class="sl-noevents"/>
           </template>
           <text v-else x="0" y="0"
                 :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" :font-family="rdr.font"
                 :font-size="unitR(u)" font-weight="800"
                 text-anchor="middle" dominant-baseline="central"
-                style="user-select:none;pointer-events:none">{{u.name[0].toUpperCase()}}</text>
+                class="sl-noselect sl-noevents">{{u.name[0].toUpperCase()}}</text>
           <!-- HP bar -->
           <template v-if="field.ui?.showHpBars !== false">
             <rect :x="-unitR(u)" :y="unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
@@ -899,6 +899,43 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
           </template>
         </g>
       </g>
+      </template>
+
+      <!-- Aiming overlay: same-shape reach arc as the move highlight, but at the aimed
+           action's own range (throw range / weapon range), colored to read as a distinct
+           mode. A throw adds a blast-radius preview at the cursor; a shoot adds an aim ray
+           from the unit to the cursor, clipped to weapon range. Drawn after terrain/walls/
+           units (not alongside the legal-move highlight above) so the shading and outcome
+           badges read on top of the map instead of being covered by it. -->
+      <template v-if="aiming">
+        <path v-if="aimRegionPathD" :d="aimRegionPathD"
+              fill="rgba(242,180,65,0.16)" stroke="rgba(242,180,65,0.65)" stroke-width="1.5"
+              class="sl-noevents"/>
+        <circle v-else-if="aimRegion"
+                :cx="fit.x(aimRegion.cx)" :cy="fit.y(aimRegion.cy)" :r="fit.len(aimRegion.r)"
+                fill="rgba(242,180,65,0.16)" stroke="rgba(242,180,65,0.65)" stroke-width="1.5"
+                class="sl-noevents"/>
+        <circle v-if="aiming.type === 'throw' && hoverWorld"
+                :cx="fit.x(hoverWorld.x)" :cy="fit.y(hoverWorld.y)" :r="fit.len(aiming.blastRadius || 0)"
+                fill="rgba(255,110,40,0.28)" stroke="rgba(255,110,40,0.75)" stroke-width="1.5"
+                class="sl-noevents"/>
+        <line v-if="aiming.type === 'shoot' && shootRayEnd && aimUnit"
+              :x1="fit.x(aimUnit.x)" :y1="fit.y(aimUnit.y)"
+              :x2="fit.x(shootRayEnd.x)" :y2="fit.y(shootRayEnd.y)"
+              stroke="rgba(255,210,60,0.85)" stroke-width="2" stroke-dasharray="3 3"
+              class="sl-noevents"/>
+
+        <!-- Expected-outcome badges: "-NN" damage or "BLIND", over every unit the
+             current cursor position would hit (see aimPreviewList) -->
+        <g v-for="p in aimPreviewList" :key="'aimprev'+p.id"
+           :style="{ transform: `translate(${fit.x(p.x)}px, ${fit.y(p.y) - unitR(units.find(u => u.id === p.id) ?? {}) - 12}px)` }"
+           class="sl-noevents">
+          <rect :x="-14" y="-9" width="28" height="14" rx="3"
+                fill="rgba(20,10,8,0.8)" :stroke="p.text === 'BLIND' ? '#8ad0e6' : '#ff6b57'" stroke-width="1"/>
+          <text x="0" y="1.5" text-anchor="middle" dominant-baseline="middle"
+                :fill="p.text === 'BLIND' ? '#8ad0e6' : '#ff6b57'"
+                :font-family="rdr.font" font-size="9" font-weight="700">{{p.text}}</text>
+        </g>
       </template>
 
       <!-- Continuous-map fog: a single semi-transparent veil with each shown unit's vision
@@ -929,12 +966,12 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             :x="fit.x(dragHoverSq[0])" :y="fit.y(dragHoverSq[1])"
             :width="fit.len(1)" :height="fit.len(1)"
             fill="rgba(66,198,230,0.55)" stroke="rgba(66,198,230,0.9)" stroke-width="2"
-            style="pointer-events:none"/>
+            class="sl-noevents"/>
 
       <!-- Drag: ghost piece following cursor -->
       <g v-if="dragUnit && dragSvgPos"
          :style="{ transform: `translate(${dragSvgPos.x}px, ${dragSvgPos.y}px)` }"
-         style="pointer-events:none;opacity:0.75">
+         class="sl-drag">
         <circle v-if="!dragUnit.imagePath && unitShape(dragUnit)==='circle'"
                 cx="0" cy="0" :r="unitR(dragUnit)"
                 :fill="dragUnit.teamObj.raw" stroke="white" stroke-width="2"/>
@@ -949,7 +986,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                :x="-unitR(dragUnit)" :y="-unitR(dragUnit)"
                :width="unitR(dragUnit)*2" :height="unitR(dragUnit)*2"
                :href="dragUnit.imagePath"
-               style="image-rendering:pixelated"/>
+               class="sl-pixel"/>
         <template v-else-if="facingActive">
           <circle v-if="markerSpec(dragUnit).kind === 'circle'" cx="0" cy="0" :r="markerSpec(dragUnit).r" fill="white"/>
           <template v-else-if="markerSpec(dragUnit).kind === 'ring'">
@@ -962,12 +999,12 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               fill="white" :font-family="rdr.font"
               :font-size="unitR(dragUnit)" font-weight="800"
               text-anchor="middle" dominant-baseline="central"
-              style="user-select:none">{{dragUnit.name[0].toUpperCase()}}</text>
+              class="sl-noselect">{{dragUnit.name[0].toUpperCase()}}</text>
       </g>
     </svg>
 
     <!-- Fog mask (radial gradient blobs, only for non-square non-chess-fog games) -->
-    <div v-if="fog && !field.ui?.gridFog && field.grid !== 'square'" class="bf-layer" style="pointer-events:none;z-index:3"
+    <div v-if="fog && !field.ui?.gridFog && field.grid !== 'square'" class="bf-layer sl-fog"
          :style="{
            background: rdr.fogS,
            WebkitMaskImage: fogMask,
@@ -993,4 +1030,11 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
 .unit-blink {
   animation: unit-blink 0.6s steps(1, end) infinite;
 }
+.sl-noevents { pointer-events: none; }
+.sl-allevents { pointer-events: all; }
+.sl-clickable { cursor: pointer; }
+.sl-pixel { image-rendering: pixelated; }
+.sl-noselect { user-select: none; }
+.sl-drag { pointer-events: none; opacity: 0.75; }
+.sl-fog { pointer-events: none; z-index: 3; }
 </style>

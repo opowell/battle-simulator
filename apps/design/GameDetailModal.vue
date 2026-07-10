@@ -57,24 +57,24 @@ const playersLabel = computed(() => {
         <div class="gdm-body">
           <div class="gdm-head">
             <span class="gdm-icon"><BsIcon :name="game.icon || 'grid'" :size="20" color="var(--accent)"/></span>
-            <div style="min-width:0">
+            <div class="gdm-name-wrap">
               <div class="gdm-name">{{game.name}}</div>
-              <div class="mono" style="font-size:11px;color:var(--dim)">{{playersLabel}}</div>
+              <div class="mono gdm-players">{{playersLabel}}</div>
             </div>
           </div>
 
-          <div v-if="game.scenarios?.length" style="margin-top:14px">
-            <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:8px">Scenarios</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <div v-if="game.scenarios?.length" class="gdm-scenarios">
+            <div class="gdm-scenarios-title">Scenarios</div>
+            <div class="gdm-tags">
               <span v-for="sc in game.scenarios" :key="sc.id" class="tag">{{sc.name}}</span>
             </div>
           </div>
 
-          <div style="display:flex;gap:10px;margin-top:18px">
-            <button class="btn" style="flex:1;justify-content:center;padding:11px" @click="$emit('configure', game)">
+          <div class="gdm-actions">
+            <button class="btn gdm-action" @click="$emit('configure', game)">
               <BsIcon name="sliders" :size="14" color="var(--dim)"/> Start…
             </button>
-            <button class="btn btn-primary" style="flex:1;justify-content:center;padding:11px" @click="$emit('quick-start', game)">
+            <button class="btn btn-primary gdm-action" @click="$emit('quick-start', game)">
               <BsIcon name="play" :size="14" color="#04222b" :stroke="2"/> Quick start
             </button>
           </div>
@@ -97,6 +97,13 @@ const playersLabel = computed(() => {
 .gdm-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.4);cursor:pointer}
 .gdm-dot.on{background:#fff}
 .gdm-body{padding:18px 20px 20px;overflow-y:auto}
+.gdm-name-wrap{min-width:0}
+.gdm-players{font-size:11px;color:var(--dim)}
+.gdm-scenarios{margin-top:14px}
+.gdm-scenarios-title{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
+.gdm-tags{display:flex;flex-wrap:wrap;gap:6px}
+.gdm-actions{display:flex;gap:10px;margin-top:18px}
+.gdm-action{flex:1;justify-content:center;padding:11px}
 .gdm-head{display:flex;align-items:center;gap:12px}
 .gdm-icon{width:38px;height:38px;border-radius:8px;display:grid;place-items:center;border:1px solid var(--line2);background:var(--bg2);flex:none}
 .gdm-name{font-weight:700;font-size:17px}

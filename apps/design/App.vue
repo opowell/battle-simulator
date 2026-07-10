@@ -531,54 +531,49 @@ function exitBattle() {
 </script>
 
 <template>
-  <div style="height:100vh;display:flex;flex-direction:column">
+  <div class="app-root">
     <div class="topbar" v-if="view !== 'battle'">
       <div class="brand">
         <span class="mark"><BsIcon name="crosshair" :size="15"/></span>
         BATTLE&nbsp;SIMULATOR
       </div>
-      <div class="statuschip"
-           :style="serverErr ? {borderColor:'var(--danger)',color:'var(--danger)'} : {}">
-        <span class="pulse"
-              :style="serverErr ? {background:'var(--danger)',animationPlayState:'paused'} : {}"/>
+      <div class="statuschip" :class="{ 'app-chip--err': serverErr }">
+        <span class="pulse" :class="{ 'app-pulse--err': serverErr }"/>
         {{ serverErr ? 'offline' : 'api · localhost:3000' }}
       </div>
-      <div style="flex:1"/>
-      <span class="mono" style="font-size:11px;color:var(--faint)">
+      <div class="app-spacer"/>
+      <span class="mono app-games">
         {{apiGames.length}} games
       </span>
-      <button class="iconbtn" @click="openSettings" title="Settings" style="color:var(--dim)">
+      <button class="iconbtn app-settings-btn" @click="openSettings" title="Settings">
         <BsIcon name="sliders" :size="15" color="var(--dim)"/>
       </button>
     </div>
 
-    <div style="flex:1;min-height:0">
-      <div v-if="view === 'settings'"
-           style="height:100%;overflow-y:auto;padding:32px 24px;display:flex;align-items:flex-start;justify-content:center">
-        <div style="width:100%;max-width:480px;display:flex;flex-direction:column;gap:20px">
-          <div style="display:flex;align-items:center;gap:14px">
+    <div class="app-body">
+      <div v-if="view === 'settings'" class="app-settings">
+        <div class="app-settings-inner">
+          <div class="app-settings-head">
             <button class="btn btn-ghost btn-sm" @click="closeSettings">
               <BsIcon name="back" :size="13" color="var(--dim)"/> Back
             </button>
-            <span class="up" style="font-size:12px;font-weight:700;letter-spacing:.12em">Settings</span>
+            <span class="up app-settings-title">Settings</span>
           </div>
           <div class="panel">
             <div class="panel-h"><span class="panel-t">Theme</span></div>
-            <div class="panel-b" style="display:flex;flex-direction:column;gap:8px">
+            <div class="panel-b app-theme-list">
               <button v-for="th in THEMES" :key="th.id"
-                      :class="['scenrow', theme === th.id && 'sel']"
-                      style="text-align:left"
+                      :class="['scenrow', 'app-theme-row', theme === th.id && 'sel']"
                       @click="theme = th.id">
-                <div class="scenmark" :style="theme === th.id ? 'border-color:var(--accent)' : ''">
-                  <div :style="{width:'14px',height:'14px',borderRadius:'50%',background:th.accent}"/>
+                <div class="scenmark">
+                  <div class="app-swatch app-swatch--accent" :style="{background:th.accent}"/>
                 </div>
                 <div>
-                  <div style="font-size:14px;font-weight:600">{{th.label}}</div>
-                  <div style="font-size:11px;color:var(--dim)" class="mono">{{th.id}}</div>
+                  <div class="app-theme-label">{{th.label}}</div>
+                  <div class="mono app-theme-id">{{th.id}}</div>
                 </div>
-                <div style="display:flex;gap:5px;align-items:center">
-                  <div v-for="c in th.teams" :key="c"
-                       :style="{width:'16px',height:'16px',borderRadius:'50%',background:c}"/>
+                <div class="app-team-swatches">
+                  <div v-for="c in th.teams" :key="c" class="app-swatch app-swatch--team" :style="{background:c}"/>
                 </div>
               </button>
             </div>
@@ -609,10 +604,32 @@ function exitBattle() {
                    @open-settings="openSettings"
                    @submit-action="submitAction"
                    @set-marker="setMarker"/>
-      <div v-else
-           style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--dim)">
+      <div v-else class="app-loading">
         Loading…
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.app-root { height: 100vh; display: flex; flex-direction: column; }
+.app-chip--err { border-color: var(--danger); color: var(--danger); }
+.app-pulse--err { background: var(--danger); animation-play-state: paused; }
+.app-spacer { flex: 1; }
+.app-games { font-size: 11px; color: var(--faint); }
+.app-settings-btn { color: var(--dim); }
+.app-body { flex: 1; min-height: 0; }
+.app-settings { height: 100%; overflow-y: auto; padding: 32px 24px; display: flex; align-items: flex-start; justify-content: center; }
+.app-settings-inner { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 20px; }
+.app-settings-head { display: flex; align-items: center; gap: 14px; }
+.app-settings-title { font-size: 12px; font-weight: 700; letter-spacing: .12em; }
+.app-theme-list { display: flex; flex-direction: column; gap: 8px; }
+.app-theme-row { text-align: left; }
+.app-theme-label { font-size: 14px; font-weight: 600; }
+.app-theme-id { font-size: 11px; color: var(--dim); }
+.app-team-swatches { display: flex; gap: 5px; align-items: center; }
+.app-swatch { border-radius: 50%; }
+.app-swatch--accent { width: 14px; height: 14px; }
+.app-swatch--team { width: 16px; height: 16px; }
+.app-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--dim); }
+</style>

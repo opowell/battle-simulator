@@ -22,19 +22,22 @@ const fontSize  = computed(() => Math.max(11, props.r * (props.fx.died ? 1.15 : 
 </script>
 
 <template>
-  <g style="pointer-events:none">
+  <g class="fx-layer">
     <circle cx="0" cy="0" :r="r" :fill="fill" :class="flashClass"/>
     <text v-if="fx.amount != null"
           x="0" :y="-r - 2" text-anchor="middle"
           :font-size="fontSize" font-weight="800"
           :fill="numFill" stroke="rgba(0,0,0,0.65)" stroke-width="0.7"
-          class="fx-num" style="paint-order:stroke;font-family:ui-monospace,monospace">
+          class="fx-num">
       {{ numText }}
     </text>
   </g>
 </template>
 
 <style scoped>
+.fx-layer { pointer-events: none; }
+.fx-num { paint-order: stroke; font-family: ui-monospace, monospace; }
+
 /* Action / heal: a single soft flash that fades out. */
 @keyframes fx-pulse { 0% { opacity: 0.7; } 100% { opacity: 0; } }
 .fx-pulse { animation: fx-pulse 0.38s ease-out forwards; }

@@ -207,8 +207,7 @@ function onClick(e) {
 
 <template>
   <div ref="host" class="bf-layer" :style="{ background: rdr.stage, overflow: 'hidden' }">
-    <svg ref="svgEl" :width="box.w" :height="box.h" @click="onClick"
-         style="position:absolute;inset:0;display:block;cursor:pointer">
+    <svg ref="svgEl" :width="box.w" :height="box.h" @click="onClick" class="iso-svg">
       <defs>
         <!-- clips a sprite tile to its inscribed diamond, trimming the opaque corners some
              tilesets bake in (classic Civ2 tiles overlap; we tessellate exactly instead) -->
@@ -218,7 +217,7 @@ function onClick(e) {
         <pattern v-for="p in scene.patterns" :key="p.id" :id="p.id"
                  patternUnits="userSpaceOnUse" :width="TS" :height="TS" :patternTransform="p.matrix">
           <image :href="p.href" :width="TS" :height="TS" preserveAspectRatio="none"
-                 style="image-rendering:pixelated"/>
+                 class="iso-pixel"/>
         </pattern>
       </defs>
 
@@ -231,7 +230,7 @@ function onClick(e) {
             <polygon :points="d.top" :fill="d.topFill"
                      :stroke="rdr.grid" stroke-width="0.5" stroke-linejoin="round"/>
             <image v-if="d.img" :href="d.img" :x="d.imgX" :y="d.imgY" :width="d.imgW" :height="d.imgH"
-                   preserveAspectRatio="none" clip-path="url(#isodiamond)" style="image-rendering:pixelated"/>
+                   preserveAspectRatio="none" clip-path="url(#isodiamond)" class="iso-pixel"/>
           </template>
           <!-- texture mode: extruded diamond with cliff faces -->
           <template v-else>
@@ -241,12 +240,12 @@ function onClick(e) {
                      :stroke="rdr.grid" stroke-width="0.75" stroke-linejoin="round"/>
           </template>
           <polygon v-if="tileHi(d)" :points="d.top" :fill="tileHi(d)"
-                   stroke="rgba(66,198,230,0.75)" stroke-width="1" style="pointer-events:none"/>
-          <polygon v-if="d.fogged" :points="d.top" fill="rgba(9,11,16,0.60)" style="pointer-events:none"/>
+                   stroke="rgba(66,198,230,0.75)" stroke-width="1" class="iso-noevents"/>
+          <polygon v-if="d.fogged" :points="d.top" fill="rgba(9,11,16,0.60)" class="iso-noevents"/>
         </g>
 
         <!-- Unit / city -->
-        <g v-else style="pointer-events:none">
+        <g v-else class="iso-noevents">
           <g v-if="d.u.dead" :opacity="0.4">
             <line :x1="d.sx-d.hw*.4" :y1="d.syTop-d.hh*.4" :x2="d.sx+d.hw*.4" :y2="d.syTop+d.hh*.4"
                   :stroke="d.u.teamObj.raw" stroke-width="2"/>
@@ -277,7 +276,7 @@ function onClick(e) {
             <!-- sprite -->
             <image v-if="d.u.imagePath" :href="d.u.imagePath"
                    :x="d.imgX" :y="d.imgY" :width="d.spriteW" :height="d.spriteW"
-                   preserveAspectRatio="xMidYMax meet" style="image-rendering:pixelated"/>
+                   preserveAspectRatio="xMidYMax meet" class="iso-pixel"/>
             <template v-else-if="facingActive">
               <circle v-if="markerGlyph(markerShapeFor(d.u.type), d.hw*0.18).kind === 'circle'"
                       :cx="d.sx" :cy="d.syTop" :r="markerGlyph(markerShapeFor(d.u.type), d.hw*0.18).r"
@@ -312,4 +311,7 @@ function onClick(e) {
 <style scoped>
 @keyframes iso-active-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 .iso-active { animation: iso-active-pulse 1.2s ease-in-out infinite; }
+.iso-svg { position: absolute; inset: 0; display: block; cursor: pointer; }
+.iso-pixel { image-rendering: pixelated; }
+.iso-noevents { pointer-events: none; }
 </style>

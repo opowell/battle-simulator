@@ -17,15 +17,28 @@ const props = defineProps({
   selectedId: { type: String, default: null },
 });
 
-// Vision shown: the selected friendly unit's own vision, else the whole player's union.
+function regionToShape(r) {
+  if (r.kind === 'circle')
+    return { kind: 'circle', cx: props.fit.x(r.cx), cy: props.fit.y(r.cy), r: props.fit.len(r.r) };
+  // 'sector' (open cone) or 'polyarc' (exact wall-occluded region) → one SVG path.
+  return { kind: 'path', d: VISION.regionPath(r, props.fit) };
+}
+
+// Fog always shows the whole player's vision (union of every friendly unit's region) —
+// selection never narrows what's punched out of the veil.
 const regions = computed(() => {
+  const sources = VISION.visionSources(props.units, props.viewerId, null);
+  return VISION.visionRegions(props.field, sources).map(regionToShape);
+});
+
+// When a unit is selected, its own vision region is additionally traced as a highlighted
+// outline on top of the fog/units, so a player can tell what THAT unit specifically sees
+// within the broader team vision.
+const highlightRegion = computed(() => {
+  if (props.selectedId == null) return null;
   const sources = VISION.visionSources(props.units, props.viewerId, props.selectedId);
-  return VISION.visionRegions(props.field, sources).map(r => {
-    if (r.kind === 'circle')
-      return { kind: 'circle', cx: props.fit.x(r.cx), cy: props.fit.y(r.cy), r: props.fit.len(r.r) };
-    // 'sector' (open cone) or 'polyarc' (exact wall-occluded region) → one SVG path.
-    return { kind: 'path', d: VISION.regionPath(r, props.fit) };
-  });
+  if (sources.length !== 1 || sources[0].id !== props.selectedId) return null;
+  return regionToShape(VISION.unitVisionRegion(props.field, sources[0]));
 });
 
 const board = computed(() => ({
@@ -35,7 +48,7 @@ const board = computed(() => ({
 </script>
 
 <template>
-  <g style="pointer-events:none">
+  <g class="fog-layer">
     <defs>
       <mask id="bfFogMask" maskUnits="userSpaceOnUse"
             :x="board.x" :y="board.y" :width="board.w" :height="board.h">
@@ -49,5 +62,17 @@ const board = computed(() => ({
     </defs>
     <rect :x="board.x" :y="board.y" :width="board.w" :height="board.h"
           :fill="rdr.fogA" opacity="0.66" mask="url(#bfFogMask)"/>
+    <!-- Selected unit's own vision region, traced on top so it reads distinctly from the
+         team's shared vision underneath (which already includes it). -->
+    <template v-if="highlightRegion">
+      <circle v-if="highlightRegion.kind === 'circle'" class="selected-vision"
+              :cx="highlightRegion.cx" :cy="highlightRegion.cy" :r="highlightRegion.r"/>
+      <path v-else class="selected-vision" :d="highlightRegion.d"/>
+    </template>
   </g>
 </template>
+
+<style scoped>
+.fog-layer { pointer-events: none; }
+.selected-vision { fill: none; stroke: rgba(255,255,255,0.85); stroke-width: 1.5; stroke-dasharray: 4 3; }
+</style>

@@ -43,16 +43,16 @@ function fmtTime(ms) {
 </script>
 
 <template>
-  <div class="field" :title="opt.description" style="grid-column:1 / -1">
+  <div class="field adf" :title="opt.description">
     <label>{{ opt.label }}</label>
-    <div class="seg" style="font-size:11px;margin:4px 0 8px">
-      <button :class="{ on: mode === 'power' }" @click="setMode('power')" style="padding:3px 10px">Power level</button>
-      <button :class="{ on: mode === 'time' }"  @click="setMode('time')"  style="padding:3px 10px">Time limit</button>
+    <div class="seg adf-seg">
+      <button :class="{ on: mode === 'power' }" @click="setMode('power')" class="adf-seg-btn">Power level</button>
+      <button :class="{ on: mode === 'time' }"  @click="setMode('time')"  class="adf-seg-btn">Time limit</button>
     </div>
 
     <template v-if="mode === 'power'">
-      <label style="font-weight:400;color:var(--dim)">
-        {{ (power ?? 0) === 0 ? 'Random' : power }} <span style="opacity:.6">/ 100</span>
+      <label class="adf-value">
+        {{ (power ?? 0) === 0 ? 'Random' : power }} <span class="adf-value-unit">/ 100</span>
       </label>
       <input type="range" min="0" max="100" step="1"
              :value="power ?? 0"
@@ -60,8 +60,8 @@ function fmtTime(ms) {
     </template>
 
     <template v-else>
-      <label style="font-weight:400;color:var(--dim)">
-        {{ fmtTime(time) }} <span style="opacity:.6">per move</span>
+      <label class="adf-value">
+        {{ fmtTime(time) }} <span class="adf-value-unit">per move</span>
       </label>
       <input type="range" min="0" :max="SLIDER_MAX" step="1"
              :value="msToPos(time)"
@@ -69,3 +69,11 @@ function fmtTime(ms) {
     </template>
   </div>
 </template>
+
+<style scoped>
+.adf { grid-column: 1 / -1; }
+.adf-seg { font-size: 11px; margin: 4px 0 8px; }
+.adf-seg-btn { padding: 3px 10px; }
+.adf-value { font-weight: 400; color: var(--dim); }
+.adf-value-unit { opacity: .6; }
+</style>

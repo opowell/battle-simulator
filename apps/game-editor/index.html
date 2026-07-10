@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Game Editor — Battle Simulator</title>
+<link rel="stylesheet" href="/ui/design/vendor/fonts/fonts.css"/>
+<style>
+:root{
+  --bg0:#0a0d10; --bg1:#10151a; --bg2:#161c23; --bg3:#1c242c;
+  --line:#232c35; --line2:#2f3a45; --line3:#3a4754;
+  --txt:#d6dde3; --dim:#8a96a1; --faint:#5a656f;
+  --accent:#42c6e6; --accent-d:#1d8aa6;
+  --ok:#46d39a; --warn:#f2b441; --danger:#ff5f56;
+  --r:6px; --r2:10px;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --ui:'Chakra Petch',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg0);color:var(--txt);font-family:var(--ui);font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased;overflow:hidden}
+#app{height:100vh;width:100vw}
+.mono{font-family:var(--mono)}
+.up{text-transform:uppercase;letter-spacing:.08em}
+button{font-family:inherit;color:inherit;cursor:pointer}
+a{color:var(--accent);text-decoration:none}
+::selection{background:var(--accent-d);color:#fff}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:var(--line3)}
+::-webkit-scrollbar-track{background:transparent}
+
+.topbar{height:52px;display:flex;align-items:center;gap:18px;padding:0 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--bg2),var(--bg1))}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.14em;font-size:13px;white-space:nowrap;flex-shrink:0}
+.brand .mark{width:24px;height:24px;display:grid;place-items:center;border:1px solid var(--accent);color:var(--accent);border-radius:5px;box-shadow:0 0 14px -4px var(--accent)}
+.statuschip{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--dim);border:1px solid var(--line);background:var(--bg1);padding:4px 9px;border-radius:20px;white-space:nowrap}
+.spacer{flex:1}
+
+.panel{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r2);display:flex;flex-direction:column;min-height:0}
+.panel-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.panel-t{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.panel-b{padding:14px;overflow:auto;min-height:0}
+
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);padding:8px 13px;border-radius:var(--r);font-size:13px;font-weight:500;transition:.12s;white-space:nowrap}
+.btn:hover{border-color:var(--line3);background:var(--bg3)}
+.btn:active{transform:translateY(1px)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#04222b;font-weight:600}
+.btn-primary:hover{background:#5cd4f0;border-color:#5cd4f0}
+.btn-danger{border-color:rgba(255,95,86,.4);color:var(--danger)}
+.btn-danger:hover{background:rgba(255,95,86,.12);border-color:var(--danger)}
+.btn-ghost{background:transparent;border-color:transparent}
+.btn-ghost:hover{background:var(--bg2);border-color:var(--line)}
+.btn[disabled]{opacity:.4;pointer-events:none}
+
+.badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;font-weight:500;padding:2px 7px;border-radius:4px;letter-spacing:.05em;text-transform:uppercase}
+.badge-warn{background:rgba(242,180,65,.12);color:var(--warn)}
+.badge-ok{background:rgba(70,211,154,.12);color:var(--ok)}
+
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+input,select,textarea{font-family:var(--ui);font-size:13px;background:var(--bg0);color:var(--txt);border:1px solid var(--line2);border-radius:var(--r);padding:8px 10px;outline:none;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea.code{font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre;resize:none;tab-size:2;flex:1}
+
+.glist{display:flex;flex-direction:column;gap:8px}
+.grow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 12px;border:1px solid var(--line);border-radius:var(--r2);background:var(--bg2);cursor:pointer;transition:.12s;text-align:left;width:100%}
+.grow:hover{border-color:var(--line3);background:var(--bg3)}
+.grow.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.gicon{width:38px;height:38px;border-radius:8px;display:grid;place-items:center;border:1px solid var(--line2);background:var(--bg0);flex:none;color:var(--accent)}
+.gname{font-weight:600}
+.gmeta{font-family:var(--mono);font-size:11px;color:var(--dim)}
+
+.tabs{display:inline-flex;background:var(--bg0);border:1px solid var(--line);border-radius:var(--r);padding:2px;gap:2px}
+.tabs button{border:none;background:transparent;color:var(--dim);padding:6px 13px;border-radius:4px;font-size:12px;font-weight:500}
+.tabs button:hover{color:var(--txt)}
+.tabs button.on{background:var(--bg3);color:var(--accent);box-shadow:inset 0 0 0 1px var(--line2)}
+
+.slot{display:grid;grid-template-columns:1fr 1fr auto;gap:9px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg2)}
+.slot+.slot{margin-top:8px}
+
+.iconpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:6px;max-height:180px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg0)}
+.iconopt{aspect-ratio:1;display:grid;place-items:center;border:1px solid var(--line);border-radius:var(--r);background:var(--bg2);color:var(--dim);cursor:pointer}
+.iconopt:hover{border-color:var(--line3);color:var(--txt)}
+.iconopt.on{border-color:var(--accent);color:var(--accent);background:var(--bg3)}
+
+.filelist{display:flex;flex-direction:column;gap:2px}
+.filerow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border-radius:var(--r);cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--dim);border:1px solid transparent}
+.filerow:hover{background:var(--bg2);color:var(--txt)}
+.filerow.on{background:var(--bg3);color:var(--accent);border-color:var(--line2)}
+.filerow .sz{font-size:10px;color:var(--faint)}
+
+.toast{position:fixed;bottom:18px;right:18px;z-index:2000;display:flex;flex-direction:column;gap:8px}
+.toastmsg{padding:10px 14px;border-radius:var(--r);border:1px solid var(--line2);background:var(--bg2);font-size:13px;box-shadow:0 10px 30px -10px rgba(0,0,0,.7);max-width:360px}
+.toastmsg.err{border-color:var(--danger);color:#ffd7d4}
+.toastmsg.ok{border-color:var(--ok);color:#c9f5e2}
+
+.banner{display:flex;align-items:center;gap:10px;padding:9px 14px;background:rgba(242,180,65,.1);border:1px solid rgba(242,180,65,.35);border-radius:var(--r);color:var(--warn);font-size:12.5px}
+
+.modal-scrim{position:fixed;inset:0;z-index:1000;background:rgba(4,7,10,.78);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:24px}
+.modal-panel{position:relative;background:var(--bg1);border:1px solid var(--line2);border-radius:var(--r2);box-shadow:0 24px 64px -12px rgba(0,0,0,.85);max-height:90vh;width:520px;display:flex;flex-direction:column;overflow:hidden}
+.muted{color:var(--dim)}
+.empty{display:grid;place-items:center;height:100%;color:var(--faint);font-size:13px;text-align:center;padding:24px}
+
+/* layout + form structure */
+.editor{height:100%;display:flex;flex-direction:column}
+.editor-body{flex:1;display:grid;grid-template-columns:320px 1fr;gap:14px;padding:14px;min-height:0}
+.banner-wrap{padding:10px 16px 0}
+.detail-head-l{display:flex;align-items:center;gap:12px}
+.detail-title{font-size:14px;letter-spacing:.04em;text-transform:none;color:var(--txt)}
+.gicon-sm{width:30px;height:30px}
+.meta-tab{max-width:640px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-actions{margin-top:20px;display:flex;gap:10px}
+.form-actions.right{justify-content:flex-end}
+.players-add{margin-top:8px;align-self:flex-start}
+.files-tab{display:grid;grid-template-columns:220px 1fr;gap:14px;padding:0;height:100%;min-height:0}
+.files-side{border-right:1px solid var(--line);padding:12px;overflow:auto}
+.files-main{display:flex;flex-direction:column;min-height:0;padding:12px}
+.files-bar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+
+/* small utilities */
+.mt14{margin-top:14px}
+.mt16{margin-top:16px}
+.hint{font-size:11px}
+.txt-sm{font-size:12px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="/ui/design/vendor/vue.global.js"></script>
+<script src="/ui/design/vendor/vue3-sfc-loader.js"></script>
+<script src="./icons.js"></script>
+<script src="./api.js"></script>
+<script>
+(function () {
+  const { loadModule } = window['vue3-sfc-loader'];
+  const sfcOptions = {
+    moduleCache: { vue: Vue },
+    async getFile(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.status + ' ' + url);
+      return r.text();
+    },
+    addStyle(css) {
+      const s = document.createElement('style');
+      s.textContent = css;
+      document.head.appendChild(s);
+    },
+  };
+
+  const BsIcon = {
+    props: { name: String, size: { default: 18 }, color: { default: 'currentColor' }, stroke: { default: 1.7 } },
+    template: `
+      <svg :width="size" :height="size" viewBox="0 0 24 24" fill="none"
+           :stroke="color" :stroke-width="stroke" stroke-linecap="round" stroke-linejoin="round">
+        <path :d="paths[name] || paths.grid"/>
+      </svg>`,
+    data() { return { paths: window.ICON_PATHS }; },
+  };
+
+  const app = Vue.createApp({
+    components: {
+      App: Vue.defineAsyncComponent(() => loadModule('./App.vue', sfcOptions)),
+    },
+    template: '<App/>',
+  });
+  Object.assign(app.config.globalProperties, { ICON_PATHS: window.ICON_PATHS });
+  app.component('BsIcon', BsIcon);
+  app.mount('#app');
+})();
+</script>
+</body>
+</html>

@@ -13,37 +13,48 @@ defineEmits(['toggle-menu', 'show-help']);
 </script>
 
 <template>
-  <div style="padding:12px 14px;border-bottom:1px solid var(--line)">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+  <div class="gh">
+    <div class="gh-top">
       <BsIcon name="crosshair" :size="14" color="var(--accent)"/>
-      <span v-if="ui.help"
-            style="font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:5px"
+      <span v-if="ui.help" class="gh-game gh-game--link"
             :title="'How to play ' + field.game"
             @click="$emit('show-help')">
         {{field.game}}
-        <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(66,198,230,.12);color:var(--accent);font-weight:500;letter-spacing:.04em">?</span>
+        <span class="gh-help">?</span>
       </span>
-      <span v-else style="font-weight:700;font-size:14px">{{field.game}}</span>
-      <button class="iconbtn" title="Menu" style="width:22px;height:22px"
-              :style="{borderColor: showMenu ? 'var(--accent)' : 'var(--line2)'}"
+      <span v-else class="gh-game">{{field.game}}</span>
+      <button class="iconbtn gh-menu-btn" title="Menu"
+              :class="{ 'gh-menu-btn--on': showMenu }"
               @click="$emit('toggle-menu')">
         <BsIcon name="grid" :size="12" :color="showMenu ? 'var(--accent)' : 'var(--dim)'"/>
       </button>
-      <span class="mono" style="font-size:11px;color:var(--faint);margin-left:auto">Turn {{liveState?.turn ?? 0}}</span>
+      <span class="mono gh-turn">Turn {{liveState?.turn ?? 0}}</span>
     </div>
-    <div v-if="isLive" style="display:flex">
-      <span v-if="isDone"
-            style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(70,211,154,.1);color:var(--ok)">
+    <div v-if="isLive" class="gh-status">
+      <span v-if="isDone" class="gh-chip gh-chip--ok">
         ✓ {{liveState.result?.winner ? 'Winner: ' + liveState.result.winner : 'Game over'}}
       </span>
-      <span v-else-if="isPending"
-            class="mono" style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(70,211,154,.1);color:var(--ok)">
+      <span v-else-if="isPending" class="mono gh-chip gh-chip--ok">
         ● Your turn · {{pendingPlayerId}}
       </span>
-      <span v-else
-            class="mono" style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(242,180,65,.1);color:var(--warn)">
+      <span v-else class="mono gh-chip gh-chip--warn">
         ○ AI thinking…
       </span>
     </div>
   </div>
 </template>
+
+<style scoped>
+.gh { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.gh-top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.gh-game { font-weight: 700; font-size: 14px; }
+.gh-game--link { cursor: pointer; display: flex; align-items: center; gap: 5px; }
+.gh-help { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: rgba(66,198,230,.12); color: var(--accent); font-weight: 500; letter-spacing: .04em; }
+.gh-menu-btn { width: 22px; height: 22px; }
+.gh-menu-btn--on { border-color: var(--accent); }
+.gh-turn { font-size: 11px; color: var(--faint); margin-left: auto; }
+.gh-status { display: flex; }
+.gh-chip { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
+.gh-chip--ok { background: rgba(70,211,154,.1); color: var(--ok); }
+.gh-chip--warn { background: rgba(242,180,65,.1); color: var(--warn); }
+</style>
