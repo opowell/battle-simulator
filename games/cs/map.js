@@ -285,7 +285,7 @@ export function getReachable(tiles, pos, range, units) {
   const result  = [];
   while (queue.length) {
     const { x, y, rem } = queue.shift();
-    if (rem === 0) continue;
+    if (rem <= 0) continue;
     for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
       const nx = x + dx, ny = y + dy, nk = k(nx, ny);
       if (!visited.has(nk) && isWalkable(tiles, nx, ny) && !occupied.has(nk)) {

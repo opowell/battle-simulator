@@ -104,12 +104,11 @@ Grenades are thrown with a `throw` action to any walkable tile within 8 tiles (n
 | Type | Phase | Notes |
 |---|---|---|
 | `buy` | buy | `item` key (weapon id, `armor`, `helmet`, `defusekit`, or grenade id); deducted from `$money` |
-| `move` | action | `{x, y}` within movement range (4 tiles) |
+| `move` | action | `{x, y}`; may be issued multiple times per turn, each costing move allowance equal to the distance moved (4 tiles/turn, resets each turn) |
 | `shoot` | action | `targetId`; requires LOS, in range, and not blinded |
 | `throw` | action | `grenade` + `target {x,y}`; range 8, no LOS required |
 | `plant` | action | Terrorists only; plant at bombsite A or B |
 | `defuse` | action | CTs only; defuse active bomb (2 sequential actions, or 1 with kit) |
-| `skip-unit` | action | Skip all remaining actions for this agent |
 | `end-buy` | buy | End team's buy phase |
 | `end-turn` | action | End current team's action phase |
 

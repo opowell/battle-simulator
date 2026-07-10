@@ -20,10 +20,27 @@ import { segmentClearOf } from '../terrainShapes.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 
 
-const MOVE_RANGE     = 4;
+const MOVE_RANGE     = 4; // per-turn move allowance (budget, not a single-move cap) — see perTurn.moveAllowance
+// Smallest move that actually counts as moving. A unit's move budget is a float64 that shrinks
+// by the exact (continuous) distance travelled, so it routinely lands on a tiny positive residue
+// (e.g. 1e-16) after a near-full move. Without a floor, that residue is still "> 0", so the unit
+// is still offered moves — and the AI's search lattice, sized to a ~1e-16 range, produces points
+// that round right back onto the unit's own position: a zero-distance "move" that is legal, costs
+// no budget, and never sets hasActed, so the turn loops forever ("AI thinking…"). Requiring every
+// move to cover at least MOVE_EPS makes each accepted move strictly spend budget, so a turn always
+// runs out of moves and ends. It's far below any tactically meaningful step (units sit ~0.4 apart).
+const MOVE_EPS       = 0.05;
 const BOMB_TIMER     = 8;
 const DEFUSE_NEEDED  = 2;
 const ROUND_TURN_MAX = 24;
+// Hard cap on how many items one unit may buy in a single buy phase. Each buy is its own
+// engine step (and, for an AI player, a full move search), so an unbounded buy phase is what
+// froze the game: an AI that assigns no value to unspent money will buy everything it can
+// afford, and with a big late-game wallet that ran to ~100 sequential searches per buy phase.
+// A cap of 6 still allows a full realistic loadout (primary + armor + helmet + defuse kit + a
+// couple of grenades) while bounding the buy phase to a handful of steps per unit no matter how
+// rich the unit is or how many buyable items exist. Resets every round (units respawn fresh).
+const MAX_BUYS_PER_ROUND = 6;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -99,7 +116,9 @@ function makeUnit(id, ownerId, pos, faction) {
     ammo: fullAmmo('pistol'),
     grenades: {},
     blinded: 0,
-    perTurn: { hasMoved: false, hasActed: false },
+    // moveAllowance depletes by distance moved (see applyActions' 'move' branch) and can be
+    // spent across any number of moves per turn, unlike hasActed's one-shot gate.
+    perTurn: { hasActed: false, moveAllowance: MOVE_RANGE },
   };
 }
 
@@ -124,13 +143,24 @@ function buyActions(state, teamId) {
   const actions = [];
 
   for (const u of myUnits) {
+    // Stop offering buys to a unit that has already bought its allotment this round — keeps the
+    // buy phase bounded to a few steps per unit (see MAX_BUYS_PER_ROUND).
+    if ((u.buysThisRound ?? 0) >= MAX_BUYS_PER_ROUND) continue;
     const money = u.money;   // each player buys from their own wallet, not a shared pool
-    // Weapons (pistol is free/default, not buyable)
-    for (const [wid, w] of Object.entries(WEAPONS)) {
-      if (wid === 'pistol') continue;
-      if (w.teams && !w.teams.includes(teamId)) continue;
-      if (w.cost <= money && u.weapon !== wid)
-        actions.push({ type: 'buy', unitId: u.id, item: wid, name: `${w.name} ($${w.cost})`, icon: WEAPON_ICON(wid) });
+    // Weapons: a unit upgrades from its starting pistol ONCE per buy phase (buy your primary,
+    // then you're kitted). Offering a weapon buy whenever `u.weapon !== wid` (as before) let a
+    // unit swap guns every step — and since the AI places no value on saving money, it bought
+    // and re-bought weapons until its wallet drained, stretching one buy phase to hundreds of
+    // engine steps, each a full AI search, so the game froze ("AI thinking…") for minutes once
+    // late-game wallets grew. Gating on the default pistol caps weapon buys at one per unit, so
+    // the buy phase is short and bounded regardless of how much money a unit is holding.
+    if (u.weapon === 'pistol') {
+      for (const [wid, w] of Object.entries(WEAPONS)) {
+        if (wid === 'pistol') continue;
+        if (w.teams && !w.teams.includes(teamId)) continue;
+        if (w.cost <= money)
+          actions.push({ type: 'buy', unitId: u.id, item: wid, name: `${w.name} ($${w.cost})`, icon: WEAPON_ICON(wid) });
+      }
     }
     // Armor (kevlar)
     if (!u.armor && ARMOR_COST <= money)
@@ -161,8 +191,8 @@ function actionPhaseActions(state, teamId) {
   const losBlockers = csLosBlockers(state.gameSpecific.map, state.gameSpecific.smokeZones ?? []);
 
   for (const u of myUnits) {
-    if (!u.perTurn.hasMoved) {
-      for (const to of getReachable(tiles, u.position, MOVE_RANGE, state.units))
+    if (u.perTurn.moveAllowance > MOVE_EPS) {
+      for (const to of getReachable(tiles, u.position, u.perTurn.moveAllowance, state.units))
         actions.push({ type: 'move', unitId: u.id, from: u.position, to });
     }
 
@@ -217,9 +247,6 @@ function actionPhaseActions(state, teamId) {
       if (teamId === 'CT' && bomb?.planted && euclidean(u.position, bomb.plantedAt) < 0.5)
         actions.push({ type: 'defuse', unitId: u.id });
     }
-
-    if (!u.perTurn.hasMoved || !u.perTurn.hasActed)
-      actions.push({ type: 'skip-unit', unitId: u.id });
   }
 
   actions.push({ type: 'end-turn', unitId: '__player__' });
@@ -235,13 +262,17 @@ function isMoveLegal(state, teamId, action) {
   if (state.currentPhase !== 'action') return false; // no free-form moves during the buy phase
   const map  = state.gameSpecific.map;
   const unit = state.units.find(u => u.id === action.unitId);
-  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.hasMoved) return false;
+  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.moveAllowance <= MOVE_EPS) return false;
   // Continuous geometry runs in float64; convert the authoritative BigNumber position
   // and the incoming wire coordinate to Number here (see games/coord.js §2).
   const px = num(unit.position.x), py = num(unit.position.y);
   const x = num(action.to.x), y = num(action.to.y);
+  const dist = Math.hypot(px - x, py - y);
+  // Reject a move that doesn't actually move (below MOVE_EPS): such a move spends no budget and
+  // never ends the unit's turn, so accepting one lets the AI loop on it forever (see MOVE_EPS).
+  if (dist < MOVE_EPS) return false;
   if (!isWalkableContinuous(map, x, y)) return false;
-  if (Math.hypot(px - x, py - y) > MOVE_RANGE) return false;
+  if (dist > unit.perTurn.moveAllowance) return false;
   if (!hasClearLine(px, py, x, y, (qx, qy) => !isWalkableContinuous(map, qx, qy))) return false;
   if (!isClearOfUnits(x, y, state.units, unit.id)) return false;
   return true;
@@ -271,6 +302,23 @@ function isActionLegal(state, teamId, action) {
   return false;
 }
 
+// Stable identity for the ObscuroAgent's search tree and its map-back of the chosen action
+// onto the legal set. The generic defaultActionKey only looks at type/unitId/from/to/targetId,
+// which is disastrous here: it ignores `item` (so every buy for a unit collides — the agent
+// would "buy" whatever item happens to be first in the legal list) and `grenade`/`target` (so a
+// concrete thrown grenade collides with the target-less `throw` template from getLegalActions,
+// and the agent hands that template — with no target — to applyActions, which then crashes in
+// parsePos on the missing point, hanging the turn). Capture every field that distinguishes one
+// legal action from another; coordinates go through num() so continuous points key consistently.
+function csActionKey(a) {
+  const pt = p => (p && typeof p === 'object') ? [num(p.x), num(p.y)] : null;
+  return JSON.stringify([
+    a.type ?? null, a.unitId ?? null,
+    a.item ?? null, a.grenade ?? null,
+    a.targetId ?? null, pt(a.to), pt(a.target),
+  ]);
+}
+
 // Continuous action set for the ObscuroAgent's tree search: each mover's discrete tile
 // moves AND each thrower's discrete grenade targets are replaced by a lattice of exact
 // continuous points (see games/continuousMove.js), so the AI positions and aims freely
@@ -281,7 +329,11 @@ function getSearchActions(state, teamId, res) {
   // getLegalActions is phase-aware (buy phase has no moves/throws → base passes through).
   let out = latticeActions(getLegalActions(state, teamId), {
     type: 'move', point: 'to',
-    origin: a => { const o = originOf(a); return o && { ...o, range: MOVE_RANGE }; },
+    origin: a => {
+      const o = originOf(a);
+      const u = units.find(x => x.id === a.unitId);
+      return o && u && { ...o, range: u.perTurn.moveAllowance };
+    },
     isLegal: (a, x, y) => isMoveLegal(state, teamId, { unitId: a.unitId, to: { x, y } }),
   }, res);
   out = latticeActions(out, {
@@ -370,9 +422,14 @@ function applyActions(state, playerActions, rng = Math.random) {
     if (action.type === 'buy') {
       const { item, unitId } = action;
       // A buy grants the item to `unitId` AND debits that same unit's wallet — money is
-      // per-player, so one CT's purchase never drains the rest of the team's cash.
+      // per-player, so one CT's purchase never drains the rest of the team's cash. It also
+      // bumps buysThisRound, the counter buyActions uses to cap purchases per unit (the cap
+      // keeps the buy phase short — an AI won't value leftover money, so without it it would
+      // buy until broke). The counter resets each round because units respawn fresh.
       const apply = (cost, grant) => {
-        units = units.map(u => u.id === unitId ? { ...grant(u), money: u.money - cost } : u);
+        units = units.map(u => u.id === unitId
+          ? { ...grant(u), money: u.money - cost, buysThisRound: (u.buysThisRound ?? 0) + 1 }
+          : u);
       };
 
       if (item === 'armor') {
@@ -420,8 +477,10 @@ function applyActions(state, playerActions, rng = Math.random) {
         // Movement-derived heading drives the unit's vision cone (games/vision.js); a
         // zero-length move keeps the prior facing.
         const dx = num(to.x) - num(u.position.x), dy = num(to.y) - num(u.position.y);
+        const dist = Math.hypot(dx, dy);
         const facing = (dx || dy) ? Math.atan2(dy, dx) : u.facing;
-        return { ...u, position: to, facing, perTurn: { ...u.perTurn, hasMoved: true } };
+        return { ...u, position: to, facing,
+                 perTurn: { ...u.perTurn, moveAllowance: Math.max(0, u.perTurn.moveAllowance - dist) } };
       });
       const s0 = { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
       const rr = getRoundResult(s0);
@@ -465,6 +524,15 @@ function applyActions(state, playerActions, rng = Math.random) {
 
     if (action.type === 'throw') {
       const { grenade } = action;
+      // getLegalActions emits a target-LESS `throw` template (one per grenade held) that the AI
+      // search and the human UI both expand into a concrete aim point; it is never itself a
+      // playable action. Guard against one slipping through (e.g. an agent's last-ditch fallback
+      // to legalActions[0]): consume the unit's action so play advances rather than crashing in
+      // parsePos on the missing point or looping forever re-picking the same template.
+      if (!action.target) {
+        units = units.map(u => u.id === action.unitId ? { ...u, perTurn: { ...u.perTurn, hasActed: true } } : u);
+        return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
+      }
       // target: decimal strings (human continuous click) or integer tile (AI candidate).
       const target = parsePos(action.target);
       const losBlockers = csLosBlockers(gs.map, smokeZones);
@@ -517,7 +585,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       const u = units.find(u => u.id === action.unitId);
       bomb = { planted: true, plantedAt: { ...u.position }, timer: BOMB_TIMER,
                defuseProgress: 0, defusingUnitId: null, defuseNeeded: DEFUSE_NEEDED };
-      units = units.map(u => u.id === action.unitId ? { ...u, perTurn: { hasMoved: true, hasActed: true } } : u);
+      units = units.map(u => u.id === action.unitId ? { ...u, perTurn: { hasActed: true, moveAllowance: 0 } } : u);
       return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
     }
 
@@ -549,12 +617,6 @@ function applyActions(state, playerActions, rng = Math.random) {
           ammo: { mag: u.ammo.mag + drawn, reserve: u.ammo.reserve - drawn },
           perTurn: { ...u.perTurn, hasActed: true } };
       });
-      return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
-    }
-
-    if (action.type === 'skip-unit') {
-      units = units.map(u => u.id === action.unitId
-        ? { ...u, perTurn: { hasMoved: true, hasActed: true } } : u);
       return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
     }
 
@@ -590,7 +652,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       // Reset perTurn for current team; reduce blind timers (blind expires at end of their own turn)
       units = units.map(u => {
         if (u.ownerId !== playerId) return u;
-        return { ...u, blinded: Math.max(0, u.blinded - 1), perTurn: { hasMoved: false, hasActed: false } };
+        return { ...u, blinded: Math.max(0, u.blinded - 1), perTurn: { hasActed: false, moveAllowance: MOVE_RANGE } };
       });
 
       const tentative = {
@@ -767,10 +829,10 @@ function toGrid(state) {
       maxHp:         u.maxHp,
       job:           u.weapon,
       portraitPath:  `/images/cs/units/${u.faction}`,
-      moveRange:     MOVE_RANGE,
+      moveRange:     u.perTurn?.moveAllowance,
       equipment:     equipmentList(u),
       statusEffects: u.blinded ? ['blinded'] : undefined,
-      moved:         u.perTurn?.hasMoved,
+      moved:         u.perTurn?.moveAllowance < MOVE_RANGE,
       acted:         u.perTurn?.hasActed,
       // Fraction of incoming damage this unit shrugs off — lets the design UI's aiming
       // overlay show a generic "expected damage" preview (rawDamage * (1 - reduction))
@@ -938,6 +1000,7 @@ export const CsGame = {
     { id: 'de_plaza', name: 'de_plaza',  description: 'Shape terrain — open oval plaza with a central fountain', config: { mapId: 'de_plaza' } },
   ],
   createInitialState,
+  actionKey:        csActionKey,
   getLegalActions:  withTeam(getLegalActions),
   isActionLegal:    withTeam(isActionLegal),
   getSearchActions: withTeam(getSearchActions),
