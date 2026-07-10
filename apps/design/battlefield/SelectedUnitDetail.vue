@@ -28,6 +28,9 @@ defineEmits(['open-info', 'open-ability-info']);
     <div v-if="unit.x != null" class="mono" style="font-size:10px;color:var(--faint);margin-bottom:8px">
       ({{Math.floor(unit.x)}}, {{Math.floor(unit.y)}})
     </div>
+    <div v-if="unit.money != null" class="mono" style="font-size:11px;color:var(--ok);margin-bottom:8px">
+      ${{unit.money}}
+    </div>
     <div v-if="unit.dead" class="mono" style="font-size:11px;color:#ff5f56">KIA</div>
     <template v-else>
       <template v-if="unit.hpMax != null && field.ui?.showHpBars !== false">

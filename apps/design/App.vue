@@ -263,6 +263,9 @@ function buildField(g, s) {
       description:   c.description,
       job:           c.job,
       moveRange:     c.moveRange,
+      // Per-unit money (CS buy phase) — a game's toGrid may set it; drives the buy
+      // panel's affordability display. Absent for games with no economy.
+      money:         c.money,
       // Fraction of incoming damage this unit shrugs off (see CsGame.js's toGrid) —
       // lets the aiming overlay preview show an estimated "-NN" without the design
       // UI knowing any particular game's armor model.

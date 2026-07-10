@@ -27,10 +27,12 @@ test('cs: starts in buy phase', () => {
   assert.equal(state.currentPhase, 'buy');
 });
 
-test('cs: both teams start with money', () => {
+test('cs: every unit starts with its own money', () => {
   const state = CsGame.createInitialState(players());
-  assert.ok(state.gameSpecific.money.T > 0);
-  assert.ok(state.gameSpecific.money.CT > 0);
+  // Money is per-player (per-unit), not a shared team pool, so each side can equip
+  // its whole squad at round start.
+  assert.ok(state.units.length > 0);
+  for (const u of state.units) assert.ok(u.money > 0);
 });
 
 test('cs: scores start at 0', () => {
