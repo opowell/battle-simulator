@@ -48,6 +48,12 @@ const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.
 // (e.g. civ1) there's no turn-scoped activeUnitId, so blink whichever unit is clicked.
 const blinkTargetId = computed(() => props.field.ui?.freeSelection ? props.selectedId : props.activeUnitId);
 
+// While aiming a button-picked action (CS lists every unit's actions at once, so the
+// clicked "Move…"/"Shoot…" button may belong to a unit other than activeUnitId — see
+// aimUnit below), the glow/fill highlight should follow the unit actually being aimed,
+// not whichever was last selected.
+const highlightUnitId = computed(() => props.aiming?.unitId ?? props.activeUnitId);
+
 // When `ui.highlightSelectedSquare` is set, the selected unit's square gets a background
 // tint instead of the dashed ring drawn around the unit itself.
 const selectedSquare = computed(() => {
@@ -824,35 +830,35 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
         <!-- Live unit -->
         <g v-else :class="{ 'unit-blink': u.id === blinkTargetId && field.ui?.blinkActiveUnit }">
           <!-- Active unit ring: white outer ring + inner glow ring (skipped when the game blinks the unit instead) -->
-          <template v-if="u.id === activeUnitId && !field.ui?.blinkActiveUnit">
+          <template v-if="u.id === highlightUnitId && !field.ui?.blinkActiveUnit">
             <circle cx="0" cy="0" :r="unitR(u)+11"
                     fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="6" class="active-ring"/>
             <circle cx="0" cy="0" :r="unitR(u)+7"
                     fill="none" stroke="white" stroke-width="2" class="active-ring"/>
           </template>
           <!-- Selected unit ring: dashed ring (skipped when blinking, or when the game highlights the square instead) -->
-          <circle v-if="u.id === selectedId && u.id !== activeUnitId && !(u.id === blinkTargetId && field.ui?.blinkActiveUnit) && !field.ui?.highlightSelectedSquare"
+          <circle v-if="u.id === selectedId && u.id !== highlightUnitId && !(u.id === blinkTargetId && field.ui?.blinkActiveUnit) && !field.ui?.highlightSelectedSquare"
                   cx="0" cy="0" :r="unitR(u)+6"
                   fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.5" stroke-dasharray="3 3"/>
           <!-- Facing indicator: filled arrowhead on unit edge -->
           <polygon v-if="field.ui?.showFacing !== false"
                    :points="facingArrow(u)"
-                   :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw"
+                   :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw"
                    :stroke="rdr.stage" stroke-width="1"/>
           <!-- Body shape: active unit gets solid team-color fill (skipped when a sprite image is available) -->
           <circle v-if="!u.imagePath && unitShape(u)==='circle'"
                   cx="0" cy="0" :r="unitR(u)"
-                  :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
-                  :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
+                  :fill="u.id === highlightUnitId ? u.teamObj.raw : rdr.unitFill"
+                  :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <polygon v-else-if="!u.imagePath && unitShape(u)==='triangle'"
                    :points="`0,${-unitR(u)} ${unitR(u)},${unitR(u)} ${-unitR(u)},${unitR(u)}`"
-                   :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
-                   :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
+                   :fill="u.id === highlightUnitId ? u.teamObj.raw : rdr.unitFill"
+                   :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <rect v-else-if="!u.imagePath"
                 :x="-unitR(u)" :y="-unitR(u)"
                 :width="unitR(u)*2" :height="unitR(u)*2"
-                :fill="u.id === activeUnitId ? u.teamObj.raw : rdr.unitFill"
-                :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
+                :fill="u.id === highlightUnitId ? u.teamObj.raw : rdr.unitFill"
+                :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <!-- Sprite image or first letter of unit name -->
           <template v-if="u.imagePath">
             <!-- Invisible hit-area: the image itself has pointer-events:none so it doesn't block clicks on what's behind it -->
@@ -866,19 +872,19 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
           </template>
           <template v-else-if="facingActive">
             <circle v-if="markerSpec(u).kind === 'circle'" cx="0" cy="0" :r="markerSpec(u).r"
-                    :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
+                    :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
             <template v-else-if="markerSpec(u).kind === 'ring'">
               <circle cx="0" cy="0" :r="markerSpec(u).rOuter" fill="none"
-                      :stroke="u.id === activeUnitId ? 'white' : u.teamObj.raw" stroke-width="1.6"
+                      :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="1.6"
                       style="pointer-events:none"/>
               <circle cx="0" cy="0" :r="markerSpec(u).rInner"
-                      :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
+                      :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
             </template>
             <polygon v-else :points="markerSpec(u).points"
-                     :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
+                     :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" style="pointer-events:none"/>
           </template>
           <text v-else x="0" y="0"
-                :fill="u.id === activeUnitId ? 'white' : u.teamObj.raw" :font-family="rdr.font"
+                :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" :font-family="rdr.font"
                 :font-size="unitR(u)" font-weight="800"
                 text-anchor="middle" dominant-baseline="central"
                 style="user-select:none;pointer-events:none">{{u.name[0].toUpperCase()}}</text>
