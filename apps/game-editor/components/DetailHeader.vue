@@ -1,13 +1,14 @@
 <script setup>
-// Right-panel header: game icon + name, Metadata/Files tabs, Delete button.
-defineProps({ name: String, icon: String, tab: String, filesCount: { type: Number, default: 0 } });
+// Right-panel header: game thumbnail + name, Metadata/Files tabs, Delete button.
+import GameThumb from './GameThumb.vue';
+defineProps({ name: String, tab: String, filesCount: { type: Number, default: 0 } });
 defineEmits(['update:tab', 'delete']);
 </script>
 
 <template>
   <div class="panel-h">
     <div class="detail-head-l">
-      <span class="gicon gicon-sm"><BsIcon :name="icon" :size="17"/></span>
+      <span class="gicon gicon-sm"><GameThumb :name="name"/></span>
       <span class="panel-t detail-title">{{ name }}</span>
       <div class="tabs">
         <button :class="{ on: tab === 'meta' }" @click="$emit('update:tab', 'meta')">Metadata</button>

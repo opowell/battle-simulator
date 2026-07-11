@@ -42,11 +42,20 @@ const ROUND_TURN_MAX = 24;
 // rich the unit is or how many buyable items exist. Resets every round (units respawn fresh).
 const MAX_BUYS_PER_ROUND = 6;
 
+// Crouching (see the 'crouch'/'stand' actions below): a stance toggle that trades move speed
+// for a smaller, harder-to-hit silhouette and a shorter sight line. It doesn't consume the
+// per-turn action gate (hasActed) — a unit can still shoot/reload/throw/plant/defuse the same
+// turn it toggles stance — only movement and vision are affected.
+const CROUCH_MOVE_MULT        = 0.5;  // crouched move allowance, applied on the unit's next turn
+const CROUCH_DAMAGE_REDUCTION = 0.15; // extra damage reduction while crouched, stacks with armor
+const CROUCH_VISION_MULT      = 0.7;  // crouched sight radius, relative to CS_VISION.range
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function calcDamage(raw, unit) {
-  if (!unit.armor) return raw;
-  const reduction = ARMOR_REDUCTION + (unit.helmet ? HELMET_EXTRA_REDUCTION : 0);
+  let reduction = 0;
+  if (unit.armor) reduction += ARMOR_REDUCTION + (unit.helmet ? HELMET_EXTRA_REDUCTION : 0);
+  if (unit.crouched) reduction += CROUCH_DAMAGE_REDUCTION;
   return Math.round(raw * (1 - reduction));
 }
 
@@ -116,6 +125,7 @@ function makeUnit(id, ownerId, pos, faction) {
     ammo: fullAmmo('pistol'),
     grenades: {},
     blinded: 0,
+    crouched: false,
     // moveAllowance depletes by distance moved (see applyActions' 'move' branch) and can be
     // spent across any number of moves per turn, unlike hasActed's one-shot gate.
     perTurn: { hasActed: false, moveAllowance: MOVE_RANGE },
@@ -195,6 +205,10 @@ function actionPhaseActions(state, teamId) {
       for (const to of getReachable(tiles, u.position, u.perTurn.moveAllowance, state.units))
         actions.push({ type: 'move', unitId: u.id, from: u.position, to });
     }
+
+    // Crouch/stand: a stance toggle, not gated by hasActed (see CROUCH_MOVE_MULT etc.) — a
+    // unit can still shoot/reload/throw/plant/defuse the same turn it changes stance.
+    actions.push({ type: u.crouched ? 'stand' : 'crouch', unitId: u.id });
 
     if (!u.perTurn.hasActed) {
       // Shoot (not available while blinded or out of ammo in the magazine). Line of sight
@@ -581,6 +595,14 @@ function applyActions(state, playerActions, rng = Math.random) {
       return s2;
     }
 
+    if (action.type === 'crouch' || action.type === 'stand') {
+      const crouched = action.type === 'crouch';
+      units = units.map(u => u.id === action.unitId
+        ? { ...u, crouched, visionRange: crouched ? CS_VISION.range * CROUCH_VISION_MULT : undefined }
+        : u);
+      return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
+    }
+
     if (action.type === 'plant') {
       const u = units.find(u => u.id === action.unitId);
       bomb = { planted: true, plantedAt: { ...u.position }, timer: BOMB_TIMER,
@@ -652,7 +674,8 @@ function applyActions(state, playerActions, rng = Math.random) {
       // Reset perTurn for current team; reduce blind timers (blind expires at end of their own turn)
       units = units.map(u => {
         if (u.ownerId !== playerId) return u;
-        return { ...u, blinded: Math.max(0, u.blinded - 1), perTurn: { hasActed: false, moveAllowance: MOVE_RANGE } };
+        return { ...u, blinded: Math.max(0, u.blinded - 1),
+                 perTurn: { hasActed: false, moveAllowance: MOVE_RANGE * (u.crouched ? CROUCH_MOVE_MULT : 1) } };
       });
 
       const tentative = {
@@ -713,6 +736,7 @@ function renderState(state) {
       const gStr = Object.entries(u.grenades ?? {}).filter(([, c]) => c > 0).map(([g, c]) => `${g}×${c}`).join(',');
       if (gStr) s += `[${gStr}]`;
       if (u.blinded) s += '(blind)';
+      if (u.crouched) s += '(crouched)';
       return `${s}(${u.hp}hp,$${u.money})`;
     }).join(' ');
     return `  ${tid} $${cash} | ${uStr || '(all dead)'}`;
@@ -751,6 +775,10 @@ const TERRAIN_INFO = {
   bombsiteB: { name: 'Bombsite B', description: 'Bomb can be planted or defused here.' },
   ctSpawn:   { name: 'CT Spawn',   description: 'Counter-Terrorist starting area.' },
   tSpawn:    { name: 'T Spawn',    description: 'Terrorist starting area.' },
+  // Elevation workaround (no z-axis in this engine): blocks movement like a wall, but is
+  // excluded from LOS blocking (see csLosBlockers in belief.js) so it can be seen/shot
+  // across or over, standing in for real waist-high/elevated cover.
+  lowWall:   { name: 'Low wall / ledge', description: 'Blocks movement, but not sight — an elevation stand-in.' },
 };
 
 const SHAPE_FLOOR = '#c8c0a8';
@@ -831,7 +859,7 @@ function toGrid(state) {
       portraitPath:  `/images/cs/units/${u.faction}`,
       moveRange:     u.perTurn?.moveAllowance,
       equipment:     equipmentList(u),
-      statusEffects: u.blinded ? ['blinded'] : undefined,
+      statusEffects: [...(u.blinded ? ['blinded'] : []), ...(u.crouched ? ['crouched'] : [])],
       moved:         u.perTurn?.moveAllowance < MOVE_RANGE,
       acted:         u.perTurn?.hasActed,
       // Fraction of incoming damage this unit shrugs off — lets the design UI's aiming
@@ -876,7 +904,7 @@ function toGrid(state) {
 export function createInitialState(players, config = {}) {
   const winRounds = config.winRounds ?? 8;
   const maxRounds = config.maxRounds ?? 15;
-  const map       = MAPS[config.mapId ?? config.scenario ?? 'dust2'] ?? MAPS.dust2;
+  const map       = MAPS[config.mapId ?? config.scenario ?? 'de_dust2'] ?? MAPS.de_dust2;
 
   const [p1, p2] = players;
   // Slot 0 is always colored teamA (blue) and slot 1 teamB (red) by the generic
@@ -991,7 +1019,8 @@ export const CsGame = {
   sampleWorlds: withTeam(csSampleWorlds),
   name: 'CS',
   scenarios: [
-    { id: 'dust2',    name: 'Dust II',   description: 'Classic defuse map — two sites, mid control', config: { mapId: 'dust2' } },
+    { id: 'de_dust2', name: 'Dust II',   description: 'The flagship map, in detail — Long, Catwalk, Mid and B Tunnel all named and connected', config: { mapId: 'de_dust2' } },
+    { id: 'dust2',    name: 'Dust II (classic)', description: 'Original simplified defuse map — two sites, mid control', config: { mapId: 'dust2' } },
     { id: 'de_dust',  name: 'de_dust',   description: 'Original Dust — linear corridors, symmetric sites', config: { mapId: 'de_dust' } },
     { id: 'cs_siege', name: 'cs_siege',  description: 'T storms a CT-held compound; bombsites inside', config: { mapId: 'cs_siege' } },
     { id: 'cs_italy', name: 'cs_italy',  description: 'Village map — winding streets, market and wine cellar', config: { mapId: 'cs_italy' } },

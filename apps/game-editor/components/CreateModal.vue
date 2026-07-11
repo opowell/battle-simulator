@@ -1,10 +1,9 @@
 <script setup>
 // New-game modal. Binds to the parent's reactive `draft` object.
 import { computed } from 'vue';
-import IconPicker from './IconPicker.vue';
 import PlayersEditor from './PlayersEditor.vue';
 
-const props = defineProps({ draft: Object, names: Array, saving: Boolean });
+const props = defineProps({ draft: Object, saving: Boolean });
 defineEmits(['create', 'cancel']);
 
 const classPreview = computed(() => {
@@ -29,11 +28,6 @@ function onName(e) { props.draft.name = e.target.value.toLowerCase(); }
         <div class="row2 mt14">
           <div class="field"><label>Min players</label><input type="number" min="2" v-model.number="draft.minPlayers"/></div>
           <div class="field"><label>Max players</label><input type="number" :min="draft.minPlayers" v-model.number="draft.maxPlayers"/></div>
-        </div>
-
-        <div class="field mt14">
-          <label>Icon</label>
-          <IconPicker v-model="draft.icon" :names="names"/>
         </div>
 
         <div class="field mt14">

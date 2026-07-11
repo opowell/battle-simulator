@@ -6,10 +6,22 @@ import { getTacticalBelief } from './belief.js';
 // Default scenario
 // ---------------------------------------------------------------------------
 
+// Default (skirmish) terrain: a diagonal forest copse gives cover across the middle, and
+// two impassable ponds sit in the off-deploy corners to route flanking moves. 180°
+// rotationally symmetric so neither corner is favoured; the deploy cells (P1 at x1-2/y1-2,
+// P2 at x5-6/y5-6) are left clear. Water is impassable (see grid.js reachableSquares).
+// Lives in DEFAULT_CONFIG so it's the terrain for the default board on every create path.
+const SKIRMISH_TERRAIN = (() => {
+  const t = {};
+  for (const [x, y] of [[0, 6], [1, 6], [1, 5], [7, 1], [6, 1], [6, 2]]) t[`${x},${y}`] = 'water';
+  for (const [x, y] of [[2, 2], [2, 3], [3, 3], [3, 4], [4, 3], [4, 4], [5, 4], [5, 5]]) t[`${x},${y}`] = 'forest';
+  return t;
+})();
+
 const DEFAULT_CONFIG = {
   width: 8,
   height: 8,
-  terrain: {},
+  terrain: SKIRMISH_TERRAIN,
 };
 
 function makeUnit(id, ownerId, type, x, y) {
@@ -97,9 +109,9 @@ const TERRAIN_INFO = {
 export const TacticalGame = {
   name: 'Tactical',
   scenarios: [
-    { id: 'skirmish',     name: 'Skirmish',     description: '8×8 grid — fast 2v2 squad',               config: {} },
-    { id: 'assault',      name: 'Assault',      description: '12×10 grid — mid-size engagement',         config: { width: 12, height: 10 } },
-    { id: 'grand-battle', name: 'Grand Battle', description: '16×12 grid — full company strength',       config: { width: 16, height: 12 } },
+    { id: 'skirmish',     name: 'Skirmish',     description: '8×8 grid — forest cover, corner ponds, fast 2v2', config: {} },
+    { id: 'assault',      name: 'Assault',      description: '12×10 grid — mid-size engagement',         config: { width: 12, height: 10, terrain: {} } },
+    { id: 'grand-battle', name: 'Grand Battle', description: '16×12 grid — full company strength',       config: { width: 16, height: 12, terrain: {} } },
   ],
   colors: { plains: '#c8b87a', water: '#4a8fd4', forest: '#3a7a3a' },
 

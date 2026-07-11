@@ -94,6 +94,80 @@ test('cs: end-turn in action phase alternates active team', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Crouching
+// ---------------------------------------------------------------------------
+
+function toActionPhase(state) {
+  const s1 = CsGame.applyActions(state, [{ playerId: 'p1', action: { type: 'end-buy', unitId: '__player__' } }]);
+  return CsGame.applyActions(s1, [{ playerId: 'p2', action: { type: 'end-buy', unitId: '__player__' } }]);
+}
+
+test('cs: crouch and stand actions are offered and toggle unit.crouched', () => {
+  let state = toActionPhase(CsGame.createInitialState(players()));
+  const unitId = state.units.find(u => u.ownerId === 'T').id;
+
+  let actions = CsGame.getLegalActions(state, 'p2');
+  assert.ok(actions.some(a => a.type === 'crouch' && a.unitId === unitId));
+  assert.ok(!actions.some(a => a.type === 'stand' && a.unitId === unitId));
+
+  state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'crouch', unitId } }]);
+  assert.equal(state.units.find(u => u.id === unitId).crouched, true);
+
+  actions = CsGame.getLegalActions(state, 'p2');
+  assert.ok(actions.some(a => a.type === 'stand' && a.unitId === unitId));
+  assert.ok(!actions.some(a => a.type === 'crouch' && a.unitId === unitId));
+
+  state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'stand', unitId } }]);
+  assert.equal(state.units.find(u => u.id === unitId).crouched, false);
+});
+
+test('cs: crouching reduces damage taken from a shot', () => {
+  function hpLossFor(crouched) {
+    let state = toActionPhase(CsGame.createInitialState(players()));
+    const shooter = state.units.find(u => u.ownerId === 'CT');
+    const target  = state.units.find(u => u.ownerId === 'T');
+    state = {
+      ...state,
+      units: state.units.map(u => {
+        if (u.id === shooter.id) return { ...u, position: { ...target.position } };
+        if (u.id === target.id)  return { ...u, crouched };
+        return u;
+      }),
+    };
+    const s2 = CsGame.applyActions(
+      state,
+      [{ playerId: 'p1', action: { type: 'shoot', unitId: shooter.id, targetId: target.id } }],
+      () => 0, // always beats accuracy, so the shot always hits
+    );
+    const after = s2.units.find(u => u.id === target.id);
+    return target.hp - after.hp;
+  }
+
+  assert.ok(hpLossFor(true) < hpLossFor(false));
+});
+
+test('cs: crouching halves next-turn move allowance', () => {
+  let state = toActionPhase(CsGame.createInitialState(players()));
+  const unitId = state.units.find(u => u.ownerId === 'T').id;
+
+  state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'crouch', unitId } }]);
+  // End T's turn, then CT's turn, so T's perTurn resets for its next turn.
+  state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'end-turn', unitId: '__player__' } }]);
+  state = CsGame.applyActions(state, [{ playerId: 'p1', action: { type: 'end-turn', unitId: '__player__' } }]);
+
+  const unit = state.units.find(u => u.id === unitId);
+  assert.ok(unit.perTurn.moveAllowance < 4);
+});
+
+test('cs: crouching shrinks vision range for getVisibleState', () => {
+  let state = toActionPhase(CsGame.createInitialState(players()));
+  const unitId = state.units.find(u => u.ownerId === 'T').id;
+  state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'crouch', unitId } }]);
+  const unit = state.units.find(u => u.id === unitId);
+  assert.ok(unit.visionRange < 4);
+});
+
+// ---------------------------------------------------------------------------
 // getResult
 // ---------------------------------------------------------------------------
 

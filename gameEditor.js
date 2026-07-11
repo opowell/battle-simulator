@@ -3,7 +3,7 @@
  * api-server.js) and their raw source files, for the /ui/game-editor app.
  *
  * The registry is the hardcoded `const GAMES = { … }` object literal in
- * api-server.js. Its values mix data (icon, player counts, defaultPlayers) with
+ * api-server.js. Its values mix data (player counts, defaultPlayers) with
  * a live class reference (`game: ChessGame`), so we can't just JSON-parse it.
  * Instead we:
  *   • parse   — extract the block, stringify the class token, eval to an object;
@@ -34,7 +34,7 @@ export function parseRegistry(serverSrc) {
   const inner = m[1].replace(/game:\s*([A-Za-z0-9_$]+)/g, 'game: "$1"');
   // eslint-disable-next-line no-new-func
   const obj = new Function(`return ({${inner}})`)();
-  return obj; // { name: { game: "XxxGame", icon, minPlayers, maxPlayers, defaultPlayers } }
+  return obj; // { name: { game: "XxxGame", minPlayers, maxPlayers, defaultPlayers } }
 }
 
 /** Public list shape for the editor (array, source-of-truth ordering). */
@@ -43,7 +43,6 @@ export function registryList(serverSrc) {
   return Object.entries(obj).map(([name, e]) => ({
     name,
     gameClass: e.game,
-    icon: e.icon,
     minPlayers: e.minPlayers,
     maxPlayers: e.maxPlayers,
     defaultPlayers: e.defaultPlayers,
@@ -64,11 +63,10 @@ function serializeRegistry(obj) {
   const rows = Object.entries(obj);
   const keyW  = Math.max(...rows.map(([n]) => n.length + 1));                 // "name:"
   const gameW = Math.max(...rows.map(([, e]) => `game: ${e.game},`.length));
-  const iconW = Math.max(...rows.map(([, e]) => `icon: '${e.icon}',`.length));
   const maxW  = Math.max(...rows.map(([, e]) => `maxPlayers: ${e.maxPlayers},`.length));
   const lines = rows.map(([name, e]) =>
     `  ${padEnd(name + ':', keyW)} { ${padEnd(`game: ${e.game},`, gameW)} ` +
-    `${padEnd(`icon: '${e.icon}',`, iconW)} minPlayers: ${e.minPlayers}, ` +
+    `minPlayers: ${e.minPlayers}, ` +
     `${padEnd(`maxPlayers: ${e.maxPlayers},`, maxW)} defaultPlayers: ${serializePlayers(e.defaultPlayers)} },`
   );
   return `const GAMES = {\n${lines.join('\n')}\n};`;
@@ -141,7 +139,6 @@ function normalizeMeta(meta) {
   const maxPlayers = Number(meta.maxPlayers);
   if (!Number.isInteger(minPlayers) || minPlayers < 2) throw new Error('minPlayers must be an integer ≥ 2');
   if (!Number.isInteger(maxPlayers) || maxPlayers < minPlayers) throw new Error('maxPlayers must be an integer ≥ minPlayers');
-  if (!meta.icon || typeof meta.icon !== 'string') throw new Error('icon is required');
   const players = Array.isArray(meta.defaultPlayers) ? meta.defaultPlayers : [];
   if (players.length < 2) throw new Error('Need at least 2 default players');
   for (const p of players) {
@@ -149,7 +146,6 @@ function normalizeMeta(meta) {
     if (!p.name) throw new Error(`Player ${p.id} needs a name`);
   }
   return {
-    icon: meta.icon,
     minPlayers,
     maxPlayers,
     defaultPlayers: players.map(p => ({ id: p.id, name: p.name })),

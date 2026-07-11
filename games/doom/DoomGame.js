@@ -1,5 +1,5 @@
 import { unitStrengthEval } from '../evalHelpers.js';
-import { MAP_WIDTH, MAP_HEIGHT, MAP_ROOMS, hasLOS, getReachable, manhattan, renderMap, isWalkableContinuous } from './map.js';
+import { MAP_WIDTH, MAP_HEIGHT, RENDER_SHAPES, LOS_OPEN_SHAPES, hasLOS, getReachable, manhattan, renderMap, isWalkableContinuous } from './map.js';
 import { WEAPONS, AMMO_CAPS, WEAPON_RANK } from './weapons.js';
 import { createMarine, createMonster } from './units.js';
 import { getDoomBelief, DOOM_VISION } from './belief.js';
@@ -11,24 +11,25 @@ import { parsePos, num, tileNum, posToWire } from '../coord.js';
 
 function defaultItems() {
   return [
-    // Room A
-    { id: 'i0',  type: 'medkit',              x:  4, y:  3, pickedUp: false },
-    // Room B
-    { id: 'i1',  type: 'shotgun-pickup',      x: 12, y:  1, pickedUp: false },
-    { id: 'i2',  type: 'shell-box',           x: 11, y:  3, pickedUp: false },
-    { id: 'i3',  type: 'health-bonus',        x: 16, y:  4, pickedUp: false },
-    // Room C
-    { id: 'i4',  type: 'bullet-box',          x: 10, y:  7, pickedUp: false },
-    { id: 'i5',  type: 'armor-bonus',         x:  6, y:  6, pickedUp: false },
-    // Room D
-    { id: 'i6',  type: 'armor-vest',          x:  3, y:  9, pickedUp: false },
-    { id: 'i7',  type: 'chaingun-pickup',     x:  6, y: 11, pickedUp: false },
-    { id: 'i8',  type: 'rocketlauncher-pickup', x: 2, y: 11, pickedUp: false },
-    // Room E
-    { id: 'i9',  type: 'rocket-box',          x: 15, y:  8, pickedUp: false },
-    { id: 'i10', type: 'plasma-pickup',       x: 17, y:  9, pickedUp: false },
-    { id: 'i11', type: 'cell-pack',           x: 14, y: 11, pickedUp: false },
-    { id: 'i12', type: 'medkit',              x: 11, y: 11, pickedUp: false },
+    // Start room
+    { id: 'i0',  type: 'medkit',                x:  4, y:  3, pickedUp: false },
+    // NE first-encounter room
+    { id: 'i1',  type: 'shotgun-pickup',        x: 28, y:  3, pickedUp: false },
+    { id: 'i2',  type: 'shell-box',             x: 31, y:  4, pickedUp: false },
+    { id: 'i3',  type: 'health-bonus',          x: 20, y:  3, pickedUp: false },
+    // Central spine / courtyard
+    { id: 'i4',  type: 'bullet-box',            x: 20, y:  7, pickedUp: false },
+    { id: 'i5',  type: 'armor-bonus',           x: 12, y:  9, pickedUp: false },
+    // Armour platform in the nukage moat (the prize you wade for)
+    { id: 'i6',  type: 'armor-vest',            x: 18, y: 12, pickedUp: false },
+    // West store room + arena
+    { id: 'i7',  type: 'chaingun-pickup',       x:  3, y: 14, pickedUp: false },
+    { id: 'i8',  type: 'rocketlauncher-pickup', x: 24, y: 20, pickedUp: false },
+    { id: 'i9',  type: 'rocket-box',            x: 26, y: 20, pickedUp: false },
+    { id: 'i11', type: 'cell-pack',             x: 10, y: 20, pickedUp: false },
+    { id: 'i12', type: 'medkit',                x: 11, y: 14, pickedUp: false },
+    // Secret plasma room (east)
+    { id: 'i10', type: 'plasma-pickup',         x: 34, y: 12, pickedUp: false },
   ];
 }
 
@@ -340,21 +341,23 @@ function createInitialState(players, config = {}) {
   const teamPlayerMap = { marine: p1.id, demon: p2.id };
 
   const marines = [
-    createMarine('marine-1', { x: 2, y: 2 }),
+    createMarine('marine-1', { x: 4, y: 4 }), // NW start room
   ];
 
   const demons = [
-    // Room B — first encounter (ranged)
-    createMonster('zombie-1',   'zombieman', { x: 12, y: 2 }),
-    createMonster('zombie-2',   'zombieman', { x: 16, y: 3 }),
-    createMonster('imp-1',      'imp',       { x: 14, y: 4 }),
-    // Room C — mid corridor (imp ambush)
-    createMonster('imp-2',      'imp',       { x: 13, y: 6 }),
-    // Room D — melee brute
-    createMonster('demon-1',    'demon',     { x:  4, y: 10 }),
-    // Room E — bosses
-    createMonster('cacodemon-1','cacodemon', { x: 13, y: 10 }),
-    createMonster('baron-1',    'baron',     { x: 16, y: 10 }),
+    // NE first-encounter room — ranged hitscanners
+    createMonster('zombie-1',    'zombieman',  { x: 26, y: 4 }),
+    createMonster('zombie-2',    'zombieman',  { x: 30, y: 5 }),
+    createMonster('shotgunner-1','shotgunner', { x: 28, y: 8 }),
+    // Courtyard / nukage channel — imp ambush
+    createMonster('imp-1',       'imp',        { x: 25, y: 12 }),
+    createMonster('imp-2',       'imp',        { x: 14, y: 18 }),
+    // Secret plasma room — imp guard
+    createMonster('imp-3',       'imp',        { x: 33, y: 11 }),
+    // South arena — melee brute + bosses
+    createMonster('demon-1',     'demon',      { x: 12, y: 21 }),
+    createMonster('cacodemon-1', 'cacodemon',  { x: 20, y: 21 }),
+    createMonster('baron-1',     'baron',      { x: 24, y: 21 }),
   ];
 
   // Orient each side toward the enemy at spawn so vision cones point at the action from
@@ -384,13 +387,10 @@ function createInitialState(players, config = {}) {
 }
 
 // ── toGrid (design UI) ──────────────────────────────────────────────────────────
-// Non-grid terrain like CsGame/CombatMissionGame: rooms are authored as shapes
-// (MAP_ROOMS, rects + ovals — see map.js), drawn directly as floor-coloured shapes
-// over a uniform rock backdrop, so the two arena rooms render round rather than
-// every room looking like a blocky rectangle.
-
-const FLOOR_FILL = '#c8c0a8';
-const ROOM_SHAPES = MAP_ROOMS.map(r => ({ ...r, fill: FLOOR_FILL }));
+// Non-grid terrain like CsGame/CombatMissionGame: the E1M1 level is authored as shapes
+// (rects + ovals — see map.js), drawn over a uniform rock backdrop. RENDER_SHAPES layers
+// the floor rooms/corridors (tinted per kind) then the solid props on top (nukage pools,
+// crates, computer banks, columns, barrels) — 100+ terrain objects in all.
 
 // Side-panel portraits (single sprite frame each, sourced from doom.fandom.com).
 const UNIT_PORTRAITS = new Set(['doomguy', 'zombieman', 'shotgunner', 'imp', 'demon', 'cacodemon', 'baron']);
@@ -430,14 +430,15 @@ function toGrid(state) {
   });
 
   // Exact occluder geometry for the client's fog/reach renderer: the floor is the union
-  // of the authored room shapes (MAP_ROOMS), walls are the complement. Sending the true
-  // shapes (not a rasterized tile grid) lets vision respect a room's real entrance — e.g.
-  // an oval room whose mouth is a narrow cusp stays almost fully hidden from the hallway.
-  const openShapes = MAP_ROOMS.map(({ shape, x, y, w, h }) => ({ shape, x, y, w, h }));
+  // of the authored floor shapes (LOS_OPEN_SHAPES), walls (incl. every solid prop, which
+  // sits on an un-floored cell) are the complement. Sending the true shapes (not a
+  // rasterized tile grid) lets vision respect a room's real entrance — e.g. an oval room
+  // whose mouth is a narrow cusp stays almost fully hidden from the hallway.
+  const openShapes = LOS_OPEN_SHAPES;
 
   return {
     width: MAP_WIDTH, height: MAP_HEIGHT, locationType: 'continuous',
-    cells, units: unitList, shapes: ROOM_SHAPES,
+    cells, units: unitList, shapes: RENDER_SHAPES,
     // Hand the veil the SAME sight range + cone the engine reveals with (DOOM_VISION), so
     // the drawn vision circle/cone matches getVisibleState exactly (both Euclidean now).
     ui: { hideGrid: true, visionRange: DOOM_VISION.range, fovDegrees: DOOM_VISION.fovDegrees },

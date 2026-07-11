@@ -5,20 +5,25 @@ export const TERRAIN = {
   HIGH_COVER: 'C',
 };
 
-// 14 wide × 12 tall
-// Two horizontal interior walls (rows 4 and 7) each with two corridors (x=3,4 and x=9,10)
-// XCOM deploys top-left, Aliens deploy bottom-right
+// 14 wide × 12 tall urban raid map. # = wall, . = floor, c = low cover (+20 def),
+// C = high cover (+40 def). XCOM deploys top-left (x1-2, y1-2), Aliens bottom-right
+// (x11-12, y9-10) — both corners kept clear.
+//
+// A gutted central building (roof-capped walls, open to the south) anchors the map and
+// splits it into a west and an east approach; low/high cover is layered around it and
+// along the flanks so every advance has a piece of cover to break for. Every floor tile
+// stays reachable and both deploy corners are kept clear.
 const MAP_TEMPLATE = [
   '##############',
   '#............#',
-  '#...c....c...#',
-  '#............#',
-  '###..####..###',
-  '#............#',
-  '#...CC..CC...#',
-  '###..####..###',
-  '#............#',
-  '#...c....c...#',
+  '#..c..CC..c..#',
+  '#....####....#',
+  '#.C..#..#..C.#',
+  '#..c.#..#.c..#',
+  '#....#..#....#',
+  '#.cc.#..#.cc.#',
+  '#....#..#..C.#',
+  '#..c......c..#',
   '#............#',
   '##############',
 ];

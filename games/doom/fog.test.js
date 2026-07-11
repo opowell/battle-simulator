@@ -37,13 +37,14 @@ test('doom fog: sampleWorlds places demons outside vision+LOS', () => {
 });
 
 test('doom fog: a facing marine sees ahead within its cone but not behind', () => {
-  // Room C (y6-7) is open floor from x1..18, so LOS is clear along the row.
+  // The north corridor (y3) is open floor from the start room across to the north hall
+  // (x3..17), so LOS is clear along the row.
   const base = DoomGame.createInitialState(players(), { fogOfWar: true });
   const state = { ...base, units: [
     { id: 'marine-1', ownerId: 'marine', type: 'marine', alive: true, hp: 100, perTurn: { ap: 4 },
-      position: { x: 10, y: 6 }, facing: 0 }, // faces east
-    { id: 'z-ahead',  ownerId: 'demon', type: 'zombieman', alive: true, hp: 12, perTurn: { ap: 3 }, position: { x: 13, y: 6 } },
-    { id: 'z-behind', ownerId: 'demon', type: 'zombieman', alive: true, hp: 12, perTurn: { ap: 3 }, position: { x: 7,  y: 6 } },
+      position: { x: 12, y: 3 }, facing: 0 }, // faces east
+    { id: 'z-ahead',  ownerId: 'demon', type: 'zombieman', alive: true, hp: 12, perTurn: { ap: 3 }, position: { x: 15, y: 3 } },
+    { id: 'z-behind', ownerId: 'demon', type: 'zombieman', alive: true, hp: 12, perTurn: { ap: 3 }, position: { x: 9,  y: 3 } },
   ] };
   const seen = DoomGame.getVisibleState(state, 'p1').units.map(u => u.id);
   assert.ok(seen.includes('z-ahead'),   'demon ahead within the cone is visible');

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
+import GameThumb from './GameThumb.vue';
 
 const props = defineProps({
   game: { type: Object, default: null }, // null = closed
@@ -56,7 +57,7 @@ const playersLabel = computed(() => {
 
         <div class="gdm-body">
           <div class="gdm-head">
-            <span class="gdm-icon"><BsIcon :name="game.icon || 'grid'" :size="20" color="var(--accent)"/></span>
+            <span class="gdm-icon"><GameThumb :name="game.name" :size="22"/></span>
             <div class="gdm-name-wrap">
               <div class="gdm-name">{{game.name}}</div>
               <div class="mono gdm-players">{{playersLabel}}</div>

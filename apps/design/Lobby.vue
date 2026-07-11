@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue';
 import GameCard from './GameCard.vue';
+import GameThumb from './GameThumb.vue';
 import GameDetailModal from './GameDetailModal.vue';
 import GameConfigureModal from './GameConfigureModal.vue';
 
@@ -101,7 +102,7 @@ function sessionStatusColor(s) {
         <!-- Session rows -->
         <div v-for="s in sessions" :key="s.id" class="sessionrow">
           <div class="gicon">
-            <BsIcon :name="(apiGames.find(g => g.name === s.game) || {}).icon || 'grid'" :size="20" color="var(--accent)"/>
+            <GameThumb :name="s.game" :size="26"/>
           </div>
           <div class="lobby-row-main">
             <div class="lobby-row-top">

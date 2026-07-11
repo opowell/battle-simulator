@@ -628,7 +628,6 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
         <rect v-else
               :x="fit.x(s.x)" :y="fit.y(s.y)"
               :width="fit.len(s.w)" :height="fit.len(s.h)"
-              :rx="s.round ? fit.len(0.25) : 0"
               :fill="s.fill" :fill-opacity="s.opacity ?? 1"
               :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? 1.5 : 0"
               class="sl-noevents"/>
@@ -847,22 +846,40 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                    :points="facingArrow(u)"
                    :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw"
                    :stroke="rdr.stage" stroke-width="1"/>
-          <!-- Body shape: active unit gets solid team-color fill (skipped when a sprite image is available) -->
-          <circle v-if="!u.imagePath && unitShape(u)==='circle'"
+          <!-- Body shape: active unit gets solid team-color fill (skipped when a sprite image or a
+               layered composite sprite is available) -->
+          <circle v-if="!u.imagePath && !u.spriteLayers && unitShape(u)==='circle'"
                   cx="0" cy="0" :r="unitR(u)"
                   :fill="u.id === highlightUnitId ? u.teamObj.raw : rdr.unitFill"
                   :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
-          <polygon v-else-if="!u.imagePath && unitShape(u)==='triangle'"
+          <polygon v-else-if="!u.imagePath && !u.spriteLayers && unitShape(u)==='triangle'"
                    :points="`0,${-unitR(u)} ${unitR(u)},${unitR(u)} ${-unitR(u)},${unitR(u)}`"
                    :fill="u.id === highlightUnitId ? u.teamObj.raw : rdr.unitFill"
                    :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
-          <rect v-else-if="!u.imagePath"
+          <rect v-else-if="!u.imagePath && !u.spriteLayers"
                 :x="-unitR(u)" :y="-unitR(u)"
                 :width="unitR(u)*2" :height="unitR(u)*2"
                 :fill="u.id === highlightUnitId ? u.teamObj.raw : rdr.unitFill"
                 :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
+          <!-- Layered composite sprite: an ordered stack of independently offset/rotated images
+               (body, hands, held weapon, ring, equipment badges — see a game's toGrid, e.g.
+               games/surviv/SurvivGame.js's spriteLayers()). Each layer's dx/dy/rot are precomputed
+               server-side (already rotated for facing), so this stays a dumb draw loop: any game
+               can opt in by putting `spriteLayers` on a unit instead of `imagePath`. -->
+          <template v-if="u.spriteLayers">
+            <rect :x="-unitR(u)" :y="-unitR(u)"
+                  :width="unitR(u)*2" :height="unitR(u)*2"
+                  fill="transparent" class="sl-allevents"/>
+            <g v-for="(layer, li) in u.spriteLayers" :key="'sp'+li"
+               :transform="`translate(${unitR(u)*layer.dx}, ${unitR(u)*layer.dy}) rotate(${layer.rot||0})`"
+               class="sl-noevents">
+              <image :x="-unitR(u)*layer.wFrac*(layer.anchorX??0.5)" :y="-unitR(u)*layer.hFrac*(layer.anchorY??0.5)"
+                     :width="unitR(u)*layer.wFrac" :height="unitR(u)*layer.hFrac"
+                     :href="layer.src"/>
+            </g>
+          </template>
           <!-- Sprite image or first letter of unit name -->
-          <template v-if="u.imagePath">
+          <template v-else-if="u.imagePath">
             <!-- Invisible hit-area: the image itself has pointer-events:none so it doesn't block clicks on what's behind it -->
             <rect :x="-unitR(u)" :y="-unitR(u)"
                   :width="unitR(u)*2" :height="unitR(u)*2"

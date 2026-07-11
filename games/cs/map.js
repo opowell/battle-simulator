@@ -27,7 +27,7 @@ function buildBase(w, h) {
 const CS_SHAPE_STYLES = {
   wall:      { tile: 'wall',      render: { fill: '#23262b', stroke: '#3a3f47' },                            name: 'Wall',       description: 'Impassable, blocks line of sight.' },
   building:  { tile: 'wall',      render: { fill: '#33373d', stroke: '#4a4f57' },                            name: 'Building',   description: 'Impassable, blocks line of sight.' },
-  crate:     { tile: 'wall',      render: { fill: '#6f5533', stroke: '#8a6a3f', round: true },               name: 'Crates',     description: 'Impassable hard cover, blocks line of sight.' },
+  crate:     { tile: 'wall',      render: { fill: '#6f5533', stroke: '#8a6a3f' },                             name: 'Crates',     description: 'Impassable hard cover, blocks line of sight.' },
   pit:       { tile: 'wall',      render: { fill: '#7a3b1f', opacity: 0.9 },                                 name: 'Furnace pit',description: 'Impassable, blocks line of sight.' },
   water:     { tile: 'wall',      render: { fill: '#2f6d8f', opacity: 0.85 },                                name: 'Water',      description: 'Impassable, blocks line of sight.' },
   plaza:     { tile: null,        render: { fill: '#b8b09a', opacity: 0.55 },                                name: 'Plaza',      description: 'Open pavement.' },
@@ -36,16 +36,91 @@ const CS_SHAPE_STYLES = {
   bombsiteB: { tile: 'bombsiteB', render: { fill: '#d4a03a', opacity: 0.26, stroke: '#e0b24a' }, label: 'B', name: 'Bombsite B', description: 'Bomb can be planted or defused here.' },
   ctSpawn:   { tile: null,        render: { fill: '#4a8fd4', opacity: 0.16 }, label: 'CT',                   name: 'CT Spawn',   description: 'Counter-Terrorist starting area.' },
   tSpawn:    { tile: null,        render: { fill: '#d4713a', opacity: 0.16 }, label: 'T',                    name: 'T Spawn',    description: 'Terrorist starting area.' },
+  // ── Elevation workaround ──────────────────────────────────────────────────
+  // Positions are flat (x, y) — there is no z-axis, so real height differences (boxes you
+  // stand on, catwalks over tunnels, ramps) can't be modeled geometrically. `lowWall`
+  // approximates the gameplay effect of low/waist-height cover instead of the geometry:
+  // its tile is NOT 'wall', so csLosBlockers (belief.js) — which only opacifies
+  // tile === 'wall' — never blocks sight or shots through it, while isWalkable/
+  // isWalkableContinuous below explicitly still treat it as solid. Net effect: you can
+  // see and shoot across/over it exactly like real elevated cover, but can't walk
+  // through it. The complementary trick for actual elevated PATHS (e.g. a catwalk
+  // overlooking a tunnel) is topological, not geometric: author them as a separate
+  // parallel lane rather than literally stacking on the same (x, y) as the room below,
+  // and paint the connecting slope with the purely cosmetic `ramp`/`catwalk` kinds
+  // (tile: null — walkable, non-blocking) so the layout still reads as elevated terrain.
+  lowWall:   { tile: 'lowWall',   render: { fill: '#8a7a54', stroke: '#a5926a', opacity: 0.85 },              name: 'Low wall / ledge', description: 'Waist-high cover — blocks movement, but (unlike a wall) can be seen and shot across, standing in for a real elevation difference.' },
+  ramp:      { tile: null,        render: { fill: '#b7ac86', opacity: 0.4 },                                  name: 'Ramp',       description: 'Slope up to higher ground. Cosmetic — walkable and does not block sight.' },
+  catwalk:   { tile: null,        render: { fill: '#c9bf9a', opacity: 0.5, stroke: '#a5926a' },               name: 'Catwalk',    description: 'Elevated walkway. Cosmetic — walkable and does not block sight.' },
+  // Small blocking prop — a crate/barrel variant sized for scattering many at once without
+  // eating a whole tile of corridor width.
+  debris:    { tile: 'wall',      render: { fill: '#6f5533', stroke: '#8a6a3f', opacity: 0.9 },               name: 'Debris',     description: 'Small impassable cover — a crate, barrel or pallet.' },
+  // ── Ground-detail decals ──────────────────────────────────────────────────
+  // Purely cosmetic (tile: null — walkable, non-blocking, never opacifies LOS): scattered
+  // across the floor by scatterGroundDetail() below to give the map painterly texture
+  // (cracked pavement, gravel, scorch marks, sand drifts, stains, loose planking) instead
+  // of a flat backdrop, without touching mechanics.
+  crack:     { tile: null,        render: { fill: '#5a5240', opacity: 0.22 },                                 name: 'Crack',      description: 'Cracked pavement. Cosmetic.' },
+  gravel:    { tile: null,        render: { fill: '#9c9280', opacity: 0.28 },                                 name: 'Gravel',     description: 'Loose gravel. Cosmetic.' },
+  scorch:    { tile: null,        render: { fill: '#1a1712', opacity: 0.22 },                                 name: 'Scorch mark',description: 'Old scorch mark. Cosmetic.' },
+  sand:      { tile: null,        render: { fill: '#d8c896', opacity: 0.3 },                                  name: 'Sand drift', description: 'Wind-blown sand. Cosmetic.' },
+  stain:     { tile: null,        render: { fill: '#7a6a48', opacity: 0.2 },                                  name: 'Stain',      description: 'Ground stain. Cosmetic.' },
+  plank:     { tile: null,        render: { fill: '#8a6a3f', opacity: 0.45 },                                 name: 'Loose plank',description: 'Loose planking. Cosmetic.' },
 };
+
+// Deterministic scatter of small cosmetic ground-detail shapes (see the decal kinds
+// above). Always placed FIRST in a map's terrain array — isWalkableContinuous scans
+// terrainShapes in reverse and returns on the first hit, so a later (real) wall/crate at
+// the same spot must always be able to win the tie; putting decals first guarantees that.
+function mulberry32(seed) {
+  return function rng() {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const GROUND_DETAIL_KINDS = ['crack', 'gravel', 'scorch', 'sand', 'stain', 'plank'];
+
+function scatterGroundDetail(seed, count, width, height) {
+  const rng = mulberry32(seed);
+  const round2 = n => Math.round(n * 100) / 100;
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const kind = GROUND_DETAIL_KINDS[Math.floor(rng() * GROUND_DETAIL_KINDS.length)];
+    const w = 0.3 + rng() * 0.5, h = 0.3 + rng() * 0.5;
+    const x = round2(1 + rng() * (width - 2 - w));
+    const y = round2(1 + rng() * (height - 2 - h));
+    out.push({ shape: rng() < 0.5 ? 'oval' : 'rect', x, y, w: round2(w), h: round2(h), kind });
+  }
+  return out;
+}
 
 // Floor colour used for the (uniform) tile layer under a shape map — the terrain is
 // conveyed entirely by the shapes, so the raster grid stays a plain backdrop.
 export const CS_SHAPE_FLOOR = '#c8c0a8';
 
+// The map border is always solid (buildBase stamps 'wall' around the edge), but that was
+// never given a render shape — only whatever a map's own terrain drew showed up, so the
+// edge looked like open background. Draw it explicitly so every shape-based map reads as
+// a walled arena. Render-only (buildBase/the boundary check in isWalkableContinuous
+// already make it solid), so these aren't added to terrainShapes/tiles.
+function perimeterWallShapes(W, H) {
+  const render = CS_SHAPE_STYLES.wall.render;
+  const info   = { name: CS_SHAPE_STYLES.wall.name, description: CS_SHAPE_STYLES.wall.description, label: null };
+  return [
+    { shape: 'rect', x: 0,     y: 0,     w: W, h: 1, ...render, ...info },
+    { shape: 'rect', x: 0,     y: H - 1, w: W, h: 1, ...render, ...info },
+    { shape: 'rect', x: 0,     y: 0,     w: 1, h: H, ...render, ...info },
+    { shape: 'rect', x: W - 1, y: 0,     w: 1, h: H, ...render, ...info },
+  ];
+}
+
 function buildFromShapes(def) {
   const { width: W, height: H, terrain, tSpawns, ctSpawns } = def;
   const t = buildBase(W, H);
-  const shapes = [];
+  const shapes = [...perimeterWallShapes(W, H)];
   // Continuous-movement lookup: the authored shapes themselves (float x/y/w/h), each
   // tagged with the mechanics tile they rasterize to — used by isWalkableContinuous
   // below instead of the rasterized `tiles` dict, so free-form movement isn't limited
@@ -59,8 +134,13 @@ function buildFromShapes(def) {
     shapes.push({
       shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h,
       ...style.render,
-      label: s.label ?? style.label ?? null,
-      name: style.name, description: style.description,
+      // On-map text is reserved for gameplay-relevant zones (spawn/bombsite labels come
+      // from the kind's own style, e.g. CS_SHAPE_STYLES.bombsiteA.label = 'A'). A per-shape
+      // `s.label` (map-authoring callout names like "Xbox"/"Blue") is intentionally NOT
+      // drawn on the map — it only replaces the generic kind name in the terrain-details
+      // panel when that shape is selected (see Battlefield.vue's selectedTerrain).
+      label: style.label ?? null,
+      name: s.label ?? style.name, description: style.description,
     });
   }
 
@@ -74,7 +154,7 @@ export function isWalkableContinuous(map, x, y) {
   if (x <= 0 || y <= 0 || x >= map.width - 1 || y >= map.height - 1) return false;
   for (let i = map.terrainShapes.length - 1; i >= 0; i--) {
     const s = map.terrainShapes[i];
-    if (pointInShape(s, x, y)) return s.tile !== 'wall';
+    if (pointInShape(s, x, y)) return s.tile !== 'wall' && s.tile !== 'lowWall';
   }
   return true;
 }
@@ -217,9 +297,87 @@ const CS_ITALY = {
   tSpawns:  [{ x: 19, y: 2 }, { x: 20, y: 2 }, { x: 18, y: 2 }, { x: 19, y: 3 }, { x: 19, y: 1 }],
 };
 
+// de_dust2 — the flagship map, rebuilt at higher fidelity with named callouts. CTs hold
+// the centre-left spawn with routes down to A (via Catwalk/Short) and B (via Mid/Window);
+// Ts hold the top-right spawn with routes down Long into A and down through B Tunnel.
+//
+// Real Dust II leans heavily on ELEVATION — Long's ramp up into A, Catwalk overlooking B
+// Tunnel from above, waist-high boxes (Xbox, Car, the corner box at A) you crouch/shoot
+// over. This engine has no z-axis (unit.position is a flat continuous x/y — see
+// project_continuous_coords in memory), so true stacked geometry isn't possible. Two
+// workarounds stand in for it (see the `lowWall`/`ramp`/`catwalk` kinds above):
+//   1. Elevated PATHS (Catwalk) are authored as their own lane running parallel to the
+//      room they overlook rather than literally on top of it — topological separation
+//      instead of a z-coordinate.
+//   2. Waist-high COVER (Xbox, Car, the A corner box, the B window sill) uses `lowWall`:
+//      it blocks movement like a wall, but is deliberately excluded from csLosBlockers'
+//      opacity test (belief.js only opacifies tile === 'wall'), so — like real elevated
+//      cover — you can still see and shoot across or over it.
+const DE_DUST2 = {
+  width: 22, height: 14,
+  terrain: [
+    // ── ground-detail layer (cosmetic, always first — see scatterGroundDetail) ──
+    ...scatterGroundDetail(0xd2, 80, 22, 14),
+
+    // ── spawns & sites ──
+    { shape: 'rect', x:  1, y:  9, w: 4, h: 3, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 17, y:  9, w: 3, h: 3, kind: 'tSpawn'    },
+    { shape: 'rect', x:  1, y:  1, w: 5, h: 4, kind: 'bombsiteB' },
+    { shape: 'rect', x: 15, y:  1, w: 5, h: 4, kind: 'bombsiteA' },
+
+    // ── structural walls: Mid corridor (west leg) and Long/Catwalk divider ──
+    { shape: 'rect', x:  5, y:  3, w: 1, h: 6, kind: 'building'  }, // mid west wall (leaves y1-2 open: B Window)
+    { shape: 'rect', x:  9, y:  1, w: 1, h: 7, kind: 'building'  }, // mid east wall
+    { shape: 'rect', x: 13, y:  5, w: 1, h: 4, kind: 'building'  }, // catwalk/long divider (leaves y1-4 open: Short)
+
+    // ── Long A: right-side corridor from T spawn down into A, with barrel cover ──
+    // (labels below feed the terrain-details panel on select only — see the note in
+    // buildFromShapes; they're not drawn on the map itself.)
+    { shape: 'oval', x: 15, y:  4, w: 3, h: 3, kind: 'crate',   label: 'Blue'   }, // mid-long barrels
+    { shape: 'rect', x: 14, y:  1, w: 1, h: 3, kind: 'ramp',    label: 'Ramp'   }, // slope up into A
+    { shape: 'rect', x: 15, y:  8, w: 4, h: 1, kind: 'ramp',    label: 'Long Doors' },
+    { shape: 'rect', x: 19, y:  1, w: 1, h: 2, kind: 'lowWall', label: 'Goose'  }, // corner box, shoot-over
+    { shape: 'rect', x: 16, y:  1, w: 1, h: 1, kind: 'lowWall', label: 'Pit'    }, // second A corner box
+    { shape: 'rect', x: 15, y:  9, w: 3, h: 1, kind: 'ramp',    label: 'T Ramp' }, // T spawn's slope down to Long
+
+    // ── Catwalk / Short A: elevated lane (own path, not stacked) into A's flank ──
+    { shape: 'rect', x: 10, y:  5, w: 3, h: 4, kind: 'catwalk', label: 'Catwalk' },
+    { shape: 'rect', x: 13, y:  2, w: 1, h: 1, kind: 'lowWall', label: 'Short'  }, // catwalk railing into A, shoot-over
+    { shape: 'rect', x:  2, y:  8, w: 6, h: 1, kind: 'ramp',    label: 'CT Ramp' },
+    { shape: 'rect', x: 11, y:  2, w: 1, h: 1, kind: 'ramp',    label: 'Ninja'  }, // quiet corner between Short and Catwalk
+    { shape: 'rect', x:  1, y: 12, w: 2, h: 1, kind: 'catwalk', label: 'Heaven' }, // CT spawn's elevated ledge
+
+    // ── Mid: centre corridor with Xbox cover, opens into B Window ──
+    { shape: 'rect', x:  6, y:  3, w: 2, h: 2, kind: 'crate',   label: 'Xbox'   },
+    { shape: 'rect', x:  6, y:  7, w: 3, h: 1, kind: 'ramp',    label: 'Mid Doors' },
+    { shape: 'rect', x:  6, y:  2, w: 1, h: 1, kind: 'lowWall', label: 'Window' }, // window sill, shoot-through
+    { shape: 'rect', x:  9, y:  8, w: 1, h: 1, kind: 'ramp',    label: 'Suicide' }, // exposed mid/catwalk crossing
+
+    // ── B Tunnel: left-side route from T spawn's plaza down into B ──
+    { shape: 'rect', x:  2, y:  5, w: 3, h: 4, kind: 'ramp',    label: 'B Tunnel' },
+    { shape: 'rect', x:  2, y:  5, w: 1, h: 1, kind: 'ramp',    label: 'Dark'   }, // unlit tunnel corner
+    { shape: 'rect', x:  1, y:  1, w: 2, h: 1, kind: 'crate',   label: 'Car'    },
+    { shape: 'rect', x:  3, y:  3, w: 1, h: 1, kind: 'lowWall', label: 'Elevator' }, // B site platform edge
+    { shape: 'rect', x:  2, y:  4, w: 1, h: 1, kind: 'ramp',    label: 'Deep'   }, // back corner of B site
+
+    // ── scattered debris: small extra cover, one per zone, none blocking the only path ──
+    { shape: 'rect', x:  4, y: 11, w: 1, h: 1, kind: 'debris' }, // CT spawn
+    { shape: 'rect', x: 19, y: 11, w: 1, h: 1, kind: 'debris' }, // T spawn
+    { shape: 'rect', x: 17, y:  3, w: 1, h: 1, kind: 'debris' }, // A site
+    { shape: 'rect', x:  4, y:  3, w: 1, h: 1, kind: 'debris' }, // B site
+    { shape: 'rect', x:  7, y:  6, w: 1, h: 1, kind: 'debris' }, // Mid, east bypass still open
+    { shape: 'rect', x: 11, y:  7, w: 1, h: 1, kind: 'debris' }, // Catwalk
+    { shape: 'rect', x:  3, y:  6, w: 1, h: 1, kind: 'debris' }, // B Tunnel
+    { shape: 'rect', x: 18, y:  6, w: 1, h: 1, kind: 'debris' }, // Long
+  ],
+  ctSpawns: [{ x: 1, y: 10 }, { x: 2, y: 10 }, { x: 3, y: 10 }, { x: 2, y: 9 }, { x: 2, y: 11 }],
+  tSpawns:  [{ x: 19, y: 10 }, { x: 18, y: 10 }, { x: 17, y: 10 }, { x: 18, y: 9 }, { x: 18, y: 11 }],
+};
+
 // ── Map registry ──────────────────────────────────────────────────────────────
 
 export const MAPS = {
+  de_dust2: buildFromShapes(DE_DUST2),
   dust2:    buildFromShapes(DUST2),
   de_dust:  buildFromShapes(DE_DUST),
   cs_siege: buildFromShapes(CS_SIEGE),
@@ -242,7 +400,7 @@ export function isBombsite(tiles, x, y) {
 // keyed by integers, so snap to the tile a point sits in.
 export function isWalkable(tiles, x, y) {
   const t = tiles[k(Math.floor(x), Math.floor(y))];
-  return t !== undefined && t !== 'wall';
+  return t !== undefined && t !== 'wall' && t !== 'lowWall';
 }
 
 // Bresenham LOS — returns false if any intermediate tile is a wall or in extraBlocked.
@@ -298,7 +456,7 @@ export function getReachable(tiles, pos, range, units) {
   return result;
 }
 
-const TILE_CHARS = { wall: '#', floor: '.', bombsiteA: 'A', bombsiteB: 'B', ctSpawn: 'c', tSpawn: 't' };
+const TILE_CHARS = { wall: '#', floor: '.', bombsiteA: 'A', bombsiteB: 'B', ctSpawn: 'c', tSpawn: 't', lowWall: '=' };
 
 export function renderMap(state) {
   const { units, gameSpecific: { bomb, smokeZones = [], fireZones = [], map } } = state;

@@ -65,9 +65,13 @@ export function generateMap(width, height, rng, campPositions) {
   function classify(x, y) {
     if (nearCamp(x, y)) return 'plains';
     const i = y * width + x, e = elev[i], m = moist[i];
-    if (e > 0.82) return 'mountains';
-    if (e > 0.66) return 'hills';
-    if (m > 0.62) return 'forest';
+    // Thresholds tuned down from the original (0.82/0.66/0.62) so the interior isn't a
+    // near-empty plain: roughly a third of it is now forest/hills cover with a few rocky
+    // outcrops, while the camp safe zones and camp-to-camp connectivity still hold (mountains
+    // are impassable, so the ridge threshold stays high enough not to wall the map off).
+    if (e > 0.80) return 'mountains';
+    if (e > 0.58) return 'hills';
+    if (m > 0.54) return 'forest';
     return 'plains';
   }
 

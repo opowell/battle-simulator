@@ -76,6 +76,8 @@ function fmtAction(action) {
   if (t === 'throw')     return action.name ? `Throw ${action.name}` : 'Throw Grenade';
   if (t === 'buy')       return action.name ? `Buy ${action.name}` : `Buy ${action.item ?? ''}`;
   if (t === 'end-buy')   return 'Done Buying';
+  if (t === 'crouch')    return 'Crouch';
+  if (t === 'stand')     return 'Stand Up';
   if (t === 'end-turn')  return action.direction ? `End Turn · Face ${action.direction}` : 'End Turn';
   if (t === 'end-phase') return 'End Phase';
   if (t === 'pass')      return 'Pass';

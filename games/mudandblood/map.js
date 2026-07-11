@@ -7,20 +7,25 @@ export const TERRAIN = {
   BASE:    '#',
 };
 
-// 20 wide × 10 tall
-// y=0: German spawn zone (top)
-// y=8: Allied trench — if Germans reach here, Axis wins
-// y=9: Allied base (impassable)
+// 20 wide × 10 tall — a WWI no-man's-land assault.
+// . = open mud, ~ = barbed wire (2 AP to enter), o = shell crater (+20 cover),
+// s = sandbags (+35 cover), T = trench (+50 cover), # = Allied base (impassable).
+// y=0: German spawn (top) · y=8: Allied trench — Axis wins on reaching it · y=9: base.
+//
+// The middle is now a real killing field: forward MG nests, a broken belt of barbed wire
+// with three breach lanes (the Axis must funnel through them), a dense crater field for
+// bounding cover, and a sandbag line with gaps just short of the trench. Allied units
+// deploy on the sandbags/trench (y7-8), so those rows stay passable cover.
 const MAP_TEMPLATE = [
   '....................',  // y=0 German spawn
-  '....................',  // y=1 open
-  '....................',  // y=2 open
-  '~~~~~~~~~~~~~~~~~~~~',  // y=3 barbed wire (2 AP to enter)
-  '....................',  // y=4 no-man's land
-  '.oo..oo..oo..oo..oo.',  // y=5 craters (low cover)
-  'o...oo...oo...oo....',  // y=6 craters (low cover)
-  'ssssssssssssssssssss',  // y=7 sandbags (high cover)
-  'TTTTTTTTTTTTTTTTTTTT',  // y=8 Allied trench (max cover / win condition)
+  '...o.......o.....o..',  // y=1 shell craters
+  '.....ss......ss.....',  // y=2 forward MG nests
+  '~~~...~~~~~...~~~..~',  // y=3 barbed wire — 3 breach lanes
+  '..o...o...o...o...o.',  // y=4 cratered mud
+  '.oo..oo..oo..oo..oo.',  // y=5 crater field
+  'o..soo..soo..soo..o.',  // y=6 craters + sandbag nests
+  'ssss..ssssss..sssss.',  // y=7 sandbag line (gaps)
+  'TTTTTTTTTTTTTTTTTTTT',  // y=8 Allied trench (win condition)
   '####################',  // y=9 Allied base (impassable)
 ];
 

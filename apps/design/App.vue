@@ -260,6 +260,10 @@ function buildField(g, s) {
       imagePath:     c.imagePath,
       portraitPath:  c.portraitPath,
       mainImagePath: c.mainImagePath,
+      // Layered composite sprite (body/hands/held weapon/team ring/equipment badges,
+      // each independently offset+rotated) — see apps/design/SchematicLayer.vue's
+      // generic renderer and e.g. games/surviv/SurvivGame.js's spriteLayers().
+      spriteLayers:  c.spriteLayers,
       description:   c.description,
       job:           c.job,
       moveRange:     c.moveRange,

@@ -51,14 +51,13 @@ function deployScenario(scen, players) {
   ];
 }
 
-// Resolve a scenario id → { board, units(players) }. The default 'standard' keeps the
-// original hand-laid grid map; the rest are shape-based (non-grid terrain) maps.
+// Resolve a scenario id → { board, units(players) }. The DEFAULT (no/unknown scenario) is
+// the dense shape-based Bocage map; 'ambush' selects the original hand-laid grid map; the
+// rest are the other shape-based (non-grid terrain) maps.
 function resolveScenario(scenId, players) {
-  if (scenId && SHAPE_SCENARIOS[scenId]) {
-    const scen = SHAPE_SCENARIOS[scenId];
-    return { board: createMapFromShapes(scen), units: deployScenario(scen, players) };
-  }
-  return { board: createMap(), units: createScenario(players) };
+  if (scenId === 'ambush') return { board: createMap(), units: createScenario(players) };
+  const scen = (scenId && SHAPE_SCENARIOS[scenId]) || SHAPE_SCENARIOS.bocage;
+  return { board: createMapFromShapes(scen), units: deployScenario(scen, players) };
 }
 
 // ── Legal actions ─────────────────────────────────────────────────────────────
@@ -419,10 +418,10 @@ export const CombatMissionGame = {
   evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'CombatMission',
   scenarios: [
-    { id: 'standard',    name: 'Ambush',        description: 'Platoon-level infantry ambush on mixed terrain', config: {} },
-    { id: 'bocage',      name: 'Bocage',        description: 'Shape terrain — Normandy hedgerow fields, woods and farmhouses', config: { scenario: 'bocage' } },
+    { id: 'bocage',      name: 'Bocage',        description: 'Normandy hedgerow country — a dense patchwork of walled fields, sunken lanes, orchards and a farm hamlet', config: {} },
     { id: 'river_line',  name: 'River Line',    description: 'Shape terrain — a single bridge crosses an impassable river', config: { scenario: 'river_line' } },
     { id: 'hill_woods',  name: 'Hill & Woods',  description: 'Shape terrain — scattered oval woods over open hills', config: { scenario: 'hill_woods' } },
+    { id: 'ambush',      name: 'Ambush',        description: 'Platoon-level infantry ambush on the original mixed-terrain grid', config: { scenario: 'ambush' } },
   ],
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },

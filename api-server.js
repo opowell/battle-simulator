@@ -45,6 +45,7 @@ import { DoomGame }          from './games/doom/index.js';
 import { MudAndBloodGame }  from './games/mudandblood/index.js';
 import { KDiceGame }        from './games/kdice/index.js';
 import { WarodDotsGame }   from './games/warofdots/WarodDotsGame.js';
+import { SurvivGame }        from './games/surviv/index.js';
 
 // ---------------------------------------------------------------------------
 // Static file serving — /ui/<name>/* → apps/<name>/
@@ -189,24 +190,25 @@ function f_stem(f) { const dot = f.lastIndexOf('.'); return dot < 0 ? f : f.slic
 // ---------------------------------------------------------------------------
 
 const GAMES = {
-  chess:         { game: ChessGame,         icon: 'crown',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }] },
-  tactical:      { game: TacticalGame,      icon: 'target',    minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  cardbattle:    { game: CardBattleGame,    icon: 'cards',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  civ1:          { game: Civ1Game,          icon: 'flag',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  civ2:          { game: Civ2Game,          icon: 'city',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  risk:          { game: RiskGame,          icon: 'globe',     minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  axisallies:    { game: AxisAlliesGame,    icon: 'plane',     minPlayers: 2, maxPlayers: 5,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
-  combatmission: { game: CombatMissionGame, icon: 'tank',      minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  xcom:          { game: XComGame,          icon: 'ufo',       minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }] },
-  aow:           { game: AowGame,           icon: 'wand',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  cs:            { game: CsGame,            icon: 'crosshair', minPlayers: 2, maxPlayers: 10, defaultPlayers: [{ id: 'ct', name: 'CT' }, { id: 't', name: 'T' }] },
-  ffta:          { game: FFTAGame,          icon: 'sword',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  sc1:           { game: Sc1Game,           icon: 'zap',       minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  sc2:           { game: Sc2Game,           icon: 'star',      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  doom:          { game: DoomGame,          icon: 'flame',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'marine', name: 'Marine' }, { id: 'demons', name: 'Demons' }] },
-  mudandblood:   { game: MudAndBloodGame,   icon: 'skull',     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
-  kdice:         { game: KDiceGame,         icon: 'dice',      minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }] },
-  warofdots:     { game: WarodDotsGame,     icon: 'target',    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'player', name: 'You' }, { id: 'ai', name: 'AI' }] },
+  chess:         { game: ChessGame,         minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }] },
+  tactical:      { game: TacticalGame,      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  cardbattle:    { game: CardBattleGame,    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  civ1:          { game: Civ1Game,          minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  civ2:          { game: Civ2Game,          minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  risk:          { game: RiskGame,          minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  axisallies:    { game: AxisAlliesGame,    minPlayers: 2, maxPlayers: 5,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
+  combatmission: { game: CombatMissionGame, minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  xcom:          { game: XComGame,          minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }] },
+  aow:           { game: AowGame,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  cs:            { game: CsGame,            minPlayers: 2, maxPlayers: 10, defaultPlayers: [{ id: 'ct', name: 'CT' }, { id: 't', name: 'T' }] },
+  ffta:          { game: FFTAGame,          minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  sc1:           { game: Sc1Game,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  sc2:           { game: Sc2Game,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  doom:          { game: DoomGame,          minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'marine', name: 'Marine' }, { id: 'demons', name: 'Demons' }] },
+  mudandblood:   { game: MudAndBloodGame,   minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
+  kdice:         { game: KDiceGame,         minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }] },
+  warofdots:     { game: WarodDotsGame,     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'player', name: 'You' }, { id: 'ai', name: 'AI' }] },
+  surviv:        { game: SurvivGame,        minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'blue', name: 'Blue' }, { id: 'red', name: 'Red' }] },
 };
 
 // ---------------------------------------------------------------------------
@@ -426,9 +428,8 @@ function dedupeAgents(list) {
 }
 
 async function handleGames(res) {
-  send(res, 200, Object.entries(GAMES).map(([name, { game, icon, defaultPlayers, minPlayers, maxPlayers }]) => ({
+  send(res, 200, Object.entries(GAMES).map(([name, { game, defaultPlayers, minPlayers, maxPlayers }]) => ({
     name,
-    icon,
     defaultPlayers,
     minPlayers,
     maxPlayers,

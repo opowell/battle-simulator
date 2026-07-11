@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import AiDifficultyField from './AiDifficultyField.vue';
+import GameThumb from './GameThumb.vue';
 
 const props = defineProps({
   game:     { type: Object,  default: null }, // null = closed
@@ -80,7 +81,7 @@ function handleCreate() {
     <div v-if="game" class="modal-scrim" @click.self="$emit('close')">
       <div class="modal-panel gcm">
         <div class="gcm-head">
-          <BsIcon :name="game.icon || 'grid'" :size="16" color="var(--accent)"/>
+          <GameThumb :name="game.name" :size="20"/>
           <b class="gcm-name">{{game.name}}</b>
           <span class="gcm-sub">Configure</span>
         </div>

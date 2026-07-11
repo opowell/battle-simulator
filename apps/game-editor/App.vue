@@ -10,11 +10,9 @@ import CreateModal   from './components/CreateModal.vue';
 import ToastStack    from './components/ToastStack.vue';
 
 const blankMeta = () => ({
-  icon: 'grid', minPlayers: 2, maxPlayers: 2,
+  minPlayers: 2, maxPlayers: 2,
   defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }],
 });
-
-const iconNames = Object.keys(window.ICON_PATHS);
 
 const games    = ref([]);
 const loading  = ref(true);
@@ -42,7 +40,7 @@ const fileDirty = computed(() => fileContent.value !== fileOriginal.value);
 function baseline() {
   const g = current.value;
   return g
-    ? { icon: g.icon, minPlayers: g.minPlayers, maxPlayers: g.maxPlayers, defaultPlayers: g.defaultPlayers.map(p => ({ ...p })) }
+    ? { minPlayers: g.minPlayers, maxPlayers: g.maxPlayers, defaultPlayers: g.defaultPlayers.map(p => ({ ...p })) }
     : blankMeta();
 }
 
@@ -140,9 +138,9 @@ onMounted(() => load());
 
       <div class="panel">
         <template v-if="current">
-          <DetailHeader :name="current.name" :icon="form.icon" v-model:tab="tab"
+          <DetailHeader :name="current.name" v-model:tab="tab"
                         :files-count="current.files.length" @delete="removeGame"/>
-          <MetadataForm v-if="tab === 'meta'" :form="form" :names="iconNames" :dirty="metaDirty" :saving="saving"
+          <MetadataForm v-if="tab === 'meta'" :form="form" :dirty="metaDirty" :saving="saving"
                         @save="saveMeta" @revert="form = baseline()"/>
           <FilesTab v-else :files="current.files" :file-path="filePath" v-model:content="fileContent"
                     :dirty="fileDirty" :saving="saving" @open="openFile" @save="saveFile"/>
@@ -151,7 +149,7 @@ onMounted(() => load());
       </div>
     </div>
 
-    <CreateModal v-if="creating" :draft="draft" :names="iconNames" :saving="saving"
+    <CreateModal v-if="creating" :draft="draft" :saving="saving"
                  @create="createGame" @cancel="creating = false"/>
     <ToastStack :toasts="toasts"/>
   </div>

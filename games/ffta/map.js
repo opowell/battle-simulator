@@ -1,16 +1,22 @@
 // 12 wide × 10 tall tactical map
-// # = wall, . = grass (h0), 1 = elevated (h1), 2 = high ground (h2)
-// P1 deploys top-left, P2 deploys bottom-right
+// # = wall (impassable rock), . = grass (h0), 1 = elevated (h1), 2 = high ground (h2)
+// P1 deploys top-left (x1-4, y1-2), P2 deploys bottom-right (x7-10, y6-8) — kept flat.
+//
+// A terraced central massif (h1 dirt slopes rising to an h2 rock crown) is the contested
+// high ground — attacking downhill from it grants +20%/level damage (see FFTAGame combat).
+// Two rock outcrops (#) pinch the approaches into flanking lanes, and the layout is 180°
+// rotationally symmetric so neither deploy corner has the terrain advantage. The iso
+// renderer draws the elevation as real cliffs, so the ridge reads as a mountain pass.
 const MAP_TEMPLATE = [
   '############',
-  '#..11......#',
-  '#..1.......#',
-  '#..........#',
   '#....2.....#',
+  '#...1211.#.#',
+  '#..12#21...#',
+  '#.1.222.11.#',
+  '#.11.222.1.#',
+  '#...12#21..#',
+  '#.#.1121...#',
   '#.....2....#',
-  '#.......1..#',
-  '#.......11.#',
-  '#..........#',
   '############',
 ];
 
