@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CsGame } from './index.js';
+import { WEAPONS } from './weapons.js';
 import { num } from '../coord.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
@@ -251,16 +252,39 @@ test('cs: buy phase is bounded even with a huge wallet and a buy-everything play
   assert.equal(state.currentPhase, 'action');
 });
 
-test('cs: a unit is never offered a second weapon in one buy phase', () => {
+// A unit carries a pistol AND a primary slot at once (see CsGame.js's WEAPON_SLOT), so a
+// second weapon buy is legitimately offered after the first — as long as it fills the OTHER
+// slot. What must never happen is a second buy for the SAME slot (that's the ping-pong the
+// per-round cap/gating exists to prevent).
+function slotOf(item) {
+  const cat = WEAPONS[item].category;
+  return cat === 'pistol' ? 'pistol' : cat === 'melee' ? 'melee' : 'primary';
+}
+
+test('cs: a unit is never offered a second buy for the same weapon slot in one buy phase', () => {
   let state = CsGame.createInitialState(players());
   state = { ...state, units: state.units.map(u => ({ ...u, money: 16000 })) };
   const active = state.activePlayers[0];         // T buys first
-  const buyWeapon = CsGame.getLegalActions(state, active).find(a => a.type === 'buy' && a.item !== 'armor');
+  const buyWeapon = CsGame.getLegalActions(state, active).find(a => a.type === 'buy' && WEAPON_IS(a.item));
+  const boughtSlot = slotOf(buyWeapon.item);
   state = CsGame.applyActions(state, [{ playerId: active, action: buyWeapon }]);
   const unit = state.units.find(u => u.id === buyWeapon.unitId);
   const stillOffered = CsGame.getLegalActions(state, active)
-    .some(a => a.type === 'buy' && a.unitId === unit.id && WEAPON_IS(a.item));
-  assert.equal(stillOffered, false, 'weapon re-buy still offered — buy phase can ping-pong');
+    .some(a => a.type === 'buy' && a.unitId === unit.id && WEAPON_IS(a.item) && slotOf(a.item) === boughtSlot);
+  assert.equal(stillOffered, false, 'same-slot weapon re-buy still offered — that slot can ping-pong');
+});
+
+test('cs: a unit CAN be offered a weapon buy for the other slot after filling one', () => {
+  let state = CsGame.createInitialState(players());
+  state = { ...state, units: state.units.map(u => ({ ...u, money: 16000 })) };
+  const active = state.activePlayers[0];
+  const buyWeapon = CsGame.getLegalActions(state, active).find(a => a.type === 'buy' && WEAPON_IS(a.item));
+  const boughtSlot = slotOf(buyWeapon.item);
+  state = CsGame.applyActions(state, [{ playerId: active, action: buyWeapon }]);
+  const unit = state.units.find(u => u.id === buyWeapon.unitId);
+  const otherSlotOffered = CsGame.getLegalActions(state, active)
+    .some(a => a.type === 'buy' && a.unitId === unit.id && WEAPON_IS(a.item) && slotOf(a.item) !== boughtSlot);
+  assert.equal(otherSlotOffered, true, 'the other weapon slot (pistol/primary) should still be buyable');
 });
 
 test('cs: a unit stops being offered buys after the per-round cap', () => {
@@ -311,6 +335,93 @@ test('cs: a target-less throw is consumed, not crashed on', () => {
     next = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'throw', unitId: 'T-0', grenade: 'he' } }]);
   });
   assert.equal(next.units.find(u => u.id === 'T-0').perTurn.hasActed, true, 'the unit’s action is consumed');
+});
+
+// ---------------------------------------------------------------------------
+// Weapon loadout (pistol/melee/primary slots, switching, per-slot move speed)
+// ---------------------------------------------------------------------------
+
+test('cs: units spawn with a pistol+knife loadout, pistol active, no primary', () => {
+  const state = CsGame.createInitialState(players());
+  for (const u of state.units) {
+    assert.equal(u.weapons.pistol, 'pistol');
+    assert.equal(u.weapons.melee, 'knife');
+    assert.equal(u.weapons.primary, null);
+    assert.equal(u.active, 'pistol');
+  }
+});
+
+test('cs: buying a primary equips it without clearing the pistol slot', () => {
+  let state = CsGame.createInitialState(players());
+  state = { ...state, units: state.units.map(u => ({ ...u, money: 16000 })) };
+  const active = state.activePlayers[0];
+  const primaryBuy = CsGame.getLegalActions(state, active)
+    .find(a => a.type === 'buy' && WEAPON_IS(a.item) && WEAPONS[a.item].category !== 'pistol');
+  state = CsGame.applyActions(state, [{ playerId: active, action: primaryBuy }]);
+  const unit = state.units.find(u => u.id === primaryBuy.unitId);
+  assert.equal(unit.weapons.primary, primaryBuy.item);
+  assert.equal(unit.weapons.pistol, 'pistol', 'pistol slot untouched by a primary buy');
+  assert.equal(unit.active, 'primary', 'buying auto-equips the new weapon');
+});
+
+test('cs: switch-weapon changes the active slot and taxes moveAllowance, not hasActed', () => {
+  let state = CsGame.createInitialState(players(), { mapId: 'dust2' });
+  state = { ...state, currentPhase: 'action', gameSpecific: { ...state.gameSpecific, buyPhase: 'done' } };
+  const before = state.units.find(u => u.id === 'T-0');
+  const budgetBefore = before.perTurn.moveAllowance;
+  const next = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'switch-weapon', unitId: 'T-0', slot: 'melee' } }]);
+  const after = next.units.find(u => u.id === 'T-0');
+  assert.equal(after.active, 'melee');
+  assert.equal(after.perTurn.moveAllowance, budgetBefore - 1);
+  assert.equal(after.perTurn.hasActed, false, 'switching weapons does not consume the main action');
+});
+
+test('cs: turn-start move budget follows the active weapon — knife fastest, pistol baseline, primary slowest', () => {
+  // A switch mid-turn only taxes the budget already fixed for that turn (see the
+  // switch-weapon test above) — the speed tier itself is applied when moveAllowance is
+  // (re)computed at the start of a unit's turn (the 'end-turn' handler), so exercise that
+  // directly: force a unit's active slot, then end its team's turn and read the fresh budget.
+  const budgetFor = (activeSlot) => {
+    let state = CsGame.createInitialState(players());
+    state = {
+      ...state, currentPhase: 'action',
+      gameSpecific: { ...state.gameSpecific, buyPhase: 'done' },
+      units: state.units.map(u => u.id === 'T-0'
+        ? { ...u, weapons: { ...u.weapons, primary: 'ak47' }, active: activeSlot,
+            ammo: { ...u.ammo, primary: { mag: 30, reserve: 90 } } }
+        : u),
+    };
+    // T-0 belongs to team T, controlled by player p2 — ending p2's turn resets T's own units.
+    const next = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'end-turn', unitId: '__player__' } }]);
+    return next.units.find(u => u.id === 'T-0').perTurn.moveAllowance;
+  };
+  const melee = budgetFor('melee'), pistol = budgetFor('pistol'), primary = budgetFor('primary');
+  assert.ok(melee > pistol, 'knife should move faster than pistol');
+  assert.ok(pistol > primary, 'pistol should move faster than a primary');
+});
+
+test('cs: shooting only spends ammo from the active slot', () => {
+  let state = CsGame.createInitialState(players());
+  state = { ...state, units: state.units.map(u => ({ ...u, money: 16000 })) };
+  const active = state.activePlayers[0];
+  const primaryBuy = CsGame.getLegalActions(state, active)
+    .find(a => a.type === 'buy' && WEAPON_IS(a.item) && WEAPONS[a.item].category !== 'pistol');
+  state = CsGame.applyActions(state, [{ playerId: active, action: primaryBuy }]);
+  state = CsGame.applyActions(state, [{ playerId: 'p1', action: { type: 'end-buy', unitId: '__player__' } }]);
+  state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'end-buy', unitId: '__player__' } }]);
+  const unitId = primaryBuy.unitId;
+  const before = state.units.find(u => u.id === unitId);
+  assert.equal(before.active, 'primary');
+  const pistolAmmoBefore = before.ammo.pistol.mag;
+
+  // Switch to pistol and shoot the air (no target needed to exercise ammo debit — call
+  // applyActions' shoot branch directly against a fabricated adjacent enemy).
+  state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'switch-weapon', unitId, slot: 'pistol' } }]);
+  const enemy = state.units.find(u => u.ownerId === 'CT');
+  state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'shoot', unitId, targetId: enemy.id } }], () => 1);
+  const after = state.units.find(u => u.id === unitId);
+  assert.equal(after.ammo.pistol.mag, pistolAmmoBefore - 1, 'pistol mag debited');
+  assert.equal(after.ammo.primary.mag, before.ammo.primary.mag, 'primary mag untouched while pistol is active');
 });
 
 // A weapon id is anything in WEAPONS except non-weapon buy items (armor/helmet/kit/grenades).

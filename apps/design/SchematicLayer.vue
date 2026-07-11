@@ -37,6 +37,7 @@ const props = defineProps({
   aiming: { type: Object, default: null },
 });
 const emit = defineEmits(['select', 'sq-click', 'set-marker']);
+const imgSrc = window.api.imgSrc;
 
 // Team whose pieces project vision. Normally the human (teams[0]); in reveal mode it
 // follows whoever is to move at the displayed ply, so fog flips as you step through.
@@ -354,12 +355,20 @@ function tileColor(tile) {
 function tileBgImage(tile) {
   if (!tile.bgImage) return null;
   if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
-  return tile.bgImage;
+  return imgSrc(tile.bgImage);
 }
 
 // Design rule: grid-based games get a square marker (a game can override per unit
 // type via ui.unitShapes, e.g. chess); non-grid (continuous, see field.locationType)
 // games get a circle, matching there being no cell for a square to align to.
+// A spriteLayers() layer's fill/stroke is normally a literal CSS color, but games
+// with dynamic (owner-index-based) team palettes can't know that color server-side
+// (see apps/design/App.vue's TEAM_RAWS) — passing the sentinel 'team' instead defers
+// to the same u.teamObj.raw the plain-shape body already uses.
+function layerColor(u, val) {
+  return val === 'team' ? (u.id === highlightUnitId.value ? 'white' : u.teamObj.raw) : val;
+}
+
 function unitShape(u) {
   const shapes = props.field.ui?.unitShapes;
   if (shapes?.[u.type]) return shapes[u.type];
@@ -381,7 +390,7 @@ const MARKER_CYCLE = ['p', 'n', 'b', 'r', 'q', 'k', null];
 // Enemy piece colour from the viewer's perspective, so manual markers use the
 // opponent's actual sprite set rather than always assuming the enemy is black.
 const enemyPrefix = computed(() => viewerIsBlack.value ? 'w' : 'b');
-function markerImg(type) { return `/images/chess/${enemyPrefix.value}${type.toUpperCase()}`; }
+function markerImg(type) { return `${window.api.basePath}/images/chess/${enemyPrefix.value}${type.toUpperCase()}`; }
 
 function isFogSquare(col, row) {
   if (gridFogVisibleSet.value) return !gridFogVisibleSet.value.has(`${col},${row}`);
@@ -720,7 +729,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
       <image v-for="m in displayMarkers" :key="'sm'+m.col+','+m.row"
              :x="fit.x(m.col) + fit.len(0.1)" :y="fit.y(m.row) + fit.len(0.1)"
              :width="fit.len(0.8)" :height="fit.len(0.8)"
-             :href="m.img ?? markerImg(m.type)"
+             :href="imgSrc(m.img) ?? markerImg(m.type)"
              opacity="0.55"
              class="sl-noevents"/>
 
@@ -862,10 +871,14 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                 :fill="u.id === highlightUnitId ? u.teamObj.raw : rdr.unitFill"
                 :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <!-- Layered composite sprite: an ordered stack of independently offset/rotated images
-               (body, hands, held weapon, ring, equipment badges — see a game's toGrid, e.g.
-               games/surviv/SurvivGame.js's spriteLayers()). Each layer's dx/dy/rot are precomputed
-               server-side (already rotated for facing), so this stays a dumb draw loop: any game
-               can opt in by putting `spriteLayers` on a unit instead of `imagePath`. -->
+               OR primitive shapes (body, hands, held weapon, ring, equipment badges — see a
+               game's toGrid, e.g. games/surviv/SurvivGame.js's spriteLayers()). Each layer's
+               dx/dy/rot are precomputed server-side (already rotated for facing), so this stays
+               a dumb draw loop: any game can opt in by putting `spriteLayers` on a unit instead
+               of `imagePath`. A layer with `shape: 'circle'|'rect'` draws a flat-color primitive
+               (fill/stroke/strokeWidth, circle uses rFrac, rect reuses wFrac/hFrac/anchorX/anchorY)
+               instead of an `<image>` — see games/cs/CsGame.js's spriteLayers() for a
+               surviv.io-style all-primitive unit (no sourced art at all). -->
           <template v-if="u.spriteLayers">
             <rect :x="-unitR(u)" :y="-unitR(u)"
                   :width="unitR(u)*2" :height="unitR(u)*2"
@@ -873,9 +886,21 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             <g v-for="(layer, li) in u.spriteLayers" :key="'sp'+li"
                :transform="`translate(${unitR(u)*layer.dx}, ${unitR(u)*layer.dy}) rotate(${layer.rot||0})`"
                class="sl-noevents">
-              <image :x="-unitR(u)*layer.wFrac*(layer.anchorX??0.5)" :y="-unitR(u)*layer.hFrac*(layer.anchorY??0.5)"
+              <circle v-if="layer.shape==='circle'" cx="0" cy="0" :r="unitR(u)*(layer.rFrac??0.5)"
+                      :fill="layerColor(u, layer.fill)||'#888'" :stroke="layerColor(u, layer.stroke)||'none'" :stroke-width="layer.strokeWidth||0"/>
+              <rect v-else-if="layer.shape==='rect'"
+                    :x="-unitR(u)*layer.wFrac*(layer.anchorX??0.5)" :y="-unitR(u)*layer.hFrac*(layer.anchorY??0.5)"
+                    :width="unitR(u)*layer.wFrac" :height="unitR(u)*layer.hFrac"
+                    :rx="unitR(u)*(layer.rxFrac??0)"
+                    :fill="layerColor(u, layer.fill)||'#888'" :stroke="layerColor(u, layer.stroke)||'none'" :stroke-width="layer.strokeWidth||0"/>
+              <text v-else-if="layer.shape==='text'" x="0" y="0"
+                    :font-size="unitR(u)*(layer.rFrac??0.9)" font-weight="800" :font-family="rdr.font"
+                    text-anchor="middle" dominant-baseline="central" class="sl-noselect" paint-order="stroke"
+                    :fill="layerColor(u, layer.fill)||'#fff'"
+                    :stroke="layerColor(u, layer.stroke)||'none'" :stroke-width="layer.strokeWidth||0">{{layer.text}}</text>
+              <image v-else :x="-unitR(u)*layer.wFrac*(layer.anchorX??0.5)" :y="-unitR(u)*layer.hFrac*(layer.anchorY??0.5)"
                      :width="unitR(u)*layer.wFrac" :height="unitR(u)*layer.hFrac"
-                     :href="layer.src"/>
+                     :href="imgSrc(layer.src)"/>
             </g>
           </template>
           <!-- Sprite image or first letter of unit name -->
@@ -1002,7 +1027,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
         <image v-if="dragUnit.imagePath"
                :x="-unitR(dragUnit)" :y="-unitR(dragUnit)"
                :width="unitR(dragUnit)*2" :height="unitR(dragUnit)*2"
-               :href="dragUnit.imagePath"
+               :href="imgSrc(dragUnit.imagePath)"
                class="sl-pixel"/>
         <template v-else-if="facingActive">
           <circle v-if="markerSpec(dragUnit).kind === 'circle'" cx="0" cy="0" :r="markerSpec(dragUnit).r" fill="white"/>

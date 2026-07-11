@@ -95,7 +95,15 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
     tree.infosets.set(key, rootI);
     warmStartInfoset(tree, rootI);
   }
-  await expandRoot(tree, hooks);
+  // Start the wall-clock budget before expandRoot: on a game with a huge root
+  // action set (e.g. CS's continuous move/throw lattice, up to hundreds of
+  // actions per unit) expanding every belief world at the root can itself run
+  // long, and previously did so entirely outside the budget — the AI would hang
+  // well past its configured time limit before the round loop below ever got a
+  // chance to check the clock.
+  const budgetMs = cfg.timeBudgetMs ?? 0;
+  const t0 = Date.now();
+  await expandRoot(tree, hooks, { deadline: budgetMs ? t0 + budgetMs : Infinity });
   const root = tree.rootInfoset;
   if (!root) return { action: null, dist: [], rows: [], value: 0, tree };
 
@@ -109,8 +117,6 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   const cfrPerRound = cfg.cfrPerRound ?? 4;
   const maxRounds = cfg.maxRounds ?? 200;
   const maxInfosets = cfg.maxInfosets ?? Infinity;
-  const budgetMs = cfg.timeBudgetMs ?? 0;
-  const t0 = Date.now();
   let step = 0;
   // Snapshot the root strategy after each solve so purification can tell which
   // actions were "stable since T½" (App. C.8).

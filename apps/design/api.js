@@ -1,6 +1,8 @@
-// api.js — HTTP client for the Battle Simulator API
-
-const _BASE = 'http://localhost:3333';
+// api.js — HTTP client for the Battle Simulator API. Talks to whatever
+// origin/path prefix loaded this page, so it works standalone (served at the
+// root) or embedded under a launcher (e.g. served at /battle-simulator/ui/design/).
+const _BASE_PATH = window.location.pathname.replace(/\/ui\/.*$/, '');
+const _BASE = window.location.origin + _BASE_PATH;
 
 async function _req(path, opts) {
   const r = await fetch(_BASE + path, {
@@ -11,7 +13,17 @@ async function _req(path, opts) {
   return r.json();
 }
 
+// Game state carries root-relative image paths computed server-side (e.g.
+// "/images/cs/units/ct"); re-add our own mount prefix so they resolve
+// correctly whether running standalone (prefix '') or embedded (e.g.
+// "/battle-simulator") under a launcher.
+function imgSrc(path) {
+  return path && path.startsWith('/') ? _BASE_PATH + path : path;
+}
+
 window.api = {
+  basePath: _BASE_PATH,
+  imgSrc,
   games:    ()                      => _req('/games'),
   sessions: ()                      => _req('/sessions'),
   session:  (id, player)             => _req('/sessions/' + id + (player ? '?player=' + player : '')),

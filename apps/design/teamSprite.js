@@ -80,6 +80,7 @@
   const tinted = (window.Vue ? Vue.reactive({}) : {});
   const inflight = new Set();
   window.teamSpriteHref = function (src, hex, enabled) {
+    src = window.api.imgSrc(src);
     if (!src || !enabled || !hex) return src;
     const key = src + '|' + hex;
     if (tinted[key]) return tinted[key];

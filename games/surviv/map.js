@@ -4,13 +4,22 @@
 //
 // Shape-authored, exactly like games/cs/map.js: terrain is a list of rects/ovals with a
 // `kind` that decides both the mechanics tile it rasterizes to and its client render
-// style. See that file's header comment for the general approach; the one new wrinkle
-// here is `bush` (see BUSH kinds below) — walkable and NOT a LOS blocker via the normal
-// wall mechanism, but tracked separately so belief.js can grant concealment to a unit
-// standing inside one (see BUSH_SPOT_RANGE in weapons.js).
+// style. See that file's header comment for the general approach. Two wrinkles beyond
+// CS:
+//   - `bush` (see BUSH kinds below) — walkable and NOT a LOS blocker via the normal
+//     wall mechanism, but tracked separately so belief.js can grant concealment to a
+//     unit standing inside one (see BUSH_SPOT_RANGE in weapons.js).
+//   - `crate`/`barrel` are BREAKABLE: the map only authors their static geometry/HP
+//     (below); per-match destroyed state lives in gameSpecific.breakables
+//     (SurvivGame.js), since it changes turn to turn. Every wall-blocking check in this
+//     file (isWalkableContinuous) and belief.js's LOS blockers takes an optional
+//     destroyed-id/-cell set so a broken crate stops blocking movement and sight.
 
 import { forEachCell, pointInShape } from '../terrainShapes.js';
 import { num, tileNum } from '../coord.js';
+
+export const CRATE_HP  = 60;
+export const BARREL_HP = 40;
 
 function k(x, y) { return `${x},${y}`; }
 
@@ -25,7 +34,6 @@ function buildBase(w, h) {
 const SURVIV_SHAPE_STYLES = {
   forest:    { tile: 'wall',      render: { fill: '#2c5f3a', stroke: '#1f4429' },  name: 'Forest',    description: 'Dense trees — impassable, blocks line of sight.' },
   water:     { tile: 'wall',      render: { fill: '#2f7fae', opacity: 0.88 },                    name: 'Water',     description: 'Impassable, blocks line of sight.' },
-  sand:      { tile: null,        render: { fill: '#d9c48a', opacity: 0.55 },                    name: 'Sand',      description: 'Open ground, walkable.' },
   building:  { tile: 'wall',      render: { fill: '#7a6a55', stroke: '#544838' },                 name: 'Building',  description: 'Impassable, blocks line of sight.' },
   crate:     { tile: 'wall',      render: { fill: '#8a6a3f', stroke: '#5f4726' },    name: 'Crates',    description: 'Impassable hard cover, blocks line of sight.' },
   barrel:    { tile: 'wall',      render: { fill: '#a44a3a', stroke: '#6f2f24' },    name: 'Barrel',    description: 'Impassable hard cover, blocks line of sight.' },
@@ -40,36 +48,83 @@ const SURVIV_SHAPE_STYLES = {
 // Floor colour under the shape layer — grass, since the terrain is conveyed by shapes.
 export const SURVIV_SHAPE_FLOOR = '#5a9450';
 
+const BREAKABLE_KINDS = new Set(['crate', 'barrel']);
+
 function buildFromShapes(def) {
   const { width: W, height: H, terrain, redSpawns, blueSpawns, loot } = def;
   const t = buildBase(W, H);
   const shapes = [];
   const terrainShapes = [];
   const bushShapes = [];
+  const breakables = [];
+  const breakableCells = {};
+  let breakableIdx = 0;
 
   for (const s of terrain) {
     const style = SURVIV_SHAPE_STYLES[s.kind] ?? SURVIV_SHAPE_STYLES.building;
-    if (style.tile) forEachCell(s, W, H, (x, y) => { t[k(x, y)] = style.tile; });
-    const tShape = { shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h, tile: style.tile, kind: s.kind };
+    const isBreakable = BREAKABLE_KINDS.has(s.kind);
+    const id = isBreakable ? `breakable-${breakableIdx++}` : undefined;
+    const cells = [];
+    if (style.tile) forEachCell(s, W, H, (x, y) => {
+      t[k(x, y)] = style.tile;
+      if (isBreakable) cells.push(k(x, y));
+    });
+    const tShape = { shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h, tile: style.tile, kind: s.kind, id };
     terrainShapes.push(tShape);
     if (s.kind === 'bush') bushShapes.push(tShape);
+    if (isBreakable) {
+      const maxHp = s.hp ?? (s.kind === 'crate' ? CRATE_HP : BARREL_HP);
+      breakables.push({ id, shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h, kind: s.kind, maxHp });
+      breakableCells[id] = cells;
+    }
     shapes.push({
       shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h,
       ...style.render,
       label: s.label ?? style.label ?? null,
       name: style.name, description: style.description,
+      id,
     });
   }
 
-  return { width: W, height: H, tiles: t, redSpawns, blueSpawns, loot, shapes, terrainShapes, bushShapes };
+  return {
+    width: W, height: H, tiles: t, redSpawns, blueSpawns, loot, shapes, terrainShapes, bushShapes,
+    breakables, breakableCells,
+    breakablesById: Object.fromEntries(breakables.map(b => [b.id, b])),
+  };
 }
 
-// Continuous (non-rasterized) walkability — mirrors games/cs/map.js's version exactly.
-export function isWalkableContinuous(map, x, y) {
+// Per-match breakable state, seeded from a map's static defs (see createInitialState).
+export function initialBreakableState(map) {
+  return map.breakables.map(b => ({ id: b.id, hp: b.maxHp, maxHp: b.maxHp, destroyed: false }));
+}
+
+// The ids of currently-destroyed breakables — feed to isWalkableContinuous and
+// belief.js's survivLosBlockers so a broken crate stops blocking movement/sight.
+export function destroyedIdSet(breakableState) {
+  return new Set((breakableState ?? []).filter(b => b.destroyed).map(b => b.id));
+}
+
+// The union of rasterized cells for all currently-destroyed breakables — feed to
+// isWalkable/getReachable (the discrete tile-grid side of movement).
+export function destroyedCellSet(map, breakableState) {
+  const s = new Set();
+  for (const b of breakableState ?? []) {
+    if (!b.destroyed) continue;
+    for (const c of map.breakableCells[b.id] ?? []) s.add(c);
+  }
+  return s;
+}
+
+// Continuous (non-rasterized) walkability — mirrors games/cs/map.js's version, plus an
+// optional destroyedIds set (see destroyedIdSet) so a broken crate/barrel stops blocking.
+export function isWalkableContinuous(map, x, y, destroyedIds) {
   if (x <= 0 || y <= 0 || x >= map.width - 1 || y >= map.height - 1) return false;
   for (let i = map.terrainShapes.length - 1; i >= 0; i--) {
     const s = map.terrainShapes[i];
-    if (pointInShape(s, x, y)) return s.tile !== 'wall';
+    if (pointInShape(s, x, y)) {
+      if (s.tile !== 'wall') return true;
+      return Boolean(destroyedIds && s.id && destroyedIds.has(s.id));
+    }
   }
   return true;
 }
@@ -85,6 +140,8 @@ export function isInBush(map, x, y) {
 // point) so the map is exactly symmetric. Layout: forest belts funnel each team out of
 // spawn along a north and south lane, both lanes cross a sand-ringed pond, and both
 // converge on a central town (buildings + a crate cluster) holding the best loot.
+// Every shape carries real gameplay weight (cover, hazard, or concealment) — no
+// purely-decorative terrain (e.g. no cosmetic-only ground texture kinds).
 const WIDTH = 30, HEIGHT = 18;
 
 const SANDBAR_ISLAND = {
@@ -103,8 +160,6 @@ const SANDBAR_ISLAND = {
     // ── ponds (north/south hazards, each self-mirrored) ──
     { shape: 'oval', x: 11, y: 0,  w: 8, h: 3, kind: 'water' },
     { shape: 'oval', x: 11, y: 15, w: 8, h: 3, kind: 'water' },
-    { shape: 'rect', x: 10, y: 3,  w: 10, h: 1, kind: 'sand' },
-    { shape: 'rect', x: 10, y: 14, w: 10, h: 1, kind: 'sand' },
 
     // ── central town ──
     { shape: 'rect', x: 11, y: 6,  w: 3, h: 1, kind: 'building' },
@@ -115,11 +170,12 @@ const SANDBAR_ISLAND = {
     { shape: 'rect', x: 10, y: 8,  w: 1, h: 1, kind: 'crate' },
     { shape: 'rect', x: 19, y: 8,  w: 1, h: 1, kind: 'crate' },
 
-    // ── barrels (mid-lane cover) ──
-    { shape: 'oval', x: 8,  y: 4,  w: 1, h: 1, kind: 'barrel' },
-    { shape: 'oval', x: 21, y: 4,  w: 1, h: 1, kind: 'barrel' },
-    { shape: 'oval', x: 8,  y: 13, w: 1, h: 1, kind: 'barrel' },
-    { shape: 'oval', x: 21, y: 13, w: 1, h: 1, kind: 'barrel' },
+    // ── barrels (mid-lane cover, guarding the town's north/south approach — kept clear
+    //    of the forest ovals so they don't render as props floating inside solid trees) ──
+    { shape: 'oval', x: 12.5, y: 3,    w: 1, h: 1, kind: 'barrel' },
+    { shape: 'oval', x: 15.5, y: 3,    w: 1, h: 1, kind: 'barrel' },
+    { shape: 'oval', x: 12.5, y: 13,   w: 1, h: 1, kind: 'barrel' },
+    { shape: 'oval', x: 15.5, y: 13,   w: 1, h: 1, kind: 'barrel' },
 
     // ── bushes (concealment, town approaches + mid-lane) ──
     { shape: 'oval', x: 9,    y: 6,   w: 1.5, h: 1.5, kind: 'bush' },
@@ -142,17 +198,20 @@ const SANDBAR_ISLAND = {
   // risk/reward gradient that drives surviv.io's push-to-the-middle dynamic. `tier`
   // is a lookup key into LOOT_TABLE (see SurvivGame.js), not an item id itself, so the
   // concrete item can be varied per spawn point while the map stays deterministic.
+  // Every point below sits in verified-walkable ground (checked against
+  // isWalkableContinuous — several originally overlapped the forest/crate/building
+  // shapes above and were unreachable; see games/surviv/map.js's git history).
   loot: [
-    { x: 5,  y: 8,  tier: 1 }, { x: 25, y: 8,  tier: 1 },
-    { x: 5,  y: 9,  tier: 1 }, { x: 25, y: 9,  tier: 1 },
-    { x: 9,  y: 4,  tier: 2 }, { x: 21, y: 4,  tier: 2 },
-    { x: 9,  y: 13, tier: 2 }, { x: 21, y: 13, tier: 2 },
-    { x: 7,  y: 6,  tier: 'grenade' }, { x: 23, y: 6,  tier: 'grenade' },
-    { x: 7,  y: 11, tier: 'vest' },    { x: 23, y: 11, tier: 'vest' },
-    { x: 13, y: 6,  tier: 'helmet' },  { x: 17, y: 6,  tier: 'helmet' },
-    { x: 12, y: 7,  tier: 3 }, { x: 18, y: 7,  tier: 3 },
-    { x: 12, y: 10, tier: 3 }, { x: 18, y: 10, tier: 3 },
-    { x: 14, y: 9,  tier: 4 }, { x: 16, y: 9,  tier: 4 },
+    { x: 5,  y: 8,   tier: 1 }, { x: 25, y: 8,   tier: 1 },
+    { x: 5,  y: 9,   tier: 1 }, { x: 25, y: 9,   tier: 1 },
+    { x: 9,  y: 7.5, tier: 2 }, { x: 21, y: 7.5, tier: 2 },
+    { x: 9,  y: 10.5,tier: 2 }, { x: 21, y: 10.5,tier: 2 },
+    { x: 7,  y: 8,   tier: 'grenade' }, { x: 23, y: 8,   tier: 'grenade' },
+    { x: 7,  y: 11,  tier: 'vest' },    { x: 23, y: 11,  tier: 'vest' },
+    { x: 13, y: 7.5, tier: 'helmet' },  { x: 17, y: 7.5, tier: 'helmet' },
+    { x: 12, y: 7.5, tier: 3 }, { x: 18, y: 7.5, tier: 3 },
+    { x: 12, y: 10,  tier: 3 }, { x: 18, y: 10,  tier: 3 },
+    { x: 14, y: 10.5,tier: 4 }, { x: 16, y: 10.5,tier: 4 },
   ],
 };
 
@@ -162,9 +221,14 @@ export const MAPS = {
 
 // ── Utility functions (all take tiles as first argument) ──────────────────────
 
-export function isWalkable(tiles, x, y) {
-  const t = tiles[k(Math.floor(x), Math.floor(y))];
-  return t !== undefined && t !== 'wall';
+// destroyedCells (see destroyedCellSet): tile keys a broken crate/barrel used to
+// occupy, now walkable despite the static tiles dict still saying 'wall'.
+export function isWalkable(tiles, x, y, destroyedCells) {
+  const key = k(Math.floor(x), Math.floor(y));
+  const t = tiles[key];
+  if (t === undefined) return false;
+  if (t !== 'wall') return true;
+  return Boolean(destroyedCells && destroyedCells.has(key));
 }
 
 export function euclidean(a, b) {
@@ -173,7 +237,7 @@ export function euclidean(a, b) {
 
 // BFS reachable positions (4-directional, excludes occupied tiles) — the AI's discrete
 // candidate set, same approach as games/cs/map.js's getReachable.
-export function getReachable(tiles, pos, range, units) {
+export function getReachable(tiles, pos, range, units, destroyedCells) {
   const startX = Math.floor(pos.x), startY = Math.floor(pos.y);
   const startKey = k(startX, startY);
   const occupied = new Set(
@@ -189,7 +253,7 @@ export function getReachable(tiles, pos, range, units) {
     if (rem <= 0) continue;
     for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
       const nx = x + dx, ny = y + dy, nk = k(nx, ny);
-      if (!visited.has(nk) && isWalkable(tiles, nx, ny) && !occupied.has(nk)) {
+      if (!visited.has(nk) && isWalkable(tiles, nx, ny, destroyedCells) && !occupied.has(nk)) {
         visited.add(nk);
         result.push({ x: nx, y: ny });
         queue.push({ x: nx, y: ny, rem: rem - 1 });

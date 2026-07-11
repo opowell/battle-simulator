@@ -379,6 +379,10 @@ function applyAxisLabels(game, grid) {
 }
 
 function readBody(req) {
+  // Embedded mode: the host launcher's express.json()/urlencoded() middleware
+  // already drained the request stream and parsed it into req.body, so reading
+  // the raw stream again below would hang forever waiting for 'end'.
+  if (req.body !== undefined) return Promise.resolve(req.body ?? {});
   return new Promise((resolve, reject) => {
     let data = '';
     req.on('data', chunk => (data += chunk));
@@ -686,18 +690,24 @@ function resolvePort() {
 
 const PORT = resolvePort();
 
-const server = createServer(async (req, res) => {
+// The request handler doubles as a plain node:http listener (standalone mode)
+// and as Express middleware (embedded mode, see the default export below).
+// Express strips the mount prefix from req.url and exposes it via req.baseUrl,
+// which is '' under plain node:http, so `base` resolves correctly either way.
+async function handleRequest(req, res) {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
     return res.end();
   }
+
+  const base = req.baseUrl || '';
 
   try {
     const { parts, method, url } = route(req);
 
     // Default — redirect to design UI
     if (method === 'GET' && parts[0] === '') {
-      res.writeHead(302, { Location: '/ui/design' });
+      res.writeHead(302, { Location: `${base}/ui/design` });
       return res.end();
     }
 
@@ -706,7 +716,7 @@ const server = createServer(async (req, res) => {
     if (method === 'GET' && parts[0] === 'ui' && UI_APPS.includes(parts[1])) {
       // Redirect /ui/<name> (no trailing slash) so relative asset paths resolve correctly
       if (parts.length === 2 && !url.pathname.endsWith('/')) {
-        res.writeHead(302, { Location: `/ui/${parts[1]}/` });
+        res.writeHead(302, { Location: `${base}/ui/${parts[1]}/` });
         return res.end();
       }
       return await serveApp(parts[1], req, res);
@@ -718,7 +728,7 @@ const server = createServer(async (req, res) => {
     if (method === 'GET' && parts[0] === 'play' && parts[1]) {
       const gameName = parts[1];
       if (parts.length === 2 && !url.pathname.endsWith('/')) {
-        res.writeHead(302, { Location: `/play/${gameName}/` });
+        res.writeHead(302, { Location: `${base}/play/${gameName}/` });
         return res.end();
       }
       const rel     = url.pathname.replace(new RegExp(`^/play/${gameName}/?`), '') || 'index.html';
@@ -808,24 +818,32 @@ const server = createServer(async (req, res) => {
     console.error(e);
     err(res, 500, e.message);
   }
-});
+}
 
 // ---------------------------------------------------------------------------
 // WebSocket push — clients subscribe at /sessions/:id/ws?player=:playerId and
 // receive the same per-player snapshot handleGetSession returns, pushed on every
 // state change. Replaces the old 2s poll; REST stays for initial load + fallback.
+//
+// handleUpgrade is shared between standalone mode (prefix '', every upgrade is
+// ours) and embedded mode (prefix '/<app.id>', where several apps may share one
+// httpServer — we only claim upgrades under our own prefix and leave the rest
+// alone for other apps' listeners). Returns true if this call claimed the
+// request (serviced or rejected it), false if it belongs to someone else.
 // ---------------------------------------------------------------------------
 
 const wss = new WebSocketServer({ noServer: true });
 
-server.on('upgrade', (req, socket, head) => {
+function handleUpgrade(req, socket, head, prefix = '') {
   const url = new URL(req.url, 'http://localhost');
-  const parts = url.pathname.replace(/^\/|\/$/g, '').split('/');
+  if (prefix && url.pathname !== prefix && !url.pathname.startsWith(prefix + '/')) return false;
+  const relPath = prefix ? (url.pathname.slice(prefix.length) || '/') : url.pathname;
+  const parts = relPath.replace(/^\/|\/$/g, '').split('/');
 
   // Only /sessions/:id/ws upgrades; anything else gets refused during handshake.
   if (parts[0] !== 'sessions' || parts.length !== 3 || parts[2] !== 'ws') {
     socket.destroy();
-    return;
+    return true;
   }
 
   const session = sessions.get(parts[1]);
@@ -834,7 +852,7 @@ server.on('upgrade', (req, socket, head) => {
     // clean failed upgrade and falls back to polling.
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
-    return;
+    return true;
   }
 
   const playerId = url.searchParams.get('player') ?? null;
@@ -847,12 +865,38 @@ server.on('upgrade', (req, socket, head) => {
     ws.on('close', drop);
     ws.on('error', drop);
   });
-});
+  return true;
+}
 
-server.listen(PORT, () => {
-  console.log(`Battle Simulator API running on http://localhost:${PORT}`);
-  console.log(`\nGames: ${Object.keys(GAMES).join(', ')}`);
-  console.log(`\nQuick start:`);
-  console.log(`  POST /sessions  { "game": "chess", "players": [{"id":"white","agent":"human"},{"id":"black","agent":"random"}] }`);
-  console.log(`  POST /sessions/:id/action  { "playerId": "white", "action": {...} }`);
-});
+// Only bind our own listening server + process-wide 'upgrade' handler when run
+// directly (`node api-server.js`); when imported as an embedded app server
+// (see the default export below) the host process owns the httpServer.
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isMain) {
+  const server = createServer((req, res) => handleRequest(req, res));
+
+  server.on('upgrade', (req, socket, head) => handleUpgrade(req, socket, head, ''));
+
+  server.listen(PORT, () => {
+    console.log(`Battle Simulator API running on http://localhost:${PORT}`);
+    console.log(`\nGames: ${Object.keys(GAMES).join(', ')}`);
+    console.log(`\nQuick start:`);
+    console.log(`  POST /sessions  { "game": "chess", "players": [{"id":"white","agent":"human"},{"id":"black","agent":"random"}] }`);
+    console.log(`  POST /sessions/:id/action  { "playerId": "white", "action": {...} }`);
+  });
+}
+
+// Embedded mode — mounted by the jas-repo launcher (server/processApps.js) per
+// its "servers" contract: default export (router, app, httpServer) => void.
+// Static files, REST, and (if httpServer is shared) WebSocket upgrades all get
+// scoped under this app's own route prefix, e.g. /battle-simulator/games.
+export default (router, app, httpServer) => {
+  const prefix = '/' + app.id;
+  router.use(prefix, (req, res) => handleRequest(req, res));
+
+  if (httpServer && !httpServer.__battleSimulatorUpgradeAttached) {
+    httpServer.on('upgrade', (req, socket, head) => handleUpgrade(req, socket, head, prefix));
+    httpServer.__battleSimulatorUpgradeAttached = true;
+  }
+};

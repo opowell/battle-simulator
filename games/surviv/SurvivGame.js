@@ -5,13 +5,17 @@ import {
   STARTING_HP, MOVE_RANGE, PICKUP_RANGE,
   SHOOT_ACC_MAX, SHOOT_ACC_MIN,
   GRENADE_THROW_RANGE, FRAG_RADIUS, FRAG_DAMAGE,
+  BARREL_BLAST_RADIUS, BARREL_BLAST_DAMAGE,
   isMelee, fullAmmo,
 } from './weapons.js';
-import { MAPS, euclidean, getReachable, renderMap, isWalkableContinuous, isInBush } from './map.js';
+import {
+  MAPS, euclidean, getReachable, renderMap, isWalkableContinuous, isInBush,
+  initialBreakableState, destroyedIdSet, destroyedCellSet,
+} from './map.js';
 import { getSurvivBelief, survivVisionCfg, survivLosBlockers, survivFilterVisibleUnits, spotsPoint } from './belief.js';
 import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { orientToEnemies } from '../vision.js';
-import { segmentClearOf } from '../terrainShapes.js';
+import { segmentClearOf, nearestPointOnShape } from '../terrainShapes.js';
 import { makePos, parsePos, num, posToWire } from '../coord.js';
 
 const MOVE_EPS = 0.05; // see games/cs/CsGame.js's identical constant for why this floor exists
@@ -113,18 +117,23 @@ function actionPhaseActions(state, teamId) {
   const { map } = state.gameSpecific;
   const myUnits = state.units.filter(u => u.alive && u.ownerId === teamId);
   const actions = [];
-  const losBlockers = survivLosBlockers(map);
+  const breakables = state.gameSpecific.breakables;
+  const destroyedIds = destroyedIdSet(breakables);
+  const destroyedCells = destroyedCellSet(map, breakables);
+  const losBlockers = survivLosBlockers(map, destroyedIds);
   const loot = state.gameSpecific.loot.filter(l => !l.taken);
+  const live = breakables.filter(b => !b.destroyed);
 
   for (const u of myUnits) {
     if (u.perTurn.moveAllowance > MOVE_EPS) {
-      for (const to of getReachable(map.tiles, u.position, u.perTurn.moveAllowance, state.units))
+      for (const to of getReachable(map.tiles, u.position, u.perTurn.moveAllowance, state.units, destroyedCells))
         actions.push({ type: 'move', unitId: u.id, from: u.position, to });
     }
 
     if (!u.perTurn.hasActed) {
       const wpn = WEAPONS[u.weapon];
-      if (isMelee(u.weapon) || u.ammo.mag > 0) {
+      const canFire = isMelee(u.weapon) || u.ammo.mag > 0;
+      if (canFire) {
         const enemies = state.units.filter(e => e.alive && e.ownerId !== teamId);
         for (const e of enemies) {
           const d = euclidean(u.position, e.position);
@@ -134,6 +143,24 @@ function actionPhaseActions(state, teamId) {
               type: 'shoot', unitId: u.id, targetId: e.id, range: wpn.range,
               damage: wpn.damage, accuracy: SHOOT_ACC_MAX - (SHOOT_ACC_MAX - SHOOT_ACC_MIN) * (d / wpn.range),
             });
+        }
+
+        // Break cover: attack a crate/barrel with whatever's in hand. Range is checked
+        // to the NEAREST point on the shape (not its centre) so melee can reach a wide
+        // shape's edge, and LOS excludes the target's own shape (see the id filter)
+        // so the ray to its own boundary can't self-block.
+        const ux = num(u.position.x), uy = num(u.position.y);
+        for (const b of live) {
+          const def = map.breakablesById[b.id];
+          const near = nearestPointOnShape(def, ux, uy);
+          const d = Math.hypot(ux - near.x, uy - near.y);
+          if (d > wpn.range) continue;
+          const blockers = losBlockers.filter(bl => bl.id !== b.id);
+          if (!segmentClearOf(ux, uy, near.x, near.y, blockers)) continue;
+          actions.push({
+            type: 'break', unitId: u.id, breakableId: b.id, range: wpn.range, damage: wpn.damage,
+            name: `Break ${def.kind === 'crate' ? 'Crate' : 'Barrel'}`, icon: WEAPON_ICON(u.weapon),
+          });
         }
       }
 
@@ -161,13 +188,14 @@ function isMoveLegal(state, teamId, action) {
   const map  = state.gameSpecific.map;
   const unit = state.units.find(u => u.id === action.unitId);
   if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.moveAllowance <= MOVE_EPS) return false;
+  const destroyedIds = destroyedIdSet(state.gameSpecific.breakables);
   const px = num(unit.position.x), py = num(unit.position.y);
   const x = num(action.to.x), y = num(action.to.y);
   const dist = Math.hypot(px - x, py - y);
   if (dist < MOVE_EPS) return false;
-  if (!isWalkableContinuous(map, x, y)) return false;
+  if (!isWalkableContinuous(map, x, y, destroyedIds)) return false;
   if (dist > unit.perTurn.moveAllowance) return false;
-  if (!hasClearLine(px, py, x, y, (qx, qy) => !isWalkableContinuous(map, qx, qy))) return false;
+  if (!hasClearLine(px, py, x, y, (qx, qy) => !isWalkableContinuous(map, qx, qy, destroyedIds))) return false;
   if (!isClearOfUnits(x, y, state.units, unit.id)) return false;
   return true;
 }
@@ -177,8 +205,9 @@ function isThrowLegal(state, teamId, action) {
   const unit = state.units.find(u => u.id === action.unitId);
   if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.hasActed) return false;
   if (!(unit.grenades?.frag > 0)) return false;
+  const destroyedIds = destroyedIdSet(state.gameSpecific.breakables);
   const x = num(action.target.x), y = num(action.target.y);
-  if (!isWalkableContinuous(map, x, y)) return false;
+  if (!isWalkableContinuous(map, x, y, destroyedIds)) return false;
   if (Math.hypot(num(unit.position.x) - x, num(unit.position.y) - y) > GRENADE_THROW_RANGE) return false;
   return true;
 }
@@ -191,7 +220,10 @@ function isActionLegal(state, teamId, action) {
 
 function survivActionKey(a) {
   const pt = p => (p && typeof p === 'object') ? [num(p.x), num(p.y)] : null;
-  return JSON.stringify([a.type ?? null, a.unitId ?? null, a.lootId ?? null, a.targetId ?? null, pt(a.to), pt(a.target)]);
+  return JSON.stringify([
+    a.type ?? null, a.unitId ?? null, a.lootId ?? null, a.breakableId ?? null,
+    a.targetId ?? null, pt(a.to), pt(a.target),
+  ]);
 }
 
 function getSearchActions(state, teamId, res) {
@@ -293,6 +325,44 @@ function applyActions(state, playerActions, rng = Math.random) {
       u.id === action.unitId ? { ...u, perTurn: { ...u.perTurn, hasActed: true } } : u);
     const loot = gs.loot.map(l => l.id === action.lootId ? { ...l, taken: true } : l);
     return { ...state, units, gameSpecific: { ...gs, loot }, lastActions: playerActions };
+  }
+
+  if (action.type === 'break') {
+    const def      = gs.map.breakablesById[action.breakableId];
+    const attacker = units.find(u => u.id === action.unitId);
+    const dmg      = WEAPONS[attacker.weapon].damage;
+
+    units = units.map(u => u.id === action.unitId
+      ? { ...u, ammo: isMelee(u.weapon) ? u.ammo : { ...u.ammo, mag: u.ammo.mag - 1 }, perTurn: { ...u.perTurn, hasActed: true } }
+      : u);
+
+    let breakables = gs.breakables.map(b => b.id === action.breakableId ? { ...b, hp: Math.max(0, b.hp - dmg) } : b);
+    const target = breakables.find(b => b.id === action.breakableId);
+    let loot = gs.loot;
+
+    if (target.hp <= 0 && !target.destroyed) {
+      breakables = breakables.map(b => b.id === action.breakableId ? { ...b, destroyed: true } : b);
+      const cx = def.x + def.w / 2, cy = def.y + def.h / 2;
+
+      if (def.kind === 'barrel') {
+        // Barrels explode when broken — area damage to anyone nearby, either team.
+        units = units.map(u => {
+          if (!u.alive || Math.hypot(num(u.position.x) - cx, num(u.position.y) - cy) > BARREL_BLAST_RADIUS) return u;
+          const newHp = Math.max(0, u.hp - calcDamage(BARREL_BLAST_DAMAGE, u));
+          return { ...u, hp: newHp, alive: newHp > 0 };
+        });
+      } else {
+        // Crates drop a common-to-mid weapon where they stood.
+        const pool = [...LOOT_TABLE[1], ...LOOT_TABLE[2]];
+        const item = pool[Math.floor(rng() * pool.length)];
+        loot = [...loot, {
+          id: `loot-break-${action.breakableId}`, x: cx, y: cy, kind: 'weapon', item, taken: false,
+          name: WEAPONS[item].name, icon: WEAPON_ICON(item),
+        }];
+      }
+    }
+
+    return { ...state, units, gameSpecific: { ...gs, breakables, loot }, lastActions: playerActions };
   }
 
   if (action.type === 'end-turn') {
@@ -450,9 +520,24 @@ function lootShapes(loot) {
   }));
 }
 
+// The map's static shape list, adjusted for per-match breakable state: a destroyed
+// crate/barrel drops out entirely (it's gone), a damaged one fades toward its rubble
+// so hitting it reads as progress even before it breaks.
+function liveShapes(map, breakables) {
+  const byId = new Map(breakables.map(b => [b.id, b]));
+  return (map.shapes ?? []).flatMap(s => {
+    if (!s.id) return [s];
+    const b = byId.get(s.id);
+    if (!b || b.destroyed) return [];
+    if (b.hp >= b.maxHp) return [s];
+    return [{ ...s, opacity: (s.opacity ?? 1) * Math.max(0.35, b.hp / b.maxHp) }];
+  });
+}
+
 function toGrid(state) {
   const { units, gameSpecific: gs } = state;
   const { tiles, width, height } = gs.map;
+  const destroyedIds = destroyedIdSet(gs.breakables);
   const playerIdx = {};
   (state.players ?? []).forEach((p, i) => { playerIdx[p.id] = i + 1; });
 
@@ -483,10 +568,10 @@ function toGrid(state) {
 
   return {
     width, height, locationType: 'continuous', cells, units: unitList,
-    shapes: [...(gs.map.shapes ?? []), ...lootShapes(gs.loot)],
+    shapes: [...liveShapes(gs.map, gs.breakables), ...lootShapes(gs.loot)],
     ui: { hideGrid: true, visionRange: 5, fovDegrees: 110, aimedActionTypes: ['move', 'throw', 'shoot'],
           recolorTeamSprites: false, showHpBars: false },
-    los: { blockShapes: survivLosBlockers(gs.map) },
+    los: { blockShapes: survivLosBlockers(gs.map, destroyedIds) },
   };
 }
 
@@ -517,6 +602,7 @@ export function createInitialState(players, config = {}) {
       fogOfWar: config.fogOfWar ?? false,
       map,
       loot: buildLoot(map),
+      breakables: initialBreakableState(map),
       teamMap, teamPlayerMap,
     },
   };
@@ -536,7 +622,8 @@ function withTeam(fn) {
 }
 
 function getVisibleState(state, teamId) {
-  const cfg = survivVisionCfg(state.gameSpecific.map);
+  const destroyedIds = destroyedIdSet(state.gameSpecific.breakables);
+  const cfg = survivVisionCfg(state.gameSpecific.map, destroyedIds);
   return {
     ...state,
     units: survivFilterVisibleUnits(state.units, teamId, cfg, state.gameSpecific.map, p => [num(p.x), num(p.y)]),
@@ -566,6 +653,7 @@ function getActionDuration(state, action) {
   if (action.type === 'throw')  return 1.5;
   if (action.type === 'reload') return 2;
   if (action.type === 'loot')   return 1;
+  if (action.type === 'break')  return 1;
   return 1;
 }
 

@@ -11,6 +11,7 @@ const props = defineProps({
   rdr:        Object,
 });
 const emit = defineEmits(['select']);
+const imgSrc = window.api.imgSrc;
 
 const tr = computed(() => {
   const mult = props.field.grid === 'square' ? (props.field.world.w <= 10 ? 0.36 : 0.46) : 2.8;
@@ -181,7 +182,7 @@ function tokenBorderRadius(u) {
                  opacity:      u.dead ? 0.45 : 1,
                }">
             <img v-if="!u.dead && u.imagePath"
-                 :src="u.imagePath" :alt="u.name"
+                 :src="imgSrc(u.imagePath)" :alt="u.name"
                  class="al-img"/>
             <span v-else-if="!u.dead"
                   class="al-initials"

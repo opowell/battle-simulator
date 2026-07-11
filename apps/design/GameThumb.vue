@@ -5,10 +5,11 @@ import { ref, watch } from 'vue';
 const props = defineProps({ name: String, size: { type: Number, default: 20 } });
 const broken = ref(false);
 watch(() => props.name, () => { broken.value = false; });
+const basePath = window.api.basePath;
 </script>
 
 <template>
-  <img v-if="name && !broken" class="game-thumb" :src="`/images/${name}/preview_asset`" :alt="name"
+  <img v-if="name && !broken" class="game-thumb" :src="`${basePath}/images/${name}/preview_asset`" :alt="name"
        :style="{ width: size + 'px', height: size + 'px' }" @error="broken = true"/>
 </template>
 

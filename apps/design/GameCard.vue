@@ -9,7 +9,7 @@ defineEmits(['click']);
 const broken = ref(false);
 watch(() => props.game.name, () => { broken.value = false; });
 
-const src = computed(() => `/images/${props.game.name}/preview_box`);
+const src = computed(() => `${window.api.basePath}/images/${props.game.name}/preview_box`);
 const playersLabel = computed(() => {
   const g = props.game;
   return g.minPlayers === g.maxPlayers ? `${g.minPlayers}P` : `${g.minPlayers}–${g.maxPlayers}P`;

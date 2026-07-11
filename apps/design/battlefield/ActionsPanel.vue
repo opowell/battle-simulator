@@ -26,6 +26,8 @@ defineEmits(['submit', 'aim', 'cancel-aim']);
 // button per grenade held); 'shoot' and 'move' collapse every target/destination
 // to one button — on continuous-location maps 'move' otherwise lists one
 // "Move → (x,y)" button per candidate point, which reads as a huge, arbitrary list.
+const imgSrc = window.api.imgSrc;
+
 const aimedActions = computed(() => {
   const types = new Set(props.ui?.aimedActionTypes ?? []);
   if (!types.size) return props.displayedActions;
@@ -132,7 +134,7 @@ function fmtAction(action) {
           <button v-for="(action, i) in aimedActions" :key="i"
                   class="action-btn ap-btn ap-btn--icon"
                   @click="action.__aim ? $emit('aim', action) : $emit('submit', action)">
-            <img v-if="action.icon" :src="action.icon" alt="" class="ap-icon"/>
+            <img v-if="action.icon" :src="imgSrc(action.icon)" alt="" class="ap-icon"/>
             {{fmtAction(action)}}
           </button>
           <div v-if="!aimedActions.length" class="ap-empty">No actions.</div>

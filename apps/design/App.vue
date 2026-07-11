@@ -23,6 +23,7 @@ const liveState   = ref(null);   // raw API session JSON
 const sessions    = ref([]);     // lobby list from GET /sessions
 const apiGames    = ref([]);     // from GET /games
 const serverErr   = ref('');
+const apiLabel    = 'api · ' + window.location.host + window.api.basePath;
 
 // Cached player info for sessions we've created (id → [{id, name, agent}])
 const sessionMeta = ref({});
@@ -543,7 +544,7 @@ function exitBattle() {
       </div>
       <div class="statuschip" :class="{ 'app-chip--err': serverErr }">
         <span class="pulse" :class="{ 'app-pulse--err': serverErr }"/>
-        {{ serverErr ? 'offline' : 'api · localhost:3000' }}
+        {{ serverErr ? 'offline' : apiLabel }}
       </div>
       <div class="app-spacer"/>
       <span class="mono app-games">

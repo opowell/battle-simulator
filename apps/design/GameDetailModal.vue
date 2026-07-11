@@ -21,7 +21,7 @@ watch(() => props.game, () => { idx.value = 0; failed.value = {}; });
 
 const slides = computed(() => props.game ? SLIDES.filter(s => !failed.value[s.mode]) : []);
 
-function src(mode) { return `/images/${props.game.name}/preview_${mode}`; }
+function src(mode) { return `${window.api.basePath}/images/${props.game.name}/preview_${mode}`; }
 function onErr(mode) {
   failed.value = { ...failed.value, [mode]: true };
   if (idx.value >= slides.value.length) idx.value = Math.max(0, slides.value.length - 1);

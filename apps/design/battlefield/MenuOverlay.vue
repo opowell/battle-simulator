@@ -6,6 +6,7 @@ defineProps({
   showRuler:  Boolean,
 });
 defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler']);
+const apiLabel = 'api · ' + window.location.host + window.api.basePath;
 </script>
 
 <template>
@@ -24,7 +25,7 @@ defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler']);
         <div class="menu-status">
           <div class="statuschip" :class="{ 'menu-chip--err': serverErr }">
             <span class="pulse" :class="{ 'menu-pulse--err': serverErr }"/>
-            {{ serverErr ? 'offline' : 'api · localhost:3000' }}
+            {{ serverErr ? 'offline' : apiLabel }}
           </div>
           <span class="mono menu-games">{{gamesCount}} games</span>
         </div>

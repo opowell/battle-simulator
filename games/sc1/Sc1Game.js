@@ -7,6 +7,7 @@ import { generateMap, findAdjacentFree, getReachableTiles, renderMap, isPassable
 import { getSc1Belief } from './belief.js';
 import { lineCost, isClearOfUnits } from '../continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
+import { scSpriteLayers } from '../starcraftSprite.js';
 
 // Unit types with a sprite in images/units/. Each PNG stores its player-color
 // region as a magenta ramp; the design app tints it to the owner's team color at
@@ -793,11 +794,12 @@ export const Sc1Game = {
         ['command-center', 'hatchery', 'lair', 'hive', 'nexus'].includes(b.type) ? 300 : 80),
   name: 'SC1',
   // Unit sprites carry a magenta player-color ramp; the design app tints each to its
-  // owner's team color at render time — used only for the side-panel portrait now (see
-  // toGrid's portraitPath), not drawn on the map, so the many similarly-shaped unit
-  // types stay distinguishable by their type letter on the board itself. SC1 has no
-  // tracked unit heading, so showFacing is off for the same reason chess/civ1/xcom
-  // disable it: a decorative, meaningless arrow isn't worth losing the letter for.
+  // owner's team color at render time — used only for the side-panel portrait (see
+  // toGrid's portraitPath). The map itself draws an all-primitive body (see
+  // games/starcraftSprite.js's scSpriteLayers) with the type letter baked in as a
+  // sprite layer, so the many similarly-shaped unit types stay distinguishable without
+  // sourced art. SC1 has no tracked unit heading, so showFacing is off for the same
+  // reason chess/civ1/xcom disable it: a decorative, meaningless arrow isn't worth it.
   ui: { recolorTeamSprites: true, hideGrid: true, showFacing: false },
   scenarios: [
     { id: 'tvz', name: 'Terran vs Zerg',    description: 'Biomech forces vs the Swarm',          config: { race1: 'terran',   race2: 'zerg' } },
@@ -855,8 +857,9 @@ export const Sc1Game = {
         hp:        u.hp,
         maxHp:     u.maxHp,
         moveRange: u.movesLeft,
-        // Kept off the map (see the `ui` comment above) — only the side-panel
-        // portrait (App.vue's portraitPath ?? imagePath fallback) uses it.
+        spriteLayers: scSpriteLayers(u.type, UNITS[u.type]),
+        // Portrait-only (see the `ui` comment above) — only the side-panel portrait
+        // (App.vue's portraitPath ?? imagePath fallback) uses it.
         portraitPath: UNIT_SPRITES.has(u.type) ? `/images/sc1/units/${u.type}` : undefined,
       };
     });

@@ -1,7 +1,9 @@
 // api.js — HTTP client for the game-editor admin endpoints. The editor is served
-// by the api-server itself, so talk to whatever origin loaded the page (works on
-// any port, e.g. a throwaway test instance).
-const _BASE = window.location.origin;
+// by the api-server itself, so talk to whatever origin/path prefix loaded the
+// page (works on any port, e.g. a throwaway test instance, or embedded under a
+// launcher at a path prefix like /battle-simulator).
+const _BASE_PATH = window.location.pathname.replace(/\/ui\/.*$/, '');
+const _BASE = window.location.origin + _BASE_PATH;
 
 async function _req(path, opts) {
   const r = await fetch(_BASE + path, {

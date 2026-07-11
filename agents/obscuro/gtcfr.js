@@ -142,8 +142,22 @@ export async function expandNode(tree, hooks, node) {
 
 // Expand every sampled root world (they share the searcher's root infoset) so
 // there is a strategy to decide at from the very first CFR iteration.
-export async function expandRoot(tree, hooks) {
-  for (const w of tree.worlds) await expandNode(tree, hooks, w.node);
+//
+// This loop runs BEFORE the round loop's time budget kicks in, so on games with
+// a huge root action set (e.g. a continuous-lattice game like CS, where a single
+// infoset can hold hundreds of move/throw points per unit) expanding every one
+// of up to ~48 belief worlds here can itself run long past the intended budget.
+// `deadline` (a Date.now()-comparable timestamp) bounds that: once it passes,
+// remaining worlds are left unexpanded and fall back to their heuristic leaf
+// value everywhere they're read (evalNode/cfrDescend both do this already).
+// The FIRST world always gets expanded regardless, since it seeds the shared
+// root infoset that every other world (and the rest of the search) needs.
+export async function expandRoot(tree, hooks, opts = {}) {
+  const deadline = opts.deadline ?? Infinity;
+  for (let i = 0; i < tree.worlds.length; i++) {
+    if (i > 0 && Date.now() > deadline) break;
+    await expandNode(tree, hooks, tree.worlds[i].node);
+  }
   tree.rootInfoset = tree.worlds.length
     ? tree.infosets.get(hooks.obsKey(tree.worlds[0].node.state, hooks.me))
     : null;

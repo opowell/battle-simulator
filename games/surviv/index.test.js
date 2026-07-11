@@ -159,3 +159,86 @@ test('surviv: toGrid renders spriteLayers with a held-weapon layer once armed', 
   const unarmed = grid.units.find(u => u.job === 'fists');
   assert.ok(!unarmed.spriteLayers.some(l => l.src.includes('/weapons/')), 'fists draws no weapon sprite');
 });
+
+// ---------------------------------------------------------------------------
+// break (destructible crates/barrels)
+// ---------------------------------------------------------------------------
+
+// breakable-1 is the small 1x1 crate at rect(10,8,1,1) — centre (10.5, 8.5) — and
+// breakable-3 is the 1x1 barrel at oval(12.5,3,1,1) — centre (13, 3.5). Both come
+// straight from games/surviv/map.js's SANDBAR_ISLAND terrain list.
+
+test('surviv: a nearby crate offers a break action, which damages it', () => {
+  const base = SurvivGame.createInitialState(players());
+  const unit = { ...base.units[0], id: 'red-0', ownerId: 'red', position: { x: 9, y: 8.5 }, weapon: 'colt45', ammo: { mag: 7, reserve: 21 }, perTurn: { hasActed: false, moveAllowance: 4 } };
+  const state = { ...base, units: [unit] };
+
+  const actions = SurvivGame.getLegalActions(state, 'red');
+  const brk = actions.find(a => a.type === 'break' && a.breakableId === 'breakable-1');
+  assert.ok(brk, 'break action offered against the nearby crate');
+
+  const next = SurvivGame.applyActions(state, [{ playerId: 'red', action: brk }]);
+  const target = next.gameSpecific.breakables.find(b => b.id === 'breakable-1');
+  assert.equal(target.hp, target.maxHp - brk.damage);
+  assert.equal(target.destroyed, false);
+});
+
+test('surviv: breaking a crate to 0 hp destroys it, opens movement, and drops loot', () => {
+  const base = SurvivGame.createInitialState(players());
+  const unit = { ...base.units[0], id: 'red-0', ownerId: 'red', position: { x: 9, y: 8.5 }, weapon: 'm4a1', ammo: { mag: 30, reserve: 90 }, perTurn: { hasActed: false, moveAllowance: 4 } };
+  let state = { ...base, units: [unit] };
+
+  // m4a1 does 25 dmg/hit; the crate has 60 hp — a few hits finish it.
+  for (let i = 0; i < 4; i++) {
+    const actions = SurvivGame.getLegalActions(state, 'red');
+    const brk = actions.find(a => a.type === 'break' && a.breakableId === 'breakable-1');
+    if (!brk) break; // already destroyed — no more break actions offered
+    state = SurvivGame.applyActions(state, [{ playerId: 'red', action: brk }]);
+    state = { ...state, units: state.units.map(u => ({ ...u, perTurn: { ...u.perTurn, hasActed: false } })) };
+  }
+
+  const target = state.gameSpecific.breakables.find(b => b.id === 'breakable-1');
+  assert.equal(target.hp, 0);
+  assert.equal(target.destroyed, true);
+
+  assert.ok(
+    isWalkableContinuous(state.gameSpecific.map, 10.5, 8.5, new Set(['breakable-1'])),
+    'destroyed crate cell is walkable once its id is marked destroyed',
+  );
+  assert.ok(
+    !isWalkableContinuous(state.gameSpecific.map, 10.5, 8.5),
+    'sanity: that same cell is still solid without the destroyed-id set (i.e. the crate really was blocking before)',
+  );
+
+  const dropped = state.gameSpecific.loot.find(l => l.id === 'loot-break-breakable-1');
+  assert.ok(dropped, 'destroying a crate drops a loot pickup where it stood');
+  assert.equal(dropped.kind, 'weapon');
+
+  const grid = SurvivGame.toGrid(state);
+  assert.ok(!grid.shapes.some(s => s.id === 'breakable-1'), 'destroyed crate no longer renders as a shape');
+});
+
+test('surviv: breaking a barrel to 0 hp explodes, damaging both teams nearby', () => {
+  const base = SurvivGame.createInitialState(players());
+  const attacker = { ...base.units[0], id: 'red-0', ownerId: 'red', position: { x: 12, y: 3.5 }, weapon: 'm4a1', ammo: { mag: 30, reserve: 90 }, perTurn: { hasActed: false, moveAllowance: 4 } };
+  const bystanderRed  = { ...base.units[1], id: 'red-1',  ownerId: 'red',  position: { x: 14, y: 3.5 }, hp: 100, alive: true };
+  const bystanderBlue = { ...base.units[2], id: 'blue-0', ownerId: 'blue', position: { x: 13, y: 4.5 }, hp: 100, alive: true };
+  let state = { ...base, units: [attacker, bystanderRed, bystanderBlue] };
+
+  // barrel has 40 hp; m4a1 does 25/hit — two hits destroy it.
+  for (let i = 0; i < 3; i++) {
+    const actions = SurvivGame.getLegalActions(state, 'red');
+    const brk = actions.find(a => a.type === 'break' && a.breakableId === 'breakable-3');
+    if (!brk) break;
+    state = SurvivGame.applyActions(state, [{ playerId: 'red', action: brk }]);
+    state = { ...state, units: state.units.map(u => ({ ...u, perTurn: { ...u.perTurn, hasActed: false } })) };
+  }
+
+  const target = state.gameSpecific.breakables.find(b => b.id === 'breakable-3');
+  assert.equal(target.destroyed, true);
+
+  const red1  = state.units.find(u => u.id === 'red-1');
+  const blue0 = state.units.find(u => u.id === 'blue-0');
+  assert.ok(red1.hp  < 100, 'nearby red bystander takes blast damage too — barrels do not discriminate by team');
+  assert.ok(blue0.hp < 100, 'nearby blue bystander takes blast damage');
+});

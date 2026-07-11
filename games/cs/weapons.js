@@ -1,5 +1,9 @@
 // magSize = rounds per magazine, reserve = spare rounds carried beyond the magazine.
+// Melee (knife) has neither — it's never bought or reloaded, every unit starts with one
+// in its fixed 'melee' loadout slot (see CsGame.js's makeUnit/WEAPON_SLOT).
 export const WEAPONS = {
+  // ── Melee ────────────────────────────────────────────────────────────────────
+  knife:     { name: 'Knife',               damage: 40,  range: 1,  cost: 0,    category: 'melee' },
   // ── Pistols ───────────────────────────────────────────────────────────────────
   pistol:    { name: 'Pistol',              damage: 30,  range: 6,  cost: 0,    category: 'pistol', magSize: 12, reserve: 24 },
   p250:      { name: 'P250',               damage: 38,  range: 7,  cost: 300,  category: 'pistol', magSize: 13, reserve: 26 },

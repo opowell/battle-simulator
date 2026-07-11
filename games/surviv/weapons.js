@@ -53,6 +53,11 @@ export const GRENADE_THROW_RANGE = 8;
 export const FRAG_RADIUS = 2;
 export const FRAG_DAMAGE = 55;
 
+// Barrels explode when broken (see SurvivGame.js's 'break' action) — weaker than a
+// frag grenade but free damage against anyone (either team) camping next to one.
+export const BARREL_BLAST_RADIUS = 2;
+export const BARREL_BLAST_DAMAGE = 45;
+
 // Concealment: a unit standing in a bush is invisible to enemies beyond this range,
 // even if it would otherwise be within normal vision range/cone/LOS (see belief.js).
 export const BUSH_SPOT_RANGE = 1.6;

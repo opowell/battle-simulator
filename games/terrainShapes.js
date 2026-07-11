@@ -86,6 +86,21 @@ export function segmentClearOf(x0, y0, x1, y1, shapes) {
   return true;
 }
 
+// Closest point ON the shape (boundary, or the point itself if already inside) to
+// (px, py) — for range checks against a shape rather than a single point (e.g. can
+// this unit reach/attack a multi-tile crate from here?). Oval case projects onto the
+// ellipse along the normalized direction from centre; rect case clamps to the box.
+export function nearestPointOnShape(s, px, py) {
+  if (s.shape === 'oval') {
+    const rx = s.w / 2, ry = s.h / 2, cx = s.x + rx, cy = s.y + ry;
+    const nx = (px - cx) / rx, ny = (py - cy) / ry;
+    const d = Math.hypot(nx, ny);
+    if (d <= 1) return { x: px, y: py };
+    return { x: cx + (nx / d) * rx, y: cy + (ny / d) * ry };
+  }
+  return { x: Math.max(s.x, Math.min(px, s.x + s.w)), y: Math.max(s.y, Math.min(py, s.y + s.h)) };
+}
+
 // Invoke cb(x, y) for every integer cell in [0,W)×[0,H) whose centre lies inside
 // the shape — the rasterization used to stamp a shape onto a tile grid.
 export function forEachCell(s, W, H, cb) {

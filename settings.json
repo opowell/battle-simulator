@@ -1,3 +1,6 @@
 {
-  "port": 3333
+  "port": 3333,
+  "clients": [],
+  "static": false,
+  "servers": "./api-server.js"
 }

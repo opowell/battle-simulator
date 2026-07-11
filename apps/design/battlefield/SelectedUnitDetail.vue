@@ -5,6 +5,7 @@ defineProps({
   rdr:   Object,
 });
 defineEmits(['open-info', 'open-ability-info']);
+const imgSrc = window.api.imgSrc;
 </script>
 
 <template>
@@ -83,7 +84,7 @@ defineEmits(['open-info', 'open-ability-info']);
           <div v-for="eq in unit.equipment" :key="eq.label" class="sud-eq">
             <span class="sud-eq-label">{{eq.label}}</span>
             <span class="sud-eq-val">
-              <img v-if="eq.icon" :src="eq.icon" :alt="eq.value" class="sud-eq-icon"/>
+              <img v-if="eq.icon" :src="imgSrc(eq.icon)" :alt="eq.value" class="sud-eq-icon"/>
               <span class="mono sud-eq-num">{{eq.value}}</span>
             </span>
           </div>

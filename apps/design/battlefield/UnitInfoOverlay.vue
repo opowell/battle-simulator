@@ -1,6 +1,7 @@
 <script setup>
 defineProps({ unit: { type: Object, default: null } });
 defineEmits(['close', 'open-ability-info']);
+const imgSrc = window.api.imgSrc;
 
 function fmtAbilityEffect(ab) {
   const pct = ab.power ? Math.round(ab.power * 100) + '%' : null;
@@ -45,7 +46,7 @@ function abilityTypeMeta(type) {
     <div v-if="unit" class="uio-scrim" @click.self="$emit('close')">
       <div class="uio-panel">
         <div v-if="unit.mainImagePath" class="uio-hero">
-          <img :key="unit.mainImagePath" :src="unit.mainImagePath" :alt="unit.name"
+          <img :key="unit.mainImagePath" :src="imgSrc(unit.mainImagePath)" :alt="unit.name"
                class="uio-hero-img"
                @error="e => e.target.closest('div').style.display='none'"/>
         </div>

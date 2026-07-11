@@ -50,6 +50,17 @@ const CROUCH_MOVE_MULT        = 0.5;  // crouched move allowance, applied on the
 const CROUCH_DAMAGE_REDUCTION = 0.15; // extra damage reduction while crouched, stacks with armor
 const CROUCH_VISION_MULT      = 0.7;  // crouched sight radius, relative to CS_VISION.range
 
+// A unit carries up to three weapons at once — a sidearm, a knife, and a primary — but only
+// one is drawn ('active') at a time; switching costs a small chunk of the move budget rather
+// than the whole turn (see the 'switch-weapon' action below), so a unit can reposition and
+// swap weapons in the same turn but not infinitely. Move speed depends on what's drawn: knife
+// fastest, pistol baseline (matches the old flat MOVE_RANGE), a primary slowest.
+const SWITCH_WEAPON_COST = 1;  // flat moveAllowance tax for a 'switch-weapon' action
+const SLOT_MOVE_MULT = { melee: 1.25, pistol: 1.0, primary: 0.7 };
+// Which loadout slot a WEAPONS category belongs in — every non-melee, non-pistol category
+// (smg/shotgun/rifle/heavy/sniper) shares the single 'primary' slot.
+const WEAPON_SLOT = category => category === 'pistol' ? 'pistol' : category === 'melee' ? 'melee' : 'primary';
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function calcDamage(raw, unit) {
@@ -121,8 +132,12 @@ function makeUnit(id, ownerId, pos, faction) {
     hp: 100, maxHp: 100,
     money: STARTING_MONEY,   // per-unit wallet (CS money is per-player, not a team pool)
     armor: 0, helmet: false, hasKit: false,
-    weapon: 'pistol',
-    ammo: fullAmmo('pistol'),
+    // Three-slot loadout (see WEAPON_SLOT/SLOT_MOVE_MULT above): every unit always owns a
+    // pistol and a knife, `primary` fills in once bought. `active` is which one is drawn —
+    // only the active weapon can fire, reload, or render on the map.
+    weapons: { pistol: 'pistol', melee: 'knife', primary: null },
+    active: 'pistol',
+    ammo: { pistol: fullAmmo('pistol') },
     grenades: {},
     blinded: 0,
     crouched: false,
@@ -146,6 +161,51 @@ function spawnUnits(map) {
 // same-named file in games/cs/images/weapons/.
 const WEAPON_ICON = w => `/images/cs/weapons/${w}`;
 
+// ── Map sprite: body + hands + held weapon, all flat-color primitives — surviv.io's look
+// (see apps/design/SchematicLayer.vue's generic `unit.spriteLayers` renderer, whose `shape:
+// 'circle'|'rect'` layers draw fill/stroke primitives instead of sourced art). All offsets
+// below are LOCAL (unrotated, facing = +x), in multiples of unitR(u); the game precomputes
+// the facing-rotated world offset so the renderer stays a dumb draw loop.
+const TEAM_COLOR = { CT: '#5b7fb0', T: '#b0824a' };
+const SKIN_COLOR = '#dba573';
+// Weapon silhouette (a simple grip-to-muzzle bar) sized by category — length/width in unitR.
+const CATEGORY_GUN = {
+  melee:   { len: 0.55, wid: 0.16 },
+  pistol:  { len: 0.85, wid: 0.22 },
+  smg:     { len: 1.05, wid: 0.26 },
+  shotgun: { len: 1.00, wid: 0.30 },
+  rifle:   { len: 1.35, wid: 0.26 },
+  heavy:   { len: 1.50, wid: 0.32 },
+  sniper:  { len: 1.65, wid: 0.22 },
+};
+
+function rot2(lx, ly, rad) {
+  const c = Math.cos(rad), s = Math.sin(rad);
+  return { dx: lx * c - ly * s, dy: lx * s + ly * c };
+}
+
+function spriteLayers(u) {
+  const rad  = u.facing ?? 0;
+  const deg  = rad * 180 / Math.PI;
+  const teamColor = TEAM_COLOR[u.ownerId] ?? TEAM_COLOR.CT;
+  // Only the currently drawn weapon renders — a holstered pistol/primary is carried but
+  // not shown (matches surviv.io, where only the active weapon appears in-hand).
+  const gun  = CATEGORY_GUN[WEAPONS[u.weapons[u.active]]?.category] ?? CATEGORY_GUN.pistol;
+  // Gun starts near the body edge and runs forward past the hands, so the muzzle stays
+  // visible beyond the grip regardless of weapon length; hands stay clustered at the grip
+  // (fixed spread, not scaled by gun.len) rather than spanning the whole barrel.
+  const gunPos    = rot2(0.15, 0, rad);
+  const backHand  = rot2(0.30, 0.22, rad);
+  const frontHand = rot2(0.55, -0.22, rad);
+  return [
+    { shape: 'circle', rFrac: 1.0, fill: teamColor, stroke: '#20242c', strokeWidth: 2, dx: 0, dy: 0, rot: 0 },
+    { shape: 'rect', wFrac: gun.len, hFrac: gun.wid, anchorX: 0, anchorY: 0.5, rxFrac: 0.15,
+      fill: '#2a2a2a', stroke: '#0e0f12', strokeWidth: 1, dx: gunPos.dx, dy: gunPos.dy, rot: deg },
+    { shape: 'circle', rFrac: 0.24, fill: SKIN_COLOR, stroke: '#20242c', strokeWidth: 1, dx: backHand.dx, dy: backHand.dy, rot: 0 },
+    { shape: 'circle', rFrac: 0.26, fill: SKIN_COLOR, stroke: '#20242c', strokeWidth: 1, dx: frontHand.dx, dy: frontHand.dy, rot: 0 },
+  ];
+}
+
 // ── Legal actions ─────────────────────────────────────────────────────────────
 
 function buyActions(state, teamId) {
@@ -157,16 +217,27 @@ function buyActions(state, teamId) {
     // buy phase bounded to a few steps per unit (see MAX_BUYS_PER_ROUND).
     if ((u.buysThisRound ?? 0) >= MAX_BUYS_PER_ROUND) continue;
     const money = u.money;   // each player buys from their own wallet, not a shared pool
-    // Weapons: a unit upgrades from its starting pistol ONCE per buy phase (buy your primary,
-    // then you're kitted). Offering a weapon buy whenever `u.weapon !== wid` (as before) let a
-    // unit swap guns every step — and since the AI places no value on saving money, it bought
-    // and re-bought weapons until its wallet drained, stretching one buy phase to hundreds of
+    // Weapons: a unit upgrades its pistol slot and fills its primary slot ONCE EACH per buy
+    // phase (two slot-scoped gates below), not once total — a unit can own both a better
+    // sidearm and a primary. Offering a weapon buy whenever the slot's current occupant could
+    // be replaced (as opposed to gating on "still holding the free default") let a unit swap
+    // guns every step — and since the AI places no value on saving money, it bought and
+    // re-bought weapons until its wallet drained, stretching one buy phase to hundreds of
     // engine steps, each a full AI search, so the game froze ("AI thinking…") for minutes once
-    // late-game wallets grew. Gating on the default pistol caps weapon buys at one per unit, so
-    // the buy phase is short and bounded regardless of how much money a unit is holding.
-    if (u.weapon === 'pistol') {
+    // late-game wallets grew. Gating each slot on "still holding its free/empty default" caps
+    // weapon buys at two per unit (one pistol + one primary), so the buy phase stays short and
+    // bounded regardless of how much money a unit is holding.
+    if (u.weapons.pistol === 'pistol') {
       for (const [wid, w] of Object.entries(WEAPONS)) {
-        if (wid === 'pistol') continue;
+        if (w.category !== 'pistol' || wid === 'pistol') continue;
+        if (w.teams && !w.teams.includes(teamId)) continue;
+        if (w.cost <= money)
+          actions.push({ type: 'buy', unitId: u.id, item: wid, name: `${w.name} ($${w.cost})`, icon: WEAPON_ICON(wid) });
+      }
+    }
+    if (!u.weapons.primary) {
+      for (const [wid, w] of Object.entries(WEAPONS)) {
+        if (w.category === 'pistol' || w.category === 'melee') continue;
         if (w.teams && !w.teams.includes(teamId)) continue;
         if (w.cost <= money)
           actions.push({ type: 'buy', unitId: u.id, item: wid, name: `${w.name} ($${w.cost})`, icon: WEAPON_ICON(wid) });
@@ -210,12 +281,25 @@ function actionPhaseActions(state, teamId) {
     // unit can still shoot/reload/throw/plant/defuse the same turn it changes stance.
     actions.push({ type: u.crouched ? 'stand' : 'crouch', unitId: u.id });
 
+    // Switch active weapon: not gated by hasActed (a unit can swap and still shoot/move the
+    // same turn), only by a small moveAllowance tax (SWITCH_WEAPON_COST) — see applyActions.
+    // Offered for every owned, non-active slot (a unit always owns pistol+melee; primary only
+    // once bought).
+    for (const slot of ['pistol', 'melee', 'primary']) {
+      if (slot === u.active || !u.weapons[slot]) continue;
+      const w = WEAPONS[u.weapons[slot]];
+      actions.push({ type: 'switch-weapon', unitId: u.id, slot, name: `Switch to ${w.name}`, icon: WEAPON_ICON(u.weapons[slot]) });
+    }
+
     if (!u.perTurn.hasActed) {
-      // Shoot (not available while blinded or out of ammo in the magazine). Line of sight
-      // is the exact continuous test against walls + smoke (matches getVisibleState).
-      if (!u.blinded && u.ammo.mag > 0) {
+      // Shoot (not available while blinded or out of ammo in the magazine — melee has no
+      // ammo, so it's always "loaded"). Only the currently drawn weapon can fire. Line of
+      // sight is the exact continuous test against walls + smoke (matches getVisibleState).
+      const activeWpnId = u.weapons[u.active];
+      const wpn = WEAPONS[activeWpnId];
+      const loaded = u.active === 'melee' || u.ammo[u.active].mag > 0;
+      if (!u.blinded && loaded) {
         const enemies = state.units.filter(e => e.alive && e.ownerId !== teamId);
-        const wpn     = WEAPONS[u.weapon];
         for (const e of enemies) {
           const d = euclidean(u.position, e.position);
           if (d <= wpn.range &&
@@ -229,10 +313,10 @@ function actionPhaseActions(state, teamId) {
         }
       }
 
-      // Reload (usable even while blinded)
-      {
-        const wpn = WEAPONS[u.weapon];
-        if (u.ammo.mag < wpn.magSize && u.ammo.reserve > 0)
+      // Reload (usable even while blinded; melee never needs it)
+      if (u.active !== 'melee') {
+        const ammo = u.ammo[u.active];
+        if (ammo.mag < wpn.magSize && ammo.reserve > 0)
           actions.push({ type: 'reload', unitId: u.id });
       }
 
@@ -328,7 +412,7 @@ function csActionKey(a) {
   const pt = p => (p && typeof p === 'object') ? [num(p.x), num(p.y)] : null;
   return JSON.stringify([
     a.type ?? null, a.unitId ?? null,
-    a.item ?? null, a.grenade ?? null,
+    a.item ?? null, a.grenade ?? null, a.slot ?? null,
     a.targetId ?? null, pt(a.to), pt(a.target),
   ]);
 }
@@ -455,7 +539,13 @@ function applyActions(state, playerActions, rng = Math.random) {
       } else if (GRENADES[item]) {
         apply(GRENADES[item].cost, u => ({ ...u, grenades: { ...u.grenades, [item]: (u.grenades[item] ?? 0) + 1 } }));
       } else if (WEAPONS[item]) {
-        apply(WEAPONS[item].cost, u => ({ ...u, weapon: item, type: WEAPONS[item].category, ammo: fullAmmo(item) }));
+        // Fills the item's slot (pistol upgrade or primary) and auto-equips it — you just
+        // spent money on it, so it's what you're holding. Doesn't touch the other slot.
+        const slot = WEAPON_SLOT(WEAPONS[item].category);
+        apply(WEAPONS[item].cost, u => ({
+          ...u, weapons: { ...u.weapons, [slot]: item }, active: slot, type: WEAPONS[item].category,
+          ammo: { ...u.ammo, [slot]: fullAmmo(item) },
+        }));
       }
 
       return { ...state, units, gameSpecific: gs, lastActions: playerActions };
@@ -505,12 +595,14 @@ function applyActions(state, playerActions, rng = Math.random) {
     if (action.type === 'shoot') {
       const attacker = units.find(u => u.id === action.unitId);
       const defender = units.find(u => u.id === action.targetId);
-      const wpn      = WEAPONS[attacker.weapon];
+      const wpn      = WEAPONS[attacker.weapons[attacker.active]];
       const d        = euclidean(attacker.position, defender.position);
       const accuracy = 0.90 - 0.40 * (d / wpn.range);
 
       units = units.map(u => u.id === action.unitId
-        ? { ...u, ammo: { ...u.ammo, mag: u.ammo.mag - 1 }, perTurn: { ...u.perTurn, hasActed: true } } : u);
+        ? { ...u,
+            ammo: u.active === 'melee' ? u.ammo : { ...u.ammo, [u.active]: { ...u.ammo[u.active], mag: u.ammo[u.active].mag - 1 } },
+            perTurn: { ...u.perTurn, hasActed: true } } : u);
 
       if (rng() > accuracy) {
         return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
@@ -632,13 +724,22 @@ function applyActions(state, playerActions, rng = Math.random) {
     if (action.type === 'reload') {
       units = units.map(u => {
         if (u.id !== action.unitId) return u;
-        const wpn    = WEAPONS[u.weapon];
-        const needed = wpn.magSize - u.ammo.mag;
-        const drawn  = Math.min(needed, u.ammo.reserve);
+        const wpn    = WEAPONS[u.weapons[u.active]];
+        const ammo   = u.ammo[u.active];
+        const needed = wpn.magSize - ammo.mag;
+        const drawn  = Math.min(needed, ammo.reserve);
         return { ...u,
-          ammo: { mag: u.ammo.mag + drawn, reserve: u.ammo.reserve - drawn },
+          ammo: { ...u.ammo, [u.active]: { mag: ammo.mag + drawn, reserve: ammo.reserve - drawn } },
           perTurn: { ...u.perTurn, hasActed: true } };
       });
+      return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
+    }
+
+    if (action.type === 'switch-weapon') {
+      units = units.map(u => u.id === action.unitId
+        ? { ...u, active: action.slot, type: WEAPONS[u.weapons[action.slot]].category,
+            perTurn: { ...u.perTurn, moveAllowance: Math.max(0, u.perTurn.moveAllowance - SWITCH_WEAPON_COST) } }
+        : u);
       return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
     }
 
@@ -671,11 +772,13 @@ function applyActions(state, playerActions, rng = Math.random) {
           .filter(fz => fz.turnsLeft > 0);
       }
 
-      // Reset perTurn for current team; reduce blind timers (blind expires at end of their own turn)
+      // Reset perTurn for current team; reduce blind timers (blind expires at end of their own turn).
+      // Move budget scales with the currently-drawn weapon (SLOT_MOVE_MULT) and stance.
       units = units.map(u => {
         if (u.ownerId !== playerId) return u;
         return { ...u, blinded: Math.max(0, u.blinded - 1),
-                 perTurn: { hasActed: false, moveAllowance: MOVE_RANGE * (u.crouched ? CROUCH_MOVE_MULT : 1) } };
+                 perTurn: { hasActed: false,
+                            moveAllowance: MOVE_RANGE * SLOT_MOVE_MULT[u.active] * (u.crouched ? CROUCH_MOVE_MULT : 1) } };
       });
 
       const tentative = {
@@ -729,7 +832,9 @@ function renderState(state) {
     const teamUnits = state.units.filter(u => u.ownerId === tid);
     const cash  = teamUnits.reduce((a, u) => a + (u.money ?? 0), 0);
     const uStr  = teamUnits.filter(u => u.alive).map(u => {
-      let s = `${u.id}:${u.weapon}(${u.ammo.mag}/${u.ammo.reserve})`;
+      const activeWpn = u.weapons[u.active];
+      const ammoStr = u.active === 'melee' ? '' : `(${u.ammo[u.active].mag}/${u.ammo[u.active].reserve})`;
+      let s = `${u.id}:${activeWpn}${ammoStr}`;
       if (u.armor)  s += '+vest';
       if (u.helmet) s += '+helm';
       if (u.hasKit) s += '+kit';
@@ -799,14 +904,26 @@ function effectShapes(gs) {
   return out;
 }
 
+// One row per owned loadout slot, the active one flagged "(equipped)" — see the
+// 'switch-weapon' action for how a unit changes which is drawn.
+function slotRow(label, u, slot) {
+  const wid = u.weapons[slot];
+  if (!wid) return { label, value: 'None' };
+  const name = WEAPONS[wid].name + (u.active === slot ? ' (equipped)' : '');
+  return { label, value: name, icon: WEAPON_ICON(wid) };
+}
+
 function equipmentList(u) {
   const activeGrenades = Object.entries(u.grenades ?? {}).filter(([, c]) => c > 0);
   const grenadeStr = activeGrenades
     .map(([g, c]) => `${GRENADES[g]?.name ?? g}${c > 1 ? ` ×${c}` : ''}`)
     .join(', ');
+  const activeAmmo = u.active === 'melee' ? null : u.ammo[u.active];
   return [
-    { label: 'Weapon',  value: WEAPONS[u.weapon]?.name ?? u.weapon, icon: WEAPON_ICON(u.weapon) },
-    { label: 'Ammo',    value: `${u.ammo.mag} / ${u.ammo.reserve}` },
+    slotRow('Pistol',  u, 'pistol'),
+    slotRow('Primary', u, 'primary'),
+    slotRow('Melee',   u, 'melee'),
+    { label: 'Ammo',    value: activeAmmo ? `${activeAmmo.mag} / ${activeAmmo.reserve}` : '—' },
     { label: 'Armor',   value: u.armor ? (u.helmet ? 'Vest + Helmet' : 'Vest') : 'None',
       icon: u.armor ? WEAPON_ICON(u.helmet ? 'helmet' : 'armor') : undefined },
     { label: 'Grenades', value: grenadeStr || 'None',
@@ -855,12 +972,13 @@ function toGrid(state) {
       owner:         playerIdx[gs.teamPlayerMap[u.ownerId]] ?? 0,
       hp:            u.hp,
       maxHp:         u.maxHp,
-      job:           u.weapon,
+      job:           u.weapons[u.active],
       portraitPath:  `/images/cs/units/${u.faction}`,
+      spriteLayers:  spriteLayers(u),
       moveRange:     u.perTurn?.moveAllowance,
       equipment:     equipmentList(u),
       statusEffects: [...(u.blinded ? ['blinded'] : []), ...(u.crouched ? ['crouched'] : [])],
-      moved:         u.perTurn?.moveAllowance < MOVE_RANGE,
+      moved:         u.perTurn?.moveAllowance < MOVE_RANGE * SLOT_MOVE_MULT[u.active] * (u.crouched ? CROUCH_MOVE_MULT : 1),
       acted:         u.perTurn?.hasActed,
       // Fraction of incoming damage this unit shrugs off — lets the design UI's aiming
       // overlay show a generic "expected damage" preview (rawDamage * (1 - reduction))

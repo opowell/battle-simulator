@@ -5,6 +5,7 @@ import { BUILDINGS } from './buildings.js';
 import { resolveAttack, resolveAttackVsBuilding, inRange, chebyshev, effectiveRange } from './combat.js';
 import { generateMap, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
 import { getSc2Belief } from './belief.js';
+import { scSpriteLayers } from '../starcraftSprite.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1081,6 +1082,7 @@ export const Sc2Game = {
           color: this.colors[tile.terrain] ?? this.colors.open ?? '#808070',
           terrain: terrainInfo(tile.terrain),
           unitName: u ? u.type : undefined,
+          spriteLayers: u ? scSpriteLayers(u.type, UNITS[u.type]) : undefined,
           portraitPath: u && UNIT_PORTRAITS.has(u.type) ? `/images/sc2/units/${u.type}` : undefined,
         });
       }

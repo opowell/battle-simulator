@@ -10,9 +10,16 @@
 //      on this or the Obscuro AI hallucinates/loses enemies at bush edges (the same
 //      "phantom enemy" crash class CS's belief.js header describes) — both build from
 //      survivVisionCfg + the same bush check below.
+//   3. Destructible cover — crates/barrels can be broken (see SurvivGame.js's 'break'
+//      action), so unlike CS's static walls, "is this shape currently a sight blocker"
+//      depends on per-match state (gameSpecific.breakables), not just the map. Every
+//      survivLosBlockers/survivVisionCfg call site passes the CURRENT destroyedIds (see
+//      destroyedIdSet in map.js) so a broken crate stops blocking sight immediately —
+//      this belief's _spotSet included, or it would keep hiding tiles a broken crate no
+//      longer conceals (the same observation/belief drift CS's header warns about).
 // ---------------------------------------------------------------------------
 
-import { isWalkable, getReachable, isInBush } from './map.js';
+import { isWalkable, getReachable, isInBush, destroyedIdSet } from './map.js';
 import { num, tilePos } from '../coord.js';
 import { euclidean, seesPoint, viewersOf } from '../vision.js';
 import { segmentClearOf } from '../terrainShapes.js';
@@ -21,17 +28,22 @@ import { BUSH_SPOT_RANGE, MOVE_RANGE } from './weapons.js';
 export const SURVIV_VISION = { range: 5, fovDegrees: 110, metric: euclidean };
 
 // The opaque shapes that block surviv sight: forest, buildings, crates, barrels, water —
-// every terrain shape whose tile is 'wall'. Bushes are deliberately excluded (they're
-// walkable and don't block sight of what's past them — only conceal a unit inside).
-export function survivLosBlockers(map) {
+// every terrain shape whose tile is 'wall' — MINUS any currently-destroyed breakable
+// (destroyedIds, see destroyedIdSet in map.js). Bushes are deliberately excluded
+// (they're walkable and don't block sight of what's past them — only conceal a unit
+// inside).
+export function survivLosBlockers(map, destroyedIds) {
   const out = [];
-  for (const s of map.terrainShapes ?? [])
-    if (s.tile === 'wall') out.push({ shape: s.shape, x: s.x, y: s.y, w: s.w, h: s.h });
+  for (const s of map.terrainShapes ?? []) {
+    if (s.tile !== 'wall') continue;
+    if (destroyedIds && s.id && destroyedIds.has(s.id)) continue;
+    out.push({ shape: s.shape, x: s.x, y: s.y, w: s.w, h: s.h, id: s.id });
+  }
   return out;
 }
 
-export function survivVisionCfg(map) {
-  const blockers = survivLosBlockers(map);
+export function survivVisionCfg(map, destroyedIds) {
+  const blockers = survivLosBlockers(map, destroyedIds);
   return { ...SURVIV_VISION, hasLOS: (ax, ay, bx, by) => segmentClearOf(ax, ay, bx, by, blockers) };
 }
 
@@ -90,7 +102,7 @@ export class SurvivBelief {
   // Tiles our team can actually spot right now (range + cone + LOS + bush check).
   _spotSet(observation) {
     const spot = new Set();
-    const cfg = survivVisionCfg(this.map);
+    const cfg = survivVisionCfg(this.map, destroyedIdSet(observation.gameSpecific.breakables));
     for (const m of observation.units) {
       if (!m.alive || m.ownerId !== this.myTeam) continue;
       const mt = tilePos(m.position);
@@ -104,7 +116,11 @@ export class SurvivBelief {
     return spot;
   }
 
-  // Every unseen enemy may have advanced one move of reach since our last turn.
+  // Every unseen enemy may have advanced one move of reach since our last turn. Uses
+  // the map's STATIC tiles (doesn't account for crates broken mid-match) — a small,
+  // deliberate approximation: it can only under-estimate an unseen enemy's reach
+  // through freshly-opened rubble, never place it somewhere truly unreachable, so the
+  // belief stays conservative rather than wrong.
   _expand() {
     for (const pc of this.pieces.values()) {
       if (!pc.alive) continue;

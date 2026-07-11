@@ -13,6 +13,8 @@
 // Everything is painted back-to-front; clicks hit-test tile tops → same sq-click/select events.
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 
+const imgSrc = window.api.imgSrc;
+
 const props = defineProps({
   field:        Object,
   fit:          Object,
@@ -110,7 +112,7 @@ const scene = computed(() => {
     if (!patId.has(key)) {
       const id = `isopat${patterns.length}`;
       const a = hw / TS, b = hh / TS, c = -hw / TS, d = hh / TS;
-      patterns.push({ id, href, matrix: `matrix(${a},${b},${c},${d},${originX},${(originY - h * dz).toFixed(2)})` });
+      patterns.push({ id, href: imgSrc(href), matrix: `matrix(${a},${b},${c},${d},${originX},${(originY - h * dz).toFixed(2)})` });
       patId.set(key, id);
     }
     return patId.get(key);
@@ -128,7 +130,7 @@ const scene = computed(() => {
       fogged: !tileVisible(t.x, t.y),
     };
     if (sprite) {
-      return { ...base, sprite: true, img: t.bgImage,
+      return { ...base, sprite: true, img: imgSrc(t.bgImage),
         imgX: cx - hw, imgY: cyTop - hh, imgW: hw * 2, imgH: hh * 2, topFill: t.color || '#808070' };
     }
     const fH = (h + 1) * dz;
@@ -274,7 +276,7 @@ function onClick(e) {
                      :cx="d.sx" :cy="d.syTop" :rx="d.hw*0.86" :ry="d.hh*0.86"
                      fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-dasharray="4 3"/>
             <!-- sprite -->
-            <image v-if="d.u.imagePath" :href="d.u.imagePath"
+            <image v-if="d.u.imagePath" :href="imgSrc(d.u.imagePath)"
                    :x="d.imgX" :y="d.imgY" :width="d.spriteW" :height="d.spriteW"
                    preserveAspectRatio="xMidYMax meet" class="iso-pixel"/>
             <template v-else-if="facingActive">
