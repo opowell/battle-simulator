@@ -9,6 +9,7 @@ import ActionsPanel      from './battlefield/ActionsPanel.vue';
 import RosterPanel       from './battlefield/RosterPanel.vue';
 import UnitsLostPanel    from './battlefield/UnitsLostPanel.vue';
 import GameLog           from './battlefield/GameLog.vue';
+import AiAnalysisPanel   from './battlefield/AiAnalysisPanel.vue';
 import BottomBar         from './battlefield/BottomBar.vue';
 import MenuOverlay       from './battlefield/MenuOverlay.vue';
 import GameOverOverlay   from './battlefield/GameOverOverlay.vue';
@@ -20,6 +21,7 @@ const props = defineProps({
   liveState:     Object,
   field:         Object,
   unitFx:        { type: Object, default: () => ({}) },
+  territoryFx:   { type: Object, default: () => ({}) },
   historyFields: { type: Array, default: () => [] },
   revealFields:  { type: Array, default: () => [] },
   revealLog:     { type: Array, default: () => [] },
@@ -28,7 +30,7 @@ const props = defineProps({
   gamesCount:    { type: Number, default: 0 },
   serverErr:     { type: String, default: '' },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game']);
 
 // ── playback ──────────────────────────────────────────────────
 const tFloat  = ref(0);
@@ -53,6 +55,16 @@ const selectedSquare = ref(null);
 // Holds the hit shape plus the clicked cell (atX/atY) for the info panel + highlight.
 const selectedShape = ref(null);
 
+// Terrain info is opt-in: a plain click on terrain just clears the current selection
+// (like clicking empty space). Only while armed via the "Inspect terrain…" toggle does
+// clicking a tile/shape populate selectedSquare/selectedShape below.
+const inspectTerrain = ref(false);
+function toggleInspectTerrain() {
+  inspectTerrain.value = !inspectTerrain.value;
+  selectedId.value = null;
+  aiming.value = null;
+}
+
 function pointInShape(s, px, py) {
   if (s.shape === 'oval') {
     const rx = s.w / 2, ry = s.h / 2;
@@ -60,12 +72,21 @@ function pointInShape(s, px, py) {
     const nx = (px - (s.x + rx)) / rx, ny = (py - (s.y + ry)) / ry;
     return nx * nx + ny * ny <= 1;
   }
+  if (s.shape === 'poly') {
+    // Standard ray-casting point-in-polygon test over s.points ({x,y}[]).
+    let inside = false;
+    for (let i = 0, j = s.points.length - 1; i < s.points.length; j = i++) {
+      const { x: xi, y: yi } = s.points[i], { x: xj, y: yj } = s.points[j];
+      if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
   return px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h;
 }
 
 function selectUnit(id) {
   selectedId.value = id;
-  if (id) { selectedSquare.value = null; selectedShape.value = null; }
+  if (id) { selectedSquare.value = null; selectedShape.value = null; inspectTerrain.value = false; }
   aiming.value = null;
 }
 
@@ -89,6 +110,13 @@ function startAim(action) {
   } else if (action.type === 'move') {
     const u = displayUnits.value.find(un => un.id === action.unitId);
     aiming.value = { type: 'move', unitId: action.unitId, range: u?.moveRange ?? Infinity };
+  } else if (action.type === 'rotate') {
+    // No range: only the bearing to the clicked point matters, so any click is valid.
+    aiming.value = { type: 'rotate', unitId: action.unitId };
+  } else if (action.type === 'punch') {
+    // Bearing-only like rotate — the blast always lands a fixed `range` ahead, so the
+    // click just picks a direction (see SurvivGame.js's isPunchLegal/applyActions).
+    aiming.value = { type: 'punch', unitId: action.unitId, range: action.range, blastRadius: action.radius, damage: action.damage };
   }
 }
 
@@ -118,6 +146,7 @@ watch(() => props.liveState?.id, () => {
   selectedSquare.value = null;
   selectedShape.value = null;
   aiming.value = null;
+  inspectTerrain.value = false;
 }, { immediate: true });
 
 watch(() => props.historyFields, (h) => {
@@ -176,6 +205,7 @@ function toggleReveal() {
   selectedSquare.value = null;
   selectedShape.value = null;
   aiming.value = null;
+  inspectTerrain.value = false;
   histPos.value = Math.max(0, histLength.value - 1);
 }
 
@@ -236,7 +266,7 @@ const rdr = computed(() => RDR[props.theme] || RDR.military);
 const ui = computed(() => props.field.ui ?? {});
 
 watch(() => props.liveState?.id, (id) => {
-  if (id) showRuler.value = ui.value.showGrid ?? true;
+  if (id) showRuler.value = ui.value.showRuler ?? true;
 }, { immediate: true });
 
 // ── world → screen transform ──────────────────────────────────
@@ -294,9 +324,9 @@ function actionGridCoord(action, field) {
 }
 
 const unitMoves = computed(() => {
-  if (!isPending.value || !selectedId.value) return [];
+  if (!isPending.value || !moveUnitId.value) return [];
   return legalActions.value
-    .filter(a => a.unitId === selectedId.value)
+    .filter(a => a.unitId === moveUnitId.value)
     .map(a => actionGridCoord(a, 'to'))
     .filter(Boolean);
 });
@@ -311,6 +341,15 @@ const activeUnitId = computed(() => {
   return selectedId.value;
 });
 
+// The unit that move-square highlighting and click-to-move drive off. Normally the
+// selected unit, but in strictActiveUnit mode (ffta) the server picks the active unit and
+// clicks don't reselect, so the reachable squares must come from that active unit — even
+// before it's clicked. This also keeps `move` actions out of the ActionsPanel button list
+// (displayedActions filters them once unitMoves is populated), so ffta never shows a raw
+// list of "Move → (x,y)" buttons.
+const moveUnitId = computed(() =>
+  ui.value.strictActiveUnit ? activeUnitId.value : selectedId.value);
+
 // The one human player viewing this session (fog games are always 1 human vs AI/other-human
 // via separate sessions), used to attribute a manual fog marker to the right player.
 const humanPlayerId = computed(() => props.liveState?.humanPlayers?.[0] ?? null);
@@ -320,7 +359,51 @@ function handleSetMarker(col, row, type) {
   emit('set-marker', { playerId: humanPlayerId.value, col, row, type });
 }
 
+// Territory-click games (kdice): every hex belongs to some territory, but only
+// one hex (the "capital") carries a unit token — clicking anywhere in a
+// territory's blob must resolve to that territory, so find whichever tile's
+// center is nearest the click point and use its territoryId as the "unit" to
+// select/attack (see KDiceGame.toGrid and SchematicLayer's hexagon click path).
+function nearestTerritoryUnitId(x, y) {
+  const tiles = displayField.value?.tiles ?? [];
+  let best = null, bestD = Infinity;
+  for (const t of tiles) {
+    if (t.territoryId == null) continue;
+    const d = (t.x - x) ** 2 + (t.y - y) ** 2;
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  return best?.territoryId ?? null;
+}
+
+function handleTerritoryClick(x, y) {
+  const clickedId = nearestTerritoryUnitId(x, y);
+  if (!clickedId) { selectedId.value = null; return; }
+  if (isPending.value && selectedId.value && selectedId.value !== clickedId) {
+    const action = legalActions.value.find(a =>
+      a.type === 'attack' && a.from === selectedId.value && a.to === clickedId);
+    if (action) { submitAction(action); selectedId.value = null; return; }
+  }
+  selectedId.value = selectedId.value === clickedId ? null : clickedId;
+}
+
 function handleSqClick(col, row, x, y) {
+  if (props.field.ui?.territoryClick) { handleTerritoryClick(x, y); return; }
+  if (inspectTerrain.value) {
+    // Armed via the "Inspect terrain…" toggle: clicks look up terrain info instead of
+    // clearing the selection like a normal click would. Stays armed across clicks so
+    // several tiles can be inspected in a row; toggle it off (or select a unit) to exit.
+    selectedId.value = null;
+    if (props.field.shapes?.length) {
+      const cx = col + 0.5, cy = row + 0.5;
+      const hit = [...props.field.shapes].reverse().find(s => s.name && pointInShape(s, cx, cy));
+      selectedShape.value = hit ? { ...hit, atX: col, atY: row } : null;
+      selectedSquare.value = null;
+    } else {
+      selectedSquare.value = props.field.hasTerrain ? { x: col, y: row } : null;
+      selectedShape.value = null;
+    }
+    return;
+  }
   if (aiming.value && x != null && y != null) {
     const u = displayUnits.value.find(un => un.id === aiming.value.unitId);
     if (u) {
@@ -334,22 +417,36 @@ function handleSqClick(col, row, x, y) {
         // Same continuous-point rule as the direct-click move path below.
         if (Math.hypot(x - u.x, y - u.y) <= (aiming.value.range ?? Infinity))
           submitAction({ type: 'move', unitId: u.id, to: { x: String(x), y: String(y) } });
+      } else if (aiming.value.type === 'rotate') {
+        // Any click sets the facing bearing — no range limit, and a click on the
+        // unit's own square (zero-length vector) is simply a no-op cancel.
+        if (x !== u.x || y !== u.y)
+          submitAction({ type: 'rotate', unitId: u.id, target: { x: String(x), y: String(y) } });
       } else if (aiming.value.type === 'shoot') {
-        // "Choose a direction": fire at whichever legal target's bearing from the unit is
-        // closest to the clicked point's bearing (same resolution SchematicLayer's aiming
-        // overlay previews on hover — see VISION.nearestBearing), not whatever's exactly
-        // under the pixel.
+        // "Choose a direction": prefer whichever already-detected enemy's bearing from
+        // the unit is closest to the clicked point's bearing (same resolution
+        // SchematicLayer's aiming overlay previews on hover — see VISION.nearestBearing).
+        // If nothing's currently detected in range/LOS, fall back to a free-aim shot
+        // toward the clicked point — the server resolves whatever (if anything) the
+        // shot actually lines up with, same as a locked-on shot but possibly a miss.
         const candidates = aiming.value.candidates
           .map(a => { const t = displayUnits.value.find(un => un.id === a.targetId); return t && { ...a, x: t.x, y: t.y }; })
           .filter(Boolean);
         const best = VISION.nearestBearing(u.x, u.y, x, y, candidates);
         if (best) { const { x: _x, y: _y, ...action } = best; submitAction(action); }
+        else if (x !== u.x || y !== u.y)
+          submitAction({ type: 'shoot', unitId: u.id, target: { x: String(x), y: String(y) } });
+      } else if (aiming.value.type === 'punch') {
+        // Any click sets the punch bearing — no range limit on the click itself, the
+        // blast lands at the weapon's fixed range regardless of how far this point is.
+        if (x !== u.x || y !== u.y)
+          submitAction({ type: 'punch', unitId: u.id, target: { x: String(x), y: String(y) } });
       }
     }
     aiming.value = null;
     return;
   }
-  if (isPending.value && selectedId.value) {
+  if (isPending.value && moveUnitId.value) {
     // Continuous-location maps (see games/coord.js): movement is a straight-line slide to
     // the exact point clicked — no grid to snap to. The server (each game's isActionLegal)
     // is the real authority on walls/occupancy/cost; here we only gate on the unit's move
@@ -369,25 +466,18 @@ function handleSqClick(col, row, x, y) {
       }
     } else {
       const action = legalActions.value.find(a => {
-        if (a.unitId !== selectedId.value) return false;
+        if (a.unitId !== moveUnitId.value) return false;
         const coords = actionGridCoord(a, 'to');
         return coords && coords[0] === col && coords[1] === row;
       });
       if (action) { submitAction(action); selectedSquare.value = null; selectedShape.value = null; return; }
     }
   }
+  // A plain click (not armed via "Inspect terrain…") never selects terrain — it just
+  // clears whatever was selected, same as clicking empty space always has.
   selectedId.value = null;
-  // Non-grid (shape) maps: select the topmost terrain shape under the click, not a grid
-  // cell. Clicking bare ground (no shape) clears the selection.
-  if (props.field.shapes?.length) {
-    const cx = col + 0.5, cy = row + 0.5;
-    const hit = [...props.field.shapes].reverse().find(s => s.name && pointInShape(s, cx, cy));
-    selectedShape.value = hit ? { ...hit, atX: col, atY: row } : null;
-    selectedSquare.value = null;
-    return;
-  }
-  const occupied = displayUnits.value.some(u => !u.dead && Math.floor(u.x) === col && Math.floor(u.y) === row);
-  selectedSquare.value = (props.field.hasTerrain && !occupied) ? { x: col, y: row } : null;
+  selectedShape.value = null;
+  selectedSquare.value = null;
 }
 
 const selectedUnit = computed(() => displayUnits.value.find(u => u.id === selectedId.value) || null);
@@ -443,6 +533,10 @@ const lostUnitsTeams = computed(() => {
 });
 
 const displayedActions = computed(() => {
+  // Territory-click games (kdice): attacks are issued entirely by clicking the
+  // map (select a territory, then click its target — see handleTerritoryClick),
+  // so the action panel only needs whatever's left (end-turn).
+  if (ui.value.territoryClick) return legalActions.value.filter(a => a.type !== 'attack');
   if (ui.value.freeSelection) {
     return legalActions.value.filter(a =>
       a.unitId === '__player__' || (a.unitId === selectedId.value && !actionGridCoord(a, 'to')));
@@ -555,8 +649,13 @@ onUnmounted(() => {
           @open-ability-info="openAbilityInfo"/>
         <SelectedSquareDetail v-else-if="selectedTerrain" :terrain="selectedTerrain"/>
         <div v-else class="bf-empty">
-          Select a unit{{ field.shapes?.length ? ' or terrain feature' : (field.hasTerrain ? ' or square' : '') }} to view details.
+          Select a unit{{ (field.shapes?.length || field.hasTerrain) ? ', or "Inspect terrain…" then a tile,' : '' }} to view details.
         </div>
+        <button v-if="field.shapes?.length || field.hasTerrain"
+          class="action-btn bf-inspect-btn" :class="{ 'bf-inspect-btn--on': inspectTerrain }"
+          @click="toggleInspectTerrain">
+          {{ inspectTerrain ? 'Cancel inspect' : 'Inspect terrain…' }}
+        </button>
 
         <ActionsPanel v-if="isLive"
           :isDone="isDone" :atLatest="atLatest" :isPending="isPending"
@@ -583,6 +682,7 @@ onUnmounted(() => {
           :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
           :showRuler="showRuler" :rdr="rdr"
           :unitFx="(atLatest && !revealAll) ? unitFx : {}"
+          :territoryFx="(atLatest && !revealAll) ? territoryFx : {}"
           :legalSquares="unitMoves"
           :lastMoveSquares="lastMoveSquares"
           :dragToMove="ui.dragToMove ?? false"
@@ -609,6 +709,9 @@ onUnmounted(() => {
           :log="logForDisplay" :historyLength="histLength" :histPos="histPos"
           :units="displayUnits"
           @seek="pos => histPos = pos"/>
+
+        <AiAnalysisPanel v-if="isLive && liveState?.aiAnalysis"
+          :analysis="liveState.aiAnalysis"/>
       </div>
     </div>
 
@@ -634,7 +737,8 @@ onUnmounted(() => {
     :isDone="isDone" :dismissed="dismissedResult" :liveState="liveState"
     :winnerTeam="winnerTeam" :reasonLabel="reasonLabel" :field="field"
     @dismiss="dismissedResult = true"
-    @exit="$emit('exit')"/>
+    @exit="$emit('exit')"
+    @new-game="$emit('new-game')"/>
 
   <UnitInfoOverlay
     :unit="infoUnit"
@@ -658,4 +762,6 @@ onUnmounted(() => {
 .bf-col--right { border-left: 1px solid var(--line); }
 .bf-stage-area { flex: 1; position: relative; overflow: hidden; }
 .bf-empty { padding: 12px 14px; font-size: 11px; color: var(--faint); }
+.bf-inspect-btn { margin: 0 14px 12px; width: calc(100% - 28px); }
+.bf-inspect-btn--on { border-color: var(--accent); color: var(--accent); }
 </style>

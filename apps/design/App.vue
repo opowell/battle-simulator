@@ -38,6 +38,12 @@ const HOP_STEP_MS = 220;
 const FX_BEAT_MS  = 400; // gap before the next beat; the numeral keeps rising into it
 const hopAnim  = ref(null);  // currently-playing hop { unitId, steps, step } (for pinning)
 const animQueue = ref([]);   // pending beats, not yet started
+// True from the moment an 'fx' beat starts until its full delay (flashes + any
+// pause) has elapsed. Without this, a beat appended to animQueue mid-flight (the
+// watcher below calls playNext() as soon as it queues anything) would start
+// immediately instead of waiting its turn — invisible back when fx beats only ran
+// ~400ms, but a real bug once a territory-flash beat can run ~1900ms.
+const fxBusy = ref(false);
 let animTimer = null;
 let seenLogLength = 0;
 
@@ -68,6 +74,37 @@ function triggerFx(unitId, fx) {
   }, fx.type === 'action' ? 420 : 780));
 }
 
+// Territory-wide flash (kdice): every hex belonging to a territory hard-blinks
+// white (no fade — see SchematicLayer's .territory-flash-hex, which steps
+// opacity 1/0 rather than easing) instead of a single circle on its capital hex.
+// An attack blinks 3x (attacker + defender); placing reinforcements blinks 1x.
+// Each blink is one on/off cycle of TERRITORY_BLINK_MS; playNext (below) then
+// holds the queue for a further TERRITORY_PAUSE_MS once the blinking ends,
+// before the next queued action starts — the "beat" pause the caller asked for.
+// holdOwner (attacks only — see oldOwnerOf above) is the pre-attack owner index;
+// while a territory's flash entry exists, SchematicLayer keeps painting it that
+// colour instead of its true (already-updated) one, so a conquered territory only
+// visibly flips to the winner's colour once its flash finishes and this entry
+// is removed — not the instant the underlying state changes.
+const territoryFx = ref({}); // territoryId -> { key, blinks, holdOwner }
+let territoryFxKey = 0;
+const territoryFxTimers = new Map();
+const TERRITORY_BLINK_MS = 300;
+const TERRITORY_PAUSE_MS = 1000;
+
+function triggerTerritoryFx(territoryId, blinks, holdOwner) {
+  if (!territoryId) return;
+  territoryFxKey += 1;
+  territoryFx.value = { ...territoryFx.value, [territoryId]: { key: territoryFxKey, blinks, holdOwner } };
+  clearTimeout(territoryFxTimers.get(territoryId));
+  territoryFxTimers.set(territoryId, setTimeout(() => {
+    const next = { ...territoryFx.value };
+    delete next[territoryId];
+    territoryFx.value = next;
+    territoryFxTimers.delete(territoryId);
+  }, blinks * TERRITORY_BLINK_MS));
+}
+
 function buildHopPath(from, to, diagonal = false) {
   const path = [{ x: from.x, y: from.y }];
   let { x, y } = from;
@@ -85,12 +122,23 @@ function buildHopPath(from, to, diagonal = false) {
 }
 
 function playNext() {
-  if (hopAnim.value || animQueue.value.length === 0) return;
+  if (hopAnim.value || fxBusy.value || animQueue.value.length === 0) return;
   const beat = animQueue.value[0];
   animQueue.value = animQueue.value.slice(1);
   if (beat.kind === 'fx') {
+    fxBusy.value = true;
     for (const f of beat.flashes) triggerFx(f.unitId, f.fx);
-    animTimer = setTimeout(playNext, FX_BEAT_MS);
+    let delay = FX_BEAT_MS;
+    const territoryFlashes = beat.territoryFlashes ?? [];
+    if (territoryFlashes.length) {
+      let maxBlinks = 0;
+      for (const tf of territoryFlashes) {
+        triggerTerritoryFx(tf.territoryId, tf.blinks, tf.holdOwner);
+        maxBlinks = Math.max(maxBlinks, tf.blinks);
+      }
+      delay = maxBlinks * TERRITORY_BLINK_MS + TERRITORY_PAUSE_MS;
+    }
+    animTimer = setTimeout(() => { fxBusy.value = false; playNext(); }, delay);
     return;
   }
   hopAnim.value = { unitId: beat.unitId, steps: beat.steps, step: 0 };
@@ -144,8 +192,10 @@ watch(liveState, (newState, oldState) => {
   }
 
   // Board point of a unit for a flash: its new point if still on the board, else its
-  // last-seen point (a slain unit is gone from newState). Discrete units centre at
-  // cell + 0.5 (see buildField); continuous positions are already exact points.
+  // last-seen point (a slain unit is gone from newState). Square-grid discrete units
+  // centre at cell + 0.5 (see buildField); hexagon-grid cells are already exact pixel
+  // centers (no offset — see buildField's cellCenterOffset); continuous positions are
+  // already exact points too.
   const fxSquare = (id) => {
     if (continuous) {
       const u = (newState.grid.units ?? []).find(u => u.id === id)
@@ -154,8 +204,62 @@ watch(liveState, (newState, oldState) => {
     }
     const c = newState.grid.cells.find(c => c.unitId === id)
            ?? oldState.grid.cells.find(c => c.unitId === id);
-    return c ? { x: c.x + 0.5, y: c.y + 0.5 } : {};
+    const offset = newState.grid.grid === 'hexagon' ? 0 : 0.5;
+    return c ? { x: c.x + offset, y: c.y + offset } : {};
   };
+
+  // Pre-bundle owner of every territory (kdice), so a conquered territory's hexes
+  // can keep displaying its old owner's colour throughout the attack flash and
+  // only flip to the new colour once the flash ends (see territoryFx's holdOwner,
+  // read by SchematicLayer's tileColor/segBorderColor). Built once per watch fire
+  // (not per attack) since a single update can bundle several AI turns' worth of
+  // attacks — see the bundleHold pre-population below.
+  const oldOwnerByTerritory = new Map();
+  for (const c of oldState.grid.cells) {
+    if (c.territoryId != null && !oldOwnerByTerritory.has(c.territoryId)) oldOwnerByTerritory.set(c.territoryId, c.owner);
+  }
+  const oldOwnerOf = (territoryId) => oldOwnerByTerritory.get(territoryId) ?? null;
+
+  // playerId → board index (see KDiceGame.toGrid's pidIdx). The raw session JSON
+  // has no top-level `players` array — field.teams (built by buildField from
+  // apiGames' defaultPlayers) is the client's own ordered player list, index+1
+  // already matching the server's pidIdx convention.
+  const pidIdxByPlayer = new Map((activeField.value?.teams ?? []).map((t, i) => [t.id, i + 1]));
+
+  // Ownership advanced entry-by-entry through this bundle (starting from the
+  // pre-bundle snapshot), so a reinforcement flash reflects what the player
+  // owned AT THAT POINT in the turn sequence — not newState's final post-bundle
+  // ownership, which could already exclude a territory a later entry in this
+  // same bundle went on to capture from them.
+  const runningOwner = new Map(oldOwnerByTerritory);
+  const territoriesOwnedBy = (playerId) => {
+    const idx = pidIdxByPlayer.get(playerId);
+    if (idx == null) return [];
+    const ids = [];
+    for (const [tid, owner] of runningOwner) if (owner === idx) ids.push(tid);
+    return ids;
+  };
+
+  // A bundled update (e.g. several AI turns played out before control returns to
+  // the human) rebuilds `field` from the FINAL post-bundle state right away, so
+  // every territory that changes hands anywhere in the bundle would otherwise show
+  // its end color immediately — before any of that bundle's attacks have animated.
+  // Pre-populate territoryFx for all of them (blinks: 0 — no blink, just a colour
+  // hold; see SchematicLayer's flashingHexes, which only draws the white overlay
+  // for blinks > 0) so they keep their pre-bundle colour until the specific attack
+  // beat that changes them plays and overwrites this entry with a real flash.
+  if (fxOn) {
+    const newOwnerByTerritory = new Map();
+    for (const c of newState.grid.cells) {
+      if (c.territoryId != null && !newOwnerByTerritory.has(c.territoryId)) newOwnerByTerritory.set(c.territoryId, c.owner);
+    }
+    const bundleHold = {};
+    for (const [tid, newOwner] of newOwnerByTerritory) {
+      const old = oldOwnerByTerritory.get(tid);
+      if (old != null && old !== newOwner) bundleHold[tid] = { key: 0, blinks: 0, holdOwner: old };
+    }
+    if (Object.keys(bundleHold).length) territoryFx.value = { ...territoryFx.value, ...bundleHold };
+  }
 
   // Build beats in log order: the mover's hop, then this turn's flashes, then any
   // knockback slide of a struck unit — so a bundled reply plays step by step.
@@ -172,16 +276,47 @@ watch(liveState, (newState, oldState) => {
 
     if (fxOn) {
       const flashes = [];
-      if (action?.unitId && FX_ACTION_TYPES.has(action.type))
-        flashes.push({ unitId: action.unitId, fx: { type: 'action', ...fxSquare(action.unitId) } });
+      const territoryFlashes = [];
+      if (action?.unitId && FX_ACTION_TYPES.has(action.type)) {
+        // Territory-attack games (e.g. kdice) target a second cell via action.to rather
+        // than an events list — flash the whole attacker + defender territory instead
+        // of the generic single-unit circle (see SchematicLayer's territoryFx). An
+        // attack hard-blinks 3x; a single reinforcement (below) blinks once.
+        if (action.to && action.to !== action.unitId) {
+          territoryFlashes.push(
+            { territoryId: action.unitId, blinks: 3, holdOwner: oldOwnerOf(action.unitId) },
+            { territoryId: action.to, blinks: 3, holdOwner: oldOwnerOf(action.to) },
+          );
+        } else {
+          flashes.push({ unitId: action.unitId, fx: { type: 'action', ...fxSquare(action.unitId) } });
+        }
+      }
+      // Reinforcements placed (kdice end-turn) — see KDiceGame.applyActions, which
+      // stamps action.result.reinforced (used only to detect that a reinforcement
+      // step happened at all). The flash itself covers every territory the player
+      // owns, not just the handful that actually got a bonus die, so it reads as
+      // "reinforcements were assigned this turn" rather than pointing at specific
+      // recipients.
+      if (action?.type === 'end-turn' && action.result?.reinforced) {
+        const playerId = entry.playerActions?.[0]?.playerId;
+        for (const tid of territoriesOwnedBy(playerId)) territoryFlashes.push({ territoryId: tid, blinks: 1 });
+      }
       for (const ev of entry.events ?? []) {
         if (ev.type === 'damage')    flashes.push({ unitId: ev.targetId, fx: { type: 'damage', amount: ev.amount, died: ev.died, ...fxSquare(ev.targetId) } });
         else if (ev.type === 'heal') flashes.push({ unitId: ev.targetId, fx: { type: 'heal',   amount: ev.amount, ...fxSquare(ev.targetId) } });
       }
-      if (flashes.length) beats.push({ kind: 'fx', flashes });
+      if (flashes.length || territoryFlashes.length) beats.push({ kind: 'fx', flashes, territoryFlashes });
       // Knockback: a struck unit that also moved slides after the hit lands.
       if (hopsOn) for (const ev of entry.events ?? [])
         if (ev.type === 'damage' && moved.has(ev.targetId) && !claimed.has(ev.targetId)) pushHop(ev.targetId);
+    }
+
+    // Advance runningOwner for a won attack so later entries in this same bundle
+    // (e.g. that player's own end-turn reinforcement, or another player's attack)
+    // see this territory's owner as of here, not the bundle's eventual final state.
+    if (action?.type === 'attack' && action.result?.won && action.to) {
+      const attackerIdx = pidIdxByPlayer.get(entry.playerActions?.[0]?.playerId);
+      if (attackerIdx != null) runningOwner.set(action.to, attackerIdx);
     }
   }
   // Any remaining moved units (e.g. fx off, or moves the log didn't attribute) hop last.
@@ -226,13 +361,17 @@ function buildField(g, s) {
 
   const locationType = g.locationType ?? 'discrete';
 
-  // Discrete games locate a unit by an integer cell, rendered at the cell centre (hence
-  // +0.5). Continuous games (doom/cs/combatmission — see games/coord.js) carry real
-  // positions in a parallel `g.units` channel as decimal strings; a position is already
-  // the exact point, so it renders directly with no cell-centre offset.
+  // Discrete SQUARE-grid games locate a unit by an integer cell index, rendered at the
+  // cell centre (hence +0.5). Hexagon-grid games (kdice) already give cell.x/y as an
+  // exact pixel-space hex center (see games/mapTypes/hexagon.js hexToPixel) — adding
+  // +0.5 there would shift every unit token half a hex radius off its own hex's center.
+  // Continuous games (doom/cs/combatmission — see games/coord.js) carry real positions
+  // in a parallel `g.units` channel as decimal strings; a position is already the exact
+  // point, so it renders directly with no cell-centre offset either.
+  const cellCenterOffset = (locationType === 'continuous' || g.grid === 'hexagon') ? 0 : 0.5;
   const unitSource = locationType === 'continuous'
     ? (g.units ?? []).map(u => ({ src: u, x: Number(u.x), y: Number(u.y), id: u.id }))
-    : g.cells.filter(c => c.glyph).map(c => ({ src: c, x: c.x + 0.5, y: c.y + 0.5, id: c.unitId ?? `u_${c.x}_${c.y}` }));
+    : g.cells.filter(c => c.glyph).map(c => ({ src: c, x: c.x + cellCenterOffset, y: c.y + cellCenterOffset, id: c.unitId ?? `u_${c.x}_${c.y}` }));
 
   const units = unitSource
     .map(({ src: c, x, y, id }) => ({
@@ -251,6 +390,8 @@ function buildField(g, s) {
       visionRange:   c.visionRange,
       mp:            c.mp,
       maxMp:         c.maxMp,
+      apNow:         c.apNow,
+      apMax:         c.apMax,
       stats:         c.stats,
       abilities:     c.abilities,
       equipment:     c.equipment,
@@ -279,7 +420,14 @@ function buildField(g, s) {
 
   const tiles = g.cells
     .filter(c => c.color)
-    .map(c => ({ x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null, height: c.height ?? 0, terrain: c.terrain ?? null }));
+    .map(c => ({
+      x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null, height: c.height ?? 0, terrain: c.terrain ?? null,
+      // Owner index (for the 'team' tile-colour sentinel, see SchematicLayer's tileColor)
+      // and the logical territory a hex belongs to (for click-to-select on multi-hex
+      // territory maps — see games/mapTypes/hexagon.js and KDiceGame.toGrid).
+      owner: c.owner ?? null,
+      territoryId: c.territoryId ?? null,
+    }));
 
   return {
     game:  s.game,
@@ -287,7 +435,16 @@ function buildField(g, s) {
     label: `${s.game} · Turn ${s.turn ?? 0}`,
     world: { w: g.width, h: g.height },
     turns: 1,
-    grid:  'square',
+    grid:  g.grid ?? 'square',
+    // Hex "radius" (center-to-corner) in world units — only set by hexagon-grid
+    // games (see games/mapTypes/hexagon.js) — used by SchematicLayer to draw
+    // hex polygon tiles instead of square-grid rects.
+    hexSize: g.hexSize ?? null,
+    // Per-territory outline segments on a hexagon-grid map — only the edges
+    // bordering a different territory, so multi-hex blobs get one clean
+    // outline instead of a full hex lattice (see KDiceGame.toGrid and
+    // games/mapTypes/hexagon.js's territoryBorders).
+    hexBorders: g.territoryBorders ?? [],
     // 'discrete' (integer tile grid) vs 'continuous' (real click-to-point positions,
     // see games/coord.js). Gates the straight-line slide animation, the move-radius
     // circle, and exact-point move submission — replaces the old shapes?.length proxy.
@@ -309,7 +466,7 @@ function buildField(g, s) {
     // of bleeding through them (see apps/design/vision.js). Absent ⇒ no occlusion.
     los: g.los ?? null,
     units,
-    // A game's toGrid may return a per-state `ui` override (e.g. hideGrid for shape
+    // A game's toGrid may return a per-state `ui` override (e.g. hideGridLines for shape
     // maps); it layers on top of the game's static ui.
     ui:       { ...(apiGame?.ui ?? {}), ...(g.ui ?? {}) },
     xLabels:  g.xLabels ?? null,
@@ -533,6 +690,20 @@ function exitBattle() {
   router.push('/');
   refresh();
 }
+
+// Start a fresh game reusing the finished session's exact creation parameters
+// (game, players, config), which the server echoes back on liveState.params.
+async function restartGame() {
+  const params = liveState.value?.params;
+  if (!params) return;
+  try {
+    stopPoll();
+    const created = await api.create(params);
+    sessionMeta.value = { ...sessionMeta.value, [created.id]: params.players };
+    await enterSession(created.id);
+    refresh();
+  } catch (e) { serverErr.value = e.message; }
+}
 </script>
 
 <template>
@@ -598,6 +769,7 @@ function exitBattle() {
                    :live-state="liveState"
                    :field="activeField"
                    :unit-fx="unitFx"
+                   :territory-fx="territoryFx"
                    :history-fields="historyFields"
                    :reveal-fields="revealFields"
                    :reveal-log="revealLog"
@@ -606,6 +778,7 @@ function exitBattle() {
                    :games-count="apiGames.length"
                    :server-err="serverErr"
                    @exit="exitBattle"
+                   @new-game="restartGame"
                    @open-settings="openSettings"
                    @submit-action="submitAction"
                    @set-marker="setMarker"/>

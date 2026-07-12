@@ -315,9 +315,9 @@ function renderState(state) {
 // ── createInitialState ────────────────────────────────────────────────────────
 
 function createInitialState(players, config = {}) {
-  const width  = config.width  ?? 20;
-  const height = config.height ?? 14;
-  const seed   = config.seed   ?? 12345;
+  const width  = config.width  ?? 50;
+  const height = config.height ?? 30;
+  const seed   = config.seed   ?? (Math.floor(Math.random() * 0xffffffff) >>> 0);
 
   const rng = mulberry32(seed);
   const tiles = generateMap(width, height, rng);
@@ -356,7 +356,7 @@ function createInitialState(players, config = {}) {
     lastActions: null,
     gameSpecific: {
       nextId: idCtr,
-      fogOfWar: config.fogOfWar ?? false,
+      fogOfWar: config.fogOfWar ?? true,
       // Common-knowledge starting deployment: cities are founded later so this
       // only seeds units; the belief tracker (belief.js) learns enemy cities
       // the first time it sees them.
@@ -431,8 +431,7 @@ export const Civ2Game = {
   name: 'Civ2',
   assets,
   scenarios: [
-    { id: 'standard', name: 'Standard',   description: 'Default 22×12 world map',         config: {} },
-    { id: 'large',    name: 'Large World', description: '32×18 world — longer campaign',    config: { width: 32, height: 18 } },
+    { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
   ],
   colors: { ocean: '#1a5a8a', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
   // The terrain art is pre-drawn 64×32 isometric diamond tiles, so render the board
@@ -440,7 +439,9 @@ export const Civ2Game = {
   // units/cities as owner-tinted tokens. See apps/design/IsoLayer.vue.
   ui: { isometric: true, isoTileMode: 'sprite', isoUnitStyle: 'token', freeSelection: true, allowDiagonalHopsWhileMoving: true },
   gameOptions: [
-    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: false },
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: true },
+    { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
+    { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },
   ],
   createInitialState,
   getLegalActions,

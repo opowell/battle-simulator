@@ -671,19 +671,19 @@ export function renderState(state) {
 // ── createInitialState ────────────────────────────────────────────────────────
 
 export function createInitialState(players, config = {}) {
-  const width  = config.width  ?? 28;
-  const height = config.height ?? 18;
-
   const [p1, p2] = players;
   const race1 = config.race1 ?? p1.race ?? 'terran';
   const race2 = config.race2 ?? p2.race ?? 'zerg';
 
-  const tiles = generateMap(width, height);
-  const board = { width, height, tiles };
+  // "Aiur Crossing" is a fixed, hand-authored shape map (see games/mapTypes/starcraftMap.js),
+  // so its dimensions and the two main-base centres come from the map itself.
+  const { width, height, tiles, shapes, bases } = generateMap();
+  const board = { width, height, tiles, shapes, bases };
 
-  // Starting positions
-  const pos1 = { x: 3, y: 3 };   // P1: bottom-left
-  const pos2 = { x: width - 4, y: height - 4 };  // P2: top-right
+  // Main-base centres (inside their mineral rings). Offsets below point toward the open
+  // ring entrance, so nothing spawns on a mineral/gas/rock tile.
+  const pos1 = bases.main1;  // P1: bottom-left corner
+  const pos2 = bases.main2;  // P2: top-right corner
 
   // Main building type per race
   const mainBldg = { terran: 'command-center', zerg: 'hatchery', protoss: 'nexus' };
@@ -695,8 +695,8 @@ export function createInitialState(players, config = {}) {
     makeBuilding(`b${idCtr++}`, p2.id, mainBldg[race2], pos2.x, pos2.y, 0),
   ];
 
-  // Starting workers near each base
-  const workerOffsets = [[1, 0], [2, 0], [0, 1], [1, 1]];
+  // Starting workers in the pocket, next to the mineral ring (P2 mirrors via −offset).
+  const workerOffsets = [[0, 1], [1, 1], [-1, 1], [1, 0]];
   const units = [];
 
   for (const [dx, dy] of workerOffsets) {
@@ -704,10 +704,10 @@ export function createInitialState(players, config = {}) {
     units.push(makeUnit(`u${idCtr++}`, p2.id, workerType[race2], pos2.x - dx, pos2.y - dy));
   }
 
-  // Starting military units
+  // Starting military units, out in front of the ring entrance.
   const startMilitary = { terran: 'marine', zerg: 'zergling', protoss: 'zealot' };
   const mil = startMilitary;
-  for (const [dx, dy] of [[3, 0], [0, 2]]) {
+  for (const [dx, dy] of [[2, 0], [2, -1]]) {
     units.push(makeUnit(`u${idCtr++}`, p1.id, mil[race1], pos1.x + dx, pos1.y + dy));
     units.push(makeUnit(`u${idCtr++}`, p2.id, mil[race2], pos2.x - dx, pos2.y - dy));
   }
@@ -800,7 +800,7 @@ export const Sc1Game = {
   // sprite layer, so the many similarly-shaped unit types stay distinguishable without
   // sourced art. SC1 has no tracked unit heading, so showFacing is off for the same
   // reason chess/civ1/xcom disable it: a decorative, meaningless arrow isn't worth it.
-  ui: { recolorTeamSprites: true, hideGrid: true, showFacing: false },
+  ui: { recolorTeamSprites: true, hideGridLines: true, showFacing: false },
   scenarios: [
     { id: 'tvz', name: 'Terran vs Zerg',    description: 'Biomech forces vs the Swarm',          config: { race1: 'terran',   race2: 'zerg' } },
     { id: 'pvt', name: 'Protoss vs Terran', description: 'Psionic warriors vs human marines',    config: { race1: 'protoss',  race2: 'terran' } },
@@ -833,13 +833,17 @@ export const Sc1Game = {
 
     // Terrain-only cells — units and buildings both travel in the `units` channel
     // below now (see games/coord.js), not by exact-match into this integer grid.
+    // The map is drawn from grouped feature shapes (board.shapes, see toGrid's return),
+    // so every cell shares one low-ground backdrop colour and the shapes convey the
+    // real terrain (like games/doom). Per-cell `terrain` is still carried for the
+    // click-to-inspect terrain-info panel.
     const cells = [];
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const tile = tiles[`${x},${y}`] ?? {};
         cells.push({
           x, y,
-          color: this.colors[tile.terrain] ?? this.colors.open ?? '#808070',
+          color: '#586a41',
           terrain: terrainInfo(tile.terrain),
         });
       }
@@ -876,6 +880,7 @@ export const Sc1Game = {
       maxHp:    b.maxHp,
     }));
 
-    return { width, height, locationType: 'continuous', cells, units: [...unitList, ...buildingList] };
+    return { width, height, locationType: 'continuous', cells, units: [...unitList, ...buildingList],
+             shapes: board.shapes ?? [] };
   },
 };

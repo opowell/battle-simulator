@@ -21,6 +21,15 @@ export function pointInShape(s, px, py) {
     const ny = (py - (s.y + ry)) / ry;
     return nx * nx + ny * ny <= 1;
   }
+  if (s.shape === 'poly') {
+    // Standard ray-casting point-in-polygon test over s.points ({x,y}[]).
+    let inside = false;
+    for (let i = 0, j = s.points.length - 1; i < s.points.length; j = i++) {
+      const { x: xi, y: yi } = s.points[i], { x: xj, y: yj } = s.points[j];
+      if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
   // rectangle (default)
   return px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h;
 }
@@ -118,6 +127,81 @@ export function forEachCell(s, W, H, cb) {
 // a tile's type; `typeStyles` maps the types worth drawing → SVG style ({ fill, stroke?,
 // opacity?, round?, label? }). Types absent from `typeStyles` (e.g. plain floor) are left
 // as background. Contiguous same-type cells are greedily merged into maximal rectangles.
+// Like tilesToShapes, but groups each type's contiguous (4-neighbour) cells into one
+// polygon per connected region instead of decomposing it into several maximal
+// rectangles. Two adjacent same-type cells always end up on one shape this way, so they
+// never draw a stroke down the seam between them — tilesToShapes can split an L-shaped
+// or ring-shaped region into multiple rects that each get their own border. Regions with
+// a hole (a ring) trace an extra inner loop; callers that never author rings can ignore
+// that case.
+export function tilesToPolygons(getType, W, H, typeStyles) {
+  const shapes = [];
+  const visited = new Set();
+  const key = (x, y) => `${x},${y}`;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const type = getType(x, y);
+      if (!type || !typeStyles[type] || visited.has(key(x, y))) continue;
+      const cells = [];
+      const queue = [[x, y]];
+      visited.add(key(x, y));
+      while (queue.length) {
+        const [cx, cy] = queue.shift();
+        cells.push([cx, cy]);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx, ny = cy + dy, nk = key(nx, ny);
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || visited.has(nk)) continue;
+          if (getType(nx, ny) === type) { visited.add(nk); queue.push([nx, ny]); }
+        }
+      }
+      const style = typeStyles[type];
+      for (const loop of traceCellBoundary(cells))
+        shapes.push({ shape: 'poly', points: loop.map(([px, py]) => ({ x: px, y: py })), ...style, label: style.label ?? null });
+    }
+  }
+  return shapes;
+}
+
+// Trace the boundary of a set of unit cells into one or more closed orthogonal loops.
+// Each cell contributes its 4 unit edges; an edge shared by two cells in the set is
+// interior and cancels out, leaving only the boundary edges. Edges are oriented so the
+// cell interior is always on their right (top: left→right, right: top→bottom, bottom:
+// right→left, left: bottom→top), which chains them head-to-tail into closed loops and
+// makes an outer loop wind opposite to any inner (hole) loop.
+function traceCellBoundary(cells) {
+  const set = new Set(cells.map(([x, y]) => `${x},${y}`));
+  const has = (x, y) => set.has(`${x},${y}`);
+  const edges = [];
+  for (const [x, y] of cells) {
+    if (!has(x, y - 1)) edges.push([[x, y], [x + 1, y]]);         // top
+    if (!has(x + 1, y)) edges.push([[x + 1, y], [x + 1, y + 1]]); // right
+    if (!has(x, y + 1)) edges.push([[x + 1, y + 1], [x, y + 1]]); // bottom
+    if (!has(x - 1, y)) edges.push([[x, y + 1], [x, y]]);         // left
+  }
+  const byStart = new Map();
+  edges.forEach((e, i) => {
+    const sk = e[0].join(',');
+    if (!byStart.has(sk)) byStart.set(sk, []);
+    byStart.get(sk).push(i);
+  });
+  const used = new Array(edges.length).fill(false);
+  const loops = [];
+  for (let i = 0; i < edges.length; i++) {
+    if (used[i]) continue;
+    const loop = [];
+    let idx = i;
+    do {
+      used[idx] = true;
+      loop.push(edges[idx][0]);
+      const candidates = byStart.get(edges[idx][1].join(',')) || [];
+      const next = candidates.find(c => !used[c]);
+      idx = next ?? -1;
+    } while (idx !== -1 && idx !== i);
+    loops.push(loop);
+  }
+  return loops;
+}
+
 export function tilesToShapes(getType, W, H, typeStyles) {
   const shapes = [];
   for (const [type, style] of Object.entries(typeStyles)) {

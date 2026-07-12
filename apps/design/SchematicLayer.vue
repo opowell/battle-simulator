@@ -12,6 +12,10 @@ const props = defineProps({
   // Transient combat flashes keyed by unit id (see App.vue's unitFx). Drawn at a
   // captured board square so a killing blow still flashes after its victim is gone.
   unitFx:       { type: Object, default: () => ({}) },
+  // Territory-wide flash keyed by territoryId (see App.vue's territoryFx): every
+  // hex belonging to the territory flashes white and fades, instead of a single
+  // circle on its capital hex — used by kdice's attack animation.
+  territoryFx:  { type: Object, default: () => ({}) },
   selectedId:   String,
   hoveredId:    { type: String, default: null },
   activeUnitId: { type: String, default: null },
@@ -123,16 +127,50 @@ function handleBoardMouseMove(e) {
 function handleBoardMouseLeave() { hoverWorld.value = null; }
 
 // Shoot's aim ray, clipped to the weapon's range so it reads as the actual reach
-// rather than an arbitrary line to the cursor.
+// rather than an arbitrary line to the cursor. Rotate reuses this (no `range` on a
+// rotate aiming object, so the ray always runs the full distance to the cursor —
+// facing has no reach limit).
+//
+// A shoot with no `range` at all (see DoomGame.js) has no max distance — the real
+// shot travels in a straight line until it hits a wall or a unit, so the preview
+// should too: extend the ray past the cursor to whichever comes first, instead of
+// stopping exactly at the clicked point (a location has no special meaning here,
+// only the bearing does).
 const shootRayEnd = computed(() => {
-  if (props.aiming?.type !== 'shoot' || !aimUnit.value || !hoverWorld.value) return null;
+  if (!['shoot', 'rotate', 'punch'].includes(props.aiming?.type) || !aimUnit.value || !hoverWorld.value) return null;
   const u = aimUnit.value, h = hoverWorld.value;
   const dx = h.x - u.x, dy = h.y - u.y;
   const dist = Math.hypot(dx, dy);
+  if (!dist) return h;
   const range = props.aiming.range;
-  if (!dist || range == null || dist <= range) return h;
-  const t = range / dist;
-  return { x: u.x + dx * t, y: u.y + dy * t };
+  if (range != null) {
+    if (dist <= range) return h;
+    const t = range / dist;
+    return { x: u.x + dx * t, y: u.y + dy * t };
+  }
+  if (props.aiming.type !== 'shoot') return h;
+
+  const dirx = dx / dist, diry = dy / dist;
+  const ang  = Math.atan2(dy, dx);
+  const BIG  = 2 * Math.max(props.field.world?.w ?? 0, props.field.world?.h ?? 0, dist);
+  const los  = props.field.los;
+  let wallDist = BIG;
+  if (los?.openShapes)       wallDist = VISION._internal.shapeExit(u.x, u.y, ang, los.openShapes,  BIG, 'open' )?.dist ?? BIG;
+  else if (los?.blockShapes) wallDist = VISION._internal.shapeExit(u.x, u.y, ang, los.blockShapes, BIG, 'block')?.dist ?? BIG;
+
+  const HIT_RADIUS = 0.6;
+  let unitDist = BIG;
+  for (const other of props.units) {
+    if (other.dead || other.id === u.id) continue;
+    const along = (other.x - u.x) * dirx + (other.y - u.y) * diry;
+    if (along < 0 || along >= unitDist) continue;
+    const px = u.x + dirx * along, py = u.y + diry * along;
+    if (Math.hypot(other.x - px, other.y - py) > HIT_RADIUS) continue;
+    unitDist = along;
+  }
+
+  const stop = Math.min(wallDist, unitDist);
+  return { x: u.x + dirx * stop, y: u.y + diry * stop };
 });
 
 // Per-unit outcome preview while aiming — a small "-NN" / "BLIND" badge over each
@@ -170,6 +208,18 @@ const aimPreviewList = computed(() => {
     if (!target) return [];
     const pct = target.accuracy != null ? ` (${Math.round(target.accuracy * 100)}%)` : '';
     return [{ id: target.targetId, x: target.x, y: target.y, text: `-${dmgAgainst(target, target.damage ?? 0)}${pct}` }];
+  }
+
+  // Punch's blast always lands at the fixed clipped ray endpoint (shootRayEnd), not
+  // the raw cursor — same "-NN" preview as a thrown grenade, just at that fixed spot.
+  if (props.aiming.type === 'punch' && shootRayEnd.value) {
+    const c = shootRayEnd.value;
+    const out = [];
+    for (const u of props.units) {
+      if (u.dead || Math.hypot(u.x - c.x, u.y - c.y) > (props.aiming.blastRadius ?? 0)) continue;
+      out.push({ id: u.id, x: u.x, y: u.y, text: `-${dmgAgainst(u, props.aiming.damage ?? 0)}` });
+    }
+    return out;
   }
 
   return [];
@@ -243,7 +293,9 @@ const boardSquares = computed(() => {
 });
 
 function unitR(u) {
-  const mult = props.field.grid === 'square' ? (props.field.world.w <= 10 ? 0.36 : 0.42) : 2.4;
+  const mult = props.field.grid === 'square' ? (props.field.world.w <= 10 ? 0.36 : 0.42)
+    : props.field.grid === 'hexagon' ? (props.field.hexSize ?? 1) * 0.55
+    : 2.4;
   // Bare sprite images have no stroke/padding eating into them, so let them fill more of the cell.
   const boosted = u?.imagePath ? mult * 1.25 : mult;
   return Math.max(5, props.fit.len(boosted));
@@ -346,10 +398,90 @@ const selectedVisionTiles = computed(() => {
   return out;
 });
 
+// While a territory is flashing after a conquest, its hexes keep showing the
+// pre-attack owner (see App.vue's territoryFx.holdOwner) — the new owner's
+// colour only appears once the flash finishes and the entry is removed.
+function heldOwner(territoryId) {
+  if (territoryId == null) return null;
+  const fx = props.territoryFx?.[territoryId];
+  return fx && fx.holdOwner != null ? fx.holdOwner : null;
+}
+
 function tileColor(tile) {
   if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`))
     return props.rdr.fogA;
+  // 'team' is a sentinel (see kdice's toGrid): the server can't know the client's
+  // team palette, so it defers to whichever colour the client already assigned
+  // this tile's owner (same trick as layerColor for sprite-layer units).
+  // Lightened for the fill (matches the original K.Dice board's pastel look) —
+  // the border segments (see segBorderColor) carry the darker, saturated shade
+  // instead, so the blob still reads as clearly bounded.
+  if (tile.color === 'team') {
+    const owner = heldOwner(tile.territoryId) ?? tile.owner;
+    return lighten(props.field.teams[owner - 1]?.raw ?? '#8a96a1', 0.35);
+  }
   return tile.color;
+}
+
+// Hex polygon points for a pointy-top hex tile centered at (tile.x, tile.y),
+// sized by field.hexSize (world units) — see games/mapTypes/hexagon.js's
+// hexCorners, mirrored here so the renderer doesn't need a server round-trip
+// to know a hex's corners.
+function hexPoints(tile) {
+  const size = props.field.hexSize ?? 1;
+  const cx = props.fit.x(tile.x), cy = props.fit.y(tile.y);
+  // A hair of overlap beyond the true hex radius so two adjacent same-territory
+  // fills overdraw their shared edge instead of butting exactly against it —
+  // without it, SVG anti-aliasing leaves a faint background-colored seam along
+  // every hex-to-hex edge that reads as a spurious internal grid line.
+  const r = props.fit.len(size) + 0.75;
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const ang = (Math.PI / 180) * (60 * i - 30);
+    pts.push(`${cx + r * Math.cos(ang)},${cy + r * Math.sin(ang)}`);
+  }
+  return pts.join(' ');
+}
+
+// ── hex-territory colour helpers (kdice) ─────────────────────────────────
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+function rgbToHex([r, g, b]) {
+  return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+}
+function lighten(hex, amt) {
+  const [r, g, b] = hexToRgb(hex);
+  return rgbToHex([r + (255 - r) * amt, g + (255 - g) * amt, b + (255 - b) * amt]);
+}
+function darken(hex, amt) {
+  const [r, g, b] = hexToRgb(hex);
+  return rgbToHex([r * (1 - amt), g * (1 - amt), b * (1 - amt)]);
+}
+
+// A border segment sits between exactly two territories (or one territory and
+// the map's edge — see games/mapTypes/hexagon.js territoryBorders, which emits
+// each shared edge only once, tagged with both sides via aId/bId). It reads as
+// "selected" if either bordering territory is the one selected, so a shared
+// edge always recolors correctly regardless of which side asks — drawing each
+// side's own independent copy (the old per-territory scheme) let whichever
+// copy painted last silently win the pixel, making the highlight look randomly
+// incomplete around exactly the loser's edges.
+function isSegSelected(seg) {
+  const sel = props.selectedId ?? props.activeUnitId;
+  return sel != null && (seg.aId === sel || seg.bId === sel);
+}
+// Unselected borders read as a dark shade of the segment's own territory
+// colour (same-colour-as-fill would vanish into it — see hexPoints/tileColor
+// — so darkening, not matching, is what makes the outline read against the
+// fill it's tracing); selected borders turn white to stand out unambiguously.
+function segBorderColor(seg) {
+  if (isSegSelected(seg)) return '#ffffff';
+  const useA = !!seg.aOwner;
+  const owner = heldOwner(useA ? seg.aId : seg.bId) ?? (useA ? seg.aOwner : seg.bOwner);
+  const raw = props.field.teams[owner - 1]?.raw ?? '#8a96a1';
+  return darken(raw, 0.55);
 }
 
 function tileBgImage(tile) {
@@ -484,6 +616,15 @@ onUnmounted(() => {
 // ── board / unit click ────────────────────────────────────────────────────────
 function handleBoardClick(e) {
   if (dragUnit.value) return; // drag ended; sq-click already emitted in _onDragEnd
+  if (props.field.grid === 'hexagon') {
+    // No integer col/row on a hex board — pass the raw world point and let
+    // Battlefield.vue resolve it to a hex/territory (nearest tile center).
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left - props.fit.x(0)) / props.fit.s;
+    const y = (e.clientY - rect.top  - props.fit.y(0)) / props.fit.s;
+    emit('sq-click', null, null, x, y);
+    return;
+  }
   if (props.field.grid !== 'square') { emit('select', null); return; }
   const rect = e.currentTarget.getBoundingClientRect();
   const x = (e.clientX - rect.left - props.fit.x(0)) / props.fit.s;
@@ -510,6 +651,11 @@ function handleUnitClick(e, u) {
   // Aiming mode: clicking any unit token (e.g. the enemy you're shooting at) is just
   // a click at that point — let it bubble to handleBoardClick like bare ground would.
   if (props.aiming) return;
+  // Territory-click games (kdice): a territory's marker sits on one hex among many,
+  // and clicking it must go through the same select-then-attack resolution as
+  // clicking any other hex in its blob — let it bubble to handleBoardClick instead
+  // of short-circuiting into a plain select.
+  if (props.field.ui?.territoryClick) return;
   const col = Math.floor(u.x), row = Math.floor(u.y);
   const isLegalTarget = props.legalSquares.some(([lc, lr]) => lc === col && lr === row);
   if (props.dragToMove) {
@@ -571,21 +717,52 @@ function facingArrow(u) {
 // where nothing covers it, plus the covering shapes' edges where they cut into it —
 // otherwise the dashed outline draws a full oval/rect that ignores the terrain actually
 // visible on screen.
+// Axis-aligned bounding box of a shape, regardless of its kind — rect/oval already carry
+// one as x/y/w/h; poly derives it from the min/max of its points.
+function shapeBBox(s) {
+  if (s.shape !== 'poly') return s;
+  const xs = s.points.map(p => p.x), ys = s.points.map(p => p.y);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+// Shapes are re-created on every toGrid call, so the selected shape is rarely the exact
+// same object reference as its counterpart in a fresh field.shapes — compare by geometry
+// instead (points array for poly, x/y/w/h for rect/oval).
+function shapesEqual(a, b) {
+  if (a.shape !== b.shape) return false;
+  if (a.shape === 'poly')
+    return a.points.length === b.points.length && a.points.every((p, i) => p.x === b.points[i].x && p.y === b.points[i].y);
+  return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+}
 const selectedShapeIndex = computed(() => {
   const s = props.selectedShape;
   if (!s || !props.field.shapes) return -1;
-  return props.field.shapes.findIndex(sh =>
-    sh.shape === s.shape && sh.x === s.x && sh.y === s.y && sh.w === s.w && sh.h === s.h);
+  return props.field.shapes.findIndex(sh => shapesEqual(sh, s));
 });
 const coveringShapes = computed(() => {
   const idx = selectedShapeIndex.value;
   if (idx < 0) return [];
-  const s = props.selectedShape;
+  const s = shapeBBox(props.selectedShape);
   return props.field.shapes.slice(idx + 1)
-    .filter(cs => s.x < cs.x + cs.w && s.x + s.w > cs.x && s.y < cs.y + cs.h && s.y + s.h > cs.y);
+    .filter(cs => { const b = shapeBBox(cs); return s.x < b.x + b.w && s.x + s.w > b.x && s.y < b.y + b.h && s.y + s.h > b.y; });
 });
 
 const fxList = computed(() => Object.entries(props.unitFx ?? {}).map(([id, fx]) => ({ id, ...fx })));
+
+// Every hex whose territoryId is currently flashing (see App.vue's territoryFx),
+// tagged with that flash's key (so retriggering a still-blinking territory — a
+// second attack before the first finishes — restarts from a fresh element) and
+// its blink count (3 for an attack, 1 for a placed reinforcement — see App.vue).
+// blinks: 0 entries (a bundled-turn colour hold with no attack playing yet — see
+// App.vue's bundleHold) are excluded: they should keep the old colour via
+// heldOwner below, but draw no white overlay since nothing is actually flashing.
+const flashingHexes = computed(() => {
+  const fx = props.territoryFx;
+  if (!fx || !Object.keys(fx).length) return [];
+  return (props.field.tiles ?? [])
+    .filter(t => t.territoryId != null && fx[t.territoryId]?.blinks > 0)
+    .map(t => ({ tile: t, fxKey: fx[t.territoryId].key, blinks: fx[t.territoryId].blinks }));
+});
 const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'square'
   ? (props.field.world.w <= 10 ? 0.42 : 0.5)
   : 2.8)));
@@ -608,6 +785,31 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             :x="fit.x(0)" :y="fit.y(0)"
             :width="fit.len(field.world.w)" :height="fit.len(field.world.h)"
             :fill="tileColor(field.tiles[0])"/>
+      <!-- Hexagon-grid maps: one hex polygon per cell, multiple hexes sharing a
+           territory's colour form the visible territory "blob" (see KDiceGame.toGrid
+           and games/mapTypes/hexagon.js). Click hit-testing is handled separately
+           in handleBoardClick (nearest hex center), not per-polygon click handlers. -->
+      <template v-else-if="field.grid === 'hexagon'">
+        <!-- Fill only, no per-hex stroke — hexes within the same territory read as one
+             solid blob; the outline (below, drawn from field.hexBorders) traces just
+             the blob's outer edge instead of a honeycomb lattice. -->
+        <polygon v-for="(tile, i) in (field.tiles ?? [])" :key="'hx'+i"
+                 :points="hexPoints(tile)"
+                 :fill="tileColor(tile)"/>
+        <!-- Territory attack flash: an all-white overlay hex per flashing tile, hard
+             blinking on/off (see .territory-flash-hex below and App.vue's territoryFx —
+             blink count/timing must match App.vue's TERRITORY_BLINK_MS). -->
+        <polygon v-for="fh in flashingHexes" :key="'hxfx'+fh.tile.territoryId+'-'+fh.fxKey"
+                 :points="hexPoints(fh.tile)"
+                 :style="{ animationIterationCount: fh.blinks }"
+                 class="territory-flash-hex sl-noevents"/>
+        <line v-for="(seg, si) in (field.hexBorders ?? [])" :key="'hb'+si"
+              :x1="fit.x(seg.p1[0])" :y1="fit.y(seg.p1[1])"
+              :x2="fit.x(seg.p2[0])" :y2="fit.y(seg.p2[1])"
+              :stroke="segBorderColor(seg)"
+              :stroke-width="isSegSelected(seg) ? 4 : 2.25"
+              stroke-linecap="round" class="sl-noevents"/>
+      </template>
       <template v-else>
         <rect v-for="(tile, i) in (field.tiles ?? [])" :key="'t'+i"
               :x="fit.x(tile.x)" :y="fit.y(tile.y)"
@@ -632,13 +834,26 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                  :cx="fit.x(s.x + s.w/2)" :cy="fit.y(s.y + s.h/2)"
                  :rx="fit.len(s.w/2)" :ry="fit.len(s.h/2)"
                  :fill="s.fill" :fill-opacity="s.opacity ?? 1"
-                 :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? 1.5 : 0"
+                 :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? (s.strokeWidth ?? 1.5) : 0"
                  class="sl-noevents"/>
+        <!-- Free-form primitive: points are world coords (see a game's toGrid, e.g. aow's
+             mountains/trees/forts, or doom's merged same-kind decor panels). Inspectable
+             like any other shape when it carries a `name` (see Battlefield's pointInShape
+             and coveringShapes/selectedShapeIndex above). -->
+        <polygon v-else-if="s.shape === 'poly'"
+                 :points="s.points.map(p => fit.x(p.x) + ',' + fit.y(p.y)).join(' ')"
+                 :fill="s.fill" :fill-opacity="s.opacity ?? 1"
+                 :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? (s.strokeWidth ?? 1.5) : 0"
+                 stroke-linejoin="round" class="sl-noevents"/>
+        <line v-else-if="s.shape === 'line'"
+              :x1="fit.x(s.x1)" :y1="fit.y(s.y1)" :x2="fit.x(s.x2)" :y2="fit.y(s.y2)"
+              :stroke="s.stroke ?? s.fill" :stroke-width="s.strokeWidth ?? 1"
+              stroke-linecap="round" class="sl-noevents"/>
         <rect v-else
               :x="fit.x(s.x)" :y="fit.y(s.y)"
               :width="fit.len(s.w)" :height="fit.len(s.h)"
               :fill="s.fill" :fill-opacity="s.opacity ?? 1"
-              :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? 1.5 : 0"
+              :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? (s.strokeWidth ?? 1.5) : 0"
               class="sl-noevents"/>
         <text v-if="s.label"
               :x="fit.x(s.x + s.w/2)" :y="fit.y(s.y + s.h/2)"
@@ -657,6 +872,8 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             <ellipse v-if="selectedShape.shape === 'oval'"
                      :cx="fit.x(selectedShape.x + selectedShape.w/2)" :cy="fit.y(selectedShape.y + selectedShape.h/2)"
                      :rx="fit.len(selectedShape.w/2)" :ry="fit.len(selectedShape.h/2)" fill="white"/>
+            <polygon v-else-if="selectedShape.shape === 'poly'"
+                     :points="selectedShape.points.map(p => fit.x(p.x) + ',' + fit.y(p.y)).join(' ')" fill="white"/>
             <rect v-else
                   :x="fit.x(selectedShape.x)" :y="fit.y(selectedShape.y)"
                   :width="fit.len(selectedShape.w)" :height="fit.len(selectedShape.h)" fill="white"/>
@@ -664,6 +881,8 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               <ellipse v-if="cs.shape === 'oval'"
                        :cx="fit.x(cs.x + cs.w/2)" :cy="fit.y(cs.y + cs.h/2)"
                        :rx="fit.len(cs.w/2)" :ry="fit.len(cs.h/2)" fill="black"/>
+              <polygon v-else-if="cs.shape === 'poly'"
+                       :points="cs.points.map(p => fit.x(p.x) + ',' + fit.y(p.y)).join(' ')" fill="black"/>
               <rect v-else
                     :x="fit.x(cs.x)" :y="fit.y(cs.y)"
                     :width="fit.len(cs.w)" :height="fit.len(cs.h)" fill="black"/>
@@ -673,6 +892,8 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             <ellipse v-if="selectedShape.shape === 'oval'"
                      :cx="fit.x(selectedShape.x + selectedShape.w/2)" :cy="fit.y(selectedShape.y + selectedShape.h/2)"
                      :rx="fit.len(selectedShape.w/2)" :ry="fit.len(selectedShape.h/2)"/>
+            <polygon v-else-if="selectedShape.shape === 'poly'"
+                     :points="selectedShape.points.map(p => fit.x(p.x) + ',' + fit.y(p.y)).join(' ')"/>
             <rect v-else
                   :x="fit.x(selectedShape.x)" :y="fit.y(selectedShape.y)"
                   :width="fit.len(selectedShape.w)" :height="fit.len(selectedShape.h)"/>
@@ -682,6 +903,10 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
         <ellipse v-if="selectedShape.shape === 'oval'"
                  :cx="fit.x(selectedShape.x + selectedShape.w/2)" :cy="fit.y(selectedShape.y + selectedShape.h/2)"
                  :rx="fit.len(selectedShape.w/2)" :ry="fit.len(selectedShape.h/2)"
+                 fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
+                 mask="url(#selShapeMask)" class="sl-noevents"/>
+        <polygon v-else-if="selectedShape.shape === 'poly'"
+                 :points="selectedShape.points.map(p => fit.x(p.x) + ',' + fit.y(p.y)).join(' ')"
                  fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
                  mask="url(#selShapeMask)" class="sl-noevents"/>
         <rect v-else
@@ -695,6 +920,10 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
           <ellipse v-if="cs.shape === 'oval'"
                    :cx="fit.x(cs.x + cs.w/2)" :cy="fit.y(cs.y + cs.h/2)"
                    :rx="fit.len(cs.w/2)" :ry="fit.len(cs.h/2)"
+                   fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
+                   clip-path="url(#selShapeClip)" class="sl-noevents"/>
+          <polygon v-else-if="cs.shape === 'poly'"
+                   :points="cs.points.map(p => fit.x(p.x) + ',' + fit.y(p.y)).join(' ')"
                    fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-dasharray="4,3"
                    clip-path="url(#selShapeClip)" class="sl-noevents"/>
           <rect v-else
@@ -774,7 +1003,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
       </template>
 
       <!-- Grid -->
-      <template v-if="!field.ui?.hideGrid">
+      <template v-if="!field.ui?.hideGridLines">
         <line v-for="gx in gridX" :key="'gx'+gx"
               :x1="fit.x(gx)" :y1="fit.y(0)" :x2="fit.x(gx)" :y2="fit.y(field.world.h)"
               :stroke="rdr.grid" stroke-width="1"/>
@@ -835,15 +1064,19 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
 
         <!-- Live unit -->
         <g v-else :class="{ 'unit-blink': u.id === blinkTargetId && field.ui?.blinkActiveUnit }">
-          <!-- Active unit ring: white outer ring + inner glow ring (skipped when the game blinks the unit instead) -->
-          <template v-if="u.id === highlightUnitId && !field.ui?.blinkActiveUnit">
+          <!-- Active unit ring: white outer ring + inner glow ring (skipped when the game blinks the unit instead,
+               or on territory-click maps — there the whole territory blob is already outlined in white by
+               field.hexBorders (see kdice's segBorderColor), so a second pulsing ring around just the
+               dice-count badge would be a redundant, visually-competing indicator). -->
+          <template v-if="u.id === highlightUnitId && !field.ui?.blinkActiveUnit && !field.ui?.territoryClick">
             <circle cx="0" cy="0" :r="unitR(u)+11"
                     fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="6" class="active-ring"/>
             <circle cx="0" cy="0" :r="unitR(u)+7"
                     fill="none" stroke="white" stroke-width="2" class="active-ring"/>
           </template>
-          <!-- Selected unit ring: dashed ring (skipped when blinking, or when the game highlights the square instead) -->
-          <circle v-if="u.id === selectedId && u.id !== highlightUnitId && !(u.id === blinkTargetId && field.ui?.blinkActiveUnit) && !field.ui?.highlightSelectedSquare"
+          <!-- Selected unit ring: dashed ring (skipped when blinking, when the game highlights the square instead,
+               or on territory-click maps for the same reason as the active-unit ring above). -->
+          <circle v-if="u.id === selectedId && u.id !== highlightUnitId && !(u.id === blinkTargetId && field.ui?.blinkActiveUnit) && !field.ui?.highlightSelectedSquare && !field.ui?.territoryClick"
                   cx="0" cy="0" :r="unitR(u)+6"
                   fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.5" stroke-dasharray="3 3"/>
           <!-- Roster-hovered unit ring: soft solid ring, hidden once the unit is active/selected -->
@@ -880,8 +1113,10 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                instead of an `<image>` — see games/cs/CsGame.js's spriteLayers() for a
                surviv.io-style all-primitive unit (no sourced art at all). -->
           <template v-if="u.spriteLayers">
-            <rect :x="-unitR(u)" :y="-unitR(u)"
-                  :width="unitR(u)*2" :height="unitR(u)*2"
+            <!-- u.hitRFrac (default 1) lets a game widen the clickable area past the body
+                 radius when a sprite layer draws outside it (e.g. CS's armor ring). -->
+            <rect :x="-unitR(u)*(u.hitRFrac??1)" :y="-unitR(u)*(u.hitRFrac??1)"
+                  :width="unitR(u)*2*(u.hitRFrac??1)" :height="unitR(u)*2*(u.hitRFrac??1)"
                   fill="transparent" class="sl-allevents"/>
             <g v-for="(layer, li) in u.spriteLayers" :key="'sp'+li"
                :transform="`translate(${unitR(u)*layer.dx}, ${unitR(u)*layer.dy}) rotate(${layer.rot||0})`"
@@ -966,6 +1201,20 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               :x2="fit.x(shootRayEnd.x)" :y2="fit.y(shootRayEnd.y)"
               stroke="rgba(255,210,60,0.85)" stroke-width="2" stroke-dasharray="3 3"
               class="sl-noevents"/>
+        <line v-if="aiming.type === 'rotate' && shootRayEnd && aimUnit"
+              :x1="fit.x(aimUnit.x)" :y1="fit.y(aimUnit.y)"
+              :x2="fit.x(shootRayEnd.x)" :y2="fit.y(shootRayEnd.y)"
+              stroke="rgba(120,200,255,0.85)" stroke-width="2" stroke-dasharray="3 3"
+              class="sl-noevents"/>
+        <line v-if="aiming.type === 'punch' && shootRayEnd && aimUnit"
+              :x1="fit.x(aimUnit.x)" :y1="fit.y(aimUnit.y)"
+              :x2="fit.x(shootRayEnd.x)" :y2="fit.y(shootRayEnd.y)"
+              stroke="rgba(255,110,40,0.85)" stroke-width="2" stroke-dasharray="3 3"
+              class="sl-noevents"/>
+        <circle v-if="aiming.type === 'punch' && shootRayEnd"
+                :cx="fit.x(shootRayEnd.x)" :cy="fit.y(shootRayEnd.y)" :r="fit.len(aiming.blastRadius || 0)"
+                fill="rgba(255,110,40,0.28)" stroke="rgba(255,110,40,0.75)" stroke-width="1.5"
+                class="sl-noevents"/>
 
         <!-- Expected-outcome badges: "-NN" damage or "BLIND", over every unit the
              current cursor position would hit (see aimPreviewList) -->
@@ -1045,8 +1294,10 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
       </g>
     </svg>
 
-    <!-- Fog mask (radial gradient blobs, only for non-square non-chess-fog games) -->
-    <div v-if="fog && !field.ui?.gridFog && field.grid !== 'square'" class="bf-layer sl-fog"
+    <!-- Fog mask (radial gradient blobs, only for non-square non-chess-fog games).
+         Hexagon territory maps (kdice) encode fog directly in each hex's colour
+         (see KDiceGame.toGrid) rather than a radial-vision overlay, so skip it there. -->
+    <div v-if="fog && !field.ui?.gridFog && field.grid !== 'square' && field.grid !== 'hexagon'" class="bf-layer sl-fog"
          :style="{
            background: rdr.fogS,
            WebkitMaskImage: fogMask,
@@ -1072,6 +1323,17 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
 .unit-blink {
   animation: unit-blink 0.6s steps(1, end) infinite;
 }
+/* kdice territory flash: whole territory hard-blinks white — a plain on/off cut
+   (steps(1,end), no easing/fade) so it reads as a snap rather than a glow. One
+   cycle is 0.3s, matching App.vue's TERRITORY_BLINK_MS; :style sets how many
+   cycles play (animation-iteration-count — see the polygon above). Ends on the
+   "off" frame (forwards) so it never flashes a stray extra frame before the
+   element is removed once App.vue's timer clears the flash. */
+@keyframes territory-flash {
+  0%, 49.9% { opacity: 0.85; fill: #ffffff; }
+  50%, 100% { opacity: 0; fill: #ffffff; }
+}
+.territory-flash-hex { animation-name: territory-flash; animation-duration: 0.3s; animation-timing-function: steps(1, end); animation-fill-mode: forwards; }
 .sl-noevents { pointer-events: none; }
 .sl-allevents { pointer-events: all; }
 .sl-clickable { cursor: pointer; }

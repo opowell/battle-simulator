@@ -42,6 +42,8 @@ const aimedActions = computed(() => {
       out.push({ type: 'shoot', unitId: action.unitId, icon: action.icon, range: action.range, __aim: true });
     else if (action.type === 'move')
       out.push({ type: 'move', unitId: action.unitId, __aim: true });
+    else if (action.type === 'rotate')
+      out.push({ type: 'rotate', unitId: action.unitId, __aim: true });
     else
       out.push({ ...action, __aim: true });
   }
@@ -76,6 +78,8 @@ function fmtAction(action) {
     return `Shoot ${label}`;
   }
   if (t === 'throw')     return action.name ? `Throw ${action.name}` : 'Throw Grenade';
+  if (t === 'rotate')    return 'Rotate…';
+  if (t === 'punch')     return 'Punch…';
   if (t === 'buy')       return action.name ? `Buy ${action.name}` : `Buy ${action.item ?? ''}`;
   if (t === 'end-buy')   return 'Done Buying';
   if (t === 'crouch')    return 'Crouch';
@@ -122,7 +126,9 @@ function fmtAction(action) {
       <template v-if="aiming">
         <div class="mono ap-hint ap-hint--aim">
           {{aiming.type === 'throw' ? 'Click the map to throw'
-            : aiming.type === 'move' ? 'Click the map to move' : 'Click the map to aim'}}
+            : aiming.type === 'move' ? 'Click the map to move'
+            : aiming.type === 'rotate' ? 'Click the map to face that direction'
+            : aiming.type === 'punch' ? 'Click the map to choose a punch direction' : 'Click the map to aim'}}
         </div>
         <button class="action-btn ap-btn" @click="$emit('cancel-aim')">Cancel</button>
       </template>

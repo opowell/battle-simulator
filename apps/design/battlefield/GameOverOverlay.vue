@@ -7,7 +7,7 @@ defineProps({
   reasonLabel: { type: String, default: '' },
   field:       Object,
 });
-defineEmits(['dismiss', 'exit']);
+defineEmits(['dismiss', 'exit', 'new-game']);
 </script>
 
 <template>
@@ -68,7 +68,8 @@ defineEmits(['dismiss', 'exit']);
         </div>
         <div class="go-actions">
           <button class="btn btn-ghost btn-sm" @click="$emit('dismiss')">Dismiss</button>
-          <button class="btn btn-sm" @click="$emit('exit')">Back to Lobby</button>
+          <button class="btn btn-ghost btn-sm" @click="$emit('exit')">Back to Lobby</button>
+          <button class="btn btn-sm" @click="$emit('new-game')">Start new game</button>
         </div>
       </div>
     </div>

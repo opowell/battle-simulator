@@ -1,101 +1,23 @@
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
+import { buildStarcraftMap, MAP_WIDTH, MAP_HEIGHT, mulberry32 } from '../mapTypes/starcraftMap.js';
+
+export { mulberry32, MAP_WIDTH, MAP_HEIGHT };
 
 /**
- * Generate an SC2-style map.
- * Two bases in opposite corners with natural expansions, mineral clusters,
- * vespene geysers, central elevated plateau with ramp chokes.
+ * Generate the SC2 map — "Aiur Crossing", a hand-authored 2-player map built from
+ * grouped terrain features (see games/mapTypes/starcraftMap.js), the same shape-based
+ * approach as games/doom/map.js. Shares the layout with SC1: four mineral-ring bases
+ * per player (corner main, natural, third, and a 4th in the opposite corner), impassable
+ * rock outcrops that carve the field into lanes, and a contested central plateau ringed
+ * by cliffs with four ramp chokes. Returns { width, height, tiles, shapes, bases }.
+ *
+ * SC2 economy: 1500-mineral fields, 2500 for the contested gold expansions, and
+ * 2250-unit vespene geysers (SC2's leaner gas rate).
  */
-export function generateMap(width, height) {
-  const tiles = {};
-
-  // Fill with open ground
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      tiles[`${x},${y}`] = { terrain: 'open' };
-    }
-  }
-
-  // Obstacle border
-  for (let x = 0; x < width; x++) {
-    tiles[`${x},0`]           = { terrain: 'obstacle' };
-    tiles[`${x},${height-1}`] = { terrain: 'obstacle' };
-  }
-  for (let y = 0; y < height; y++) {
-    tiles[`0,${y}`]          = { terrain: 'obstacle' };
-    tiles[`${width-1},${y}`] = { terrain: 'obstacle' };
-  }
-
-  const cx = Math.floor(width / 2);
-  const cy = Math.floor(height / 2);
-
-  // Central elevated plateau
-  for (let dy = -2; dy <= 2; dy++) {
-    for (let dx = -4; dx <= 4; dx++) {
-      const x = cx + dx, y = cy + dy;
-      if (tiles[`${x},${y}`]?.terrain === 'open') {
-        tiles[`${x},${y}`] = { terrain: 'elevated' };
-      }
-    }
-  }
-
-  // Ramps into plateau (south and north chokes)
-  const rampTiles = [
-    { x: cx-1, y: cy-3 }, { x: cx, y: cy-3 }, { x: cx+1, y: cy-3 },
-    { x: cx-1, y: cy+3 }, { x: cx, y: cy+3 }, { x: cx+1, y: cy+3 },
-    // Side ramps for wider map
-    { x: cx-5, y: cy-1 }, { x: cx-5, y: cy }, { x: cx-5, y: cy+1 },
-    { x: cx+5, y: cy-1 }, { x: cx+5, y: cy }, { x: cx+5, y: cy+1 },
-  ];
-  for (const r of rampTiles) {
-    if (tiles[`${r.x},${r.y}`]) tiles[`${r.x},${r.y}`] = { terrain: 'ramp' };
-  }
-
-  // Obstacle walls (chokepoints)
-  const walls = [
-    { x: 6, y: cy-1 }, { x: 6, y: cy }, { x: 6, y: cy+1 },
-    { x: width-7, y: cy-1 }, { x: width-7, y: cy }, { x: width-7, y: cy+1 },
-  ];
-  for (const w of walls) {
-    if (tiles[`${w.x},${w.y}`]?.terrain === 'open') {
-      tiles[`${w.x},${w.y}`] = { terrain: 'obstacle' };
-    }
-  }
-
-  // ── Player 1 base: bottom-left (base at ~(3,3)) ───────────────────────────
-  const p1minerals = [
-    { x:4, y:6 }, { x:5, y:6 }, { x:6, y:6 }, { x:7, y:6 },
-    { x:4, y:7 }, { x:5, y:7 }, { x:6, y:7 }, { x:7, y:7 },
-  ];
-  for (const m of p1minerals) tiles[`${m.x},${m.y}`] = { terrain: 'minerals', amount: 1500 };
-  tiles[`8,5`]  = { terrain: 'vespene', amount: 2250 };
-  tiles[`3,7`]  = { terrain: 'vespene', amount: 2250 };
-
-  // Natural expansion P1 (mid-left)
-  const p1nat = [
-    { x:3, y:cy-2 }, { x:4, y:cy-2 }, { x:5, y:cy-2 }, { x:6, y:cy-2 },
-  ];
-  for (const m of p1nat) tiles[`${m.x},${m.y}`] = { terrain: 'minerals', amount: 1500 };
-  tiles[`4,${cy-3}`] = { terrain: 'vespene', amount: 2250 };
-
-  // ── Player 2 base: top-right (base at ~(width-4, height-4)) ──────────────
-  const p2minerals = [
-    { x:width-5, y:height-7 }, { x:width-6, y:height-7 }, { x:width-7, y:height-7 }, { x:width-8, y:height-7 },
-    { x:width-5, y:height-8 }, { x:width-6, y:height-8 }, { x:width-7, y:height-8 }, { x:width-8, y:height-8 },
-  ];
-  for (const m of p2minerals) tiles[`${m.x},${m.y}`] = { terrain: 'minerals', amount: 1500 };
-  tiles[`${width-9},${height-6}`] = { terrain: 'vespene', amount: 2250 };
-  tiles[`${width-4},${height-8}`] = { terrain: 'vespene', amount: 2250 };
-
-  // Natural expansion P2 (mid-right)
-  const p2nat = [
-    { x:width-4, y:cy+2 }, { x:width-5, y:cy+2 }, { x:width-6, y:cy+2 }, { x:width-7, y:cy+2 },
-  ];
-  for (const m of p2nat) tiles[`${m.x},${m.y}`] = { terrain: 'minerals', amount: 1500 };
-  tiles[`${width-5},${cy+3}`] = { terrain: 'vespene', amount: 2250 };
-
-  return tiles;
+export function generateMap() {
+  return buildStarcraftMap({ mineral: 1500, rich: 2500, vespene: 2250 });
 }
 
 /**

@@ -56,6 +56,7 @@ const CROUCH_VISION_MULT      = 0.7;  // crouched sight radius, relative to CS_V
 // swap weapons in the same turn but not infinitely. Move speed depends on what's drawn: knife
 // fastest, pistol baseline (matches the old flat MOVE_RANGE), a primary slowest.
 const SWITCH_WEAPON_COST = 1;  // flat moveAllowance tax for a 'switch-weapon' action
+const ROTATE_COST = 1;  // flat moveAllowance tax for a 'rotate' action (turn in place, no move)
 const SLOT_MOVE_MULT = { melee: 1.25, pistol: 1.0, primary: 0.7 };
 // Which loadout slot a WEAPONS category belongs in — every non-melee, non-pistol category
 // (smg/shotgun/rifle/heavy/sniper) shares the single 'primary' slot.
@@ -184,6 +185,11 @@ function rot2(lx, ly, rad) {
   return { dx: lx * c - ly * s, dy: lx * s + ly * c };
 }
 
+// How much thicker the body's own outline gets when armored, and how much that widens the
+// unit's clickable hit-area (see SchematicLayer.vue's `u.hitRFrac`) so the thicker edge stays selectable.
+const ARMOR_STROKE_WIDTH = 5;
+const ARMOR_HIT_RFRAC    = 1.08;
+
 function spriteLayers(u) {
   const rad  = u.facing ?? 0;
   const deg  = rad * 180 / Math.PI;
@@ -197,13 +203,23 @@ function spriteLayers(u) {
   const gunPos    = rot2(0.15, 0, rad);
   const backHand  = rot2(0.30, 0.22, rad);
   const frontHand = rot2(0.55, -0.22, rad);
-  return [
-    { shape: 'circle', rFrac: 1.0, fill: teamColor, stroke: '#20242c', strokeWidth: 2, dx: 0, dy: 0, rot: 0 },
+  const layers = [
+    // Armored units get a thicker body outline (like a plate-carrier silhouette) instead of
+    // a separate badge layer — see ARMOR_STROKE_WIDTH/ARMOR_HIT_RFRAC above.
+    { shape: 'circle', rFrac: 1.0, fill: teamColor, stroke: '#20242c',
+      strokeWidth: u.armor ? ARMOR_STROKE_WIDTH : 2, dx: 0, dy: 0, rot: 0 },
+  ];
+  if (u.helmet) {
+    const p = rot2(0.4, 0, rad);
+    layers.push({ shape: 'circle', rFrac: 0.4, fill: '#4b5563', stroke: '#20242c', strokeWidth: 1.5, dx: p.dx, dy: p.dy, rot: 0 });
+  }
+  layers.push(
     { shape: 'rect', wFrac: gun.len, hFrac: gun.wid, anchorX: 0, anchorY: 0.5, rxFrac: 0.15,
       fill: '#2a2a2a', stroke: '#0e0f12', strokeWidth: 1, dx: gunPos.dx, dy: gunPos.dy, rot: deg },
     { shape: 'circle', rFrac: 0.24, fill: SKIN_COLOR, stroke: '#20242c', strokeWidth: 1, dx: backHand.dx, dy: backHand.dy, rot: 0 },
     { shape: 'circle', rFrac: 0.26, fill: SKIN_COLOR, stroke: '#20242c', strokeWidth: 1, dx: frontHand.dx, dy: frontHand.dy, rot: 0 },
-  ];
+  );
+  return layers;
 }
 
 // ── Legal actions ─────────────────────────────────────────────────────────────
@@ -291,6 +307,14 @@ function actionPhaseActions(state, teamId) {
       actions.push({ type: 'switch-weapon', unitId: u.id, slot, name: `Switch to ${w.name}`, icon: WEAPON_ICON(u.weapons[slot]) });
     }
 
+    // Rotate in place: face any point without moving — not gated by hasActed (like
+    // switch-weapon), only a small moveAllowance tax (ROTATE_COST) — see applyActions
+    // and isRotateLegal. One untargeted template per unit; the human UI aims freely at
+    // any point via the aiming overlay (field.ui.aimedActionTypes) and the AI's search
+    // lattice (getSearchActions) expands it into concrete directions.
+    if (u.perTurn.moveAllowance >= ROTATE_COST)
+      actions.push({ type: 'rotate', unitId: u.id });
+
     if (!u.perTurn.hasActed) {
       // Shoot (not available while blinded or out of ammo in the magazine — melee has no
       // ammo, so it's always "loaded"). Only the currently drawn weapon can fire. Line of
@@ -298,17 +322,21 @@ function actionPhaseActions(state, teamId) {
       const activeWpnId = u.weapons[u.active];
       const wpn = WEAPONS[activeWpnId];
       const loaded = u.active === 'melee' || u.ammo[u.active].mag > 0;
+      // No max range — a bullet travels until it hits a wall/smoke or a unit (see
+      // applyActions), so LOS is the only gate here; accuracy still falls off with
+      // distance and clamps at 0, a soft rather than hard cutoff. No `range` field on
+      // the action either (see DoomGame.js/SchematicLayer.vue) — the aim preview
+      // shouldn't draw a max-range circle that no longer exists.
       if (!u.blinded && loaded) {
         const enemies = state.units.filter(e => e.alive && e.ownerId !== teamId);
         for (const e of enemies) {
           const d = euclidean(u.position, e.position);
-          if (d <= wpn.range &&
-              segmentClearOf(num(u.position.x), num(u.position.y), num(e.position.x), num(e.position.y), losBlockers))
+          if (segmentClearOf(num(u.position.x), num(u.position.y), num(e.position.x), num(e.position.y), losBlockers))
             // damage/accuracy mirror applyActions' shoot formula (see calcDamage there) —
             // an estimate for the design UI's aiming overlay preview, not itself authoritative.
             actions.push({
-              type: 'shoot', unitId: u.id, targetId: e.id, range: wpn.range,
-              damage: wpn.damage, accuracy: 0.90 - 0.40 * (d / wpn.range),
+              type: 'shoot', unitId: u.id, targetId: e.id,
+              damage: wpn.damage, accuracy: Math.max(0, 0.90 - 0.40 * (d / wpn.range)),
             });
         }
       }
@@ -392,11 +420,26 @@ function isThrowLegal(state, teamId, action) {
   return true;
 }
 
-// Dispatcher for the engine's continuous-action fallback: 'move' and 'throw' carry
+// Geometric fallback for a human continuous rotate (turn in place, no move): aim at
+// any exact point and the unit faces it — no LOS/wall requirement, matching FFTA's
+// untargeted facing choice. actionPhaseActions offers one template per unit with
+// enough budget; a player may aim at any point.
+function isRotateLegal(state, teamId, action) {
+  if (state.currentPhase !== 'action') return false; // no free-form rotate during the buy phase
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.moveAllowance < ROTATE_COST) return false;
+  const px = num(unit.position.x), py = num(unit.position.y);
+  const x = num(action.target.x), y = num(action.target.y);
+  if (Math.hypot(px - x, py - y) < MOVE_EPS) return false; // no direction to face
+  return true;
+}
+
+// Dispatcher for the engine's continuous-action fallback: 'move'/'throw'/'rotate' carry
 // continuous points a player clicked, so they can't be pre-enumerated for exact match.
 function isActionLegal(state, teamId, action) {
-  if (action.type === 'move')  return isMoveLegal(state, teamId, action);
-  if (action.type === 'throw') return isThrowLegal(state, teamId, action);
+  if (action.type === 'move')   return isMoveLegal(state, teamId, action);
+  if (action.type === 'throw')  return isThrowLegal(state, teamId, action);
+  if (action.type === 'rotate') return isRotateLegal(state, teamId, action);
   return false;
 }
 
@@ -438,6 +481,13 @@ function getSearchActions(state, teamId, res) {
     type: 'throw', point: 'target',
     origin: a => { const o = originOf(a); return o && { ...o, range: GRENADE_THROW_RANGE }; },
     isLegal: (a, x, y) => isThrowLegal(state, teamId, { unitId: a.unitId, grenade: a.grenade, target: { x, y } }),
+  }, res);
+  // Rotate has no meaningful "range" (only the bearing matters) — a small fixed radius
+  // just gives the lattice generator a nonzero ring to place candidate directions on.
+  out = latticeActions(out, {
+    type: 'rotate', point: 'target',
+    origin: a => { const o = originOf(a); return o && { ...o, range: 1 }; },
+    isLegal: (a, x, y) => isRotateLegal(state, teamId, { unitId: a.unitId, target: { x, y } }),
   }, res);
   return out;
 }
@@ -597,7 +647,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       const defender = units.find(u => u.id === action.targetId);
       const wpn      = WEAPONS[attacker.weapons[attacker.active]];
       const d        = euclidean(attacker.position, defender.position);
-      const accuracy = 0.90 - 0.40 * (d / wpn.range);
+      const accuracy = Math.max(0, 0.90 - 0.40 * (d / wpn.range));
 
       units = units.map(u => u.id === action.unitId
         ? { ...u,
@@ -740,6 +790,17 @@ function applyActions(state, playerActions, rng = Math.random) {
         ? { ...u, active: action.slot, type: WEAPONS[u.weapons[action.slot]].category,
             perTurn: { ...u.perTurn, moveAllowance: Math.max(0, u.perTurn.moveAllowance - SWITCH_WEAPON_COST) } }
         : u);
+      return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
+    }
+
+    if (action.type === 'rotate') {
+      const target = parsePos(action.target);
+      units = units.map(u => {
+        if (u.id !== action.unitId) return u;
+        const dx = num(target.x) - num(u.position.x), dy = num(target.y) - num(u.position.y);
+        return { ...u, facing: Math.atan2(dy, dx),
+                 perTurn: { ...u.perTurn, moveAllowance: Math.max(0, u.perTurn.moveAllowance - ROTATE_COST) } };
+      });
       return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
     }
 
@@ -975,6 +1036,7 @@ function toGrid(state) {
       job:           u.weapons[u.active],
       portraitPath:  `/images/cs/units/${u.faction}`,
       spriteLayers:  spriteLayers(u),
+      hitRFrac:      u.armor ? ARMOR_HIT_RFRAC : 1,
       moveRange:     u.perTurn?.moveAllowance,
       equipment:     equipmentList(u),
       statusEffects: [...(u.blinded ? ['blinded'] : []), ...(u.crouched ? ['crouched'] : [])],
@@ -1011,8 +1073,8 @@ function toGrid(state) {
     // (see the design UI's aiming overlay) instead of listing one button per legal
     // move point/target/tile — these carry continuous aim points or resolve to a
     // target by click direction, so they don't fit a flat action list.
-    ui: { hideGrid: true, visionRange: CS_VISION.range, fovDegrees: CS_VISION.fovDegrees,
-          aimedActionTypes: ['move', 'throw', 'shoot'] },
+    ui: { hideGridLines: true, visionRange: CS_VISION.range, fovDegrees: CS_VISION.fovDegrees,
+          aimedActionTypes: ['move', 'throw', 'shoot', 'rotate'] },
     los,
   };
 }

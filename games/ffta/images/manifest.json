@@ -7,9 +7,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "archer": {
@@ -19,14 +21,14 @@
       "portrait_3.png",
       "portrait_4.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png",
-      "sprite_3.gif",
-      "sprite_4.png"
-    ],
     "art": [
       "art.jpg"
+    ],
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "paladin": {
@@ -37,9 +39,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "ninja": {
@@ -50,9 +54,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "dragoon": {
@@ -63,9 +69,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "elementalist": {
@@ -76,9 +84,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "summoner": {
@@ -89,9 +99,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "illusionist": {
@@ -101,14 +113,14 @@
       "portrait_3.png",
       "portrait_4.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png",
-      "sprite_3.gif",
-      "sprite_4.png"
-    ],
     "art": [
       "art.jpg"
+    ],
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "assassin": {
@@ -119,9 +131,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "warrior": {
@@ -132,9 +146,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "templar": {
@@ -145,9 +161,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "alchemist": {
@@ -158,9 +176,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "fencer": {
@@ -171,9 +191,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "sniper": {
@@ -184,9 +206,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "whiteMage": {
@@ -198,16 +222,14 @@
       "portrait_5.png",
       "portrait_6.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png",
-      "sprite_3.gif",
-      "sprite_4.png",
-      "sprite_5.gif",
-      "sprite_6.png"
-    ],
     "art": [
       "art.jpg"
+    ],
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "blackMage": {
@@ -218,15 +240,14 @@
       "portrait_4.png",
       "portrait_5.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.gif",
-      "sprite_3.png",
-      "sprite_4.gif",
-      "sprite_5.png"
-    ],
     "art": [
       "art.jpg"
+    ],
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "thief": {
@@ -236,14 +257,14 @@
       "portrait_3.png",
       "portrait_4.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png",
-      "sprite_3.gif",
-      "sprite_4.png"
-    ],
     "art": [
       "art.jpg"
+    ],
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "fighter": {
@@ -254,9 +275,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "redMage": {
@@ -267,9 +290,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "timeMage": {
@@ -279,14 +304,14 @@
       "portrait_3.png",
       "portrait_4.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png",
-      "sprite_3.gif",
-      "sprite_4.png"
-    ],
     "art": [
       "art.jpg"
+    ],
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "whiteMonk": {
@@ -297,9 +322,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "bishop": {
@@ -309,8 +336,11 @@
     "portraits": [
       "portrait.png"
     ],
-    "sprites": [
-      "sprite.gif"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "morpher": {
@@ -321,9 +351,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "blueMage": {
@@ -334,9 +366,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "hunter": {
@@ -347,9 +381,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "mogKnight": {
@@ -360,9 +396,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "juggler": {
@@ -373,9 +411,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "animist": {
@@ -386,9 +426,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   },
   "gunner": {
@@ -399,9 +441,11 @@
       "portrait_1.png",
       "portrait_2.png"
     ],
-    "sprites": [
-      "sprite_1.gif",
-      "sprite_2.png"
+    "directionalSprites": [
+      "sprite_N.png",
+      "sprite_E.png",
+      "sprite_S.png",
+      "sprite_W.png"
     ]
   }
 }

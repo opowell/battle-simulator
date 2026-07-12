@@ -16,6 +16,7 @@ export function formatAction(a) {
   if (a.type === 'skip-unit')  return `${a.unitId}: Skip (no action)`;
   if (a.type === 'play-card')  return `Play ${a.payload?.card} (hand[${a.payload?.handIndex}])`;
   if (a.type === 'ability')    return `${a.unitId}: ${a.abilityName} → ${a.targetId}`;
+  if (a.type === 'rotate')     return `${a.unitId}: Rotate${a.target ? ' → ' + pos(a.target) : ''}`;
   if (a.type === 'end-turn')   return a.direction ? `${a.unitId}: Face ${a.direction}, end turn` : 'End turn';
   return JSON.stringify(a);
 }

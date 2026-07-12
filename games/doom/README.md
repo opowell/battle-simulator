@@ -53,7 +53,6 @@ Ammo caps: bullets 200, shells 50, rockets 10, cells 200. Weapons auto-upgrade o
 |---|---|---|
 | `move` | Both | Move to `{x, y}` within movement range; LOS not required |
 | `shoot` | Both | Shoot `targetId`; requires LOS within weapon range |
-| `skip-unit` | Both | Pass this unit |
 | `end-turn` | Both | End player's turn |
 
 ## Special mechanics

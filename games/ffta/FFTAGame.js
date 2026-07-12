@@ -553,6 +553,15 @@ const DIRECTIONS = {
   W: { dx: -1, dy: 0,  angle: Math.PI },
 };
 
+// Reverse of DIRECTIONS[x].angle — which sprite variant (sprite_N/E/S/W.png)
+// to show for a unit currently facing this angle.
+function facingLetter(angle) {
+  for (const [letter, { angle: a }] of Object.entries(DIRECTIONS)) {
+    if (Math.abs(a - (angle ?? 0)) < 1e-6) return letter;
+  }
+  return 'S';
+}
+
 // Units only ever face strictly N/S/E/W. When facing is inferred from a
 // movement or aim vector (which can be diagonal), snap it to the dominant axis
 // so we land on one of the four DIRECTIONS angles — never a diagonal heading.
@@ -768,9 +777,28 @@ function createInitialState(players, config = {}) {
   const scenId = config.scenario ?? 'standard';
   const scen = SCENARIOS[scenId] ?? SCENARIOS.standard;
 
+  // Face each unit toward the middle of the battlefield on spawn rather than a
+  // fixed per-side direction, so deployments read as "squaring up" instead of
+  // everyone facing sideways along their own back row. Of the four cardinals we
+  // take the one that points most toward center *and* whose front tile is on the
+  // board and passable, so a unit never spawns staring into an outer wall. This
+  // is enforced rather than assumed: the board editor can drop units anywhere,
+  // not just the symmetric spots the hand-placed scenarios happen to use.
+  const centerX = (board.width - 1) / 2;
+  const centerY = (board.height - 1) / 2;
+  const faceCenter = pos => {
+    const dist2 = ({ dx, dy }) => (pos.x + dx - centerX) ** 2 + (pos.y + dy - centerY) ** 2;
+    const open  = ({ dx, dy }) => getTile(board, pos.x + dx, pos.y + dy).passable;
+    // getTile treats off-board coords as impassable, so `open` rejects the outer
+    // wall and interior rock alike. Prefer open directions; break ties (and the
+    // fully-boxed-in case) by whichever heading sits closest to center.
+    return Object.values(DIRECTIONS)
+      .sort((a, b) => (open(b) - open(a)) || (dist2(a) - dist2(b)))[0].angle;
+  };
+
   const units = [
-    ...scen.p1.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p1.id, pos, 0)),
-    ...scen.p2.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p2.id, pos, Math.PI)),
+    ...scen.p1.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p1.id, pos, faceCenter(pos))),
+    ...scen.p2.map(({ job, pos }) => createUnit(`u${idCtr++}`, job, p2.id, pos, faceCenter(pos))),
   ];
 
   const tickedUnits = tickToNextActor(units);
@@ -902,7 +930,9 @@ export const FFTAGame = {
   // "-N", glow healed units green with "+N" — see apps/design UnitFx / App.vue.
   // strictActiveUnit: selecting a different unit does not make it "active" — the
   // player must click the game-designated active unit to see its actions.
-  ui: { moveAnimation: 'hop', combatFx: true, isometric: true, strictActiveUnit: true },
+  // showFacing: false — the isometric renderer's facing arrow is redundant now that
+  // each job has separate N/E/S/W sprite art (see toGrid's imagePath), same as XComGame.
+  ui: { moveAnimation: 'hop', combatFx: true, isometric: true, strictActiveUnit: true, showFacing: false },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
   ],
@@ -969,7 +999,7 @@ export const FFTAGame = {
           hp: u?.hp, maxHp: u?.maxHp,
           unitId:        u?.id,
           unitName:      u ? JOB_LABELS[u.job] ?? u.job : null,
-          imagePath:     u ? `/images/ffta/${u.job}/sprite` : null,
+          imagePath:     u ? `/images/ffta/${u.job}/sprite_${facingLetter(u.facing)}` : null,
           portraitPath:  u ? `/images/ffta/${u.job}/portrait` : null,
           mainImagePath: u ? `/images/ffta/${u.job}/art` : null,
           description:   u ? (JOB_DEFS[u.job]?.description ?? null) : null,

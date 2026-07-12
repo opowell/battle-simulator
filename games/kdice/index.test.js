@@ -14,9 +14,20 @@ function players(n = 2) {
 
 // ── generateMap ───────────────────────────────────────────────────────────────
 
-test('kdice: generateMap produces at least numPlayers*8 territories', () => {
+test('kdice: generateMap produces a reasonable number of multi-hex territories', () => {
+  // Territories smaller than the minimum get folded into a neighbor (see
+  // games/mapTypes/hexagon.js clusterIntoTerritories' minSize merge), so the
+  // final count can land a bit under the numPlayers*8 seed target — just
+  // check it's in the right ballpark, not an exact floor.
   const { territoryIds } = generateMap(2, Math.random);
-  assert.ok(territoryIds.length >= 16);
+  assert.ok(territoryIds.length >= 10);
+});
+
+test('kdice: generateMap territories all clear the minimum hex-count floor', () => {
+  const { hexIdsByTerritory } = generateMap(2, Math.random);
+  for (const hexIds of Object.values(hexIdsByTerritory)) {
+    assert.ok(hexIds.length >= 6, `territory has only ${hexIds.length} hexes`);
+  }
 });
 
 test('kdice: generateMap adjacency is symmetric', () => {

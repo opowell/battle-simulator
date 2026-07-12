@@ -24,7 +24,7 @@
 // inherited unchanged from the generic agent.
 // ---------------------------------------------------------------------------
 
-import { ObscuroAgent as GenericObscuroAgent } from '../../agents/ObscuroAgent.js';
+import { ObscuroAgent as GenericObscuroAgent, compactAction } from '../../agents/ObscuroAgent.js';
 import { makeHooks, runObscuroSearch } from '../../agents/obscuro/search.js';
 import { isAttackedBy } from './board.js';
 import { evaluate } from './ChessAgent.js';
@@ -107,10 +107,14 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
   }
 
   // Chess's batched Stockfish node heuristic, its depth/width scaled by the dial.
+  // Leaf strength is the dominant lever on chess play: a shallow leaf makes the
+  // whole subgame flat, so purification picks near-randomly however long it runs.
+  // Depth is therefore ramped so mid-dial already reaches genuinely strong leaves
+  // (power 50 → depth 6, width 10) rather than the old flat depth-5.
   _leafEval(observation) {
     const t = difficultyToNumber(observation.gameSpecific?.difficulty) / 100;
-    const sfDepth = Math.max(1, Math.round(1 + t * 7)); // 1..8
-    const cols = Math.round(4 + t * 8);                 // 4..12
+    const sfDepth = Math.max(1, Math.round(2 + t * 8)); // 2..10
+    const cols = Math.round(5 + t * 9);                 // 5..14
     return makeChessLeafEval(sfDepth, cols);
   }
 
@@ -131,9 +135,51 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
         ? { movetime: Math.min(Math.max(timeMs, 1), 600000), skill: 20 }
         : sfOptsForDifficulty(gs.difficulty);
       const sf = await stockfishBestAction(state, legalActions, sfOpts);
-      if (sf) return this._matchLegal(sf, legalActions) ?? sf;
+      if (sf) {
+        await this._captureStockfishAnalysis(state, legalActions, sf, sfOpts, gs);
+        return this._matchLegal(sf, legalActions) ?? sf;
+      }
     }
     return super.chooseAction(state, legalActions);
+  }
+
+  // Perfect-information play routes straight to Stockfish, so its "analysis" is
+  // the engine's own MultiPV ranking. The revealing detail for a skill-limited
+  // blunder (e.g. hanging a piece at a mid power level) is that the move actually
+  // chosen is NOT the top line — Skill Level intentionally makes the engine pick a
+  // weaker one. We therefore rank every candidate at full strength and record where
+  // the chosen move landed in that ranking (`chosenRank`).
+  async _captureStockfishAnalysis(state, legalActions, chosen, sfOpts, gs) {
+    try {
+      const us = state.activePlayers[0];
+      const fen = toFEN(state.board, state.gameSpecific, us === 'white' ? 'w' : 'b', state.turnNumber ?? 1);
+      const pv = await multiPV(fen, { multipv: 8, depth: 12 });
+      const chosenKey = this._key(chosen);
+      let cands = [];
+      if (pv && pv.length) {
+        cands = pv.map(({ move, cp }) => {
+          const a = uciToAction(move, legalActions);
+          return a ? { key: this._key(a), move: compactAction(a), cp, chosen: this._key(a) === chosenKey } : null;
+        }).filter(Boolean);
+      }
+      // The skill-limited pick may fall outside the top MultiPV lines — surface it
+      // explicitly so the panel always shows what was actually played.
+      if (!cands.some(c => c.chosen)) {
+        cands.push({ key: chosenKey, move: compactAction(chosen), cp: null, chosen: true, outsideTop: true });
+      }
+      const rank = cands.findIndex(c => c.chosen);
+      this.lastAnalysis = {
+        ts: Date.now(),
+        player: us,
+        engine: 'stockfish',
+        mode: `Stockfish · skill ${sfOpts.skill ?? 20}`,
+        difficulty: gs.difficulty ?? null,
+        movetimeMs: sfOpts.movetime ?? null,
+        chosenRank: rank >= 0 ? rank + 1 : null,
+        candidates: cands,
+        totalCandidates: cands.length,
+      };
+    } catch { /* analysis is best-effort; never break move selection */ }
   }
 }
 

@@ -53,6 +53,11 @@ export const GRENADE_THROW_RANGE = 8;
 export const FRAG_RADIUS = 2;
 export const FRAG_DAMAGE = 55;
 
+// Melee "punch": a tiny fixed blast placed `weapon.range` in front of the puncher
+// (their facing, or the aimed bearing) — never damages the puncher itself, since the
+// blast center is offset ahead of their own position (see SurvivGame.js's 'punch').
+export const PUNCH_RADIUS = 0.8;
+
 // Barrels explode when broken (see SurvivGame.js's 'break' action) — weaker than a
 // frag grenade but free damage against anyone (either team) camping next to one.
 export const BARREL_BLAST_RADIUS = 2;

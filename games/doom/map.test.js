@@ -10,9 +10,15 @@ const floorCells = new Set();
 for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (MAP_TILES[k(x, y)] === 'floor') floorCells.add(k(x, y));
 
 test('doom map: E1M1 has >100 terrain objects (the high-quality bar)', () => {
-  assert.ok(RENDER_SHAPES.length > 100, `expected >100 shapes, got ${RENDER_SHAPES.length}`);
+  // FLOOR_SHAPES + DECOR_SHAPES (the authored/cell-classified geometry) is the real
+  // richness bar. RENDER_SHAPES is intentionally smaller: it groups contiguous same-kind
+  // decor into one polygon per region (tilesToPolygons) instead of drawing each maximal
+  // rect separately, so touching props read as one panel with no seam between them.
+  assert.ok(FLOOR_SHAPES.length + DECOR_SHAPES.length > 100,
+    `expected >100 authored objects, got ${FLOOR_SHAPES.length + DECOR_SHAPES.length}`);
   assert.ok(FLOOR_SHAPES.length >= 20, 'a detailed multi-room floorplan');
   assert.ok(DECOR_SHAPES.length >= 40, 'plenty of props');
+  assert.ok(RENDER_SHAPES.length > 0, 'renders something');
 });
 
 test('doom map: every DECOR prop sits on a wall cell (never overlaps the floor union)', () => {

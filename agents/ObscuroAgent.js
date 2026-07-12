@@ -31,14 +31,32 @@ import { makeHooks, runObscuroSearch } from './obscuro/search.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const ri = (a, b, t) => Math.round(lerp(a, b, t));
-// Convex ramp for the expensive knobs: low/mid difficulty stays cheap (fast for
-// the test suite and weak-but-quick play) while only the top of the dial reaches
-// the paper-scale budget. t^2.2 keeps the mid-range near the old linear values
-// and back-loads the whole bump into the high end.
-const rc = (a, b, t) => Math.round(a + (b - a) * Math.pow(t, 2.2));
+// Convex ramp for the expensive knobs: the low end of the dial stays cheap (fast
+// for the test suite and weak-but-quick play) while the top reaches the paper-
+// scale budget. The exponent is a gentle 1.5 — enough curvature to keep 0–20
+// genuinely light (0.1^1.5 ≈ 0.03) but not so much that the MIDDLE of the dial
+// collapses to near-nothing. At 1.5, power 50 is ~0.35 of full budget (a real
+// medium opponent) instead of ~0.22 under the old 2.2, which made "50" play like
+// a beginner: too few belief worlds and too short a search to grow a usable tree.
+const rc = (a, b, t) => Math.round(a + (b - a) * Math.pow(t, 1.5));
 
 function defaultActionKey(a) {
   return JSON.stringify([a.type ?? null, a.unitId ?? null, a.from ?? null, a.to ?? null, a.targetId ?? null, a.side ?? null, a.payload ?? null]);
+}
+
+// A small, serialisable projection of an action for the AI-analysis panel — just
+// enough for the UI to render "from → to" and flag captures, without shipping the
+// whole (possibly large) action object over the wire.
+export function compactAction(a) {
+  if (!a || typeof a !== 'object') return { type: String(a) };
+  const c = { type: a.type ?? null };
+  if (a.unitId != null) c.unitId = a.unitId;
+  if (a.from != null) c.from = a.from;
+  if (a.to != null) c.to = a.to;
+  if (a.targetId != null) c.targetId = a.targetId;
+  if (a.isCapture) c.isCapture = true;
+  if (a.side != null) c.side = a.side;
+  return c;
 }
 
 export class ObscuroAgent {
@@ -150,7 +168,16 @@ export class ObscuroAgent {
     const cfg = this._config(observation);
 
     // Difficulty 0 (power mode) or a 0 ms time limit means random play.
-    if (cfg.difficulty === 0 || cfg.random) return legalActions[Math.floor(rng() * legalActions.length)];
+    if (cfg.difficulty === 0 || cfg.random) {
+      const pick = legalActions[Math.floor(rng() * legalActions.length)];
+      this.lastAnalysis = {
+        ts: Date.now(), player: me, engine: 'obscuro', mode: 'random',
+        difficulty: cfg.difficulty ?? null, worlds: 0, value: null,
+        candidates: [{ key: this._key(pick), move: compactAction(pick), prob: 1, value: null, chosen: true }],
+        totalCandidates: legalActions.length,
+      };
+      return pick;
+    }
 
     // Sample the information set. With no belief sampler (or nothing hidden) the
     // observation itself is the single world (perfect information).
@@ -195,8 +222,42 @@ export class ObscuroAgent {
     let action = this._matchLegal(res.action, legalActions);
     if (!action && res.action && game.isActionLegal?.(observation, me, res.action)) action = res.action;
     action = action ?? legalActions[0];
+    this.lastAnalysis = this._buildAnalysis(me, cfg, worlds.length, res, action);
     if (game.onActionCommitted) game.onActionCommitted(observation, me, action);
     return action;
+  }
+
+  // Assemble the human-inspectable record of this decision (candidate moves, the
+  // equilibrium mixed strategy over them, per-move values) for the AI-analysis
+  // panel. Called after the search resolves; read back off `this.lastAnalysis`.
+  _buildAnalysis(me, cfg, nWorlds, res, chosen) {
+    const rows = res.rows ?? [];
+    const dist = res.rawDist ?? res.dist ?? [];
+    const uCond = res.uCond ?? null;
+    const chosenKey = this._key(chosen);
+    const cands = rows.map((a, k) => ({
+      key: this._key(a),
+      move: compactAction(a),
+      prob: dist[k] ?? 0,
+      value: uCond ? uCond[k] : null,
+      chosen: this._key(a) === chosenKey,
+    }));
+    // Rank by the equilibrium probability mass, then by counterfactual value.
+    cands.sort((x, y) => (y.prob - x.prob) || ((y.value ?? -Infinity) - (x.value ?? -Infinity)));
+    const round3 = v => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);
+    return {
+      ts: Date.now(),
+      player: me,
+      engine: 'obscuro',
+      mode: nWorlds > 1 ? 'equilibrium (CFR)' : 'minimax',
+      difficulty: cfg.difficulty ?? null,
+      timeBudgetMs: cfg.timeBudgetMs ?? null,
+      worlds: nWorlds,
+      value: round3(res.value),
+      pmax: typeof res.pmax === 'number' ? round3(res.pmax) : null,
+      candidates: cands.slice(0, 12),
+      totalCandidates: rows.length,
+    };
   }
 
   _matchLegal(action, legalActions) {

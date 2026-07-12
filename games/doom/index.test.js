@@ -91,11 +91,21 @@ test('doom: getSearchActions yields continuous (non-integer) move points that ar
   // At least one destination is a genuinely non-integer (continuous) point.
   assert.ok(moves.some(a => !Number.isInteger(a.to.x) || !Number.isInteger(a.to.y)), 'has a continuous point');
   // Every generated move must pass the engine's geometric legality check, and every
-  // non-move action is preserved from getLegalActions.
+  // action that isn't itself lattice-expanded (move/rotate) is preserved from
+  // getLegalActions untouched.
   for (const a of moves) assert.ok(DoomGame.isActionLegal(state, 'p1', a), `legal: ${JSON.stringify(a.to)}`);
   const legal = DoomGame.getLegalActions(state, 'p1');
-  const nonMove = legal.filter(a => a.type !== 'move').length;
-  assert.equal(set.filter(a => a.type !== 'move').length, nonMove, 'non-move actions preserved');
+  const nonMove = legal.filter(a => a.type !== 'move' && a.type !== 'rotate').length;
+  assert.equal(set.filter(a => a.type !== 'move' && a.type !== 'rotate').length, nonMove, 'non-move/rotate actions preserved');
+});
+
+test('doom: getSearchActions replaces rotate templates with continuous aim-direction lattices', () => {
+  const state = DoomGame.createInitialState(players());
+  const set = DoomGame.getSearchActions(state, 'p1', { rings: 2, spokes: 8 });
+  const rotates = set.filter(a => a.type === 'rotate');
+  assert.ok(rotates.length > 0, 'has rotate candidates');
+  assert.ok(rotates.some(a => !Number.isInteger(a.target.x) || !Number.isInteger(a.target.y)), 'has a continuous aim point');
+  for (const a of rotates) assert.ok(DoomGame.isActionLegal(state, 'p1', a), `legal: ${JSON.stringify(a.target)}`);
 });
 
 test('doom: getSearchActions is deterministic (search re-derives an infoset action set per world)', () => {

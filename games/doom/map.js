@@ -1,4 +1,4 @@
-import { forEachCell, pointInShape, segmentInUnion, tilesToShapes } from '../terrainShapes.js';
+import { forEachCell, pointInShape, segmentInUnion, tilesToShapes, tilesToPolygons } from '../terrainShapes.js';
 import { num, tileNum } from '../coord.js';
 
 export const MAP_WIDTH  = 36;
@@ -11,19 +11,20 @@ function k(x, y) { return `${x},${y}`; }
 // of shapes (rects + ovals — see games/terrainShapes.js) carved out of solid rock,
 // exactly like CsGame/SurvivGame. Two lists drive everything:
 //
-//   FLOOR — the walkable regions. Their UNION is the floor; walls are the complement.
-//           This union is what the engine's LOS (segmentInUnion) and the design-UI fog
-//           veil (openShapes) both test against, so server and client visibility stay
-//           in lockstep. `kind` is a pure render tint (floor / metal / walkway); every
-//           FLOOR shape is walkable and see-through regardless.
+//   FLOOR — the walkable regions. Their UNION (plus NUKAGE — see below) is what's
+//           see-through; walls are the complement. `kind` is a pure render tint
+//           (floor / metal / walkway); every FLOOR shape is walkable and see-through.
 //
 //   DECOR — solid props laid on the rock backdrop: nukage (toxic slime) pools, storage
 //           crates, computer banks, support columns, fuel barrels. They are authored to
 //           sit in cells NO floor shape covers, so they are automatically part of the
-//           wall complement — impassable AND sight-blocking on both the server and the
-//           client, with zero special-casing (a decor cell simply isn't in the floor
-//           union, so segmentInUnion / isWalkable already treat it as wall). map.test.js
-//           asserts this non-overlap invariant, plus that FLOOR+DECOR clears 100 objects.
+//           wall complement — impassable on both the server and the client, with zero
+//           special-casing (a decor cell simply isn't in the floor union, so isWalkable
+//           already treats it as wall). map.test.js asserts this non-overlap invariant,
+//           plus that FLOOR+DECOR clears 100 objects. Sight-blocking follows the same
+//           rule EXCEPT for nukage: real slime doesn't block your view, so the vision
+//           union (LOS_OPEN_SHAPES / hasLOS) is FLOOR + NUKAGE, one union wider than the
+//           walkable one — a nukage cell is solid ground for movement but open for sight.
 //
 // Layout (y increases downward):
 //   ┌ NW: marine start (techbase) ─ top corridor ─ N hall ─ NE first-encounter room ┐
@@ -39,7 +40,7 @@ const STYLES = {
   metal:    { fill: '#6f7b8a',                                     name: 'Metal floor',  description: 'Raised steel platform.' },
   walkway:  { fill: '#8f8560',                                     name: 'Walkway',      description: 'Grated walkway.' },
   // DECOR (solid — impassable and blocks line of sight)
-  nukage:   { fill: '#7cae3a', stroke: '#9fce55', opacity: 0.92,   name: 'Nukage',       description: 'Toxic slime — impassable, blocks line of sight.' },
+  nukage:   { fill: '#7cae3a', stroke: '#9fce55', opacity: 0.92,   name: 'Nukage',       description: 'Toxic slime — impassable, but see-through.' },
   crate:    { fill: '#7a5a30', stroke: '#9a7440',     name: 'Crate',        description: 'Supply crate — hard cover, blocks line of sight.' },
   computer: { fill: '#26424c', stroke: '#3f8091',                  name: 'Computer bank',description: 'Wall terminals — impassable, blocks line of sight.' },
   column:   { fill: '#31363d', stroke: '#565c66',                  name: 'Support column',description: 'Structural column — impassable, blocks line of sight.' },
@@ -73,9 +74,12 @@ const FLOOR = [
   { shape: 'rect', x: 11, y: 16, w: 15, h: 1, kind: 'walkway' }, // S-ledge
   { shape: 'rect', x: 11, y: 10, w:  1, h: 6, kind: 'walkway' }, // W-ledge
   { shape: 'rect', x: 25, y: 10, w:  1, h: 6, kind: 'walkway' }, // E-ledge
-  // courtyard centre — green-armour platform in the moat, reached by one causeway
-  { shape: 'oval', x: 16, y: 11, w: 5, h: 4, kind: 'metal'   }, // armour platform
-  { shape: 'rect', x: 18, y: 15, w: 1, h: 1, kind: 'metal'   }, // causeway to S-ledge
+  // courtyard centre — green-armour platform in the moat, reached by one causeway.
+  // `top: true` draws these after the nukage pool (see RENDER_SHAPES below) so the
+  // platform visibly sits on top of the slime instead of the slime being carved
+  // around it.
+  { shape: 'oval', x: 16, y: 11, w: 5, h: 4, kind: 'metal', top: true }, // armour platform
+  { shape: 'rect', x: 18, y: 15, w: 1, h: 1, kind: 'metal', top: true }, // causeway to S-ledge
   // zig-zag nukage channel: courtyard → arena
   { shape: 'rect', x: 16, y: 17, w: 4, h: 2, kind: 'walkway' }, // channel head
   { shape: 'rect', x: 12, y: 18, w: 4, h: 2, kind: 'walkway' }, // channel west leg
@@ -112,10 +116,13 @@ const isFloorCell = (x, y) => MAP_TILES[k(x, y)] === 'floor';
 // the rooms' walls. Contiguous same-kind cells are then merged into panel rects.
 
 // Toxic-slime pools: the courtyard moat ringing the armour platform, plus pools lining
-// the zig-zag channel. Rects are drawn loosely — only their un-floored cells take slime,
-// so the platform/causeway/ledges punched through them simply stay floor.
+// the zig-zag channel. Each pool is authored as one clean shape and rendered as a solid
+// whole — the armour platform/causeway (FLOOR, `top: true`) are drawn afterwards so they
+// visibly sit on top of the slime rather than the slime being carved into a ring around
+// them (see RENDER_SHAPES). For movement/DECOR_KINDS purposes a pool still only "claims"
+// the un-floored cells inside it, so the platform/causeway/ledges stay walkable.
 const NUKAGE = [
-  { shape: 'rect', x: 12, y: 10, w: 13, h: 6 }, // courtyard moat (platform + causeway carve out)
+  { shape: 'rect', x: 12, y: 10, w: 13, h: 6 }, // courtyard moat
   { shape: 'oval', x: 10, y: 16, w: 3, h: 3 },  // channel pool, west
   { shape: 'oval', x: 23, y: 16, w: 3, h: 3 },  // channel pool, east
   { shape: 'rect', x: 16, y: 19, w: 4, h: 1 },  // channel pool, centre
@@ -155,19 +162,41 @@ function buildDecorKinds() {
 const DECOR_KINDS = buildDecorKinds();
 const decorType = (x, y) => DECOR_KINDS.get(k(x, y)) ?? null;
 
-// Merge contiguous same-kind decor cells into panel rects (games/terrainShapes.js).
-// nukage/barrel/column carry `round` in their style so they still read as pools/drums.
+// Merge contiguous same-kind decor cells into panel rects (games/terrainShapes.js) — used
+// for the floor-overlap invariant (map.test.js) and as the geometry DECOR_KINDS classifies
+// against; nukage/barrel/column carry `round` in their style so they still read as
+// pools/drums.
 export const DECOR_SHAPES = tilesToShapes(decorType, MAP_WIDTH, MAP_HEIGHT, {
   nukage: STYLES.nukage, crate: STYLES.crate, computer: STYLES.computer,
   barrel: STYLES.barrel, column: STYLES.column,
 });
 
+// Render-only decor shapes: same cells as DECOR_SHAPES, but grouped by connected region
+// into one polygon per region (tilesToPolygons) instead of decomposed into several
+// maximal rects, so touching same-kind props (e.g. two wall-terminal cells side by side)
+// read as one panel with no seam between them. Nukage is excluded here — it's rendered
+// straight from NUKAGE below instead of the (possibly ring-shaped) cell classification.
+const DECOR_RENDER_SHAPES = tilesToPolygons(decorType, MAP_WIDTH, MAP_HEIGHT, {
+  crate: STYLES.crate, computer: STYLES.computer, barrel: STYLES.barrel, column: STYLES.column,
+});
+
+// Nukage pools, rendered as the clean authored shapes rather than the cell-classified
+// (ring-shaped, wherever a platform/causeway pokes through) DECOR_SHAPES version.
+const NUKAGE_RENDER_SHAPES = NUKAGE.map(s => ({ ...s, ...STYLES.nukage, label: null }));
+
 // Bake render styles onto the floor shapes once, at module load.
 export const FLOOR_SHAPES = FLOOR.map(s => ({ ...s, ...STYLES[s.kind] }));
 // Geometry-only floor list for the LOS/veil samplers (they only need shape+box).
-export const LOS_OPEN_SHAPES = FLOOR.map(({ shape, x, y, w, h }) => ({ shape, x, y, w, h }));
-// Everything the design UI draws, floor first then props on top.
-export const RENDER_SHAPES = [...FLOOR_SHAPES, ...DECOR_SHAPES];
+export const LOS_OPEN_SHAPES = [...FLOOR, ...NUKAGE].map(({ shape, x, y, w, h }) => ({ shape, x, y, w, h }));
+// Everything the design UI draws: floor, then nukage pools, then wall-lining props, then
+// finally the `top: true` floor shapes (the armour platform/causeway) so they sit visibly
+// on top of the slime instead of being punched out of it.
+export const RENDER_SHAPES = [
+  ...FLOOR_SHAPES.filter(s => !s.top),
+  ...NUKAGE_RENDER_SHAPES,
+  ...DECOR_RENDER_SHAPES,
+  ...FLOOR_SHAPES.filter(s => s.top),
+];
 
 // Continuous (non-rasterized) walkability, tested directly against the authored floor
 // geometry — used for free-form (click-anywhere) movement, so precision is bounded only
@@ -184,12 +213,15 @@ export function isWalkable(x, y) {
   return MAP_TILES[k(tileNum(x), tileNum(y))] === 'floor';
 }
 
-// Exact continuous LOS: clear iff the straight sight line stays inside the floor (the
-// union of the authored FLOOR shapes). Props (crates/columns/nukage) block sight for free
-// because they occupy cells outside that union — the sight line exits the floor there and
-// segmentInUnion fails. Matches the design UI's exact vision veil (openShapes = FLOOR).
+// Exact continuous LOS: clear iff the straight sight line stays inside "open" ground —
+// the union of FLOOR plus the NUKAGE pools. Nukage is impassable (it isn't part of FLOOR,
+// so isWalkable still rejects it) but shouldn't block sight, so it's added to the vision
+// union without being added to the walkable one. Other props (crates/columns/computers)
+// block sight for free because they occupy cells outside this union — the sight line
+// exits it there and segmentInUnion fails. Matches the design UI's exact vision veil
+// (openShapes = LOS_OPEN_SHAPES = FLOOR + NUKAGE).
 export function hasLOS(x0, y0, x1, y1) {
-  return segmentInUnion(num(x0), num(y0), num(x1), num(y1), FLOOR);
+  return segmentInUnion(num(x0), num(y0), num(x1), num(y1), [...FLOOR, ...NUKAGE]);
 }
 
 // BFS movement — returns reachable floor tiles within range steps. This still builds the

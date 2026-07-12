@@ -903,18 +903,17 @@ export function renderState(state) {
 // ── createInitialState ────────────────────────────────────────────────────────
 
 export function createInitialState(players, config = {}) {
-  const width  = config.width  ?? 30;
-  const height = config.height ?? 20;
-
   const [p1, p2] = players;
   const race1 = config.race1 ?? p1.race ?? 'terran';
   const race2 = config.race2 ?? p2.race ?? 'zerg';
 
-  const tiles = generateMap(width, height);
-  const board = { width, height, tiles };
+  // "Aiur Crossing" is a fixed, hand-authored shape map (see games/mapTypes/starcraftMap.js),
+  // so its dimensions and the two main-base centres come from the map itself.
+  const { width, height, tiles, shapes, bases } = generateMap();
+  const board = { width, height, tiles, shapes, bases };
 
-  const pos1 = { x: 3, y: 3 };
-  const pos2 = { x: width - 4, y: height - 4 };
+  const pos1 = bases.main1;
+  const pos2 = bases.main2;
 
   const mainBldg  = { terran: 'command-center', zerg: 'hatchery', protoss: 'nexus' };
   const workerType = { terran: 'scv', zerg: 'drone', protoss: 'probe' };
@@ -926,7 +925,7 @@ export function createInitialState(players, config = {}) {
   ];
 
   const workers   = [];
-  const wkOffsets = [[1, 0], [2, 0], [0, 1], [1, 1]];
+  const wkOffsets = [[0, 1], [1, 1], [-1, 1], [1, 0]]; // pocket cells next to the mineral ring
   for (const [dx, dy] of wkOffsets) {
     workers.push(makeUnit(`u${idCtr++}`, p1.id, workerType[race1], pos1.x + dx, pos1.y + dy));
     workers.push(makeUnit(`u${idCtr++}`, p2.id, workerType[race2], pos2.x - dx, pos2.y - dy));
@@ -934,7 +933,7 @@ export function createInitialState(players, config = {}) {
 
   const startMil = { terran: 'marine', zerg: 'zergling', protoss: 'zealot' };
   const milUnits = [];
-  for (const [dx, dy] of [[3, 0], [0, 2], [3, 1]]) {
+  for (const [dx, dy] of [[2, 0], [2, -1], [3, 0]]) {
     milUnits.push(makeUnit(`u${idCtr++}`, p1.id, startMil[race1], pos1.x + dx, pos1.y + dy));
     milUnits.push(makeUnit(`u${idCtr++}`, p2.id, startMil[race2], pos2.x - dx, pos2.y - dy));
   }
@@ -1079,7 +1078,10 @@ export const Sc2Game = {
           x, y,
           glyph: u ? u.type[0].toUpperCase() : b ? b.type[0].toUpperCase() : '',
           owner: u ? (pidIdx[u.ownerId] ?? 0) : b ? (pidIdx[b.ownerId] ?? 0) : 0,
-          color: this.colors[tile.terrain] ?? this.colors.open ?? '#808070',
+          // The map is drawn from grouped feature shapes (board.shapes), so every cell
+          // shares one low-ground backdrop colour and the shapes convey the real terrain
+          // (like games/doom). Per-cell `terrain` is still carried for the terrain-info panel.
+          color: '#586a41',
           terrain: terrainInfo(tile.terrain),
           unitName: u ? u.type : undefined,
           spriteLayers: u ? scSpriteLayers(u.type, UNITS[u.type]) : undefined,
@@ -1087,6 +1089,6 @@ export const Sc2Game = {
         });
       }
     }
-    return { width, height, cells };
+    return { width, height, cells, shapes: board.shapes ?? [] };
   },
 };

@@ -744,7 +744,7 @@ export const WarodDotsGame = {
     const gridOut = { width: COLS, height: ROWS, cells };
     if (shapeMap) {
       gridOut.shapes = shapes;
-      gridOut.ui = { hideGrid: true };
+      gridOut.ui = { hideGridLines: true };
     }
     return gridOut;
   },

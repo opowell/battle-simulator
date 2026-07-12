@@ -387,7 +387,7 @@ function toGrid(state) {
   const shapes = board.shapes
     ?? tilesToShapes((x, y) => tiles[y][x], width, height, CM_TILE_SHAPE_STYLES);
 
-  return { width, height, locationType: 'continuous', cells, units: unitList, shapes, ui: { hideGrid: true } };
+  return { width, height, locationType: 'continuous', cells, units: unitList, shapes, ui: { hideGridLines: true } };
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────

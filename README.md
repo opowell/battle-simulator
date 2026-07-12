@@ -15,7 +15,7 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | `axisallies` | Axis & Allies | [games/axisallies/](games/axisallies/README.md) |
 | `combatmission` | Combat Mission | [games/combatmission/](games/combatmission/README.md) |
 | `xcom` | XCOM | [games/xcom/](games/xcom/README.md) |
-| `aow` | Age of Wonders | [games/aow/](games/aow/README.md) |
+| `aow` | The Ancient Art of War | [games/aow/](games/aow/README.md) |
 | `cs` | Counter-Strike | [games/cs/](games/cs/README.md) |
 | `ffta` | Final Fantasy Tactics Advance | [games/ffta/](games/ffta/README.md) |
 | `sc1` | StarCraft 1 | [games/sc1/](games/sc1/README.md) |

@@ -57,6 +57,13 @@ const GAMES_DIR = resolve(ROOT_DIR, 'games');
 const SESSIONS_DIR = resolve(ROOT_DIR, 'sessions');
 const SERVER_PATH = resolve(ROOT_DIR, 'api-server.js');
 
+/** Filesystem-safe local datetime for recording filenames, e.g. 2026-07-12T14-16-03. */
+function fileTimestamp(d = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+}
+
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js':   'text/javascript; charset=utf-8',
@@ -206,7 +213,7 @@ const GAMES = {
   sc2:           { game: Sc2Game,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   doom:          { game: DoomGame,          minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'marine', name: 'Marine' }, { id: 'demons', name: 'Demons' }] },
   mudandblood:   { game: MudAndBloodGame,   minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
-  kdice:         { game: KDiceGame,         minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }] },
+  kdice:         { game: KDiceGame,         minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }, { id: 'p4', name: 'Player 4' }] },
   warofdots:     { game: WarodDotsGame,     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'player', name: 'You' }, { id: 'ai', name: 'AI' }] },
   surviv:        { game: SurvivGame,        minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'blue', name: 'Blue' }, { id: 'red', name: 'Red' }] },
 };
@@ -218,21 +225,30 @@ const GAMES = {
 const sessions = new Map();
 
 class Session {
-  constructor(id, gameName, engine, apiAgents, fog = false, debugAI = false) {
+  constructor(id, gameName, engine, apiAgents, fog = false, debugAI = false, params = {}) {
     this.id = id;
     this.gameName = gameName;
     this.engine = engine;
     this.apiAgents = apiAgents; // Map<playerId, ApiAgent>
     this.fog = fog;
     this.debugAI = debugAI;
+    // Full set of parameters the session was created with (game, players, config) —
+    // persisted with the recording so a run can be reproduced/inspected later.
+    this.params = params;
+    this.createdAt = new Date();
     this.status = 'active';
     this.result = null;
     this.error = null;
     this.gridHistory = [];
+    // Latest AI decision record per player (candidate moves + rankings), captured
+    // off each AI agent after every step for the AI-analysis panel. Persists the
+    // most recent decision per player so the panel keeps showing it between turns.
+    this.aiAnalysis = {};
     // WebSocket subscribers: Set<{ ws, playerId }>. Each gets a per-player
     // (fog-filtered) snapshot pushed whenever this session's state changes.
     this.wsClients = new Set();
-    this._logPath = resolve(SESSIONS_DIR, id, 'log.json');
+    // Recording file is named with the creation datetime so runs sort chronologically.
+    this._recordPath = resolve(SESSIONS_DIR, `${fileTimestamp(this.createdAt)}-${id.slice(0, 8)}.json`);
     // Push the "your turn" state the moment a human agent starts waiting — the
     // engine is otherwise parked inside `await step()` with nothing to observe.
     for (const agent of this.apiAgents.values()) agent.onPending = () => this._broadcast();
@@ -248,6 +264,14 @@ class Session {
     }
   }
 
+  /** Pull the latest decision record off each AI agent that just moved. */
+  _collectAnalysis() {
+    for (const p of this.engine.players ?? []) {
+      const a = p.agent?.lastAnalysis;
+      if (a && a.player === p.id) this.aiAnalysis[p.id] = a;
+    }
+  }
+
   _captureGrid() {
     try {
       const { game } = GAMES[this.gameName];
@@ -257,10 +281,22 @@ class Session {
     } catch { return null; }
   }
 
-  async _persistLog() {
+  /** Persist the full session record — all game parameters plus the move log. */
+  async _persist() {
     try {
-      await mkdir(dirname(this._logPath), { recursive: true });
-      await writeFile(this._logPath, JSON.stringify(this.engine.log, null, 2));
+      await mkdir(dirname(this._recordPath), { recursive: true });
+      const record = {
+        id: this.id,
+        createdAt: this.createdAt.toISOString(),
+        game: this.gameName,
+        fog: this.fog,
+        debugAI: this.debugAI,
+        params: this.params,
+        status: this.status,
+        result: this.result,
+        log: this.engine.log,
+      };
+      await writeFile(this._recordPath, JSON.stringify(record, null, 2));
     } catch {}
   }
 
@@ -272,13 +308,14 @@ class Session {
       this._broadcast();
       while (this.status === 'active') {
         const { done } = await this.engine.step();
-        this._persistLog();
+        this._collectAnalysis();
         const g = this._captureGrid();
         if (g) this.gridHistory.push(g);
         if (done) {
           this.status = 'done';
           this.result = this.engine.result;
         }
+        this._persist();
         this._broadcast();
         if (done) break;
       }
@@ -335,6 +372,7 @@ class Session {
     return {
       id: this.id,
       game: this.gameName,
+      params: this.params,
       fog: this.fog,
       debugAI: this.debugAI,
       status: this.status,
@@ -351,6 +389,10 @@ class Session {
       grid: fogNoPlayer ? null : (viewState && game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null),
       lastActions,
       log,
+      // AI deliberation (candidate moves + rankings). In fog it can leak the AI's
+      // own move, so it is only revealed with debugAI on; with full information it
+      // is always shown (both sides see the board anyway).
+      aiAnalysis: fogNoPlayer ? null : ((this.debugAI || !this.fog) ? this.aiAnalysis : null),
     };
   }
 
@@ -541,7 +583,8 @@ async function handleCreateSession(req, res) {
   const fogOfWar = config.fog ?? config.fogOfWar ?? false;
   const engine = new GameEngine(entry.game, players, { maxTurns: config.maxTurns ?? 500, ...config, fogOfWar });
   const id = randomUUID();
-  const session = new Session(id, gameName, engine, apiAgents, config.fog ?? config.fogOfWar ?? false, config.debugAI ?? false);
+  const params = { game: gameName, players: defs, config };
+  const session = new Session(id, gameName, engine, apiAgents, config.fog ?? config.fogOfWar ?? false, config.debugAI ?? false, params);
   sessions.set(id, session);
 
   const firstHumanId = [...apiAgents.keys()][0] ?? null;

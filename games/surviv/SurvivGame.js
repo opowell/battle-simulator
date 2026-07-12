@@ -5,7 +5,7 @@ import {
   STARTING_HP, MOVE_RANGE, PICKUP_RANGE,
   SHOOT_ACC_MAX, SHOOT_ACC_MIN,
   GRENADE_THROW_RANGE, FRAG_RADIUS, FRAG_DAMAGE,
-  BARREL_BLAST_RADIUS, BARREL_BLAST_DAMAGE,
+  BARREL_BLAST_RADIUS, BARREL_BLAST_DAMAGE, PUNCH_RADIUS,
   isMelee, fullAmmo,
 } from './weapons.js';
 import {
@@ -19,6 +19,7 @@ import { segmentClearOf, nearestPointOnShape } from '../terrainShapes.js';
 import { makePos, parsePos, num, posToWire } from '../coord.js';
 
 const MOVE_EPS = 0.05; // see games/cs/CsGame.js's identical constant for why this floor exists
+const ROTATE_COST = 1; // flat moveAllowance tax for a 'rotate' action (turn in place, no move)
 const DEFAULT_TURN_CAP = 100; // team-turn windows before a stalemate is scored by survivors/hp
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -88,6 +89,40 @@ function buildLoot(map) {
   });
 }
 
+// Shared "something hit a crate/barrel" resolution — used by shoot (bullet ray),
+// punch (melee blast), and throw (grenade blast) alike, since breakables now take
+// damage from any attack instead of a dedicated 'break' action. Barrels explode on
+// destruction (area damage to anyone nearby, either team); crates drop a weapon where
+// they stood. Returns the updated breakables/loot/units triple (units only change for
+// a barrel's explosion — a crate never hurts anyone on destruction).
+function applyBreakableDamage(gs, units, breakableId, dmg, rng) {
+  const def = gs.map.breakablesById[breakableId];
+  let breakables = gs.breakables.map(b => b.id === breakableId ? { ...b, hp: Math.max(0, b.hp - dmg) } : b);
+  const target = breakables.find(b => b.id === breakableId);
+  let loot = gs.loot;
+
+  if (target.hp <= 0 && !target.destroyed) {
+    breakables = breakables.map(b => b.id === breakableId ? { ...b, destroyed: true } : b);
+    const cx = def.x + def.w / 2, cy = def.y + def.h / 2;
+
+    if (def.kind === 'barrel') {
+      units = units.map(u => {
+        if (!u.alive || Math.hypot(num(u.position.x) - cx, num(u.position.y) - cy) > BARREL_BLAST_RADIUS) return u;
+        const newHp = Math.max(0, u.hp - calcDamage(BARREL_BLAST_DAMAGE, u));
+        return { ...u, hp: newHp, alive: newHp > 0 };
+      });
+    } else {
+      const pool = [...LOOT_TABLE[1], ...LOOT_TABLE[2]];
+      const item = pool[Math.floor(rng() * pool.length)];
+      loot = [...loot, {
+        id: `loot-break-${breakableId}`, x: cx, y: cy, kind: 'weapon', item, taken: false,
+        name: WEAPONS[item].name, icon: WEAPON_ICON(item),
+      }];
+    }
+  }
+  return { breakables, loot, units };
+}
+
 function applyLoot(units, unitId, loot) {
   return units.map(u => {
     if (u.id !== unitId) return u;
@@ -122,7 +157,6 @@ function actionPhaseActions(state, teamId) {
   const destroyedCells = destroyedCellSet(map, breakables);
   const losBlockers = survivLosBlockers(map, destroyedIds);
   const loot = state.gameSpecific.loot.filter(l => !l.taken);
-  const live = breakables.filter(b => !b.destroyed);
 
   for (const u of myUnits) {
     if (u.perTurn.moveAllowance > MOVE_EPS) {
@@ -130,37 +164,48 @@ function actionPhaseActions(state, teamId) {
         actions.push({ type: 'move', unitId: u.id, from: u.position, to });
     }
 
+    // Rotate in place: face any point without moving — not gated by hasActed, only a
+    // small moveAllowance tax (ROTATE_COST) — see applyActions and isRotateLegal. One
+    // untargeted template per unit; the human UI aims freely at any point via the
+    // aiming overlay (field.ui.aimedActionTypes) and the AI's search lattice
+    // (getSearchActions) expands it into concrete directions.
+    if (u.perTurn.moveAllowance >= ROTATE_COST)
+      actions.push({ type: 'rotate', unitId: u.id });
+
     if (!u.perTurn.hasActed) {
       const wpn = WEAPONS[u.weapon];
-      const canFire = isMelee(u.weapon) || u.ammo.mag > 0;
-      if (canFire) {
+
+      if (isMelee(u.weapon)) {
+        // Punch: a fixed-range, fixed-radius blast placed in front of the puncher's
+        // facing (or the aimed bearing) — one untargeted template per unit, aimed the
+        // same way as 'rotate' (bearing only, via the map-click overlay). Resolved in
+        // applyActions; damages whatever's caught in the blast, crates/barrels included.
+        actions.push({
+          type: 'punch', unitId: u.id, range: wpn.range, radius: PUNCH_RADIUS,
+          damage: wpn.damage, icon: WEAPON_ICON(u.weapon),
+        });
+      } else if (u.ammo.mag > 0) {
+        // Free-aim template: always offered while the weapon can fire, even with no
+        // enemy currently in range/LOS — the human aims a direction via the map click
+        // overlay (Battlefield.vue's aimedActionTypes) and applyActions resolves
+        // whichever enemy or breakable (if any) lines up with the shot. Pushed first
+        // so the panel's per-unit dedup (ActionsPanel.vue's aimedActions) picks this
+        // one — with its icon — as the representative "Shoot" button.
+        actions.push({ type: 'shoot', unitId: u.id, damage: wpn.damage, icon: WEAPON_ICON(u.weapon) });
+
+        // No max range (and no `range` field on the action — see DoomGame.js/
+        // SchematicLayer.vue for why omitting it matters for the aim preview) — a
+        // bullet travels until it hits a wall/breakable or a unit (see applyActions),
+        // so LOS is the only gate here; accuracy still falls off with distance and
+        // clamps at 0, a soft rather than hard cutoff.
         const enemies = state.units.filter(e => e.alive && e.ownerId !== teamId);
         for (const e of enemies) {
           const d = euclidean(u.position, e.position);
-          if (d <= wpn.range &&
-              segmentClearOf(num(u.position.x), num(u.position.y), num(e.position.x), num(e.position.y), losBlockers))
+          if (segmentClearOf(num(u.position.x), num(u.position.y), num(e.position.x), num(e.position.y), losBlockers))
             actions.push({
-              type: 'shoot', unitId: u.id, targetId: e.id, range: wpn.range,
-              damage: wpn.damage, accuracy: SHOOT_ACC_MAX - (SHOOT_ACC_MAX - SHOOT_ACC_MIN) * (d / wpn.range),
+              type: 'shoot', unitId: u.id, targetId: e.id,
+              damage: wpn.damage, accuracy: Math.max(0, SHOOT_ACC_MAX - (SHOOT_ACC_MAX - SHOOT_ACC_MIN) * (d / wpn.range)),
             });
-        }
-
-        // Break cover: attack a crate/barrel with whatever's in hand. Range is checked
-        // to the NEAREST point on the shape (not its centre) so melee can reach a wide
-        // shape's edge, and LOS excludes the target's own shape (see the id filter)
-        // so the ray to its own boundary can't self-block.
-        const ux = num(u.position.x), uy = num(u.position.y);
-        for (const b of live) {
-          const def = map.breakablesById[b.id];
-          const near = nearestPointOnShape(def, ux, uy);
-          const d = Math.hypot(ux - near.x, uy - near.y);
-          if (d > wpn.range) continue;
-          const blockers = losBlockers.filter(bl => bl.id !== b.id);
-          if (!segmentClearOf(ux, uy, near.x, near.y, blockers)) continue;
-          actions.push({
-            type: 'break', unitId: u.id, breakableId: b.id, range: wpn.range, damage: wpn.damage,
-            name: `Break ${def.kind === 'crate' ? 'Crate' : 'Barrel'}`, icon: WEAPON_ICON(u.weapon),
-          });
         }
       }
 
@@ -212,9 +257,57 @@ function isThrowLegal(state, teamId, action) {
   return true;
 }
 
+// Free-aim shoot: legality only gates who/whether the unit may fire, not whether the
+// aimed point/enemy will actually connect — a miss into empty space is still a legal
+// shot (matches isThrowLegal's target-optional shape; applyActions resolves the hit).
+function isShootLegal(state, teamId, action) {
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.hasActed) return false;
+  if (!(isMelee(unit.weapon) || unit.ammo.mag > 0)) return false;
+  if (action.target) {
+    const x = num(action.target.x), y = num(action.target.y);
+    return Math.hypot(num(unit.position.x) - x, num(unit.position.y) - y) >= MOVE_EPS; // needs a direction to aim
+  }
+  if (action.targetId) {
+    const defender = state.units.find(e => e.id === action.targetId);
+    if (!defender || !defender.alive || defender.ownerId === teamId) return false;
+    const destroyedIds = destroyedIdSet(state.gameSpecific.breakables);
+    const losBlockers = survivLosBlockers(state.gameSpecific.map, destroyedIds);
+    return segmentClearOf(num(unit.position.x), num(unit.position.y), num(defender.position.x), num(defender.position.y), losBlockers);
+  }
+  return true; // bare "shoot" template with neither target — a no-op miss
+}
+
+// Geometric fallback for a human continuous rotate (turn in place, no move): aim at
+// any exact point and the unit faces it — no LOS/wall requirement, matching FFTA's
+// untargeted facing choice.
+function isRotateLegal(state, teamId, action) {
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.moveAllowance < ROTATE_COST) return false;
+  const px = num(unit.position.x), py = num(unit.position.y);
+  const x = num(action.target.x), y = num(action.target.y);
+  if (Math.hypot(px - x, py - y) < MOVE_EPS) return false; // no direction to face
+  return true;
+}
+
+// Punch: bearing-only, like isRotateLegal — the blast always lands a fixed distance
+// ahead (weapon.range), so only the aimed direction (or current facing, if no target
+// was clicked) matters, not how far the click landed.
+function isPunchLegal(state, teamId, action) {
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.hasActed) return false;
+  if (!isMelee(unit.weapon)) return false;
+  if (!action.target) return true; // falls back to current facing
+  const x = num(action.target.x), y = num(action.target.y);
+  return Math.hypot(num(unit.position.x) - x, num(unit.position.y) - y) >= MOVE_EPS;
+}
+
 function isActionLegal(state, teamId, action) {
-  if (action.type === 'move')  return isMoveLegal(state, teamId, action);
-  if (action.type === 'throw') return isThrowLegal(state, teamId, action);
+  if (action.type === 'move')   return isMoveLegal(state, teamId, action);
+  if (action.type === 'throw')  return isThrowLegal(state, teamId, action);
+  if (action.type === 'rotate') return isRotateLegal(state, teamId, action);
+  if (action.type === 'shoot')  return isShootLegal(state, teamId, action);
+  if (action.type === 'punch')  return isPunchLegal(state, teamId, action);
   return false;
 }
 
@@ -238,6 +331,19 @@ function getSearchActions(state, teamId, res) {
     type: 'throw', point: 'target',
     origin: a => { const o = originOf(a); return o && { ...o, range: GRENADE_THROW_RANGE }; },
     isLegal: (a, x, y) => isThrowLegal(state, teamId, { unitId: a.unitId, grenade: a.grenade, target: { x, y } }),
+  }, res);
+  // Rotate has no meaningful "range" (only the bearing matters) — a small fixed radius
+  // just gives the lattice generator a nonzero ring to place candidate directions on.
+  out = latticeActions(out, {
+    type: 'rotate', point: 'target',
+    origin: a => { const o = originOf(a); return o && { ...o, range: 1 }; },
+    isLegal: (a, x, y) => isRotateLegal(state, teamId, { unitId: a.unitId, target: { x, y } }),
+  }, res);
+  // Punch is bearing-only too (see isPunchLegal) — same nonzero-radius trick as rotate.
+  out = latticeActions(out, {
+    type: 'punch', point: 'target',
+    origin: a => { const o = originOf(a); return o && { ...o, range: 1 }; },
+    isLegal: (a, x, y) => isPunchLegal(state, teamId, { unitId: a.unitId, target: { x, y } }),
   }, res);
   return out;
 }
@@ -266,23 +372,128 @@ function applyActions(state, playerActions, rng = Math.random) {
     return { ...state, units, lastActions: playerActions };
   }
 
+  if (action.type === 'rotate') {
+    const target = parsePos(action.target);
+    units = units.map(u => {
+      if (u.id !== action.unitId) return u;
+      const dx = num(target.x) - num(u.position.x), dy = num(target.y) - num(u.position.y);
+      return { ...u, facing: Math.atan2(dy, dx),
+               perTurn: { ...u.perTurn, moveAllowance: Math.max(0, u.perTurn.moveAllowance - ROTATE_COST) } };
+    });
+    return { ...state, units, lastActions: playerActions };
+  }
+
   if (action.type === 'shoot') {
     const attacker = units.find(u => u.id === action.unitId);
-    const defender = units.find(u => u.id === action.targetId);
     const wpn      = WEAPONS[attacker.weapon];
-    const d        = euclidean(attacker.position, defender.position);
-    const accuracy = SHOOT_ACC_MAX - (SHOOT_ACC_MAX - SHOOT_ACC_MIN) * (d / wpn.range);
 
-    units = units.map(u => u.id === action.unitId
-      ? { ...u, ammo: isMelee(u.weapon) ? u.ammo : { ...u.ammo, mag: u.ammo.mag - 1 }, perTurn: { ...u.perTurn, hasActed: true } }
-      : u);
+    // Consumes ammo/marks acted regardless of outcome, then rolls accuracy against
+    // whichever enemy (if any) the shot connects with — `defenderId` null means the
+    // shot whiffed into empty space (nothing lined up, or the roll missed).
+    const fire = (defenderId, accuracy) => {
+      units = units.map(u => u.id === action.unitId
+        ? { ...u, ammo: isMelee(u.weapon) ? u.ammo : { ...u.ammo, mag: u.ammo.mag - 1 }, perTurn: { ...u.perTurn, hasActed: true } }
+        : u);
+      if (!defenderId || rng() > accuracy) return { ...state, units, lastActions: playerActions };
+      const defender = units.find(u => u.id === defenderId);
+      const dmg   = calcDamage(wpn.damage, defender);
+      const newHp = Math.max(0, defender.hp - dmg);
+      units = units.map(u => u.id === defenderId ? { ...u, hp: newHp, alive: newHp > 0 } : u);
+      return { ...state, units, lastActions: playerActions };
+    };
 
-    if (rng() > accuracy) return { ...state, units, lastActions: playerActions };
+    if (action.targetId) {
+      const defender = units.find(u => u.id === action.targetId);
+      const d = euclidean(attacker.position, defender.position);
+      return fire(action.targetId, Math.max(0, SHOOT_ACC_MAX - (SHOOT_ACC_MAX - SHOOT_ACC_MIN) * (d / wpn.range)));
+    }
 
-    const dmg   = calcDamage(wpn.damage, defender);
-    const newHp = Math.max(0, defender.hp - dmg);
-    units = units.map(u => u.id === action.targetId ? { ...u, hp: newHp, alive: newHp > 0 } : u);
-    return { ...state, units, lastActions: playerActions };
+    if (!action.target) return fire(null, 0); // bare template picked with no aim point
+
+    // Free-aim: no max range — walk the aimed ray out indefinitely and hit whichever
+    // enemy or crate/barrel (if any) is closest along it — same LOS rule as a
+    // locked-on shot. A breakable always "connects" (structures don't dodge); an
+    // enemy still rolls accuracy. Whichever is nearer wins, same as a bullet stopping
+    // at the first thing it meets.
+    const ax = num(attacker.position.x), ay = num(attacker.position.y);
+    const t  = parsePos(action.target);
+    const dx = num(t.x) - ax, dy = num(t.y) - ay;
+    const aimDist = Math.hypot(dx, dy) || 1;
+    const dirx = dx / aimDist, diry = dy / aimDist;
+    const HIT_RADIUS = 0.6;
+
+    const destroyedIds = destroyedIdSet(gs.breakables);
+    const losBlockers  = survivLosBlockers(gs.map, destroyedIds);
+
+    let hitUnit = null, hitBreakable = null, hitAlong = Infinity;
+    for (const e of units) {
+      if (!e.alive || e.ownerId === attacker.ownerId || e.id === attacker.id) continue;
+      const ex = num(e.position.x), ey = num(e.position.y);
+      const along = (ex - ax) * dirx + (ey - ay) * diry;
+      if (along < 0) continue;
+      const px = ax + dirx * along, py = ay + diry * along;
+      if (Math.hypot(ex - px, ey - py) > HIT_RADIUS) continue;
+      if (!segmentClearOf(ax, ay, ex, ey, losBlockers)) continue;
+      if (along < hitAlong) { hitAlong = along; hitUnit = e; hitBreakable = null; }
+    }
+    for (const b of gs.breakables) {
+      if (b.destroyed) continue;
+      const def = gs.map.breakablesById[b.id];
+      const cx = def.x + def.w / 2, cy = def.y + def.h / 2;
+      const along = (cx - ax) * dirx + (cy - ay) * diry;
+      if (along < 0 || along >= hitAlong) continue;
+      const px = ax + dirx * along, py = ay + diry * along;
+      const near = nearestPointOnShape(def, px, py);
+      if (Math.hypot(px - near.x, py - near.y) > HIT_RADIUS) continue;
+      const blockers = losBlockers.filter(bl => bl.id !== b.id);
+      if (!segmentClearOf(ax, ay, cx, cy, blockers)) continue;
+      hitAlong = along; hitUnit = null; hitBreakable = b;
+    }
+
+    if (hitBreakable) {
+      units = units.map(u => u.id === action.unitId
+        ? { ...u, ammo: isMelee(u.weapon) ? u.ammo : { ...u.ammo, mag: u.ammo.mag - 1 }, perTurn: { ...u.perTurn, hasActed: true } }
+        : u);
+      const res = applyBreakableDamage(gs, units, hitBreakable.id, wpn.damage, rng);
+      return { ...state, units: res.units, gameSpecific: { ...gs, breakables: res.breakables, loot: res.loot }, lastActions: playerActions };
+    }
+
+    if (!hitUnit) return fire(null, 0);
+    return fire(hitUnit.id, Math.max(0, SHOOT_ACC_MAX - (SHOOT_ACC_MAX - SHOOT_ACC_MIN) * (hitAlong / wpn.range)));
+  }
+
+  if (action.type === 'punch') {
+    const attacker = units.find(u => u.id === action.unitId);
+    const wpn      = WEAPONS[attacker.weapon];
+    const ax = num(attacker.position.x), ay = num(attacker.position.y);
+
+    let dir = attacker.facing ?? 0;
+    if (action.target) {
+      const t  = parsePos(action.target);
+      const dx = num(t.x) - ax, dy = num(t.y) - ay;
+      if (dx || dy) dir = Math.atan2(dy, dx);
+    }
+    const cx = ax + Math.cos(dir) * wpn.range, cy = ay + Math.sin(dir) * wpn.range;
+
+    units = units.map(u => {
+      if (u.id === action.unitId) return { ...u, facing: dir, perTurn: { ...u.perTurn, hasActed: true } };
+      // Never hurts the puncher — the blast center is offset ahead of their own position.
+      if (!u.alive || u.id === attacker.id || euclidean(u.position, { x: cx, y: cy }) > PUNCH_RADIUS) return u;
+      const newHp = Math.max(0, u.hp - calcDamage(wpn.damage, u));
+      return { ...u, hp: newHp, alive: newHp > 0 };
+    });
+
+    let breakables = gs.breakables, loot = gs.loot;
+    for (const b of gs.breakables) {
+      if (b.destroyed) continue;
+      const def  = gs.map.breakablesById[b.id];
+      const near = nearestPointOnShape(def, cx, cy);
+      if (Math.hypot(cx - near.x, cy - near.y) > PUNCH_RADIUS) continue;
+      const res = applyBreakableDamage({ ...gs, breakables, loot }, units, b.id, wpn.damage, rng);
+      breakables = res.breakables; loot = res.loot; units = res.units;
+    }
+
+    return { ...state, units, gameSpecific: { ...gs, breakables, loot }, lastActions: playerActions };
   }
 
   if (action.type === 'throw') {
@@ -291,6 +502,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       return { ...state, units, lastActions: playerActions };
     }
     const target = parsePos(action.target);
+    const tx = num(target.x), ty = num(target.y);
     units = units.map(u => u.id === action.unitId
       ? { ...u, grenades: { ...u.grenades, frag: (u.grenades.frag ?? 1) - 1 }, perTurn: { ...u.perTurn, hasActed: true } }
       : u);
@@ -300,7 +512,18 @@ function applyActions(state, playerActions, rng = Math.random) {
       const newHp = Math.max(0, u.hp - calcDamage(FRAG_DAMAGE, u));
       return { ...u, hp: newHp, alive: newHp > 0 };
     });
-    return { ...state, units, lastActions: playerActions };
+
+    let breakables = gs.breakables, loot = gs.loot;
+    for (const b of gs.breakables) {
+      if (b.destroyed) continue;
+      const def  = gs.map.breakablesById[b.id];
+      const near = nearestPointOnShape(def, tx, ty);
+      if (Math.hypot(tx - near.x, ty - near.y) > FRAG_RADIUS) continue;
+      const res = applyBreakableDamage({ ...gs, breakables, loot }, units, b.id, FRAG_DAMAGE, rng);
+      breakables = res.breakables; loot = res.loot; units = res.units;
+    }
+
+    return { ...state, units, gameSpecific: { ...gs, breakables, loot }, lastActions: playerActions };
   }
 
   if (action.type === 'reload') {
@@ -325,44 +548,6 @@ function applyActions(state, playerActions, rng = Math.random) {
       u.id === action.unitId ? { ...u, perTurn: { ...u.perTurn, hasActed: true } } : u);
     const loot = gs.loot.map(l => l.id === action.lootId ? { ...l, taken: true } : l);
     return { ...state, units, gameSpecific: { ...gs, loot }, lastActions: playerActions };
-  }
-
-  if (action.type === 'break') {
-    const def      = gs.map.breakablesById[action.breakableId];
-    const attacker = units.find(u => u.id === action.unitId);
-    const dmg      = WEAPONS[attacker.weapon].damage;
-
-    units = units.map(u => u.id === action.unitId
-      ? { ...u, ammo: isMelee(u.weapon) ? u.ammo : { ...u.ammo, mag: u.ammo.mag - 1 }, perTurn: { ...u.perTurn, hasActed: true } }
-      : u);
-
-    let breakables = gs.breakables.map(b => b.id === action.breakableId ? { ...b, hp: Math.max(0, b.hp - dmg) } : b);
-    const target = breakables.find(b => b.id === action.breakableId);
-    let loot = gs.loot;
-
-    if (target.hp <= 0 && !target.destroyed) {
-      breakables = breakables.map(b => b.id === action.breakableId ? { ...b, destroyed: true } : b);
-      const cx = def.x + def.w / 2, cy = def.y + def.h / 2;
-
-      if (def.kind === 'barrel') {
-        // Barrels explode when broken — area damage to anyone nearby, either team.
-        units = units.map(u => {
-          if (!u.alive || Math.hypot(num(u.position.x) - cx, num(u.position.y) - cy) > BARREL_BLAST_RADIUS) return u;
-          const newHp = Math.max(0, u.hp - calcDamage(BARREL_BLAST_DAMAGE, u));
-          return { ...u, hp: newHp, alive: newHp > 0 };
-        });
-      } else {
-        // Crates drop a common-to-mid weapon where they stood.
-        const pool = [...LOOT_TABLE[1], ...LOOT_TABLE[2]];
-        const item = pool[Math.floor(rng() * pool.length)];
-        loot = [...loot, {
-          id: `loot-break-${action.breakableId}`, x: cx, y: cy, kind: 'weapon', item, taken: false,
-          name: WEAPONS[item].name, icon: WEAPON_ICON(item),
-        }];
-      }
-    }
-
-    return { ...state, units, gameSpecific: { ...gs, breakables, loot }, lastActions: playerActions };
   }
 
   if (action.type === 'end-turn') {
@@ -569,7 +754,7 @@ function toGrid(state) {
   return {
     width, height, locationType: 'continuous', cells, units: unitList,
     shapes: [...liveShapes(gs.map, gs.breakables), ...lootShapes(gs.loot)],
-    ui: { hideGrid: true, visionRange: 5, fovDegrees: 110, aimedActionTypes: ['move', 'throw', 'shoot'],
+    ui: { hideGridLines: true, visionRange: 5, fovDegrees: 110, aimedActionTypes: ['move', 'throw', 'shoot', 'rotate', 'punch'],
           recolorTeamSprites: false, showHpBars: false },
     los: { blockShapes: survivLosBlockers(gs.map, destroyedIds) },
   };
@@ -645,7 +830,6 @@ function getActionDuration(state, action) {
     const shooter = state.units.find(u => u.id === action.unitId);
     const target  = state.units.find(u => u.id === action.targetId);
     if (!shooter || !target) return 1;
-    if (isMelee(shooter.weapon)) return 0.5;
     const dx = num(target.position.x) - num(shooter.position.x);
     const dy = num(target.position.y) - num(shooter.position.y);
     return Math.sqrt(dx * dx + dy * dy) / BULLET_SPEED;
@@ -653,7 +837,7 @@ function getActionDuration(state, action) {
   if (action.type === 'throw')  return 1.5;
   if (action.type === 'reload') return 2;
   if (action.type === 'loot')   return 1;
-  if (action.type === 'break')  return 1;
+  if (action.type === 'punch')  return 0.5;
   return 1;
 }
 

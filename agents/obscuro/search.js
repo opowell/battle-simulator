@@ -173,5 +173,8 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
     infoset: root,
     safe,
   });
-  return { action, dist, rawDist: strat, rows: root.actions, value, tree, safe, pmax: gadget.pmax };
+  // uCond is the per-action counterfactual value (value to us of committing to
+  // action k), surfaced so callers can rank/inspect the candidate moves.
+  const uCond = root.uCond ? [...root.uCond] : null;
+  return { action, dist, rawDist: strat, rows: root.actions, uCond, value, tree, safe, pmax: gadget.pmax };
 }

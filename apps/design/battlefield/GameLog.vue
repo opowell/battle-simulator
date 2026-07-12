@@ -17,7 +17,20 @@ function fmtAction(action) {
     if (action.unitId) return `Move ${action.unitId}`;
   }
   if (t === 'castle')    return action.side === 'kingside' ? 'O-O' : 'O-O-O';
-  if (t === 'attack')    return `Attack ${action.targetId ?? ''}`;
+  if (t === 'attack') {
+    // Territory-vs-territory attacks (kdice) carry from/to ids plus, once
+    // resolved, a dice-roll `result` stamped onto the action (see
+    // KDiceGame.applyActions) — show the rolls and outcome, not just the label.
+    if (typeof action.from === 'string' && typeof action.to === 'string') {
+      let s = `${action.from} → ${action.to}`;
+      if (action.result) {
+        const r = action.result;
+        s += `  [${r.attackerRolls.join(',')}]=${r.attackerSum} vs [${r.defenderRolls.join(',')}]=${r.defenderSum} · ${r.won ? 'WON' : 'LOST'}`;
+      }
+      return s;
+    }
+    return `Attack ${action.targetId ?? ''}`;
+  }
   if (t === 'end-turn')  return 'End Turn';
   if (t === 'end-phase') return 'End Phase';
   if (t === 'pass')      return 'Pass';

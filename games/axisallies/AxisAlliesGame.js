@@ -668,7 +668,7 @@ function toGrid(state) {
 
   return {
     width: MAP_WIDTH, height: MAP_HEIGHT, locationType: 'continuous',
-    cells, units: unitList, shapes, ui: { hideGrid: true },
+    cells, units: unitList, shapes, ui: { hideGridLines: true },
   };
 }
 

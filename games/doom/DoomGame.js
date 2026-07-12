@@ -1,11 +1,13 @@
 import { unitStrengthEval } from '../evalHelpers.js';
-import { MAP_WIDTH, MAP_HEIGHT, RENDER_SHAPES, LOS_OPEN_SHAPES, hasLOS, getReachable, manhattan, renderMap, isWalkableContinuous } from './map.js';
+import { MAP_WIDTH, MAP_HEIGHT, RENDER_SHAPES, LOS_OPEN_SHAPES, hasLOS, getReachable, renderMap, isWalkableContinuous } from './map.js';
 import { WEAPONS, AMMO_CAPS, WEAPON_RANK } from './weapons.js';
 import { createMarine, createMonster } from './units.js';
 import { getDoomBelief, DOOM_VISION } from './belief.js';
 import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { filterVisibleUnits, orientToEnemies } from '../vision.js';
 import { parsePos, num, tileNum, posToWire } from '../coord.js';
+
+const ROTATE_COST = 1;  // flat AP tax for a 'rotate' action (turn in place, no move)
 
 // ── Default item placement ─────────────────────────────────────────────────────
 
@@ -89,20 +91,33 @@ function getLegalActions(state, teamId) {
     for (const to of reachable)
       actions.push({ type: 'move', unitId: unit.id, from: unit.position, to });
 
-    // Shoot / Attack — costs a flat AP amount regardless of distance.
-    const [range, hasAmmo] = teamId === 'marine'
-      ? [WEAPONS[unit.weapon].range, unit.ammo[WEAPONS[unit.weapon].ammoType] >= WEAPONS[unit.weapon].ammoPerShot]
-      : [unit.attrs.range, true];
+    // Shoot / Attack — costs a flat AP amount, no max range: a shot travels in a
+    // straight line until it hits a wall or a unit (see applyActions/isShootLegal), so
+    // only ammo/AP and line of sight gate it, not distance.
+    const hasAmmo = teamId === 'marine'
+      ? unit.ammo[WEAPONS[unit.weapon].ammoType] >= WEAPONS[unit.weapon].ammoPerShot
+      : true;
 
     if (hasAmmo && unit.perTurn.ap >= unit.attrs.shootCost) {
+      // Free-aim template: always offered while the weapon is loaded, even with no
+      // enemy currently in LOS — the human aims a direction via the map-click overlay
+      // (field.ui.aimedActionTypes) and applyActions resolves whichever enemy (if any)
+      // lines up with the shot. Pushed first so the panel's per-unit dedup
+      // (ActionsPanel.vue's aimedActions) picks this one as the representative button.
+      actions.push({ type: 'shoot', unitId: unit.id });
+
       for (const enemy of enemies) {
-        if (manhattan(unit.position, enemy.position) <= range &&
-            hasLOS(unit.position.x, unit.position.y, enemy.position.x, enemy.position.y))
+        if (hasLOS(unit.position.x, unit.position.y, enemy.position.x, enemy.position.y))
           actions.push({ type: 'shoot', unitId: unit.id, targetId: enemy.id });
       }
     }
 
-    actions.push({ type: 'skip-unit', unitId: unit.id });
+    // Rotate in place: face any point without moving, at a flat AP tax (ROTATE_COST) —
+    // see applyActions and isRotateLegal. One untargeted template per unit; the human UI
+    // aims freely at any point via the aiming overlay (field.ui.aimedActionTypes) and
+    // the AI's search lattice (getSearchActions) expands it into concrete directions.
+    if (unit.perTurn.ap >= ROTATE_COST)
+      actions.push({ type: 'rotate', unitId: unit.id });
   }
 
   actions.push({ type: 'end-turn', unitId: '__player__' });
@@ -129,10 +144,57 @@ function isMoveLegal(state, teamId, action) {
   return true;
 }
 
+// Geometric fallback for a human continuous rotate (turn in place, no move): aim at
+// any exact point and the unit faces it — no LOS/wall requirement, matching FFTA's
+// untargeted facing choice.
+function isRotateLegal(state, teamId, action) {
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.ap < ROTATE_COST) return false;
+  const px = num(unit.position.x), py = num(unit.position.y);
+  const x = num(action.target.x), y = num(action.target.y);
+  if (Math.hypot(px - x, py - y) === 0) return false; // no direction to face
+  return true;
+}
+
+// Free-aim shoot: legality only gates who/whether the unit may fire, not whether the
+// aimed point/enemy will actually connect — a miss into empty space is still a legal
+// shot (matches isThrowLegal's target-optional shape; applyActions resolves the hit).
+function isShootLegal(state, teamId, action) {
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== teamId) return false;
+  const hasAmmo = teamId === 'marine'
+    ? unit.ammo[WEAPONS[unit.weapon].ammoType] >= WEAPONS[unit.weapon].ammoPerShot
+    : true;
+  if (!hasAmmo || unit.perTurn.ap < unit.attrs.shootCost) return false;
+  if (action.targetId) {
+    const target = state.units.find(u => u.id === action.targetId);
+    if (!target || !target.alive || target.ownerId === teamId) return false;
+    return hasLOS(unit.position.x, unit.position.y, target.position.x, target.position.y);
+  }
+  if (action.target) {
+    const x = num(action.target.x), y = num(action.target.y);
+    return Math.hypot(num(unit.position.x) - x, num(unit.position.y) - y) > 0; // needs a direction to aim
+  }
+  return true; // bare "shoot" template with neither target — a no-op miss
+}
+
 // Dispatcher for the engine's continuous-action fallback (engine/ActionValidator.js):
-// only 'move' carries a continuous, not-pre-enumerated destination in Doom.
+// 'move'/'rotate' carry a continuous, not-pre-enumerated destination/aim point; 'shoot'
+// may arrive as a free-aim point instead of one of getLegalActions' enumerated targetIds.
 function isActionLegal(state, teamId, action) {
-  return action.type === 'move' ? isMoveLegal(state, teamId, action) : false;
+  if (action.type === 'move')   return isMoveLegal(state, teamId, action);
+  if (action.type === 'rotate') return isRotateLegal(state, teamId, action);
+  if (action.type === 'shoot')  return isShootLegal(state, teamId, action);
+  return false;
+}
+
+// Stable identity for the ObscuroAgent's search tree — the generic defaultActionKey
+// (games/types.js) doesn't cover `target`, so distinct rotate aim points would all
+// collide onto the same key. Coordinates go through num() so continuous points key
+// consistently (see games/coord.js).
+function doomActionKey(a) {
+  const pt = p => (p && typeof p === 'object') ? [num(p.x), num(p.y)] : null;
+  return JSON.stringify([a.type ?? null, a.unitId ?? null, a.targetId ?? null, pt(a.to), pt(a.target)]);
 }
 
 // Continuous action set for the ObscuroAgent's tree search: each mover's discrete tile
@@ -141,11 +203,19 @@ function isActionLegal(state, teamId, action) {
 // (shoot/skip/end-turn) pass through unchanged.
 function getSearchActions(state, teamId, res) {
   const units = state.units;
-  return latticeActions(getLegalActions(state, teamId), {
+  let out = latticeActions(getLegalActions(state, teamId), {
     type: 'move', point: 'to',
     origin: a => { const u = units.find(x => x.id === a.unitId); return u ? { x: num(u.position.x), y: num(u.position.y), range: num(u.perTurn.ap) } : null; },
     isLegal: (a, x, y) => isMoveLegal(state, teamId, { unitId: a.unitId, to: { x, y } }),
   }, res);
+  // Rotate has no meaningful "range" (only the bearing matters) — a small fixed radius
+  // just gives the lattice generator a nonzero ring to place candidate directions on.
+  out = latticeActions(out, {
+    type: 'rotate', point: 'target',
+    origin: a => { const u = units.find(x => x.id === a.unitId); return u ? { x: num(u.position.x), y: num(u.position.y), range: 1 } : null; },
+    isLegal: (a, x, y) => isRotateLegal(state, teamId, { unitId: a.unitId, target: { x, y } }),
+  }, res);
+  return out;
 }
 
 // ── applyActions (internal, called with team ID in playerActions) ──────────────
@@ -205,10 +275,37 @@ function applyActions(state, playerActions, rng = Math.random) {
   // ── shoot / attack ───────────────────────────────────────────────────────────
   if (action.type === 'shoot') {
     const shooter = units.find(u => u.id === action.unitId);
-    const target  = units.find(u => u.id === action.targetId);
-    if (!shooter || !target) return state;
+    if (!shooter) return state;
 
-    // Determine shot parameters
+    let target = action.targetId ? units.find(u => u.id === action.targetId) : null;
+
+    // Free-aim: no locked target arrived on the wire — walk the aimed ray out
+    // indefinitely (no max range) and hit whichever enemy (if any) lines up with it
+    // first; hasLOS already stops the ray at the first wall in the way, since a wall
+    // between the shooter and a farther enemy breaks that enemy's LOS check. A bare
+    // template with no aim point either is a pure no-op.
+    if (!target && action.target) {
+      const sx = num(shooter.position.x), sy = num(shooter.position.y);
+      const t  = parsePos(action.target);
+      const dx = num(t.x) - sx, dy = num(t.y) - sy;
+      const aimDist = Math.hypot(dx, dy) || 1;
+      const dirx = dx / aimDist, diry = dy / aimDist;
+      const HIT_RADIUS = 0.6;
+      let hitAlong = Infinity;
+      for (const e of units) {
+        if (!e.alive || e.ownerId === shooter.ownerId) continue;
+        const ex = num(e.position.x), ey = num(e.position.y);
+        const along = (ex - sx) * dirx + (ey - sy) * diry;
+        if (along < 0) continue;
+        const px = sx + dirx * along, py = sy + diry * along;
+        if (Math.hypot(ex - px, ey - py) > HIT_RADIUS) continue;
+        if (!hasLOS(sx, sy, ex, ey)) continue;
+        if (along < hitAlong) { hitAlong = along; target = e; }
+      }
+    }
+
+    // Determine shot parameters (also spends ammo/AP on a miss — a shot fired into
+    // empty space still consumes the round, same as surviv's isMelee-guarded fire()).
     let accuracy, pellets, dmgRange, isSplash = false;
     if (playerId === 'marine') {
       const wpn = WEAPONS[shooter.weapon];
@@ -224,6 +321,11 @@ function applyActions(state, playerActions, rng = Math.random) {
       pellets  = shooter.attrs.pellets;
       dmgRange = shooter.attrs.damage;
       units    = units.map(u => u.id === shooter.id ? { ...u, perTurn: { ap: Math.max(0, u.perTurn.ap - u.attrs.shootCost) } } : u);
+    }
+
+    if (!target) {
+      const enriched = { playerId, action: { ...action, hits: 0, totalDamage: 0 } };
+      return { ...state, units, gameSpecific: gs, lastActions: [enriched] };
     }
 
     // Roll each pellet
@@ -254,13 +356,18 @@ function applyActions(state, playerActions, rng = Math.random) {
       }
     }
 
-    const enriched = { playerId, action: { ...action, hits, totalDamage } };
+    const enriched = { playerId, action: { ...action, targetId: target.id, hits, totalDamage } };
     return { ...state, units, gameSpecific: gs, lastActions: [enriched] };
   }
 
-  // ── skip-unit ─────────────────────────────────────────────────────────────────
-  if (action.type === 'skip-unit') {
-    units = units.map(u => u.id === action.unitId ? { ...u, perTurn: { ap: 0 } } : u);
+  // ── rotate ───────────────────────────────────────────────────────────────────
+  if (action.type === 'rotate') {
+    const target = parsePos(action.target);
+    units = units.map(u => {
+      if (u.id !== action.unitId) return u;
+      const dx = num(target.x) - num(u.position.x), dy = num(target.y) - num(u.position.y);
+      return { ...u, facing: Math.atan2(dy, dx), perTurn: { ap: Math.max(0, u.perTurn.ap - ROTATE_COST) } };
+    });
     return { ...state, units, gameSpecific: gs, lastActions: playerActions };
   }
 
@@ -395,6 +502,17 @@ function createInitialState(players, config = {}) {
 // Side-panel portraits (single sprite frame each, sourced from doom.fandom.com).
 const UNIT_PORTRAITS = new Set(['doomguy', 'zombieman', 'shotgunner', 'imp', 'demon', 'cacodemon', 'baron']);
 
+// Marine loadout for the design UI's SelectedUnitDetail equipment list (weapon,
+// ammo for that weapon, and armor) — monsters carry no inventory to show.
+function equipmentList(u) {
+  const wpn = WEAPONS[u.weapon];
+  return [
+    { label: 'Weapon', value: wpn.label ?? u.weapon },
+    { label: 'Ammo',   value: `${u.ammo[wpn.ammoType]} ${wpn.ammoType}` },
+    { label: 'Armor',  value: u.armor > 0 ? `${u.armor}` : 'None' },
+  ];
+}
+
 function toGrid(state) {
   const { units, gameSpecific: gs } = state;
   const pidIdx = {};
@@ -425,7 +543,10 @@ function toGrid(state) {
       // here instead of a fixed stat is what makes the client's move-range circle
       // actually shrink as AP is spent across a turn.
       moveRange: num(u.perTurn.ap),
+      apNow: num(u.perTurn.ap),
+      apMax: u.attrs.maxAP,
       portraitPath: UNIT_PORTRAITS.has(u.type) ? `/images/doom/units/${u.type}` : undefined,
+      equipment: u.ownerId === 'marine' ? equipmentList(u) : undefined,
     };
   });
 
@@ -441,7 +562,8 @@ function toGrid(state) {
     cells, units: unitList, shapes: RENDER_SHAPES,
     // Hand the veil the SAME sight range + cone the engine reveals with (DOOM_VISION), so
     // the drawn vision circle/cone matches getVisibleState exactly (both Euclidean now).
-    ui: { hideGrid: true, visionRange: DOOM_VISION.range, fovDegrees: DOOM_VISION.fovDegrees },
+    ui: { hideGridLines: true, visionRange: DOOM_VISION.range, fovDegrees: DOOM_VISION.fovDegrees,
+          aimedActionTypes: ['move', 'shoot', 'rotate'] },
     los: { openShapes },
   };
 }
@@ -483,6 +605,7 @@ export const DoomGame = {
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: true },
   ],
   createInitialState,
+  actionKey:        doomActionKey,
   getLegalActions:  withTeam(getLegalActions),
   isActionLegal:    withTeam(isActionLegal),
   getSearchActions: withTeam(getSearchActions),

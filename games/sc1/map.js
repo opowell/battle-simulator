@@ -2,104 +2,25 @@ import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
 import { tileNum } from '../coord.js';
+import { buildStarcraftMap, MAP_WIDTH, MAP_HEIGHT, mulberry32 } from '../mapTypes/starcraftMap.js';
 
-// Fast seeded PRNG
-export function mulberry32(seed) {
-  let s = seed >>> 0;
-  return function () {
-    s = (s + 0x6D2B79F5) >>> 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export { mulberry32, MAP_WIDTH, MAP_HEIGHT };
 
 /**
- * Generate an SC1-style map.
- * Layout: two bases in opposite corners, mineral clusters + vespene near each base,
- * elevated plateau in the center connected by ramps, obstacle patches.
+ * Generate the SC1 map — "Aiur Crossing", a hand-authored 2-player map built from
+ * grouped terrain features (see games/mapTypes/starcraftMap.js), the same shape-based
+ * approach as games/doom/map.js. Four mineral-ring bases per player (corner main,
+ * natural, third, and a 4th in the opposite corner), impassable rock outcrops that
+ * carve the field into lanes, and a contested central plateau ringed by cliffs with
+ * four ramp chokes. Returns { width, height, tiles, shapes, bases } — `tiles` drives
+ * movement / build / LOS, `shapes` is the grouped render layer for the design UI, and
+ * `bases` gives the two main-base centres.
  *
- * Coordinate system: x=0 left, y=0 bottom; displayed with y=height-1 at top.
+ * SC1 economy: 1500-mineral fields, 2500 for the contested gold expansions, and
+ * fat 5000-unit vespene geysers.
  */
-export function generateMap(width, height) {
-  const tiles = {};
-
-  // Fill with open ground
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      tiles[`${x},${y}`] = { terrain: 'open' };
-    }
-  }
-
-  // Obstacle border
-  for (let x = 0; x < width; x++) {
-    tiles[`${x},0`]          = { terrain: 'obstacle' };
-    tiles[`${x},${height-1}`]= { terrain: 'obstacle' };
-  }
-  for (let y = 0; y < height; y++) {
-    tiles[`0,${y}`]         = { terrain: 'obstacle' };
-    tiles[`${width-1},${y}`]= { terrain: 'obstacle' };
-  }
-
-  const cx = Math.floor(width / 2);
-  const cy = Math.floor(height / 2);
-
-  // Central elevated plateau (5 wide, 4 tall)
-  for (let dy = -2; dy <= 1; dy++) {
-    for (let dx = -3; dx <= 3; dx++) {
-      const x = cx + dx, y = cy + dy;
-      if (tiles[`${x},${y}`]?.terrain === 'open') {
-        tiles[`${x},${y}`] = { terrain: 'elevated' };
-      }
-    }
-  }
-
-  // Ramps into plateau (south and north)
-  const rampTiles = [
-    { x: cx-1, y: cy-3 }, { x: cx, y: cy-3 }, { x: cx+1, y: cy-3 }, // south ramps
-    { x: cx-1, y: cy+2 }, { x: cx, y: cy+2 }, { x: cx+1, y: cy+2 }, // north ramps
-  ];
-  for (const r of rampTiles) {
-    tiles[`${r.x},${r.y}`] = { terrain: 'ramp' };
-  }
-
-  // Additional obstacle patches (interior walls)
-  const obstaclePatches = [
-    // Left corridor wall
-    { x: 5, y: cy-1 }, { x: 5, y: cy }, { x: 5, y: cy+1 },
-    // Right corridor wall
-    { x: width-6, y: cy-1 }, { x: width-6, y: cy }, { x: width-6, y: cy+1 },
-  ];
-  for (const p of obstaclePatches) {
-    if (tiles[`${p.x},${p.y}`]?.terrain === 'open') {
-      tiles[`${p.x},${p.y}`] = { terrain: 'obstacle' };
-    }
-  }
-
-  // Player 1 base: bottom-left area (base at ~(3,3))
-  // Mineral cluster: above the base
-  const p1minerals = [
-    { x:4, y:5 }, { x:5, y:5 }, { x:6, y:5 }, { x:7, y:5 },
-    { x:4, y:6 }, { x:5, y:6 }, { x:6, y:6 }, { x:7, y:6 },
-  ];
-  for (const m of p1minerals) {
-    tiles[`${m.x},${m.y}`] = { terrain: 'minerals', amount: 1500 };
-  }
-  // Vespene geyser P1
-  tiles[`8,4`] = { terrain: 'vespene', amount: 5000 };
-
-  // Player 2 base: top-right area (base at ~(width-4, height-4))
-  const p2minerals = [
-    { x:width-5, y:height-6 }, { x:width-6, y:height-6 }, { x:width-7, y:height-6 }, { x:width-8, y:height-6 },
-    { x:width-5, y:height-7 }, { x:width-6, y:height-7 }, { x:width-7, y:height-7 }, { x:width-8, y:height-7 },
-  ];
-  for (const m of p2minerals) {
-    tiles[`${m.x},${m.y}`] = { terrain: 'minerals', amount: 1500 };
-  }
-  // Vespene geyser P2
-  tiles[`${width-9},${height-5}`] = { terrain: 'vespene', amount: 5000 };
-
-  return tiles;
+export function generateMap() {
+  return buildStarcraftMap({ mineral: 1500, rich: 2500, vespene: 5000 });
 }
 
 // Continuous (non-rasterized) terrain lookup for free-form unit movement — positions

@@ -110,6 +110,8 @@ Each square is drawn with a real FFTA battlefield texture (sliced from the *Giza
 
 The board renders **isometrically** (`ui.isometric` selects `apps/design/IsoLayer.vue` over the flat `SchematicLayer`). Each tile is a height-extruded diamond: the terrain texture is laid onto the ground plane via a skewed SVG pattern for the top face, plus shaded left/right cliff faces sized to the tile's `height`, so elevation reads as real 3-D steps. `toGrid` exposes each cell's `height` for this; units are depth-sorted and stand on their tile-tops.
 
+Each job has four sprites — `images/{job}/sprite_{N,E,S,W}.png` — sliced from that job's real FFTA battle sheet on spriters-resource.com (per-race frame layout: Human/Viera/Moogle/Nu Mou share one template, Bangaa another, since their side-profile frame sits in a different spot on the sheet). `toGrid` picks the file matching the unit's current `facing`, so `ui.showFacing` is off for this game — the sprite itself shows the direction instead of a facing arrow overlay.
+
 ## Win conditions
 
 | Outcome | Reason |

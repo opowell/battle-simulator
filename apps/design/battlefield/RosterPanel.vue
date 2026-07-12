@@ -55,6 +55,9 @@ defineEmits(['select', 'hover']);
             <div v-if="!u.dead && u.maxMp != null" class="roster-mp-track">
               <div class="roster-mp-fill" :style="{width: ((u.mp ?? 0)/u.maxMp*100)+'%'}"/>
             </div>
+            <div v-if="!u.dead && u.apMax != null" class="mono roster-ap">
+              AP {{Number(u.apNow ?? 0).toFixed(u.apNow % 1 ? 1 : 0)}}/{{u.apMax}}
+            </div>
             <div v-if="u.dead" class="mono roster-kia">KIA</div>
           </div>
         </div>
@@ -85,4 +88,5 @@ defineEmits(['select', 'hover']);
 .roster-mp-track { height: 3px; border-radius: 2px; overflow: hidden; background: rgba(100,80,200,.2); }
 .roster-mp-fill { height: 100%; border-radius: 2px; background: #9b6fff; transition: width .3s; }
 .roster-kia { font-size: 8px; color: #ff5f56; text-align: center; padding-top: 1px; }
+.roster-ap { font-size: 8px; color: var(--faint); }
 </style>
