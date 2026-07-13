@@ -2,10 +2,29 @@ import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
-import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
+import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
 
 const BASE = '/images/civ1';
+
+// Shortest horizontal distance between two columns on a map that wraps east/west.
+function wrapDX(ax, bx, width) {
+  const d = Math.abs(ax - bx);
+  return width ? Math.min(d, width - d) : d;
+}
+
+// ── Colour helpers (used by the coastline dither in toGrid) ────────────────────
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+function rgbToHex([r, g, b]) {
+  return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+}
+function lighten(hex, amt) {
+  const [r, g, b] = hexToRgb(hex);
+  return rgbToHex([r + (255 - r) * amt, g + (255 - g) * amt, b + (255 - b) * amt]);
+}
 
 const UNIT_IMAGES = {
   settlers:      `${BASE}/units/settlers`,
@@ -129,7 +148,7 @@ function getLegalActions(state, playerId) {
     // Attack: enemies in adjacent squares (Chebyshev distance ≤ 1)
     if (stats.attack > 0) {
       for (const enemy of units.filter(u => u.alive && u.ownerId !== playerId)) {
-        const dx = Math.abs(enemy.position.x - unit.position.x);
+        const dx = wrapDX(enemy.position.x, unit.position.x, board.width);
         const dy = Math.abs(enemy.position.y - unit.position.y);
         if (dx <= 1 && dy <= 1 && (dx + dy) > 0) {
           actions.push({ type: 'attack', unitId: unit.id, targetId: enemy.id });
@@ -342,7 +361,11 @@ function renderState(state) {
 function createInitialState(players, config = {}) {
   const width  = config.width  ?? 50;
   const height = config.height ?? 30;
-  const seed   = config.seed   ?? (Math.floor(Math.random() * 0xffffffff) >>> 0);
+  // A blank or non-numeric seed means "surprise me" — roll a fresh random one.
+  const parsedSeed = Number.parseInt(config.seed, 10);
+  const seed = Number.isFinite(parsedSeed) && parsedSeed > 0
+    ? (parsedSeed >>> 0)
+    : (Math.floor(Math.random() * 0xffffffff) >>> 0);
 
   const rng = mulberry32(seed);
   const tiles = generateMap(width, height, rng);
@@ -395,9 +418,10 @@ function getVisibleState(state, playerId) {
   const VISION = 2;
   const myUnits  = state.units.filter(u => u.alive && u.ownerId === playerId);
   const myCities = state.cities.filter(c => c.ownerId === playerId);
+  const W = state.board.width;
   const canSee = pos =>
-    myUnits.some(m  => Math.max(Math.abs(m.position.x - pos.x), Math.abs(m.position.y - pos.y)) <= VISION) ||
-    myCities.some(c => Math.max(Math.abs(c.position.x - pos.x), Math.abs(c.position.y - pos.y)) <= VISION);
+    myUnits.some(m  => Math.max(wrapDX(m.position.x, pos.x, W), Math.abs(m.position.y - pos.y)) <= VISION) ||
+    myCities.some(c => Math.max(wrapDX(c.position.x, pos.x, W), Math.abs(c.position.y - pos.y)) <= VISION);
   return {
     ...state,
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
@@ -422,20 +446,23 @@ function getActionDuration(state, action) {
     const unit = state.units.find(u => u.id === action.unitId);
     if (!unit) return 1;
     const from = action.from ?? unit.position;
-    const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+    const dist = Math.max(wrapDX(action.to.x, from.x, state.board.width), Math.abs(action.to.y - from.y));
     return dist / (UNITS[unit.type]?.moves ?? 1);
   }
   if (action.type === 'attack') return 1;
   return 1;
 }
 
-function terrainInfo(key) {
+function terrainInfo(tile) {
+  const key = typeof tile === 'string' ? tile : tile?.terrain;
   const t = TERRAIN[key] ?? TERRAIN.plains;
   const name = key ? key[0].toUpperCase() + key.slice(1) : 'Plains';
   const parts = [`Food ${t.food}`, `Shields ${t.shields}`, `Trade ${t.trade}`];
   if (!t.passable.land) parts.push('impassable to land units');
   else parts.push(`move cost ${t.moveCost}`);
   if (t.defBonus) parts.push(`+${Math.round(t.defBonus * 100)}% defense`);
+  if (tile?.hasRoad) parts.push('road');
+  if (tile?.hasRiver) parts.push('river');
   return { name, description: parts.join(' · ') };
 }
 
@@ -449,11 +476,12 @@ export const Civ1Game = {
   scenarios: [
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
   ],
-  colors: { ocean: '#1a5a8a', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
+  colors: { ocean: '#1a5a8a', coast: '#3d82b4', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: true },
     { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
     { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },
+    { id: 'seed',   label: 'Map seed',   description: 'Positive integer for a repeatable map — leave blank for a random one', type: 'integer', placeholder: 'random' },
   ],
   createInitialState,
   getLegalActions,
@@ -472,21 +500,118 @@ export const Civ1Game = {
     const umap = {}, cmap = {};
     for (const u of units) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
     for (const c of cities) cmap[`${c.position.x},${c.position.y}`] = c;
+
+    // River overlay: pick a directional sprite (river_<nesw>) from which screen
+    // neighbours also carry a river or are ocean, so segments join up and reach
+    // the sea. Order n,e,s,w matches the sprite filenames (e.g. river_nes.png).
+    // Neighbour lookups wrap horizontally so the east/west seam renders seamlessly.
+    const isLand = (x, y) => {
+      const t = tiles[`${wrapX(x, width)},${y}`];
+      return !!t && t.terrain !== 'ocean';
+    };
+    const riverOrSea = (x, y) => {
+      const t = tiles[`${wrapX(x, width)},${y}`];
+      return !!t && (t.hasRiver || t.terrain === 'ocean');
+    };
+    const riverSprite = (x, y) => {
+      let d = '';
+      if (riverOrSea(x, y - 1)) d += 'n';
+      if (riverOrSea(x + 1, y)) d += 'e';
+      if (riverOrSea(x, y + 1)) d += 's';
+      if (riverOrSea(x - 1, y)) d += 'w';
+      return `${BASE}/terrain/${d ? `river_${d}` : 'river'}`;
+    };
+    // Shallow "coast" water: any ocean tile touching land (incl. diagonally).
+    // Civ1 draws these lighter than deep ocean, which is what gives continents a
+    // visible shoreline instead of the sea butting hard against a block of land.
+    // Purely cosmetic — the engine terrain stays 'ocean', so rules are unchanged.
+    const isCoast = (x, y) => {
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++)
+          if ((dx || dy) && isLand(x + dx, y + dy)) return true;
+      return false;
+    };
+    const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
+
+    // Coastline dithering. Civ1's sea wasn't a grid of flat squares — the boundary
+    // between deep water, shallow "coast" water and land was a pixelated dither that
+    // let continents read with a ragged shoreline. We reproduce that on the two
+    // water-side boundaries (land is drawn with opaque sprites, so it can't dither):
+    //   • coast tile → land neighbour: a thin bright "surf" fringe.
+    //   • deep tile  → coast neighbour: a softer gradient of coast-blue into the deep.
+    // Each cell emits a run-length-merged list of sub-tile rects in fractional tile
+    // coords (0..1); the renderer paints them over the flat colour rect. Purely
+    // cosmetic — engine terrain stays 'ocean', so rules are unchanged.
+    const SUB = 4;
+    // 4×4 ordered (Bayer) matrix, 0..15 → per-subcell paint threshold. Comparing a
+    // smooth land-proximity value against it turns the fringe into a stipple whose
+    // density falls off away from the boundary, instead of a hard band.
+    const BAYER4 = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+    const surfCol = lighten(this.colors.coast, 0.4);
+    const NDIRS = [[0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]];
+    const tileDither = (x, y) => {
+      if (!isOcean(x, y)) return null;
+      const selfCoast = isCoast(x, y);
+      const color = selfCoast ? surfCol : this.colors.coast;
+      // Thin, bright fringe for the land shoreline; a deeper, softer gradient for the
+      // deep→shallow water boundary.
+      const gate = selfCoast ? 0.72 : 0.5;
+      const isTarget = selfCoast
+        ? (nx, ny) => isLand(nx, ny)
+        : (nx, ny) => isOcean(nx, ny) && isCoast(nx, ny);
+      const dirs = NDIRS.filter(([dx, dy]) => isTarget(x + dx, y + dy));
+      if (!dirs.length) return null;
+
+      // Proximity of subcell (px,py) to the nearest targeted neighbour edge/corner.
+      const influence = (px, py) => {
+        let inf = 0;
+        for (const [dx, dy] of dirs) {
+          const cx = dx > 0 ? px : dx < 0 ? 1 - px : 1;
+          const cy = dy > 0 ? py : dy < 0 ? 1 - py : 1;
+          inf = Math.max(inf, cx * cy);
+        }
+        return inf;
+      };
+
+      const out = [];
+      for (let sy = 0; sy < SUB; sy++) {
+        let run = -1;
+        for (let sx = 0; sx <= SUB; sx++) {
+          const paint = sx < SUB && (() => {
+            const inf = influence((sx + 0.5) / SUB, (sy + 0.5) / SUB);
+            return inf > gate && inf > (BAYER4[sy][sx] + 0.5) / 16;
+          })();
+          if (paint && run < 0) run = sx;
+          else if (!paint && run >= 0) {
+            out.push({ x: run / SUB, y: sy / SUB, w: (sx - run) / SUB, h: 1 / SUB, color });
+            run = -1;
+          }
+        }
+      }
+      return out.length ? out : null;
+    };
+
     const cells = [];
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const tile = tiles[`${x},${y}`] ?? {};
         const u = umap[`${x},${y}`];
         const city = cmap[`${x},${y}`];
+        const coast = tile.terrain === 'ocean' && isCoast(x, y);
         cells.push({
           x, y,
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
           unitId: u?.id ?? null,
           imagePath: u ? (UNIT_IMAGES[u.type] ?? null) : null,
-          bgImage: tile.terrain ? `${BASE}/terrain/${tile.terrain}` : null,
+          // Water is drawn as flat colour (deep ocean dark blue, coast lighter
+          // blue) rather than the purple ocean sprite — real Civ1's sea is blue,
+          // and a two-tone deep/shallow split is what makes coastlines read.
+          bgImage: tile.terrain === 'ocean' ? null : (tile.terrain ? `${BASE}/terrain/${tile.terrain}` : null),
+          dither: tile.terrain === 'ocean' ? tileDither(x, y) : null,
+          overlayImage: tile.hasRiver ? riverSprite(x, y) : null,
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,
-          color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
-          terrain: terrainInfo(tile.terrain),
+          color: coast ? this.colors.coast : (this.colors[tile.terrain] ?? this.colors.plains ?? '#808070'),
+          terrain: coast ? { ...terrainInfo(tile), name: 'Coast' } : terrainInfo(tile),
           hp: u?.hp, maxHp: u?.maxHp,
         });
       }

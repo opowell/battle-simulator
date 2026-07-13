@@ -42,8 +42,7 @@ function pct(p) { return Math.round((p || 0) * 100); }
           <span v-if="a.difficulty != null">power {{ a.difficulty }}</span>
           <span v-if="a.worlds">· {{ a.worlds }} worlds</span>
           <span v-if="a.value != null">· v {{ a.value }}</span>
-          <span v-if="a.chosenRank != null"
-                :class="a.chosenRank > 1 ? 'ai-warn' : ''">· picked #{{ a.chosenRank }}</span>
+          <span v-if="a.chosenRank != null">· picked #{{ a.chosenRank }}</span>
         </div>
 
         <div class="ai-rows">
@@ -51,14 +50,13 @@ function pct(p) { return Math.round((p || 0) * 100); }
                class="ai-row" :class="{ 'ai-row--chosen': c.chosen }">
             <span class="mono ai-rank">{{ i + 1 }}</span>
             <span class="ai-move">{{ fmtMove(c.move) }}</span>
-            <!-- CFR: equilibrium probability bar. Stockfish: centipawn eval. -->
-            <template v-if="c.prob != null">
-              <span class="ai-bar"><span class="ai-bar-fill" :style="{ width: pct(c.prob) + '%' }"></span></span>
-              <span class="mono ai-metric">{{ pct(c.prob) }}%</span>
-            </template>
-            <span v-else class="mono ai-metric ai-cp"
-                  :class="c.cp > 20 ? 'ai-pos' : c.cp < -20 ? 'ai-neg' : ''">{{ fmtCp(c.cp) }}</span>
-            <span v-if="c.chosen" class="ai-chosen">▸ played</span>
+            <!-- Stockfish centipawn eval, when scored. -->
+            <span class="mono ai-cp" :class="c.cp > 20 ? 'ai-pos' : c.cp < -20 ? 'ai-neg' : ''">
+              {{ c.cp != null ? fmtCp(c.cp) : '' }}</span>
+            <!-- Selection / equilibrium probability bar, when this is a distribution. -->
+            <span class="ai-bar"><span v-if="c.prob != null" class="ai-bar-fill"
+              :style="{ width: pct(c.prob) + '%' }"></span></span>
+            <span class="mono ai-metric">{{ c.prob != null ? pct(c.prob) + '%' : '' }}</span>
           </div>
         </div>
         <div v-if="a.totalCandidates > a.candidates.length" class="ai-more">
@@ -78,17 +76,18 @@ function pct(p) { return Math.round((p || 0) * 100); }
 .ai-player { color: var(--accent); font-size: 12px; }
 .ai-mode { font-size: 10px; color: var(--dim); }
 .ai-meta { font-size: 10px; color: var(--faint); margin: 2px 0 5px; display: flex; gap: 5px; flex-wrap: wrap; }
-.ai-warn { color: var(--danger); }
 .ai-rows { display: flex; flex-direction: column; gap: 1px; }
-.ai-row { display: grid; grid-template-columns: 16px 64px 1fr auto auto; align-items: center; gap: 6px; font-size: 11px; padding: 1px 0; }
-.ai-row--chosen { background: rgba(66,198,230,.10); border-radius: 3px; }
+.ai-row { display: grid; grid-template-columns: 16px 62px 46px 1fr 38px; align-items: center; gap: 6px; font-size: 11px; padding: 1px 4px; border-radius: 3px; }
+/* The move actually played: bold text and a stronger background highlight. */
+.ai-row--chosen { background: rgba(66,198,230,.18); }
+.ai-row--chosen .ai-move { font-weight: 700; color: var(--fg, #fff); }
 .ai-rank { font-size: 9px; color: var(--faint); text-align: right; }
 .ai-move { color: var(--fg, #ddd); }
+.ai-cp { font-size: 10px; color: var(--dim); text-align: right; }
+.ai-cp.ai-pos { color: var(--ok); }
+.ai-cp.ai-neg { color: var(--danger); }
 .ai-bar { height: 5px; background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden; }
 .ai-bar-fill { display: block; height: 100%; background: var(--accent); }
 .ai-metric { font-size: 10px; color: var(--dim); min-width: 34px; text-align: right; }
-.ai-cp.ai-pos { color: var(--ok); }
-.ai-cp.ai-neg { color: var(--danger); }
-.ai-chosen { font-size: 9px; color: var(--accent); }
 .ai-more { font-size: 10px; color: var(--faint); padding-top: 4px; }
 </style>

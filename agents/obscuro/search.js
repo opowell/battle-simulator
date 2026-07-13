@@ -52,9 +52,19 @@ export function makeHooks(game, me, opts = {}) {
   // (gtcfr.js expandNode), so an rng-sampled set would desync.
   return {
     me,
+    // Search-tree action set. Preference order:
+    //   getSearchActions      — continuous-lattice games (a resolution-scaled point set)
+    //   getSearchLegalActions — a game-specific move set for MODELLING inside the tree
+    //     that differs from the real legal set. FoW chess uses this to drop self-check
+    //     moves: real play is pseudo-legal (a player may blunder into check under fog),
+    //     but the search must NOT model the opponent as hanging its own king — that
+    //     child's "mover loses" leaf flips to a phantom win for us and poisons the value.
+    //   getLegalActions       — the default.
     legal: game.getSearchActions
       ? ((s, p) => game.getSearchActions(s, p, opts.searchRes ?? {}))
-      : ((s, p) => game.getLegalActions(s, p)),
+      : game.getSearchLegalActions
+        ? ((s, p) => game.getSearchLegalActions(s, p))
+        : ((s, p) => game.getLegalActions(s, p)),
     apply: (s, p, a) => { try { return game.applyActions(s, [{ playerId: p, action: a }], rng); } catch { return null; } },
     key,
     obsKey: (s, p) => observationKey(game, s, p),

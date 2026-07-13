@@ -99,7 +99,9 @@ const GreedyAgent = {
       );
       const dx = nearest.position.x - activeUnit.position.x;
       const dy = nearest.position.y - activeUnit.position.y;
-      const wantDir = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'E' : 'W') : (dy >= 0 ? 'S' : 'N');
+      // Facing keys are the isometric screen diagonals (see FFTAGame DIRECTIONS):
+      // grid +x → SE, −x → NW, +y → SW, −y → NE.
+      const wantDir = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'SE' : 'NW') : (dy >= 0 ? 'SW' : 'NE');
       return endTurns.find(a => a.direction === wantDir) ?? endTurns[0];
     }
     return endTurns[0];

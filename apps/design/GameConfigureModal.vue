@@ -153,6 +153,13 @@ function handleCreate() {
                 <label>{{opt.label}} · {{gameOpts[opt.id]}}</label>
                 <input type="range" :min="opt.min ?? 0" :max="opt.max ?? 100" :step="opt.step ?? 1" v-model.number="gameOpts[opt.id]"/>
               </div>
+              <div v-else-if="opt.type === 'integer'" class="field" :title="opt.description">
+                <label>{{opt.label}}</label>
+                <input type="text" inputmode="numeric" class="gcm-input"
+                       :placeholder="opt.placeholder ?? ''"
+                       :value="gameOpts[opt.id]"
+                       @input="gameOpts[opt.id] = $event.target.value.replace(/[^0-9]/g, '')"/>
+              </div>
               <AiDifficultyField v-else-if="opt.type === 'ai-difficulty'" :opt="opt"
                 v-model:power="gameOpts[opt.id]"
                 v-model:time="gameOpts[opt.timeKey ?? 'aiTimeMs']"

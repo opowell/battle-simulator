@@ -28,7 +28,7 @@ function initGameOpts(g) {
       opts[opt.timeKey ?? 'aiTimeMs'] = null;
       opts[opt.id + 'Mode'] = 'power';
     } else {
-      opts[opt.id] = opt.default ?? (opt.type === 'boolean' ? false : opt.type === 'range' ? (opt.min ?? 0) : opt.options?.[0]?.value ?? '');
+      opts[opt.id] = opt.default ?? (opt.type === 'boolean' ? false : opt.type === 'range' ? (opt.min ?? 0) : opt.type === 'integer' ? '' : opt.options?.[0]?.value ?? '');
     }
   }
   return opts;

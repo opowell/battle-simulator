@@ -139,10 +139,11 @@ async function serveGameImage(gameName, job, res, type) {
     resolve(GAMES_DIR, gameName, 'images'),
     resolve(GAMES_DIR, gameName, 'assets'),
   ];
-  // Lobby preview art gets swapped/curated by hand from time to time, unlike the
-  // static per-unit sprite sets — don't let browsers cache a stale image at the
-  // same URL for a full day after we replace the underlying file.
-  const cacheControl = safe.startsWith('preview_') ? 'no-cache' : 'public, max-age=86400';
+  // Sprite art is still being iterated on (files get replaced in place at stable
+  // URLs, e.g. re-sliced or re-mapped facing sets), so never let a browser reuse
+  // a cached image without revalidating — otherwise a swapped file keeps showing
+  // the old pixels for up to a day. `no-cache` = "always revalidate before use".
+  const cacheControl = 'no-cache';
 
   // /images/:game/:job/:type  →  games/:game/{images,assets}/:job/{type}*
   if (type) {

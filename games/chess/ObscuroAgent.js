@@ -30,7 +30,7 @@ import { isAttackedBy } from './board.js';
 import { evaluate } from './ChessAgent.js';
 import { toFEN, uciToAction } from './fen.js';
 import {
-  multiPV, stockfishBestAction, sfOptsForDifficulty, difficultyToNumber,
+  multiPV, stockfishBestAction, difficultyToNumber,
   available as stockfishAvailable,
 } from './stockfish.js';
 
@@ -124,31 +124,93 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     await this._game();
 
     const gs = state.gameSpecific;
-    // Perfect information (fog off): play Stockfish's best move directly. In time
-    // mode the per-move limit is the engine's movetime at full strength; in power
-    // mode it is scaled by the dial. A 0 power level / 0 ms limit is random, so
-    // it falls through to the generic random branch.
+    // Perfect information (fog off): play Stockfish at FULL strength — no Skill Level
+    // handicap. A 0 power level / 0 ms limit is random and falls through to the generic
+    // random branch. Otherwise:
+    //   • time mode  → the single strongest move within the movetime budget.
+    //   • power mode → the engine scores every move at full strength and we SAMPLE one
+    //     in proportion to its score (see _proportionalPick). Weaker play at lower power
+    //     comes from the softer sampling, not from a hobbled engine, so the AI plays
+    //     worse gradually instead of dropping pieces outright.
     const timeMs = gs.aiTimeMs;
     const isRandom = timeMs === 0 || (timeMs == null && gs.difficulty === 0);
     if (!gs.fogOfWar && !isRandom) {
-      const sfOpts = typeof timeMs === 'number'
-        ? { movetime: Math.min(Math.max(timeMs, 1), 600000), skill: 20 }
-        : sfOptsForDifficulty(gs.difficulty);
-      const sf = await stockfishBestAction(state, legalActions, sfOpts);
-      if (sf) {
-        await this._captureStockfishAnalysis(state, legalActions, sf, sfOpts, gs);
-        return this._matchLegal(sf, legalActions) ?? sf;
+      if (typeof timeMs === 'number') {
+        const sfOpts = { movetime: Math.min(Math.max(timeMs, 1), 600000), skill: 20 };
+        const sf = await stockfishBestAction(state, legalActions, sfOpts);
+        if (sf) {
+          await this._captureStockfishAnalysis(state, legalActions, sf, sfOpts, gs);
+          return this._matchLegal(sf, legalActions) ?? sf;
+        }
+      } else {
+        const picked = await this._proportionalPick(state, legalActions, gs);
+        if (picked) return picked;
       }
     }
     return super.chooseAction(state, legalActions);
   }
 
-  // Perfect-information play routes straight to Stockfish, so its "analysis" is
-  // the engine's own MultiPV ranking. The revealing detail for a skill-limited
-  // blunder (e.g. hanging a piece at a mid power level) is that the move actually
-  // chosen is NOT the top line — Skill Level intentionally makes the engine pick a
-  // weaker one. We therefore rank every candidate at full strength and record where
-  // the chosen move landed in that ranking (`chosenRank`).
+  // Power mode, perfect information: score every legal move at full strength, then
+  // pick one at random weighted by its score. Scores are converted to win
+  // probabilities (a principled, always-positive measure), so a move worth ~twice
+  // the win chance of another is played ~twice as often. The power dial only sets
+  // the SHARPNESS of that sampling (β): at power 50 the probability is exactly
+  // proportional to the win-prob score; higher power sharpens toward the best move,
+  // lower power flattens toward uniform. No Skill Level, so no gratuitous blunders.
+  async _proportionalPick(state, legalActions, gs) {
+    try {
+      const us = state.activePlayers[0];
+      const fen = toFEN(state.board, state.gameSpecific, us === 'white' ? 'w' : 'b', state.turnNumber ?? 1);
+      const t = difficultyToNumber(gs.difficulty) / 100;
+      // Score broadly so weak-but-legal moves stay reachable at low power; deeper at
+      // higher power for more accurate scores (strength there comes from sharper β too).
+      const multipv = Math.min(legalActions.length, 20);
+      const depth = Math.round(10 + t * 6); // 10..16
+      const pv = await multiPV(fen, { multipv, depth });
+      if (!pv || !pv.length) return null;
+
+      // cp (mover's perspective) → win probability in (0,1). Mate scores saturate.
+      const winProb = cp => (cp >= 90000 ? 1 : cp <= -90000 ? 0 : 1 / (1 + Math.pow(10, -cp / 400)));
+      // β: 0 → uniform, 1 → probability exactly proportional to win-prob score, →12 → near-best.
+      const beta = t <= 0.5 ? (t / 0.5) : (1 + (t - 0.5) / 0.5 * 11);
+
+      const scored = [];
+      for (const { move, cp } of pv) {
+        const a = uciToAction(move, legalActions);
+        if (!a) continue;
+        const wp = winProb(cp);
+        scored.push({ action: a, cp, weight: Math.pow(wp, beta) });
+      }
+      if (!scored.length) return null;
+      const total = scored.reduce((s, x) => s + x.weight, 0) || 1;
+      for (const x of scored) x.prob = x.weight / total;
+
+      // Sample proportional to weight.
+      let r = this._rng() * total, chosen = scored[0].action;
+      for (const x of scored) { r -= x.weight; if (r <= 0) { chosen = x.action; break; } }
+
+      const chosenKey = this._key(chosen);
+      const rank = scored.findIndex(x => this._key(x.action) === chosenKey);
+      this.lastAnalysis = {
+        ts: Date.now(),
+        player: us,
+        engine: 'stockfish',
+        mode: 'Stockfish · proportional',
+        difficulty: gs.difficulty ?? null,
+        depth,
+        chosenRank: rank >= 0 ? rank + 1 : null,
+        candidates: scored.map(x => ({
+          key: this._key(x.action), move: compactAction(x.action),
+          cp: x.cp, prob: x.prob, chosen: this._key(x.action) === chosenKey,
+        })),
+        totalCandidates: legalActions.length,
+      };
+      return this._matchLegal(chosen, legalActions) ?? chosen;
+    } catch { return null; } // any engine hiccup → fall back to the generic search
+  }
+
+  // Time mode (perfect information): the strongest move within the movetime budget.
+  // The MultiPV ranking is captured purely for the analysis panel.
   async _captureStockfishAnalysis(state, legalActions, chosen, sfOpts, gs) {
     try {
       const us = state.activePlayers[0];
@@ -162,17 +224,15 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
           return a ? { key: this._key(a), move: compactAction(a), cp, chosen: this._key(a) === chosenKey } : null;
         }).filter(Boolean);
       }
-      // The skill-limited pick may fall outside the top MultiPV lines — surface it
-      // explicitly so the panel always shows what was actually played.
       if (!cands.some(c => c.chosen)) {
-        cands.push({ key: chosenKey, move: compactAction(chosen), cp: null, chosen: true, outsideTop: true });
+        cands.push({ key: chosenKey, move: compactAction(chosen), cp: null, chosen: true });
       }
       const rank = cands.findIndex(c => c.chosen);
       this.lastAnalysis = {
         ts: Date.now(),
         player: us,
         engine: 'stockfish',
-        mode: `Stockfish · skill ${sfOpts.skill ?? 20}`,
+        mode: 'Stockfish · best',
         difficulty: gs.difficulty ?? null,
         movetimeMs: sfOpts.movetime ?? null,
         chosenRank: rank >= 0 ? rank + 1 : null,

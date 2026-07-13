@@ -546,20 +546,25 @@ function abilityPreview(caster, target, ability, board) {
 
 // Final-facing choice offered once a unit is done acting, mirroring the
 // original game's "pick a direction, A confirms" step before the turn ends.
+// The keys are the *on-screen* compass points of the isometric camera (north =
+// top of screen), not the grid axes: because the board is drawn rotated 45°,
+// each grid axis heads toward a screen diagonal. Grid −y renders up-and-right
+// (NE), +x down-and-right (SE), +y down-and-left (SW), −x up-and-left (NW). The
+// labels double as the sprite-variant suffixes (sprite_NE/SE/SW/NW.png).
 const DIRECTIONS = {
-  N: { dx: 0,  dy: -1, angle: -Math.PI / 2 },
-  E: { dx: 1,  dy: 0,  angle: 0 },
-  S: { dx: 0,  dy: 1,  angle: Math.PI / 2 },
-  W: { dx: -1, dy: 0,  angle: Math.PI },
+  NE: { dx: 0,  dy: -1, angle: -Math.PI / 2 },
+  SE: { dx: 1,  dy: 0,  angle: 0 },
+  SW: { dx: 0,  dy: 1,  angle: Math.PI / 2 },
+  NW: { dx: -1, dy: 0,  angle: Math.PI },
 };
 
-// Reverse of DIRECTIONS[x].angle — which sprite variant (sprite_N/E/S/W.png)
+// Reverse of DIRECTIONS[x].angle — which sprite variant (sprite_NE/SE/SW/NW.png)
 // to show for a unit currently facing this angle.
 function facingLetter(angle) {
   for (const [letter, { angle: a }] of Object.entries(DIRECTIONS)) {
     if (Math.abs(a - (angle ?? 0)) < 1e-6) return letter;
   }
-  return 'S';
+  return 'SW';
 }
 
 // Units only ever face strictly N/S/E/W. When facing is inferred from a

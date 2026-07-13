@@ -484,10 +484,28 @@ function segBorderColor(seg) {
   return darken(raw, 0.55);
 }
 
+// Optional per-tile coastline dither (see Civ1Game.toGrid): a run-length-merged
+// list of {x,y,w,h,color} sub-rects in fractional tile coords, painted over the
+// flat colour rect to break a water tile's hard square edge into a pixel stipple.
+// Hidden under fog like the tile's own colour.
+function tileDither(tile) {
+  if (!tile.dither) return null;
+  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
+  return tile.dither;
+}
+
 function tileBgImage(tile) {
   if (!tile.bgImage) return null;
   if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
   return imgSrc(tile.bgImage);
+}
+
+// A second sprite drawn on top of the terrain (e.g. a river overlay whose art is
+// transparent except for the feature itself). Fogged the same as the base tile.
+function tileOverlayImage(tile) {
+  if (!tile.overlayImage) return null;
+  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
+  return imgSrc(tile.overlayImage);
 }
 
 // Design rule: grid-based games get a square marker (a game can override per unit
@@ -811,17 +829,42 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               stroke-linecap="round" class="sl-noevents"/>
       </template>
       <template v-else>
+        <!-- A hair of overlap on the right/bottom edges so adjacent tiles overdraw
+             their shared edge instead of butting exactly against it — without it,
+             SVG anti-aliasing leaves a faint background-coloured seam along every
+             tile edge that reads as a spurious terrain grid. Both the colour layer
+             and the (typically opaque) terrain sprite are extended so neither shows
+             a seam; the river overlay below keeps its exact size so its channel art
+             lines up edge-to-edge with its neighbours. -->
         <rect v-for="(tile, i) in (field.tiles ?? [])" :key="'t'+i"
               :x="fit.x(tile.x)" :y="fit.y(tile.y)"
-              :width="fit.len(1)" :height="fit.len(1)"
+              :width="fit.len(1) + 0.75" :height="fit.len(1) + 0.75"
               shape-rendering="crispEdges"
               :fill="tileColor(tile)"/>
+        <!-- Coastline dither: sub-tile stipple rects painted over the flat colour
+             layer (games opt in via tile.dither, e.g. civ1's water shoreline). -->
+        <template v-for="(tile, i) in (field.tiles ?? [])" :key="'td'+i">
+          <rect v-for="(d, di) in (tileDither(tile) ?? [])" :key="'td'+i+'-'+di"
+                :x="fit.x(tile.x) + fit.len(d.x)" :y="fit.y(tile.y) + fit.len(d.y)"
+                :width="fit.len(d.w) + 0.75" :height="fit.len(d.h) + 0.75"
+                shape-rendering="crispEdges" :fill="d.color"
+                class="sl-noevents"/>
+        </template>
         <!-- Terrain images (overlaid on color; absent when fogged) -->
         <template v-for="(tile, i) in (field.tiles ?? [])" :key="'ti'+i">
           <image v-if="tileBgImage(tile)"
                  :x="fit.x(tile.x)" :y="fit.y(tile.y)"
-                 :width="fit.len(1)" :height="fit.len(1)"
+                 :width="fit.len(1) + 0.75" :height="fit.len(1) + 0.75"
                  :href="tileBgImage(tile)"
+                 preserveAspectRatio="xMidYMid slice"
+                 class="sl-noevents sl-pixel"/>
+        </template>
+        <!-- Terrain overlay sprites (e.g. rivers) drawn on top of the base terrain -->
+        <template v-for="(tile, i) in (field.tiles ?? [])" :key="'to'+i">
+          <image v-if="tileOverlayImage(tile)"
+                 :x="fit.x(tile.x)" :y="fit.y(tile.y)"
+                 :width="fit.len(1)" :height="fit.len(1)"
+                 :href="tileOverlayImage(tile)"
                  preserveAspectRatio="xMidYMid slice"
                  class="sl-noevents sl-pixel"/>
         </template>

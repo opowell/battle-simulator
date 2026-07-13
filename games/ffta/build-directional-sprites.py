@@ -1,6 +1,7 @@
 """
 Slice N/E/S/W unit sprites for every FFTA job from the ripped GBA battle
-sheets on spriters-resource.com, and save them as images/{job}/sprite_{N,E,S,W}.png.
+sheets on spriters-resource.com, and save them as images/{job}/sprite_{NE,SE,SW,NW}.png
+(named by the isometric screen diagonal each pose faces, north = top of screen).
 
 Each sheet packs many animation frames with no direction labels. The frame
 positions turned out to be fixed per sheet "family" (confirmed by eye, job by
@@ -96,14 +97,20 @@ def process_job(job, asset_id, cache_dir):
     W, _H = im.size
     template = HUMAN_TEMPLATE if W >= 1000 else (BANGAA_TEMPLATE if job in BANGAA_JOBS else OTHER_TEMPLATE)
     im_rgba = colorkey(im)
-    for direction, box in template.items():
-        # The template's 'E' entry is the sheet's one side-profile frame, which
-        # (confirmed by eye) actually reads as facing screen-left, i.e. West.
-        # Save it as W and derive E by mirroring, rather than the reverse.
-        out_name = 'W' if direction == 'E' else direction
-        crop_tight(im_rgba, box).save(jobdir / f'sprite_{out_name}.png')
-    w_img = Image.open(jobdir / 'sprite_W.png')
-    w_img.transpose(Image.FLIP_LEFT_RIGHT).save(jobdir / 'sprite_E.png')
+    # These ripped frames are cardinal-ish idle poses: 'S' is the character seen
+    # from the front (drawn angled down-and-left, i.e. screen SW) and 'N' its back
+    # (angled up-and-left, screen NW). FFTA's four *isometric* facings are the two
+    # front diagonals and two back diagonals (north = top of screen), so we build
+    # all four from just front and back, each plus a horizontal mirror. The sheet's
+    # side-profile 'E' frame doesn't correspond to any iso facing, so it is unused:
+    #   SW = front,   SE = front mirrored,
+    #   NW = back,    NE = back mirrored.
+    front = crop_tight(im_rgba, template['S'])
+    back  = crop_tight(im_rgba, template['N'])
+    front.save(jobdir / 'sprite_SW.png')
+    front.transpose(Image.FLIP_LEFT_RIGHT).save(jobdir / 'sprite_SE.png')
+    back.save(jobdir / 'sprite_NW.png')
+    back.transpose(Image.FLIP_LEFT_RIGHT).save(jobdir / 'sprite_NE.png')
     print(f'  {job:14} asset={asset_id} sheet={W}x{_H}')
 
 

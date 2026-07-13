@@ -246,6 +246,21 @@ export const ChessGame = {
     }));
   },
 
+  // Action set the AI search reasons over INSIDE its tree (see makeHooks in
+  // agents/obscuro/search.js). Always check-filtered, even under fog: real play
+  // stays pseudo-legal via getLegalActions (a fogged player may unknowingly move
+  // into check), but the search must model both sides as rational — never hanging
+  // their own king. A self-check move is scored "mover loses" by the leaf eval, and
+  // that value flips to a phantom WIN for the other side, which was making the AI
+  // believe it was winning a lost position and play on carelessly.
+  getSearchLegalActions(state, playerId) {
+    return getAllLegalMoves(state.board, playerId, state.gameSpecific).map(a => ({
+      ...a,
+      gridFrom: a.from ? squareToGrid(a.from) : undefined,
+      gridTo:   a.to   ? squareToGrid(a.to)   : undefined,
+    }));
+  },
+
   applyActions(state, playerActions) {
     const { playerId, action } = playerActions[0]; // chess: always 1 active player
     const opponent = playerId === 'white' ? 'black' : 'white';

@@ -6,6 +6,12 @@ import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTi
 import { assets, cityImg } from './assets/index.js';
 import { getCiv2Belief } from './belief.js';
 
+// Shortest horizontal distance between two columns on a map that wraps east/west.
+function wrapDX(ax, bx, width) {
+  const d = Math.abs(ax - bx);
+  return width ? Math.min(d, width - d) : d;
+}
+
 // ── City name pools ───────────────────────────────────────────────────────────
 
 const CITY_NAMES_P1 = [
@@ -98,7 +104,7 @@ function getLegalActions(state, playerId) {
     // Attack: enemies in adjacent squares (Chebyshev distance ≤ 1)
     if (stats.attack > 0) {
       for (const enemy of units.filter(u => u.alive && u.ownerId !== playerId)) {
-        const dx = Math.abs(enemy.position.x - unit.position.x);
+        const dx = wrapDX(enemy.position.x, unit.position.x, board.width);
         const dy = Math.abs(enemy.position.y - unit.position.y);
         if (dx <= 1 && dy <= 1 && (dx + dy) > 0) {
           actions.push({ type: 'attack', unitId: unit.id, targetId: enemy.id });
@@ -317,7 +323,11 @@ function renderState(state) {
 function createInitialState(players, config = {}) {
   const width  = config.width  ?? 50;
   const height = config.height ?? 30;
-  const seed   = config.seed   ?? (Math.floor(Math.random() * 0xffffffff) >>> 0);
+  // A blank or non-numeric seed means "surprise me" — roll a fresh random one.
+  const parsedSeed = Number.parseInt(config.seed, 10);
+  const seed = Number.isFinite(parsedSeed) && parsedSeed > 0
+    ? (parsedSeed >>> 0)
+    : (Math.floor(Math.random() * 0xffffffff) >>> 0);
 
   const rng = mulberry32(seed);
   const tiles = generateMap(width, height, rng);
@@ -372,11 +382,12 @@ function createInitialState(players, config = {}) {
 
 function getVisibleState(state, playerId) {
   const VISION = 2;
+  const W = state.board.width;
   const myUnits  = state.units.filter(u => u.alive && u.ownerId === playerId);
   const myCities = state.cities.filter(c => c.ownerId === playerId);
   const canSee = pos =>
-    myUnits.some(m  => Math.max(Math.abs(m.position.x - pos.x), Math.abs(m.position.y - pos.y)) <= VISION) ||
-    myCities.some(c => Math.max(Math.abs(c.position.x - pos.x), Math.abs(c.position.y - pos.y)) <= VISION);
+    myUnits.some(m  => Math.max(wrapDX(m.position.x, pos.x, W), Math.abs(m.position.y - pos.y)) <= VISION) ||
+    myCities.some(c => Math.max(wrapDX(c.position.x, pos.x, W), Math.abs(c.position.y - pos.y)) <= VISION);
   return {
     ...state,
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
@@ -401,7 +412,7 @@ function getActionDuration(state, action) {
     const unit = state.units.find(u => u.id === action.unitId);
     if (!unit) return 1;
     const from = action.from ?? unit.position;
-    const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
+    const dist = Math.max(wrapDX(action.to.x, from.x, state.board.width), Math.abs(action.to.y - from.y));
     return dist / (UNITS[unit.type]?.moves ?? 1);
   }
   if (action.type === 'attack') return 1;
@@ -442,6 +453,7 @@ export const Civ2Game = {
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: true },
     { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
     { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },
+    { id: 'seed',   label: 'Map seed',   description: 'Positive integer for a repeatable map — leave blank for a random one', type: 'integer', placeholder: 'random' },
   ],
   createInitialState,
   getLegalActions,

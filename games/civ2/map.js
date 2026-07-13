@@ -15,6 +15,10 @@ export function mulberry32(seed) {
 // Bilinear interpolation
 function lerp(a, b, t) { return a + (b - a) * t; }
 
+// Wrap an x coordinate into [0, width) — the world is a cylinder that wraps
+// horizontally (east/west), so the left and right edges are the same seam.
+export function wrapX(x, width) { return ((x % width) + width) % width; }
+
 /**
  * Generate a procedural map using multi-scale value noise.
  * Returns tiles: { "x,y": { terrain, hasRoad, hasRiver, fortress, pollution, special } }
@@ -25,26 +29,32 @@ export function generateMap(width, height, rng) {
   const moist = new Float32Array(width * height);
 
   for (const [scale, weight] of [[3, 0.5], [7, 0.3], [13, 0.2]]) {
-    const cw = Math.ceil(width  / scale) + 2;
+    // Columns wrap horizontally: `cellsX` lattice cells span the whole world and
+    // the corner grid is periodic in x, so noise is seamless across the seam.
+    const cellsX = Math.max(2, Math.round(width / scale));
     const ch = Math.ceil(height / scale) + 2;
-    const ec = Array.from({ length: ch * cw }, () => rng());
-    const mc = Array.from({ length: ch * cw }, () => rng());
+    const ec = Array.from({ length: ch * cellsX }, () => rng());
+    const mc = Array.from({ length: ch * cellsX }, () => rng());
 
     for (let y = 0; y < height; y++) {
+      const gy = y / scale;
+      const iy = Math.floor(gy);
+      const fy = gy - iy;
       for (let x = 0; x < width; x++) {
-        const gx = x / scale, gy = y / scale;
-        const ix = Math.floor(gx), iy = Math.floor(gy);
-        const fx = gx - ix, fy = gy - iy;
+        const gx = (x / width) * cellsX;
+        const ix = Math.floor(gx);
+        const fx = gx - ix;
+        const ix0 = ix % cellsX, ix1 = (ix + 1) % cellsX;
         const i = y * width + x;
 
         const e = lerp(
-          lerp(ec[iy * cw + ix], ec[iy * cw + ix + 1], fx),
-          lerp(ec[(iy + 1) * cw + ix], ec[(iy + 1) * cw + ix + 1], fx),
+          lerp(ec[iy * cellsX + ix0], ec[iy * cellsX + ix1], fx),
+          lerp(ec[(iy + 1) * cellsX + ix0], ec[(iy + 1) * cellsX + ix1], fx),
           fy,
         );
         const m = lerp(
-          lerp(mc[iy * cw + ix], mc[iy * cw + ix + 1], fx),
-          lerp(mc[(iy + 1) * cw + ix], mc[(iy + 1) * cw + ix + 1], fx),
+          lerp(mc[iy * cellsX + ix0], mc[iy * cellsX + ix1], fx),
+          lerp(mc[(iy + 1) * cellsX + ix0], mc[(iy + 1) * cellsX + ix1], fx),
           fy,
         );
         elev[i] += e * weight;
@@ -59,12 +69,14 @@ export function generateMap(width, height, rng) {
       const i = y * width + x;
       const e = elev[i];
       const m = moist[i];
-      const edge = Math.min(x, y, width - 1 - x, height - 1 - y);
+      // Only the poles (top/bottom rows) are forced to ocean — the map wraps
+      // horizontally, so there is no east/west edge to wall off with water.
+      const poleDist = Math.min(y, height - 1 - y);
       // Latitude: 0 at poles, 1 at equator
-      const lat = Math.min(y, height - 1 - y) / ((height - 1) / 2);
+      const lat = poleDist / ((height - 1) / 2);
 
       let terrain;
-      if (edge <= 0 || e < 0.32) {
+      if (poleDist <= 0 || e < 0.32) {
         terrain = 'ocean';
       } else if (lat < 0.18) {
         terrain = e < 0.48 ? 'arctic' : 'tundra';
@@ -91,7 +103,64 @@ export function generateMap(width, height, rng) {
       tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver: false, fortress: false, pollution: false };
     }
   }
+
+  carveRivers(tiles, width, height, elev, rng);
   return tiles;
+}
+
+// Carve a handful of rivers by starting from high ground and following the
+// steepest-descent path of orthogonal neighbours down to the sea. Only paths
+// that actually reach ocean are kept, so no rivers strand inland.
+function carveRivers(tiles, width, height, elev, rng) {
+  const idx = (x, y) => y * width + x;
+  // x wraps horizontally; only y is bounded (poles).
+  const inBounds = (x, y) => y >= 0 && y < height;
+  const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
+  const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+
+  const sources = [];
+  for (let y = 2; y < height - 2; y++) {
+    for (let x = 0; x < width; x++) {
+      const t = tiles[`${x},${y}`];
+      if (!t || t.terrain === 'ocean' || t.terrain === 'arctic') continue;
+      if (elev[idx(x, y)] > 0.62) sources.push({ x, y });
+    }
+  }
+  if (!sources.length) return;
+
+  const target = Math.max(2, Math.round((width * height) / 280));
+  let carved = 0;
+  for (let attempt = 0; attempt < target * 8 && carved < target; attempt++) {
+    const src = sources[Math.floor(rng() * sources.length)];
+    let { x, y } = src;
+    const path = [];
+    const seen = new Set();
+    let reachedSea = false;
+
+    for (let step = 0; step < width + height; step++) {
+      const k = `${x},${y}`;
+      if (seen.has(k)) break;
+      seen.add(k);
+      path.push({ x, y });
+
+      let best = null;
+      for (const [dx, dy] of DIRS) {
+        const nx = wrapX(x + dx, width), ny = y + dy;
+        if (!inBounds(nx, ny)) continue;
+        if (isOcean(nx, ny)) { reachedSea = true; break; }
+        if (seen.has(`${nx},${ny}`)) continue;
+        const e = elev[idx(nx, ny)];
+        if (!best || e < best.e) best = { x: nx, y: ny, e };
+      }
+      if (reachedSea || !best) break;
+      x = best.x; y = best.y;
+    }
+
+    if (reachedSea && path.length >= 3) {
+      for (const p of path) tiles[`${p.x},${p.y}`].hasRiver = true;
+      carved++;
+    }
+  }
 }
 
 /**
@@ -119,7 +188,8 @@ export function findStartPos(tiles, width, height, xRange, rng) {
 export function findAdjacentFree(pos, board, units) {
   const occupied = new Set(units.filter(u => u.alive).map(u => `${u.position.x},${u.position.y}`));
   for (const [dx, dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]]) {
-    const nx = pos.x + dx, ny = pos.y + dy;
+    const nx = wrapX(pos.x + dx, board.width), ny = pos.y + dy;
+    if (ny < 0 || ny >= board.height) continue;
     const k = `${nx},${ny}`;
     const t = board.tiles[k];
     if (!t || t.terrain === 'ocean') continue;
@@ -153,9 +223,10 @@ export function getReachableTiles(unit, board, allUnits, playerId) {
     const { pos, ml } = queue.shift();
 
     for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]]) {
-      const next = { x: pos.x + dx, y: pos.y + dy };
+      const ny = pos.y + dy;
+      if (ny < 0 || ny >= board.height) continue;
+      const next = { x: wrapX(pos.x + dx, board.width), y: ny };
       const k = key(next);
-      if (next.x < 0 || next.x >= board.width || next.y < 0 || next.y >= board.height) continue;
 
       const tile = board.tiles[k];
       if (!tile) continue;
