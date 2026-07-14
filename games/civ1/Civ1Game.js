@@ -4,7 +4,7 @@ import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
-import { pickCoastSprite } from './coastSprites.js';
+import { pickCoastSprites } from './coastSprites.js';
 
 const BASE = '/images/civ1';
 
@@ -660,18 +660,18 @@ export const Civ1Game = {
     };
     const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
 
-    // Coastline sprite: pick the coast_*.png shore tile (see coastSprites.js) whose
-    // land-touching edges/corners best match this ocean tile's 8 neighbours, so the
-    // shoreline reads as a curved coast instead of a hard land/sea square edge.
-    // Returns null for open water (no land within one tile) — the flat deep-ocean
-    // colour already covers that case, no sprite needed.
+    // Coastline sprites: the stacked coast_*.png shore pieces (see coastSprites.js)
+    // matching this ocean tile's 8 land neighbours, so the shoreline reads as a
+    // curved coast instead of a hard land/sea square edge. An array of
+    // {image, flipX, flipY} painted in order (an edge/cove piece plus any convex
+    // corner nubs), or null for open water — the flat deep-ocean colour covers that.
     const coastSprite = (x, y) => {
       if (!isOcean(x, y)) return null;
-      const pick = pickCoastSprite({
+      const picks = pickCoastSprites({
         N: isLand(x, y - 1), S: isLand(x, y + 1), E: isLand(x + 1, y), W: isLand(x - 1, y),
         NW: isLand(x - 1, y - 1), NE: isLand(x + 1, y - 1), SW: isLand(x - 1, y + 1), SE: isLand(x + 1, y + 1),
       });
-      return pick ? { image: `${BASE}/terrain/${pick.file}`, flipX: pick.flipX, flipY: pick.flipY } : null;
+      return picks ? picks.map(p => ({ image: `${BASE}/terrain/${p.file}`, flipX: p.flipX, flipY: p.flipY })) : null;
     };
 
     const cells = [];

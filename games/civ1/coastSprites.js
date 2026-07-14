@@ -10,6 +10,10 @@
 // Each entry's edges/corners were read off the sheet directly (avg land coverage per
 // border row/col, thresholded at 50%) — e.g. coast_w is a clean strip of land along
 // the west edge.
+// The eight stock shore shapes, each drawing land along one or more full
+// cardinal edges (their diagonal `corners` are incidental to the art — where
+// the shore curves up at an edge's ends). Every non-cardinal orientation is
+// produced by mirroring one of these via SVG flips rather than a separate file.
 const SHAPES = [
   { file: 'coast_w',      edges: { N: false, S: false, E: false, W: true  }, corners: { NW: true,  NE: false, SW: true,  SE: false } },
   { file: 'coast_n',      edges: { N: true,  S: false, E: false, W: true  }, corners: { NW: true,  NE: true,  SW: false, SE: false } },
@@ -19,13 +23,12 @@ const SHAPES = [
   { file: 'coast_e',      edges: { N: true,  S: false, E: true,  W: false }, corners: { NW: false, NE: true,  SW: false, SE: true  } },
   { file: 'coast_sw',     edges: { N: false, S: true,  E: false, W: true  }, corners: { NW: false, NE: false, SW: true,  SE: true  } },
   { file: 'coast_e_wide', edges: { N: true,  S: true,  E: true,  W: false }, corners: { NW: false, NE: true,  SW: false, SE: true  } },
-  // Convex-corner nub: a small shore in one corner for an ocean tile whose only
-  // land neighbour is that diagonal (e.g. the outer corners of a small island).
-  // The sheet has no such piece — every stock shape draws a full edge — so this
-  // one was synthesised from the SE cove's corner over open water. Without it a
-  // diagonal-only tile stays flat ocean, breaking the coastline ring.
-  { file: 'coast_corner', edges: { N: false, S: false, E: false, W: false }, corners: { NW: false, NE: false, SW: false, SE: true } },
 ];
+
+// The two cardinal neighbours flanking each diagonal corner. A convex-corner
+// nub (coast_corner) is only drawn for a diagonal whose land isn't already
+// covered by an edge shape — i.e. neither flanking cardinal is itself land.
+const CORNER_ADJ = { NW: ['N', 'W'], NE: ['N', 'E'], SW: ['S', 'W'], SE: ['S', 'E'] };
 
 const FEATURES = ['N', 'S', 'E', 'W', 'NW', 'NE', 'SW', 'SE'];
 
@@ -65,23 +68,43 @@ function score(target, shape) {
   return s;
 }
 
+const EDGES = ['N', 'S', 'E', 'W'];
+
 // target: { N, S, E, W, NW, NE, SW, SE } booleans — is land present in that
 // direction from the ocean tile being drawn. Returns null (flat deep-ocean
-// colour, no sprite) only for fully open water, otherwise { file, flipX,
-// flipY }. A diagonal-only touch resolves to the convex-corner nub above; the
-// heavy false-positive edge penalty in score() keeps a stock edge shape from
-// stealing that case (which would jut a false strip of land into the sea).
-export function pickCoastSprite(target) {
-  if (!FEATURES.some(f => target[f])) return null;
-  let best = null;
-  for (const shape of SHAPES) {
-    for (const flipX of [false, true]) {
-      for (const flipY of [false, true]) {
-        const flipped = flipShape(shape, flipX, flipY);
-        const s = score(target, flipped);
-        if (!best || s > best.s) best = { s, file: shape.file, flipX, flipY };
+// colour) for fully open water, else an ARRAY of { file, flipX, flipY } pieces
+// to stack, painted in order.
+//
+// A single 16×16 sprite can't represent every 8-neighbour combination (e.g. the
+// vertex tiles of a diamond lake touch land at two separate diagonals at once —
+// see the octagon-lake scenario), so the coastline is composited:
+//   • one best-fit edge/cove shape for whichever cardinal edges have land, plus
+//   • an independent convex-corner nub for each diagonal that has land but whose
+//     two flanking cardinals are both water (so no edge shape covers it).
+// This keeps the shore continuous for any configuration instead of a single
+// best-guess tile that leaves gaps at multi-corner spots.
+export function pickCoastSprites(target) {
+  const pieces = [];
+
+  if (EDGES.some(f => target[f])) {
+    let best = null;
+    for (const shape of SHAPES) {
+      for (const flipX of [false, true]) {
+        for (const flipY of [false, true]) {
+          const s = score(target, flipShape(shape, flipX, flipY));
+          if (!best || s > best.s) best = { s, file: shape.file, flipX, flipY };
+        }
       }
     }
+    pieces.push({ file: best.file, flipX: best.flipX, flipY: best.flipY });
   }
-  return { file: best.file, flipX: best.flipX, flipY: best.flipY };
+
+  // coast_corner's base art nubs the SE corner; flip to reach the target corner.
+  for (const [d, [a, b]] of Object.entries(CORNER_ADJ)) {
+    if (target[d] && !target[a] && !target[b]) {
+      pieces.push({ file: 'coast_corner', flipX: d === 'SW' || d === 'NW', flipY: d === 'NE' || d === 'NW' });
+    }
+  }
+
+  return pieces.length ? pieces : null;
 }
