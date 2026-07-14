@@ -11,149 +11,276 @@ export function mulberry32(seed) {
   };
 }
 
-function lerp(a, b, t) { return a + (b - a) * t; }
-
 // Wrap an x coordinate into [0, width) — the world is a cylinder that wraps
 // horizontally (east/west), so the left and right edges are the same seam.
 export function wrapX(x, width) { return ((x % width) + width) % width; }
 
-export function generateMap(width, height, rng) {
-  const elev = new Float32Array(width * height);
-  const moist = new Float32Array(width * height);
+// ── Original Civ1 map generation ───────────────────────────────────────────
+//
+// A faithful port of the algorithm the 1991 game used, as reverse-engineered
+// and documented at:
+//   https://forums.civfanatics.com/threads/civ1-map-generation-explained.498630/
+//
+// The original works on a fixed 80×50 grid; here the reference coordinates and
+// counts are scaled to whatever (width, height) the caller asks for. The seven
+// steps are: (A) land mass via random "corner-brush" walks, (B) latitude/
+// temperature base terrain, (C) a two-pass climate water cycle, (D) age/erosion
+// randomisation, (E) rivers, (F) — map-data bookkeeping the original did here
+// but which this engine computes elsewhere, so it is omitted — and (G) poles.
+//
+// Four parameters (0..2, default 1) drive the shape of the world:
+//   land    — total land mass (more land at higher values)
+//   temp    — how far deserts spread from the equator
+//   climate — how wet the world is (more grassland/jungle/swamp when higher)
+//   age     — erosion amount (more hills/mountains reshuffled when higher)
 
-  for (const [scale, weight] of [[3, 0.5], [7, 0.3], [13, 0.2]]) {
-    // Columns wrap horizontally: `cellsX` lattice cells span the whole world and
-    // the corner grid is periodic in x, so noise is seamless across the seam.
-    const cellsX = Math.max(2, Math.round(width / scale));
-    const ch = Math.ceil(height / scale) + 2;
-    const ec = Array.from({ length: ch * cellsX }, () => rng());
-    const mc = Array.from({ length: ch * cellsX }, () => rng());
+const REF_W = 80, REF_H = 50;
 
-    for (let y = 0; y < height; y++) {
-      const gy = y / scale;
-      const iy = Math.floor(gy);
-      const fy = gy - iy;
-      for (let x = 0; x < width; x++) {
-        const gx = (x / width) * cellsX;
-        const ix = Math.floor(gx);
-        const fx = gx - ix;
-        const ix0 = ix % cellsX, ix1 = (ix + 1) % cellsX;
-        const i = y * width + x;
+// 8-neighbour direction vectors indexed 0=N,1=NE,2=E,3=SE,4=S,5=SW,6=W,7=NW —
+// this ordering is what the river direction arithmetic in step E relies on.
+const DIRS8 = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
 
-        const e = lerp(
-          lerp(ec[iy * cellsX + ix0], ec[iy * cellsX + ix1], fx),
-          lerp(ec[(iy + 1) * cellsX + ix0], ec[(iy + 1) * cellsX + ix1], fx),
-          fy,
-        );
-        const m = lerp(
-          lerp(mc[iy * cellsX + ix0], mc[iy * cellsX + ix1], fx),
-          lerp(mc[(iy + 1) * cellsX + ix0], mc[(iy + 1) * cellsX + ix1], fx),
-          fy,
-        );
-        elev[i] += e * weight;
-        moist[i] += m * weight;
+export function generateMap(width, height, rng, opts = {}) {
+  const land    = opts.land    ?? 1;
+  const temp    = opts.temp    ?? 1;
+  const climate = opts.climate ?? 1;
+  const age     = opts.age     ?? 1;
+
+  const rnd = (n) => Math.floor(rng() * n);
+  const area = width * height;
+  const idx = (x, y) => y * width + x;
+  // Reference-coordinate → this-map scaling.
+  const sx = width / REF_W, sy = height / REF_H;
+  const scaleX = (rx) => Math.round(rx * sx);
+  const scaleY = (ry) => Math.round(ry * sy);
+  // Map a row to the original 0..49 latitude space and to a 0..24 "half"
+  // latitude used by the climate water cycle (equator ≈ 12).
+  const y50Of = (y) => y * (REF_H - 1) / (height - 1);
+
+  // ── A. Land mass ─────────────────────────────────────────────────────────
+  // Accumulate land by stamping many small "chunks". Each chunk is a random
+  // walk that paints a 3-pixel corner brush at every step; overlapping chunks
+  // reinforce each other so blobs grow into continents.
+  const geo = new Int16Array(area);       // land accumulation (0 = ocean)
+  const stencil = new Uint8Array(area);   // scratch for one chunk
+
+  const minX = scaleX(3),  maxX = scaleX(76);
+  const minY = scaleY(3),  maxY = scaleY(45);
+  const startX0 = scaleX(4), startXR = Math.max(1, scaleX(71) - scaleX(4));
+  const startY0 = scaleY(8), startYR = Math.max(1, scaleY(33) - scaleY(8));
+
+  const stamp = (x, y) => {
+    if (y < 0 || y >= height) return;
+    stencil[idx(wrapX(x, width), y)] = 1;
+  };
+  const paintChunk = () => {
+    stencil.fill(0);
+    let x = startX0 + rnd(startXR + 1);
+    let y = startY0 + rnd(startYR + 1);
+    let len = 1 + rnd(64);
+    while (len > 0) {
+      // Corner-shaped 3-pixel brush: this tile plus its east and south sides.
+      stamp(x, y); stamp(x + 1, y); stamp(x, y + 1);
+      len--;
+      const dir = rnd(4);
+      if (dir === 0) y--; else if (dir === 1) x++; else if (dir === 2) y++; else x--;
+      if (x < minX || x > maxX || y < minY || y > maxY) break;
+    }
+    for (let i = 0; i < area; i++) if (stencil[i]) geo[i]++;
+  };
+
+  // Keep spawning chunks until enough land exists. Original threshold is
+  // (land + 2) × 320 squares on the 80×50 grid; scale it to this map's area.
+  const landTarget = Math.round((land + 2) * 320 * area / (REF_W * REF_H));
+  const countLand = () => { let n = 0; for (let i = 0; i < area; i++) if (geo[i]) n++; return n; };
+  for (let guard = 0; guard < 4000 && countLand() < landTarget; guard++) paintChunk();
+
+  // Narrow-passage fix: dissolve 2×2 diagonal checkerboards of land/ocean so
+  // continents don't touch only at a corner (which pathfinding can't cross).
+  const isL = (x, y) => geo[idx(x, y)] > 0;
+  for (let y = 0; y < height - 1; y++) {
+    for (let x = 0; x < width - 1; x++) {
+      const a = isL(x, y), b = isL(x + 1, y), c = isL(x, y + 1), d = isL(x + 1, y + 1);
+      if (a && d && !b && !c) { geo[idx(x + 1, y)] = 1; }        // fill NE corner
+      else if (b && c && !a && !d) { geo[idx(x, y)] = 1; }       // fill NW corner
+    }
+  }
+
+  // Terrain grid held as strings (matches TERRAIN keys). Ocean everywhere land
+  // is absent; land starts blank and is filled by the temperature step.
+  const terr = new Array(area);
+  for (let i = 0; i < area; i++) terr[i] = geo[i] ? null : 'ocean';
+
+  // ── B. Temperature: latitude-based base terrain ──────────────────────────
+  // Deserts hug the equator, arctic hugs the poles. The +rnd(0..7) jitter (from
+  // the original) frays the latitude bands so they aren't dead-straight lines.
+  for (let y = 0; y < height; y++) {
+    const y50 = y50Of(y);
+    for (let x = 0; x < width; x++) {
+      const i = idx(x, y);
+      if (terr[i] === 'ocean') continue;
+      // Original: latitude = |y - 29 + rand(0..7) + (1 - temp)| then / 6 + 1,
+      // bucketed desert(<2) / plains(<4) / tundra(<6) / arctic. This makes a
+      // wide desert belt at the equator, plains through the temperate zone, and
+      // tundra toward the poles; true arctic is essentially only the pole rows.
+      const lat = Math.abs(y50 - 29 + rnd(8) + (1 - temp)) / 6 + 1;
+      terr[i] = lat < 2 ? 'desert' : lat < 4 ? 'plains' : lat < 6 ? 'tundra' : 'arctic';
+    }
+  }
+
+  // ── C. Climate: two-pass water cycle ─────────────────────────────────────
+  // Each row is swept W→E then E→W. Oceans feed a running "wetness" (clouds);
+  // land squares consume it as rainfall and, when the row is still wet, shift
+  // one step wetter along the terrain succession.
+  const rainMax = Math.max(1, 8 - climate * 2);
+  for (let y = 0; y < height; y++) {
+    const lat24 = y50Of(y) / 2; // 0..24, equator ≈ 12
+
+    // West-to-East.
+    let wet = 0;
+    for (let x = 0; x < width; x++) {
+      const i = idx(x, y);
+      if (terr[i] === 'ocean') {
+        if (Math.abs(lat24 - 12) + climate * 4 > wet) wet++;
+      } else {
+        if (wet > 0) {
+          const t = terr[i];
+          if (t === 'plains') terr[i] = 'grassland';
+          else if (t === 'tundra') terr[i] = 'arctic';
+          else if (t === 'hills') terr[i] = 'forest';
+          else if (t === 'desert') terr[i] = 'plains';
+          else if (t === 'mountains') wet -= 3;
+        }
+        wet -= rnd(rainMax);
+      }
+    }
+
+    // East-to-West.
+    wet = 0;
+    for (let x = width - 1; x >= 0; x--) {
+      const i = idx(x, y);
+      if (terr[i] === 'ocean') {
+        if (lat24 / 2 + climate > wet) wet++;
+      } else {
+        if (wet > 0) {
+          const t = terr[i];
+          if (t === 'grassland') { terr[i] = lat24 < 10 ? 'jungle' : 'swamp'; wet -= 2; }
+          else if (t === 'mountains') { terr[i] = 'forest'; wet -= 3; }
+          else if (t === 'desert') terr[i] = 'plains';
+        }
+        wet -= rnd(rainMax);
       }
     }
   }
 
+  // ── D. Age / erosion ─────────────────────────────────────────────────────
+  // Nudge random squares (and random neighbours of them) one step along an
+  // erosion succession, giving the tidy latitude/climate bands a weathered feel.
+  const erodeSteps = Math.round(800 * (1 + age) * area / (REF_W * REF_H));
+  let px = 0, py = 0;
+  for (let step = 0; step < erodeSteps; step++) {
+    let x, y;
+    if (step % 2 === 0) { x = rnd(width); y = rnd(height); }
+    else {
+      const [dx, dy] = DIRS8[rnd(8)];
+      x = wrapX(px + dx, width); y = py + dy;
+      if (y < 0 || y >= height) { y = py; }
+    }
+    px = x; py = y;
+    const i = idx(x, y);
+    switch (terr[i]) {
+      case 'forest':    terr[i] = 'jungle'; break;
+      case 'swamp':     terr[i] = 'grassland'; break;
+      case 'plains':    terr[i] = 'hills'; break;
+      case 'tundra':    terr[i] = 'hills'; break;
+      case 'grassland': terr[i] = 'forest'; break;
+      case 'jungle':    terr[i] = 'swamp'; break;
+      case 'hills':     terr[i] = 'mountains'; break;
+      case 'desert':    terr[i] = 'plains'; break;
+      case 'arctic':    terr[i] = 'mountains'; break;
+      case 'mountains': {
+        // Mountains erode to ocean only when they still border land, so we
+        // don't punch lone holes in the open sea.
+        let landNbr = false;
+        for (const [dx, dy] of DIRS8) {
+          const ny = y + dy; if (ny < 0 || ny >= height) continue;
+          if (terr[idx(wrapX(x + dx, width), ny)] !== 'ocean') { landNbr = true; break; }
+        }
+        if (landNbr) { terr[i] = 'ocean'; geo[i] = 0; }
+        break;
+      }
+    }
+  }
+
+  // Build the tiles map now so rivers can read/write hasRiver directly.
   const tiles = {};
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const i = y * width + x;
-      const e = elev[i];
-      const m = moist[i];
-      // Only the poles (top/bottom rows) are forced to ocean — the map wraps
-      // horizontally, so there is no east/west edge to wall off with water.
-      const poleDist = Math.min(y, height - 1 - y);
-      const lat = poleDist / ((height - 1) / 2);
-
-      let terrain;
-      if (poleDist <= 0 || e < 0.32) {
-        terrain = 'ocean';
-      } else if (lat < 0.18) {
-        terrain = e < 0.48 ? 'arctic' : 'tundra';
-      } else if (lat < 0.38) {
-        terrain = m < 0.4 ? 'tundra' : m < 0.65 ? 'plains' : 'forest';
-      } else if (e > 0.84) {
-        terrain = 'mountains';
-      } else if (e > 0.70) {
-        terrain = 'hills';
-      } else if (m < 0.18) {
-        terrain = 'desert';
-      } else if (m < 0.38) {
-        terrain = 'plains';
-      } else if (m < 0.58) {
-        terrain = 'grassland';
-      } else if (m < 0.76) {
-        terrain = 'forest';
-      } else if (lat < 0.55) {
-        terrain = 'jungle';
-      } else {
-        terrain = 'swamp';
-      }
-
-      // Civ1 has no railroads — only roads
-      tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver: false, fortress: false };
+      tiles[`${x},${y}`] = {
+        terrain: terr[idx(x, y)] ?? 'ocean',
+        hasRoad: false, hasRiver: false, fortress: false,
+      };
     }
   }
 
-  carveRivers(tiles, width, height, elev, rng);
+  // ── E. Rivers ────────────────────────────────────────────────────────────
+  generateRivers(tiles, terr, width, height, land, climate, rnd);
+
+  // ── G. Poles ─────────────────────────────────────────────────────────────
+  // Solid arctic on the top and bottom rows, then scatter a little tundra into
+  // the two outermost rows at each pole to break the straight ice edge.
+  for (let x = 0; x < width; x++) {
+    tiles[`${x},0`].terrain = 'arctic';
+    tiles[`${x},${height - 1}`].terrain = 'arctic';
+  }
+  const poleRows = [0, 1, height - 2, height - 1].filter((r) => r >= 0 && r < height);
+  for (let n = 0; n < 20; n++) {
+    const y = poleRows[rnd(poleRows.length)];
+    const x = rnd(width);
+    const t = tiles[`${x},${y}`];
+    if (t.terrain !== 'ocean') t.terrain = 'tundra';
+  }
+
   return tiles;
 }
 
-// Carve a handful of rivers by starting from high ground and following the
-// steepest-descent path of orthogonal neighbours down to the sea. Only paths
-// that actually reach ocean are kept, so no rivers strand inland. Tiles the path
-// crosses get hasRiver=true; the renderer picks a directional sprite from which
-// neighbours also carry a river (see Civ1Game.toGrid).
-function carveRivers(tiles, width, height, elev, rng) {
+// Step E: grow rivers from hills down to the sea using the original's
+// direction-turning walk. A river is kept only if it reaches ocean after at
+// least 5 tiles and never crosses an existing river or mountains.
+function generateRivers(tiles, terr, width, height, land, climate, rnd) {
   const idx = (x, y) => y * width + x;
-  // x wraps horizontally; only y is bounded (poles).
-  const inBounds = (x, y) => y >= 0 && y < height;
-  const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
-  const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
-
-  const sources = [];
-  for (let y = 2; y < height - 2; y++) {
-    for (let x = 0; x < width; x++) {
-      const t = tiles[`${x},${y}`];
-      if (!t || t.terrain === 'ocean' || t.terrain === 'arctic') continue;
-      if (elev[idx(x, y)] > 0.62) sources.push({ x, y });
-    }
+  const hills = [];
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 0; x < width; x++) if (terr[idx(x, y)] === 'hills') hills.push({ x, y });
   }
-  if (!sources.length) return;
+  if (!hills.length) return;
 
-  const target = Math.max(2, Math.round((width * height) / 280));
-  let carved = 0;
-  for (let attempt = 0; attempt < target * 8 && carved < target; attempt++) {
-    const src = sources[Math.floor(rng() * sources.length)];
-    let { x, y } = src;
+  const riverTarget = (climate + land) * 2 + 6;
+  let rivers = 0;
+  for (let attempt = 0; attempt < 256 && rivers <= riverTarget; attempt++) {
+    const src = hills[rnd(hills.length)];
+    let x = src.x, y = src.y, len = 0;
+    let A = rnd(4) * 2; // start on a cardinal direction {0,2,4,6}
     const path = [];
-    const seen = new Set();
-    let reachedSea = false;
+    let reachedSea = false, blocked = false;
 
-    for (let step = 0; step < width + height; step++) {
-      const k = `${x},${y}`;
-      if (seen.has(k)) break;
-      seen.add(k);
+    for (let step = 0; step < 256; step++) {
       path.push({ x, y });
-
-      let best = null;
-      for (const [dx, dy] of DIRS) {
-        const nx = wrapX(x + dx, width), ny = y + dy;
-        if (!inBounds(nx, ny)) continue;
-        if (isOcean(nx, ny)) { reachedSea = true; break; }
-        if (seen.has(`${nx},${ny}`)) continue;
-        const e = elev[idx(nx, ny)];
-        if (!best || e < best.e) best = { x: nx, y: ny, e };
-      }
-      if (reachedSea || !best) break;
-      x = best.x; y = best.y;
+      len++;
+      const C = rnd(2);
+      A = (((C - (len % 2)) * 2 + A) & 7);
+      const [dx, dy] = DIRS8[A];
+      const nx = wrapX(x + dx, width), ny = y + dy;
+      if (ny < 0 || ny >= height) { blocked = true; break; }
+      const t = tiles[`${nx},${ny}`];
+      if (t.terrain === 'ocean') { reachedSea = len >= 5; break; }
+      if (t.hasRiver || t.terrain === 'mountains') { blocked = true; break; }
+      x = nx; y = ny;
     }
 
-    if (reachedSea && path.length >= 3) {
+    if (reachedSea && !blocked) {
       for (const p of path) tiles[`${p.x},${p.y}`].hasRiver = true;
-      carved++;
+      rivers++;
     }
   }
 }

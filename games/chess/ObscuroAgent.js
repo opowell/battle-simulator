@@ -34,10 +34,30 @@ import {
   available as stockfishAvailable,
 } from './stockfish.js';
 
-// Per-leaf scores are clamped so an imagined king capture from phantom hidden
-// pieces can't swamp a concrete material decision.
+// Material (Stockfish cp) scores are clamped so an imagined king capture from
+// phantom hidden pieces can't swamp a concrete material decision.
 const LEAF_CLAMP = 1500;
 const clip = v => (v > LEAF_CLAMP ? LEAF_CLAMP : v < -LEAF_CLAMP ? -LEAF_CLAMP : v);
+
+// The search's terminal win/loss magnitude, on the same cp scale as the leaves.
+// The paper bounds ALL utilities (u: Z → [−1,+1], evals clamped inside it):
+// under fog, values are averaged across belief worlds, so a real game-ending
+// outcome must outweigh material decisively but boundedly — with the generic
+// default (±10⁶) a single phantom world in which the enemy king looked
+// capturable would swamp every real consideration and send the AI lunging.
+// 8000 ≈ 5.3× the material clamp: game-deciding, not belief-noise-proof.
+export const SEARCH_WIN = 8000;
+
+// Leaving your OWN king capturable is not merely "down some material" — it IS
+// the terminal loss (−SEARCH_WIN), and it is a consequence of a move the mover
+// CHOSE. Otherwise, under fog, a move that hangs the king in half the belief
+// worlds gets averaged against ordinary material evals in the other half and
+// comes out looking playable — which is exactly how the AI walked its king onto
+// a square a hidden pawn was covering. This is deliberately asymmetric with the
+// +LEAF_CLAMP cap on *capturing the enemy* king at a LEAF: an imagined capture
+// is phantom-prone and must not be banked on, while exposing our own king is a
+// real, self-inflicted loss we must avoid.
+const KING_HANG = SEARCH_WIN;
 
 const otherColor = c => (c === 'white' ? 'black' : 'white');
 
@@ -65,7 +85,7 @@ export function makeChessLeafEval(sfDepth, cols) {
     for (let i = 0; i < actions.length; i++) {
       const board = (childStates?.[i] ?? state).board;
       const k = findKingSquare(board, mover);
-      if (!k || isAttackedBy(board, k, them)) { out[i] = -LEAF_CLAMP; continue; } // hung king → loss
+      if (!k || isAttackedBy(board, k, them)) { out[i] = -KING_HANG; continue; } // hung own king → losing move
       need.push(i);
     }
     if (need.length) {
@@ -106,14 +126,24 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     return this._chessGame;
   }
 
+  // Bounded terminal value for the fog search (see SEARCH_WIN above).
+  _winValue() { return SEARCH_WIN; }
+
   // Chess's batched Stockfish node heuristic, its depth/width scaled by the dial.
-  // Leaf strength is the dominant lever on chess play: a shallow leaf makes the
-  // whole subgame flat, so purification picks near-randomly however long it runs.
-  // Depth is therefore ramped so mid-dial already reaches genuinely strong leaves
-  // (power 50 → depth 6, width 10) rather than the old flat depth-5.
+  // The paper runs its leaf evaluation at DEPTH 1 (App. C.5) and gets its
+  // strength from the search aggregating many worlds and growing the tree. Deep
+  // leaves here (the old 2..10 ramp) dated from when the multi-world
+  // aggregation was broken and each leaf had to carry the position alone; they
+  // also made a cold-cache expansion so slow that only a couple of belief
+  // worlds fit in the budget — reintroducing single-world behaviour through the
+  // back door. Shallow-ish leaves keep every world expandable within budget;
+  // the dial still buys leaf depth at the top: depth 6–7 is where the engine
+  // starts pricing two-ply tactics (e.g. "quiet move → pawn takes the hanging
+  // bishop") into the parent MultiPV scores, which our small trees cannot be
+  // relied on to discover in-tree for every belief world.
   _leafEval(observation) {
     const t = difficultyToNumber(observation.gameSpecific?.difficulty) / 100;
-    const sfDepth = Math.max(1, Math.round(2 + t * 8)); // 2..10
+    const sfDepth = Math.max(1, Math.round(2 + t * 5)); // 2..7
     const cols = Math.round(5 + t * 9);                 // 5..14
     return makeChessLeafEval(sfDepth, cols);
   }
@@ -150,6 +180,57 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     return super.chooseAction(state, legalActions);
   }
 
+  // Selection-time adjustment (runs inside the generic chooseAction BEFORE the
+  // move is committed to the belief trackers): the fog king-safety backstop.
+  _adjustChosenAction(observation, action, legalActions) {
+    const gs = observation.gameSpecific;
+    if (!gs?.fogOfWar) return null;
+    return this._kingSafetyGuard(observation, action, legalActions);
+  }
+
+  // Fog king-safety safeguard. Under fog the equilibrium value of a move can
+  // AVERAGE a catastrophic king-hang (in belief worlds we cannot see) against
+  // optimistic worlds, so the search sometimes commits to a move that loses the
+  // king in most consistent worlds — e.g. walking the king onto a square a hidden
+  // pawn attacks. This is a research-hard flaw in the subgame's worst-case pricing;
+  // as a robust guard we measure, over a fresh belief sample, the fraction of worlds
+  // in which each comparably-valued candidate leaves our own king capturable, and
+  // switch to a materially safer one when the chosen move is dangerous. It never
+  // overrides a decisive value gap (TOL) — only breaks near-ties toward king safety.
+  _kingSafetyGuard(state, chosen, legalActions) {
+    try {
+      const me = state.activePlayers[0];
+      const cands = this.lastAnalysis?.candidates;
+      if (!chosen || !this.game?.sampleWorlds || !cands?.length) return chosen;
+      const worlds = this.game.sampleWorlds(state, me, 24, this._rng);
+      if (!worlds || worlds.length < 4) return chosen;
+      const them = me === 'white' ? 'black' : 'white';
+      const hangFrac = (mv) => {
+        let hung = 0;
+        for (const w of worlds) {
+          const child = this.game.applyActions(w, [{ playerId: me, action: mv }]);
+          const b = child?.board;
+          let ks = null;
+          if (b) for (const sq in b) { const p = b[sq]; if (p && p.ownerId === me && p.type === 'king') { ks = sq; break; } }
+          if (!b || !ks || isAttackedBy(b, ks, them)) hung++;
+        }
+        return hung / worlds.length;
+      };
+      const chosenHang = hangFrac(chosen);
+      if (chosenHang <= 0.15) return chosen; // already safe enough — respect the search
+
+      const byKey = new Map(legalActions.map(a => [this._key(a), a]));
+      const pool = cands.map(c => ({ action: byKey.get(c.key), value: c.value ?? -Infinity })).filter(c => c.action);
+      if (pool.length < 2) return chosen;
+      const bestVal = Math.max(...pool.map(c => c.value));
+      const TOL = 250; // ~2.5 pawns: only break value-ties, never overturn a real edge
+      const eligible = pool.filter(c => c.value >= bestVal - TOL).map(c => ({ ...c, hang: hangFrac(c.action) }));
+      eligible.sort((a, b) => (a.hang - b.hang) || (b.value - a.value));
+      const safest = eligible[0];
+      return safest && chosenHang - safest.hang >= 0.15 ? safest.action : chosen;
+    } catch { return chosen; }
+  }
+
   // Power mode, perfect information: score every legal move at full strength, then
   // pick one at random weighted by its score. Scores are converted to win
   // probabilities (a principled, always-positive measure), so a move worth ~twice
@@ -182,6 +263,14 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
         scored.push({ action: a, cp, weight: Math.pow(wp, beta) });
       }
       if (!scored.length) return null;
+
+      // Full power is the true perfect-information special case: it collapses to
+      // PURE Stockfish play (deterministic best move), no sampling softness left.
+      if (t >= 0.999) {
+        let best = scored[0];
+        for (const x of scored) if (x.cp > best.cp) best = x;
+        for (const x of scored) { x.weight = x === best ? 1 : 0; }
+      }
       const total = scored.reduce((s, x) => s + x.weight, 0) || 1;
       for (const x of scored) x.prob = x.weight / total;
 

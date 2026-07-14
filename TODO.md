@@ -1,7 +1,8 @@
 Import scenarios. 
 Battle mode.
 Games specific State evaluation.
-Simultaneous action phase. 
+Simultaneous action phase.
+Real-time action phase.
 Rooms, clients and players.
 Fix scale for all games: most are too small.
 Add map zoom.

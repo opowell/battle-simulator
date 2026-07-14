@@ -3,6 +3,7 @@ import { getAllLegalMoves, getAllFogMoves } from './moves.js';
 import { ChessAgent, evaluate } from './ChessAgent.js';
 import { ObscuroAgent } from './ObscuroAgent.js';
 import { getBelief } from './belief.js';
+import { getExactBelief } from './exactBelief.js';
 
 // ---------------------------------------------------------------------------
 // Initial board setup
@@ -246,20 +247,19 @@ export const ChessGame = {
     }));
   },
 
-  // Action set the AI search reasons over INSIDE its tree (see makeHooks in
-  // agents/obscuro/search.js). Always check-filtered, even under fog: real play
-  // stays pseudo-legal via getLegalActions (a fogged player may unknowingly move
-  // into check), but the search must model both sides as rational — never hanging
-  // their own king. A self-check move is scored "mover loses" by the leaf eval, and
-  // that value flips to a phantom WIN for the other side, which was making the AI
-  // believe it was winning a lost position and play on carelessly.
-  getSearchLegalActions(state, playerId) {
-    return getAllLegalMoves(state.board, playerId, state.gameSpecific).map(a => ({
-      ...a,
-      gridFrom: a.from ? squareToGrid(a.from) : undefined,
-      gridTo:   a.to   ? squareToGrid(a.to)   : undefined,
-    }));
-  },
+  // NOTE: there is deliberately NO getSearchLegalActions here. The search tree
+  // must use the REAL fog action set (pseudo-legal: moving into check is legal,
+  // it just loses), because in FoW chess a player's legal-move set is fully
+  // determined by its own observation — so every node in one infoset shares one
+  // action set, which the Obscuro tree requires. An earlier fix modelled the
+  // tree with CHECK-FILTERED moves to stop "opponent hangs its king → phantom
+  // win for us" value flips, but that broke the invariant the other way: in the
+  // belief worlds where OUR move self-checks (exactly the dangerous ones!) the
+  // move vanished from the world's action set and was scored as a neutral pass,
+  // so a real king-hang was priced at material value. Self-check is instead
+  // handled by the VALUE model: such children evaluate to −SEARCH_WIN for the
+  // mover (games/chess/ObscuroAgent.js), new infosets seed to the best child,
+  // and CFR then keeps suicide moves out of both players' strategies.
 
   applyActions(state, playerActions) {
     const { playerId, action } = playerActions[0]; // chess: always 1 active player
@@ -477,14 +477,40 @@ export const ChessGame = {
     return (action.from ?? '') + (action.to ?? '') + promo;
   },
 
-  // Belief sampler: draw up to `n` full boards consistent with what `playerId`
-  // can see, via the fog-of-war particle tracker (belief.js). With fog off there
-  // is nothing hidden, so we return [] and the agent treats the position as the
-  // single known world (perfect-information minimax).
+  // Belief sampler. Preferred source is the EXACT position set P (the paper's
+  // belief: every position consistent with the full observation history,
+  // exactBelief.js), sampled uniformly — while it holds, the belief is perfect,
+  // and |P| = 1 means we literally know the board. If exact tracking has given
+  // up (attached mid-game, or P outgrew its cap), we fall back to the heuristic
+  // particle tracker (belief.js), which is kept in lockstep every turn so the
+  // handover is seamless. With fog off there is nothing hidden, so we return []
+  // and the agent treats the position as the single known world.
   sampleWorlds(observation, playerId, n, rng = Math.random) {
     if (!observation.gameSpecific.fogOfWar) return [];
+    // turnNumber keys the updates so re-sampling within one decision (e.g. the
+    // king-safety guard) can't advance either belief an extra phantom ply.
+    const turnKey = observation.turnNumber ?? null;
+    const exact = getExactBelief(observation, playerId);
+    exact.beginTurn(observation, turnKey);
     const belief = getBelief(observation, playerId);
-    belief.beginTurn(observation.board);
+    belief.beginTurn(observation.board, turnKey);
+    if (exact.exact) {
+      const picks = exact.samplePositions(n, rng);
+      if (picks && picks.length) {
+        return picks.map(pos => ({
+          ...observation,
+          board: pos.board,
+          units: boardToUnits(pos.board),
+          // Position-specific rights/en-passant so in-tree move generation for
+          // BOTH sides is exact per world (the heuristic path can't know these).
+          gameSpecific: {
+            ...observation.gameSpecific,
+            castlingRights: pos.cr,
+            enPassantTarget: pos.ep,
+          },
+        }));
+      }
+    }
     const boards = belief.sample(observation.board, n, rng);
     return boards.map(board => ({
       ...observation,
@@ -493,10 +519,11 @@ export const ChessGame = {
     }));
   },
 
-  // Let the belief tracker record the move we just chose, so next turn it can
-  // detect our own captured pieces and drop enemies we captured.
+  // Let both belief trackers record the move we just chose, so next turn they
+  // can advance P / detect our own captured pieces.
   onActionCommitted(observation, playerId, action) {
     if (!observation.gameSpecific.fogOfWar) return;
+    getExactBelief(observation, playerId).commitOurMove(action);
     getBelief(observation, playerId).commitOurMove(action, observation.board);
   },
 

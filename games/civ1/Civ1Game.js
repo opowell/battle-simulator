@@ -4,6 +4,7 @@ import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
+import { pickCoastSprite } from './coastSprites.js';
 
 const BASE = '/images/civ1';
 
@@ -11,19 +12,6 @@ const BASE = '/images/civ1';
 function wrapDX(ax, bx, width) {
   const d = Math.abs(ax - bx);
   return width ? Math.min(d, width - d) : d;
-}
-
-// ── Colour helpers (used by the coastline dither in toGrid) ────────────────────
-function hexToRgb(hex) {
-  const h = hex.replace('#', '');
-  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-}
-function rgbToHex([r, g, b]) {
-  return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
-}
-function lighten(hex, amt) {
-  const [r, g, b] = hexToRgb(hex);
-  return rgbToHex([r + (255 - r) * amt, g + (255 - g) * amt, b + (255 - b) * amt]);
 }
 
 const UNIT_IMAGES = {
@@ -356,9 +344,69 @@ function renderState(state) {
   ].join('\n');
 }
 
+// ── Fixed test scenarios ─────────────────────────────────────────────────────
+//
+// Unlike the standard scenario (always procedurally generated — see
+// generateMap in map.js), these are literal hand-built boards for exercising
+// specific rendering/gameplay cases in isolation (e.g. coastline sprites
+// around a small island) without fighting the random generator for one.
+
+// 5×5 board: a solid 3×3 grassland island (x,y ∈ [1,3]) ringed by open ocean,
+// no poles/rivers/roads — the simplest possible "coast surrounds land" case.
+function buildIslandTestMap() {
+  const width = 5, height = 5;
+  const tiles = {};
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const isIsland = x >= 1 && x <= 3 && y >= 1 && y <= 3;
+      tiles[`${x},${y}`] = { terrain: isIsland ? 'grassland' : 'ocean', hasRoad: false, hasRiver: false, fortress: false };
+    }
+  }
+  return { width, height, tiles };
+}
+
+function createIslandTestState(players, config) {
+  const { width, height, tiles } = buildIslandTestMap();
+  const board = { width, height, tiles };
+  const [p1, p2] = players;
+
+  // Opposite corners of the island so all four starting units land on
+  // distinct tiles — the default random near-the-settler placement used by
+  // the standard scenario has no room to avoid overlap on a map this small.
+  let idCtr = 0;
+  const units = [
+    makeUnit(`u${idCtr++}`, p1.id, 'settlers', 1, 1, UNITS.settlers.moves),
+    makeUnit(`u${idCtr++}`, p1.id, 'militia',  1, 2, UNITS.militia.moves),
+    makeUnit(`u${idCtr++}`, p2.id, 'settlers', 3, 3, UNITS.settlers.moves),
+    makeUnit(`u${idCtr++}`, p2.id, 'militia',  3, 2, UNITS.militia.moves),
+  ];
+
+  return {
+    gameName: 'Civ1',
+    turnNumber: 1,
+    activePlayers: [p1.id],
+    currentPhase: 'action',
+    players,
+    board,
+    units,
+    cities: [],
+    lastActions: null,
+    gameSpecific: {
+      nextId: idCtr,
+      fogOfWar: config.fogOfWar ?? true,
+      startRoster: {
+        units: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
+        cities: [],
+      },
+    },
+  };
+}
+
 // ── createInitialState ────────────────────────────────────────────────────────
 
 function createInitialState(players, config = {}) {
+  if (config.scenario === 'island-test') return createIslandTestState(players, config);
+
   const width  = config.width  ?? 50;
   const height = config.height ?? 30;
   // A blank or non-numeric seed means "surprise me" — roll a fresh random one.
@@ -367,8 +415,17 @@ function createInitialState(players, config = {}) {
     ? (parsedSeed >>> 0)
     : (Math.floor(Math.random() * 0xffffffff) >>> 0);
 
+  // Original-Civ1 map knobs (0..2 each); see generateMap in map.js.
+  const clampParam = (v, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(2, Math.round(n))) : d; };
+  const mapOpts = {
+    land:    clampParam(config.land, 1),
+    temp:    clampParam(config.temp, 1),
+    climate: clampParam(config.climate, 1),
+    age:     clampParam(config.age, 1),
+  };
+
   const rng = mulberry32(seed);
-  const tiles = generateMap(width, height, rng);
+  const tiles = generateMap(width, height, rng, mapOpts);
   const board = { width, height, tiles };
 
   const pos1 = findStartPos(tiles, width, height, [1, Math.floor(width * 0.45)], rng);
@@ -472,15 +529,27 @@ export const Civ1Game = {
   evaluateState: (state, playerId) =>
     unitStrengthEval(state, playerId) + sidesEval(state.cities, playerId, () => 100),
   name: 'Civ1',
-  ui: { hideGridLines: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true },
+  ui: { hideGridLines: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true },
   scenarios: [
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
+    { id: 'island-test', name: 'Tiny Island', description: 'Fixed 5×5 map: a 3×3 grassland island ringed by ocean — for testing coastline rendering', config: {} },
   ],
-  colors: { ocean: '#1a5a8a', coast: '#3d82b4', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
+  // Water is the authentic Civ1 palette sampled from images/terrain (deep ocean
+  // #5448a0 matches ocean.png exactly; coast is the shallow-blue ramp). The
+  // coastline dither in toGrid stipples between them and greens the shore.
+  colors: { ocean: '#5448a0', coast: '#6474cc', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: true },
     { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
     { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },
+    { id: 'land',    label: 'Land mass',   description: 'How much of the world is land', type: 'select', default: 1, options: [
+      { value: 0, label: 'Small (islands)' }, { value: 1, label: 'Normal' }, { value: 2, label: 'Large (pangaea)' } ] },
+    { id: 'temp',    label: 'Temperature', description: 'How far deserts spread from the equator', type: 'select', default: 1, options: [
+      { value: 0, label: 'Cool' }, { value: 1, label: 'Temperate' }, { value: 2, label: 'Warm' } ] },
+    { id: 'climate', label: 'Climate',     description: 'How wet the world is (grassland, jungle, swamp)', type: 'select', default: 1, options: [
+      { value: 0, label: 'Arid' }, { value: 1, label: 'Normal' }, { value: 2, label: 'Wet' } ] },
+    { id: 'age',     label: 'Age',         description: 'Erosion: older worlds have more hills and mountains', type: 'select', default: 1, options: [
+      { value: 0, label: '3 billion years' }, { value: 1, label: '4 billion years' }, { value: 2, label: '5 billion years' } ] },
     { id: 'seed',   label: 'Map seed',   description: 'Positive integer for a repeatable map — leave blank for a random one', type: 'integer', placeholder: 'random' },
   ],
   createInitialState,
@@ -533,62 +602,18 @@ export const Civ1Game = {
     };
     const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
 
-    // Coastline dithering. Civ1's sea wasn't a grid of flat squares — the boundary
-    // between deep water, shallow "coast" water and land was a pixelated dither that
-    // let continents read with a ragged shoreline. We reproduce that on the two
-    // water-side boundaries (land is drawn with opaque sprites, so it can't dither):
-    //   • coast tile → land neighbour: a thin bright "surf" fringe.
-    //   • deep tile  → coast neighbour: a softer gradient of coast-blue into the deep.
-    // Each cell emits a run-length-merged list of sub-tile rects in fractional tile
-    // coords (0..1); the renderer paints them over the flat colour rect. Purely
-    // cosmetic — engine terrain stays 'ocean', so rules are unchanged.
-    const SUB = 4;
-    // 4×4 ordered (Bayer) matrix, 0..15 → per-subcell paint threshold. Comparing a
-    // smooth land-proximity value against it turns the fringe into a stipple whose
-    // density falls off away from the boundary, instead of a hard band.
-    const BAYER4 = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
-    const surfCol = lighten(this.colors.coast, 0.4);
-    const NDIRS = [[0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]];
-    const tileDither = (x, y) => {
+    // Coastline sprite: pick the coast_*.png shore tile (see coastSprites.js) whose
+    // land-touching edges/corners best match this ocean tile's 8 neighbours, so the
+    // shoreline reads as a curved coast instead of a hard land/sea square edge.
+    // Returns null for open water (no land within one tile) — the flat deep-ocean
+    // colour already covers that case, no sprite needed.
+    const coastSprite = (x, y) => {
       if (!isOcean(x, y)) return null;
-      const selfCoast = isCoast(x, y);
-      const color = selfCoast ? surfCol : this.colors.coast;
-      // Thin, bright fringe for the land shoreline; a deeper, softer gradient for the
-      // deep→shallow water boundary.
-      const gate = selfCoast ? 0.72 : 0.5;
-      const isTarget = selfCoast
-        ? (nx, ny) => isLand(nx, ny)
-        : (nx, ny) => isOcean(nx, ny) && isCoast(nx, ny);
-      const dirs = NDIRS.filter(([dx, dy]) => isTarget(x + dx, y + dy));
-      if (!dirs.length) return null;
-
-      // Proximity of subcell (px,py) to the nearest targeted neighbour edge/corner.
-      const influence = (px, py) => {
-        let inf = 0;
-        for (const [dx, dy] of dirs) {
-          const cx = dx > 0 ? px : dx < 0 ? 1 - px : 1;
-          const cy = dy > 0 ? py : dy < 0 ? 1 - py : 1;
-          inf = Math.max(inf, cx * cy);
-        }
-        return inf;
-      };
-
-      const out = [];
-      for (let sy = 0; sy < SUB; sy++) {
-        let run = -1;
-        for (let sx = 0; sx <= SUB; sx++) {
-          const paint = sx < SUB && (() => {
-            const inf = influence((sx + 0.5) / SUB, (sy + 0.5) / SUB);
-            return inf > gate && inf > (BAYER4[sy][sx] + 0.5) / 16;
-          })();
-          if (paint && run < 0) run = sx;
-          else if (!paint && run >= 0) {
-            out.push({ x: run / SUB, y: sy / SUB, w: (sx - run) / SUB, h: 1 / SUB, color });
-            run = -1;
-          }
-        }
-      }
-      return out.length ? out : null;
+      const pick = pickCoastSprite({
+        N: isLand(x, y - 1), S: isLand(x, y + 1), E: isLand(x + 1, y), W: isLand(x - 1, y),
+        NW: isLand(x - 1, y - 1), NE: isLand(x + 1, y - 1), SW: isLand(x - 1, y + 1), SE: isLand(x + 1, y + 1),
+      });
+      return pick ? { image: `${BASE}/terrain/${pick.file}`, flipX: pick.flipX, flipY: pick.flipY } : null;
     };
 
     const cells = [];
@@ -607,10 +632,13 @@ export const Civ1Game = {
           // blue) rather than the purple ocean sprite — real Civ1's sea is blue,
           // and a two-tone deep/shallow split is what makes coastlines read.
           bgImage: tile.terrain === 'ocean' ? null : (tile.terrain ? `${BASE}/terrain/${tile.terrain}` : null),
-          dither: tile.terrain === 'ocean' ? tileDither(x, y) : null,
+          coastSprite: tile.terrain === 'ocean' ? coastSprite(x, y) : null,
           overlayImage: tile.hasRiver ? riverSprite(x, y) : null,
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,
-          color: coast ? this.colors.coast : (this.colors[tile.terrain] ?? this.colors.plains ?? '#808070'),
+          // All ocean tiles paint deep flat colour — coastSprite (above) draws the
+          // land-facing shoreline art from coast_*.png on top, so shorelines
+          // curve instead of snapping to whole lighter tiles.
+          color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
           terrain: coast ? { ...terrainInfo(tile), name: 'Coast' } : terrainInfo(tile),
           hp: u?.hp, maxHp: u?.maxHp,
         });

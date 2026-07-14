@@ -23,6 +23,20 @@
 import { RegretMinimizer } from './pcfr.js';
 import { freezeStrategies, observeAll, cfrDescend, evalNode } from './infoset.js';
 
+// ṽ(h): the engine-informed value of a world to `me` — the acting player's best
+// child as evaluated at root expansion (= the engine's eval of the position).
+// Falls back to the node's own leaf heuristic when the world never expanded.
+function bestChildValue(node, me) {
+  if (!node.expanded || !node.children || !node.infoset) return node.leafValue;
+  const maximising = node.infoset.player === me; // child leafValue is always to `me`
+  let best = null;
+  for (const c of node.children) {
+    if (!c) continue;
+    if (best === null || (maximising ? c.leafValue > best : c.leafValue < best)) best = c.leafValue;
+  }
+  return best ?? node.leafValue;
+}
+
 // Partition the belief worlds by opponent observation and build the gadget:
 // per-class enter/exit minimizers (Resolve), a Maxmargin selector, a non-uniform
 // prior α(J), and the alternate value for each class.
@@ -46,13 +60,19 @@ export function buildGadget(tree, hooks, cfg = {}) {
   for (const g of J) {
     // Within-class chance weights: h ∈ J chosen ∝ our reach π_{-▼}(h) (≈ belief mass).
     for (const w of g.worlds) w.cw = w.prob / (g.mass || 1);
-    // Alternate value to me if ▼ exits at J: don't assume better than the leaf
-    // heuristic ṽ(s) or the previous search value v* (Fig. 9 line 14).
+    // Alternate value to me if ▼ exits at J: min{ṽ(h), v*} (Fig. 9 line 14),
+    // where ṽ(h) is the node heuristic of the world — the value of the MOVER's
+    // best child as scored at root expansion (paper: "Stockfish's evaluation").
+    // This is the engine's view of the position itself; measuring alt from our
+    // seeded play, or from a cruder static heuristic, put the alternate values
+    // on a different scale from the resolved enter values, so enter/exit went
+    // one-hot and the subgame tunnel-visioned onto one or two belief worlds.
     let alt = 0;
-    for (const w of g.worlds) alt += w.cw * Math.min(hooks.heuristicFor(w.node.state, me), vStar);
+    for (const w of g.worlds) alt += w.cw * Math.min(bestChildValue(w.node, me), vStar);
     g.altMe = alt;
     g.R = new RegretMinimizer(2); // [enter, exit]
     g.y = g.mass;                  // blueprint opponent reach to J (≈ belief mass)
+    g.piv = g.mass;                // root reach before the first CFR iteration prices it
     ySum += g.y;
   }
   // Non-uniform Resolve prior: even mix of the blueprint opponent distribution
@@ -93,11 +113,23 @@ export function runGadgetCFR(tree, hooks, gadget, iterations) {
     const smm = maxmargin.strategy().slice();
     maxmargin.observe(J.map(g => g.altMe - g.enterMe)); // utility to ▼ = −margin
 
-    // Blend Resolve and Maxmargin into the opponent's root reach (Fig. 10 l.12).
+    // Blend Resolve and Maxmargin into the opponent's root reach (Fig. 10 l.12),
+    // then FLOOR it with the prior α: every class keeps half its prior reach.
     // (Σ π_▼ need not equal 1 when Resolve is entering — that is expected.)
+    //
+    // The floor is a deliberate deviation from the pure gadget. With singleton
+    // per-world classes and approximate alternate values, the pure blend
+    // routinely drove the reach of most classes to ~0 (all-exit, or one junk
+    // class capturing pmax), so the strategy was optimised against one or two
+    // belief worlds and swung wildly between runs. The paper can afford exact
+    // exit semantics because its alternate values come from a real blueprint;
+    // ours are engine estimates, so we keep every world voting and let the
+    // gadget TILT emphasis rather than silence classes outright. (The paper
+    // itself notes — App. B.2 fn. 12 — that safety semantics are already
+    // strained in this setting.)
     for (let i = 0; i < J.length; i++) {
       const g = J[i];
-      g.piv = pmax * g.alpha * g.pEnter + (1 - pmax) * smm[i];
+      g.piv = 0.5 * g.alpha + 0.5 * (pmax * g.alpha * g.pEnter + (1 - pmax) * smm[i]);
     }
 
     // Accumulate tree regrets with reachOpp = π_▼(J) · (within-class chance).

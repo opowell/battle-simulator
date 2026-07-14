@@ -421,7 +421,7 @@ function buildField(g, s) {
   const tiles = g.cells
     .filter(c => c.color)
     .map(c => ({
-      x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null, overlayImage: c.overlayImage ?? null, height: c.height ?? 0, terrain: c.terrain ?? null,
+      x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null, overlayImage: c.overlayImage ?? null, coastSprite: c.coastSprite ?? null, height: c.height ?? 0, terrain: c.terrain ?? null,
       // Owner index (for the 'team' tile-colour sentinel, see SchematicLayer's tileColor)
       // and the logical territory a hex belongs to (for click-to-select on multi-hex
       // territory maps — see games/mapTypes/hexagon.js and KDiceGame.toGrid).

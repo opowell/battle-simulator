@@ -484,14 +484,24 @@ function segBorderColor(seg) {
   return darken(raw, 0.55);
 }
 
-// Optional per-tile coastline dither (see Civ1Game.toGrid): a run-length-merged
-// list of {x,y,w,h,color} sub-rects in fractional tile coords, painted over the
-// flat colour rect to break a water tile's hard square edge into a pixel stipple.
-// Hidden under fog like the tile's own colour.
-function tileDither(tile) {
-  if (!tile.dither) return null;
+// Optional per-tile coastline sprite (see Civ1Game.toGrid/coastSprites.js): one of
+// 8 small shore-shape PNGs, mirrored (per flipX/flipY) to match this ocean tile's
+// land neighbours. Hidden under fog like the tile's own colour.
+function tileCoastSprite(tile) {
+  if (!tile.coastSprite) return null;
   if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
-  return tile.dither;
+  return tile.coastSprite;
+}
+
+// Mirrors the coast sprite around the tile's own centre — translate by twice the
+// centre coordinate then scale by -1 lands x (or y) back on (2*c - x).
+function coastSpriteTransform(tile, size) {
+  const cs = tileCoastSprite(tile);
+  if (!cs || (!cs.flipX && !cs.flipY)) return null;
+  const cx = props.fit.x(tile.x) + size / 2, cy = props.fit.y(tile.y) + size / 2;
+  const tx = cs.flipX ? 2 * cx : 0, ty = cs.flipY ? 2 * cy : 0;
+  const sx = cs.flipX ? -1 : 1, sy = cs.flipY ? -1 : 1;
+  return `translate(${tx},${ty}) scale(${sx},${sy})`;
 }
 
 function tileBgImage(tile) {
@@ -841,14 +851,18 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               :width="fit.len(1) + 0.75" :height="fit.len(1) + 0.75"
               shape-rendering="crispEdges"
               :fill="tileColor(tile)"/>
-        <!-- Coastline dither: sub-tile stipple rects painted over the flat colour
-             layer (games opt in via tile.dither, e.g. civ1's water shoreline). -->
-        <template v-for="(tile, i) in (field.tiles ?? [])" :key="'td'+i">
-          <rect v-for="(d, di) in (tileDither(tile) ?? [])" :key="'td'+i+'-'+di"
-                :x="fit.x(tile.x) + fit.len(d.x)" :y="fit.y(tile.y) + fit.len(d.y)"
-                :width="fit.len(d.w) + 0.75" :height="fit.len(d.h) + 0.75"
-                shape-rendering="crispEdges" :fill="d.color"
-                class="sl-noevents"/>
+        <!-- Coastline sprite: one of 8 small shore-shape PNGs, mirrored per
+             flipX/flipY to match this ocean tile's land neighbours (games opt in
+             via tile.coastSprite, e.g. civ1's water shoreline — see
+             coastSprites.js). Painted over the flat colour. -->
+        <template v-for="(tile, i) in (field.tiles ?? [])" :key="'tcs'+i">
+          <g v-if="tileCoastSprite(tile)" :transform="coastSpriteTransform(tile, fit.len(1) + 0.75)">
+            <image :x="fit.x(tile.x)" :y="fit.y(tile.y)"
+                   :width="fit.len(1) + 0.75" :height="fit.len(1) + 0.75"
+                   :href="imgSrc(tileCoastSprite(tile).image)"
+                   preserveAspectRatio="xMidYMid slice"
+                   class="sl-noevents sl-pixel"/>
+          </g>
         </template>
         <!-- Terrain images (overlaid on color; absent when fogged) -->
         <template v-for="(tile, i) in (field.tiles ?? [])" :key="'ti'+i">

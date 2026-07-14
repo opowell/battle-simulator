@@ -25,7 +25,7 @@
 // evaluation in the agent.
 // ---------------------------------------------------------------------------
 
-import { FILES, fileIndex, rankOf, squareAt, getVisibleSquares } from './board.js';
+import { FILES, fileIndex, rankOf, squareAt, getVisibleSquares, isAttackedBy } from './board.js';
 import { pseudoLegalForUnit } from './moves.js';
 
 const ALL_SQUARES = [];
@@ -49,6 +49,11 @@ const THREAT_BIAS = 3;   // how strongly to over-sample placements that attack o
 // attackers made the AI play passively, shuffling its king and pawns rather than
 // developing; we still surface real threats, just without imagining a swarm.)
 const MAX_LURKERS = 2;
+
+// Relative likelihood that a piece of each type is the one that captured on a
+// forced (known-capture) square — chess recaptures strongly favour the least
+// valuable capturer. Used by the forced-square inference in sample().
+const RECAPTURE_TYPE_WEIGHT = { pawn: 9, knight: 3, bishop: 3, rook: 1.5, queen: 1, king: 0.5 };
 
 function opp(color) { return color === 'white' ? 'black' : 'white'; }
 
@@ -183,8 +188,16 @@ export class Belief {
     }
   }
 
-  // Run the full per-turn update before the agent searches.
-  beginTurn(board) {
+  // Run the full per-turn update before the agent searches. `turnKey` makes the
+  // call idempotent within one decision: the agent may sample worlds more than
+  // once per move (the main search plus e.g. a king-safety re-sample), and each
+  // extra call used to advance the belief another phantom opponent ply, leaving
+  // it artificially diffuse. Same key → the belief is already up to date.
+  beginTurn(board, turnKey = null) {
+    if (turnKey != null) {
+      if (this._lastTurnKey === turnKey) return;
+      this._lastTurnKey = turnKey;
+    }
     if (!this.firstTurnDone) {
       // Our very first move. If we are black, white has already moved once.
       if (this.aiColor === 'black') { this.expandOnePly(board); this.oppPlies = 1; }
@@ -257,23 +270,65 @@ export class Belief {
     // move into several pieces leaving home).
     const anchors = new Set(unseen.map(pc => pc.anchor));
 
+    // Our own king square on the observed board (always visible to us) — used to
+    // reject phantom self-checks below.
+    let myKingSq = null;
+    for (const sq of Object.keys(board)) {
+      const pc = board[sq];
+      if (pc && pc.ownerId === this.aiColor && pc.type === 'king') { myKingSq = sq; break; }
+    }
+
     const particles = [];
     const keys = new Set();
     // More attempts per requested world so a larger belief (now that we sample
     // more worlds) still yields the distinct particles it asks for rather than
     // giving up early — a fuller, more representative draw from P.
-    for (let attempt = 0; attempt < n * 6 && particles.length < n; attempt++) {
+    const maxAttempts = n * 6;
+    for (let attempt = 0; attempt < maxAttempts && particles.length < n; attempt++) {
       const pb = { ...board };
       const used = new Set();
+      const placedHidden = [];     // [{ type, sq }] every hidden placement, for the check test
       let lurkers = 0;             // invisible attackers placed so far in this particle
       // The opponent can only have moved as many pieces as it has made moves, so
       // most of its army is still at home. Pieces placed beyond this budget are
       // forced back to their anchor (start / last-seen) square.
       let moveBudget = Math.min(this.oppPlies, unseen.length);
-      // Order pieces for this particle: threat-capable ones tend to come first
-      // (so they win the budget) but with jitter, so threats appear in many
-      // particles rather than all — the AI stays cautious, not paralysed.
-      const order = [...unseen].sort((a, b) =>
+
+      // Squares we KNOW hold an enemy right now (it just captured a piece of ours
+      // there) are placed FIRST, preferring a real unseen piece that could have
+      // reached the square — the recapture inference. Scattering these pieces
+      // elsewhere and back-filling a phantom (the old behaviour) both duplicated
+      // the capturer and randomised its type, inflating belief variance exactly
+      // where the position is sharpest.
+      const forcedTaken = new Set();
+      for (const fsq of this.forcedEnemy) {
+        if (pb[fsq]) continue;
+        const plausible = unseen.filter(pc => !forcedTaken.has(pc.id) && pc.possible.has(fsq));
+        if (plausible.length > 0) {
+          // Weight the candidate capturers by proximity AND (inverse) piece
+          // value: real recaptures overwhelmingly use the least valuable piece
+          // available. Without the value term the sampler put queens/rooks/kings
+          // on the capture square far too often; those give phantom CHECK from a
+          // square the mover can't see, and a belief where a quarter of worlds
+          // start in check makes every quiet move price like death — which is
+          // how the search talked itself into actual king-walk blunders.
+          const weights = plausible.map(pc =>
+            (RECAPTURE_TYPE_WEIGHT[pc.type] ?? 1) / (1 + chebyshev(fsq, pc.anchor)));
+          const pc = weightedPick(plausible, weights, rng);
+          pb[fsq] = { id: pc.id, ownerId: this.oppColor, type: pc.type, position: fsq, alive: true };
+          forcedTaken.add(pc.id);
+          if (fsq !== pc.anchor) moveBudget--; // the capture spent one opponent move
+        } else {
+          pb[fsq] = { id: '__capt__' + fsq, ownerId: this.oppColor, type: 'queen', position: fsq, alive: true };
+        }
+        used.add(fsq);
+        placedHidden.push({ type: pb[fsq].type, sq: fsq });
+      }
+
+      // Order the remaining pieces for this particle: threat-capable ones tend to
+      // come first (so they win the budget) but with jitter, so threats appear in
+      // many particles rather than all — the AI stays cautious, not paralysed.
+      const order = [...unseen].filter(pc => !forcedTaken.has(pc.id)).sort((a, b) =>
         ((threatCapable.has(a.id) ? -0.7 : 0) + rng()) - ((threatCapable.has(b.id) ? -0.7 : 0) + rng()));
       for (const pc of order) {
         const cands = [...pc.possible].filter(sq =>
@@ -295,19 +350,25 @@ export class Belief {
         if (threatens(pc.type, sq)) lurkers++;
         pb[sq] = { id: pc.id, ownerId: this.oppColor, type: pc.type, position: sq, alive: true };
         used.add(sq);
+        placedHidden.push({ type: pc.type, sq });
       }
-      // Honour squares we know hold an enemy (recent capture of one of our pieces).
-      // Infer the piece type from unseen pieces that could reach this square rather
-      // than always defaulting to queen, which over-weights dangerous worlds.
-      for (const fsq of this.forcedEnemy) {
-        if (!pb[fsq]) {
-          const plausible = unseen.filter(pc => pc.possible.has(fsq));
-          const type = plausible.length > 0
-            ? plausible[Math.floor(rng() * plausible.length)].type
-            : 'queen';
-          pb[fsq] = { id: '__capt__' + fsq, ownerId: this.oppColor, type, position: fsq, alive: true };
-        }
+
+      // Reject phantom self-checks: a particle where OUR king is already in check
+      // purely because of where we imagined hidden pieces (no capture evidence).
+      // Under FoW rules invisible checks are rare — we see every square our king
+      // could step to — yet scattering used to put ~a quarter of worlds in check,
+      // swinging evals by ±WIN for no reason. Checks delivered from a forced
+      // (evidenced) square, or by a visible piece, are kept. If non-check worlds
+      // are genuinely scarce, the last attempts accept anything so a cornered
+      // belief still yields particles.
+      if (myKingSq && attempt < n * 4 && isAttackedBy(pb, myKingSq, this.oppColor)) {
+        const hiddenCheckers = placedHidden.filter(ph =>
+          !this.forcedEnemy.has(ph.sq) && attacksSquare(pb, ph.type, this.oppColor, ph.sq, myKingSq));
+        const evidencedCheck = isAttackedBy(
+          stripSquares(pb, hiddenCheckers.map(ph => ph.sq)), myKingSq, this.oppColor);
+        if (hiddenCheckers.length > 0 && !evidencedCheck) continue; // phantom — resample
       }
+
       const key = boardSignature(pb, this.oppColor);
       if (keys.has(key)) continue;
       keys.add(key);
@@ -315,6 +376,23 @@ export class Belief {
     }
     return particles;
   }
+}
+
+// True if a `color` piece of `type` on `from` attacks the square `target`, given
+// `board` occupancy (blockers respected).
+function attacksSquare(board, type, color, from, target) {
+  const unit = { id: '__chk__', ownerId: color, type, position: from };
+  for (const a of pseudoLegalForUnit(board, unit, { castlingRights: NO_CASTLING, enPassantTarget: null }, true)) {
+    if (a.to === target) return true;
+  }
+  return false;
+}
+
+// Copy of `board` with the given squares emptied.
+function stripSquares(board, squares) {
+  const b = { ...board };
+  for (const sq of squares) b[sq] = undefined;
+  return b;
 }
 
 // True if a `color` piece of `type` placed on `sq` would attack any `targetColor`

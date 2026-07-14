@@ -1,10 +1,11 @@
 // Runtime team-color tinting for unit sprites that store their player-color region
-// as a magenta ramp (currently SC1 — see games/sc1/teamColor.js, of which this is the
-// browser-global twin). A game opts in with ui.recolorTeamSprites; SchematicLayer.vue
-// calls window.recolorTeamSprite(spriteUrl, teamHex) and gets back a tinted object-URL.
+// as a magenta ramp (SC1) or a green ramp (Civ1's unit-icon background flag).
+// A game opts in with ui.recolorTeamSprites; SchematicLayer.vue calls
+// window.recolorTeamSprite(spriteUrl, teamHex) and gets back a tinted object-URL.
 //
-// The magenta ramp is detected as pixels where red and blue both clearly exceed green;
-// we keep each pixel's brightness (HSV value) and replace hue+saturation with the team's.
+// A ramp pixel is one where a single channel clearly dominates the other two (magenta:
+// red+blue over green; green: green over red+blue); we keep each pixel's brightness
+// (HSV value) and replace hue+saturation with the team's.
 (function () {
   const cache = new Map();   // `${url}|${hex}` -> Promise<objectURL>
 
@@ -41,7 +42,9 @@
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] === 0) continue;
       const r = data[i], g = data[i + 1], b = data[i + 2];
-      if (r - g <= 25 || b - g <= 25) continue;     // not a magenta-ramp pixel
+      const isMagenta = r - g > 60 && b - g > 60;
+      const isGreen    = g - r > 60 && g - b > 60;
+      if (!isMagenta && !isGreen) continue;         // not a recolorable ramp pixel
       const v = Math.max(r, g, b) / 255;
       const [nr, ng, nb] = hsvToRgb(h, s, v);
       data[i] = nr; data[i + 1] = ng; data[i + 2] = nb;

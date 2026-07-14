@@ -19,22 +19,15 @@ function lerp(a, b, t) { return a + (b - a) * t; }
 // horizontally (east/west), so the left and right edges are the same seam.
 export function wrapX(x, width) { return ((x % width) + width) % width; }
 
-/**
- * Generate a procedural map using multi-scale value noise.
- * Returns tiles: { "x,y": { terrain, hasRoad, hasRiver, fortress, pollution, special } }
- */
-export function generateMap(width, height, rng) {
-  // Build elevation and moisture grids via multi-scale noise
-  const elev = new Float32Array(width * height);
-  const moist = new Float32Array(width * height);
-
-  for (const [scale, weight] of [[3, 0.5], [7, 0.3], [13, 0.2]]) {
-    // Columns wrap horizontally: `cellsX` lattice cells span the whole world and
-    // the corner grid is periodic in x, so noise is seamless across the seam.
+// Sample one octave of value noise into a width*height field. Columns wrap
+// horizontally: `cellsX` lattice cells span the whole world and the corner
+// grid is periodic in x, so noise is seamless across the seam.
+function octaveField(width, height, rng, octaves) {
+  const field = new Float32Array(width * height);
+  for (const [scale, weight] of octaves) {
     const cellsX = Math.max(2, Math.round(width / scale));
     const ch = Math.ceil(height / scale) + 2;
-    const ec = Array.from({ length: ch * cellsX }, () => rng());
-    const mc = Array.from({ length: ch * cellsX }, () => rng());
+    const grid = Array.from({ length: ch * cellsX }, () => rng());
 
     for (let y = 0; y < height; y++) {
       const gy = y / scale;
@@ -47,57 +40,134 @@ export function generateMap(width, height, rng) {
         const ix0 = ix % cellsX, ix1 = (ix + 1) % cellsX;
         const i = y * width + x;
 
-        const e = lerp(
-          lerp(ec[iy * cellsX + ix0], ec[iy * cellsX + ix1], fx),
-          lerp(ec[(iy + 1) * cellsX + ix0], ec[(iy + 1) * cellsX + ix1], fx),
+        const v = lerp(
+          lerp(grid[iy * cellsX + ix0], grid[iy * cellsX + ix1], fx),
+          lerp(grid[(iy + 1) * cellsX + ix0], grid[(iy + 1) * cellsX + ix1], fx),
           fy,
         );
-        const m = lerp(
-          lerp(mc[iy * cellsX + ix0], mc[iy * cellsX + ix1], fx),
-          lerp(mc[(iy + 1) * cellsX + ix0], mc[(iy + 1) * cellsX + ix1], fx),
-          fy,
-        );
-        elev[i] += e * weight;
-        moist[i] += m * weight;
+        field[i] += v * weight;
       }
     }
   }
+  return field;
+}
+
+// Fine detail octaves (3, 7, 13) plus a dominant coarse "continent" octave
+// (26) — without it, elevation is too locally-averaged to separate into
+// distinct landmasses and produces one giant blob instead.
+const ELEV_OCTAVES = [[3, 0.15], [7, 0.20], [13, 0.25], [26, 0.40]];
+// Moisture uses the opposite weighting — dominated by the fine octaves —
+// so vegetation/tundra bands stay locally textured. Reusing ELEV_OCTAVES
+// here made moisture itself continent-scale, producing dead-uniform
+// horizontal terrain strips at a given latitude across the whole map width.
+const MOIST_OCTAVES = [[3, 0.35], [7, 0.30], [13, 0.20], [26, 0.15]];
+const ISLAND_SCALE = 4;
+const ISLAND_THRESHOLD = 0.94;
+const LAND_FRACTION = 0.38;
+
+/**
+ * Generate a procedural map using multi-scale value noise.
+ * Returns tiles: { "x,y": { terrain, hasRoad, hasRiver, fortress, pollution, special } }
+ */
+export function generateMap(width, height, rng) {
+  const elev = octaveField(width, height, rng, ELEV_OCTAVES);
+  const moist = octaveField(width, height, rng, MOIST_OCTAVES);
+  // Sparse high-frequency field used only to scatter small islands across
+  // open ocean, like the archipelagos in the original game.
+  const island = octaveField(width, height, rng, [[ISLAND_SCALE, 1]]);
+
+  // Real polar ice caps: a band of rows at each pole (scaled with map
+  // height) rather than a single forced-ocean edge row.
+  const poleBand = Math.max(1, Math.min(5, Math.round(height * 0.07)));
+
+  // Quantile threshold: pick the elevation cutoff so exactly LAND_FRACTION of
+  // non-polar tiles are land, regardless of this noise realization. A fixed
+  // absolute cutoff let land ratio swing wildly seed-to-seed (from ~8% to
+  // ~80% land observed while tuning) — this keeps oceans consistently large
+  // while still letting the noise shape the coastlines and continent count.
+  const nonPolar = [];
+  for (let y = poleBand; y < height - poleBand; y++) {
+    for (let x = 0; x < width; x++) nonPolar.push(elev[y * width + x]);
+  }
+  nonPolar.sort((a, b) => a - b);
+  const oceanCut = nonPolar[Math.floor(nonPolar.length * (1 - LAND_FRACTION))];
+
+  const isLand = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const poleDist = Math.min(y, height - 1 - y);
+    if (poleDist < poleBand) continue;
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (elev[i] >= oceanCut || island[i] > ISLAND_THRESHOLD) isLand[i] = 1;
+    }
+  }
+
+  // Elevation/moisture rarely span the full [0,1] range — the multi-octave
+  // sum concentrates near the mean — so the fixed absolute cutoffs the
+  // original code used for mountains/hills/desert/jungle/swamp (e.g.
+  // e > 0.84 for mountains) landed past the tail of the real distribution
+  // and those terrains almost never appeared. Converting them to quantiles
+  // of this map's own mid/low-latitude land tiles keeps the same intended
+  // proportions (16% mountains+hills, etc.) but guarantees they show up.
+  const quantile = (sorted, q) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] : Infinity;
+  const tElev = [], tMoist = [];
+  for (let y = 0; y < height; y++) {
+    const poleDist = Math.min(y, height - 1 - y);
+    if (poleDist < poleBand) continue;
+    if (poleDist / ((height - 1) / 2) < 0.38) continue;
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (!isLand[i]) continue;
+      tElev.push(elev[i]);
+      tMoist.push(moist[i]);
+    }
+  }
+  tElev.sort((a, b) => a - b);
+  tMoist.sort((a, b) => a - b);
+  const mountainCut = quantile(tElev, 0.84);
+  const hillsCut = quantile(tElev, 0.70);
+  const desertCut = quantile(tMoist, 0.18);
+  const plainsCut = quantile(tMoist, 0.38);
+  const grasslandCut = quantile(tMoist, 0.58);
+  const forestCut = quantile(tMoist, 0.76);
 
   const tiles = {};
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = y * width + x;
-      const e = elev[i];
+      let e = elev[i];
       const m = moist[i];
-      // Only the poles (top/bottom rows) are forced to ocean — the map wraps
-      // horizontally, so there is no east/west edge to wall off with water.
       const poleDist = Math.min(y, height - 1 - y);
-      // Latitude: 0 at poles, 1 at equator
-      const lat = poleDist / ((height - 1) / 2);
 
       let terrain;
-      if (poleDist <= 0 || e < 0.32) {
+      if (poleDist < poleBand) {
+        terrain = 'arctic';
+      } else if (!isLand[i]) {
         terrain = 'ocean';
-      } else if (lat < 0.18) {
-        terrain = e < 0.48 ? 'arctic' : 'tundra';
-      } else if (lat < 0.38) {
-        terrain = m < 0.4 ? 'tundra' : m < 0.65 ? 'plains' : 'forest';
-      } else if (e > 0.84) {
-        terrain = 'mountains';
-      } else if (e > 0.70) {
-        terrain = 'hills';
-      } else if (m < 0.18) {
-        terrain = 'desert';
-      } else if (m < 0.38) {
-        terrain = 'plains';
-      } else if (m < 0.58) {
-        terrain = 'grassland';
-      } else if (m < 0.76) {
-        terrain = 'forest';
-      } else if (lat < 0.55) {
-        terrain = 'jungle';
       } else {
-        terrain = 'swamp';
+        if (e < oceanCut) e = oceanCut + 0.15; // island tile: nudge above sea level
+        const lat = poleDist / ((height - 1) / 2);
+        if (lat < 0.18) {
+          terrain = e < oceanCut + 0.15 ? 'arctic' : 'tundra';
+        } else if (lat < 0.38) {
+          terrain = m < 0.4 ? 'tundra' : m < 0.65 ? 'plains' : 'forest';
+        } else if (e > mountainCut) {
+          terrain = 'mountains';
+        } else if (e > hillsCut) {
+          terrain = 'hills';
+        } else if (m < desertCut) {
+          terrain = 'desert';
+        } else if (m < plainsCut) {
+          terrain = 'plains';
+        } else if (m < grasslandCut) {
+          terrain = 'grassland';
+        } else if (m < forestCut) {
+          terrain = 'forest';
+        } else if (lat < 0.55) {
+          terrain = 'jungle';
+        } else {
+          terrain = 'swamp';
+        }
       }
 
       tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver: false, fortress: false, pollution: false };
@@ -129,6 +199,12 @@ function carveRivers(tiles, width, height, elev, rng) {
   if (!sources.length) return;
 
   const target = Math.max(2, Math.round((width * height) / 280));
+  // Cap how far a single river can wander before giving up. Elevation is now
+  // continent-scale-dominated (see ELEV_OCTAVES), so local gradients on a
+  // plateau are nearly flat; uncapped, steepest-descent degenerated into a
+  // long mechanical zigzag across the whole plateau instead of a short,
+  // natural-looking river.
+  const maxRiverLen = Math.max(6, Math.round(Math.min(width, height) / 2));
   let carved = 0;
   for (let attempt = 0; attempt < target * 8 && carved < target; attempt++) {
     const src = sources[Math.floor(rng() * sources.length)];
@@ -137,7 +213,7 @@ function carveRivers(tiles, width, height, elev, rng) {
     const seen = new Set();
     let reachedSea = false;
 
-    for (let step = 0; step < width + height; step++) {
+    for (let step = 0; step < maxRiverLen; step++) {
       const k = `${x},${y}`;
       if (seen.has(k)) break;
       seen.add(k);

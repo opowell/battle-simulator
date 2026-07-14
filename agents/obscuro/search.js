@@ -55,10 +55,12 @@ export function makeHooks(game, me, opts = {}) {
     // Search-tree action set. Preference order:
     //   getSearchActions      — continuous-lattice games (a resolution-scaled point set)
     //   getSearchLegalActions — a game-specific move set for MODELLING inside the tree
-    //     that differs from the real legal set. FoW chess uses this to drop self-check
-    //     moves: real play is pseudo-legal (a player may blunder into check under fog),
-    //     but the search must NOT model the opponent as hanging its own king — that
-    //     child's "mover loses" leaf flips to a phantom win for us and poisons the value.
+    //     when it must differ from the real legal set. CAUTION: an infoset's action
+    //     set must be identical for every node (world) in it, so this hook must be a
+    //     function of the acting player's OBSERVATION only. FoW chess once used it to
+    //     drop self-check moves, which violated exactly that (check depends on hidden
+    //     pieces) and silently mispriced king-hanging moves as neutral passes in the
+    //     dangerous worlds; losing moves belong in the tree with losing VALUES.
     //   getLegalActions       — the default.
     legal: game.getSearchActions
       ? ((s, p) => game.getSearchActions(s, p, opts.searchRes ?? {}))
@@ -94,6 +96,9 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
     blueprint: cfg.blueprint ?? null, // previous move's infosets (KLUSS reuse)
     blueprintHits: 0,
   };
+  // Root worlds share the searcher's ONE real infoset (see expandRoot); tag them
+  // so a lazy expansion later in the round loop also lands there.
+  for (const w of tree.worlds) w.node.rootWorld = true;
   // The searcher always knows its OWN exact legal moves (they are identical
   // across every world consistent with its observation — an FoW invariant), so
   // pin the root infoset's action set to the true legal moves rather than a

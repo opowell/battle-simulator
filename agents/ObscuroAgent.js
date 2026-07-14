@@ -134,7 +134,7 @@ export class ObscuroAgent {
     return {
       difficulty: d,
       worlds:         o.particles     ?? Math.max(1, rc(1, 48, t)),
-      timeBudgetMs:   o.timeBudgetMs  ?? rc(30, 1200, t),
+      timeBudgetMs:   o.timeBudgetMs  ?? rc(30, 2000, t),
       maxRounds:      o.maxRounds     ?? rc(6, 100, t),
       maxInfosets:    o.maxInfosets   ?? rc(400, 6000, t),
       expandPerRound: o.expandPerRound ?? ri(6, 24, t),
@@ -154,6 +154,16 @@ export class ObscuroAgent {
   // evaluator here. Returning null uses the game's evaluateLeaves hook, or the
   // per-child evaluateState default.
   _leafEval(/* observation, me */) { return null; }
+
+  // Subclass hook: the terminal win/loss magnitude the search should use, on the
+  // same scale as the game's leaf evaluations. The paper bounds utilities to
+  // [−1,+1] — a certain win is worth the eval clamp, not orders of magnitude
+  // more — because under fog terminal values are AVERAGED across belief worlds:
+  // an unbounded win lets a single phantom world (e.g. an imagined capturable
+  // king) swamp every real consideration. Games may also declare `winValue` on
+  // the definition. Null keeps the generic default (large; fine for the
+  // perfect-information games that ride evaluateState).
+  _winValue(/* observation */) { return this.game.winValue ?? null; }
 
   async chooseAction(observation, legalActions) {
     if (!legalActions || legalActions.length === 0) return null;
@@ -192,7 +202,10 @@ export class ObscuroAgent {
       ? game.getSearchActions(observation, me, searchRes)
       : legalActions;
 
-    const hooks = makeHooks(game, me, { rng, leafEval: this._leafEval(observation, me), searchRes });
+    const hooks = makeHooks(game, me, {
+      rng, leafEval: this._leafEval(observation, me), searchRes,
+      win: this._winValue(observation) ?? undefined,
+    });
     const res = await runObscuroSearch(hooks, worlds, {
       opp: this._oppId(observation, me),
       rootActions,
@@ -223,9 +236,27 @@ export class ObscuroAgent {
     if (!action && res.action && game.isActionLegal?.(observation, me, res.action)) action = res.action;
     action = action ?? legalActions[0];
     this.lastAnalysis = this._buildAnalysis(me, cfg, worlds.length, res, action);
+    // Let a subclass veto/adjust the selection (e.g. chess's king-safety
+    // backstop) BEFORE the game hook records the move: onActionCommitted feeds
+    // the belief trackers, and committing an action other than the one actually
+    // played silently corrupts the belief (fatally so for the exact tracker).
+    const adjusted = this._adjustChosenAction(observation, action, legalActions);
+    if (adjusted) {
+      const swapped = this._matchLegal(adjusted, legalActions) ?? action;
+      if (swapped !== action) {
+        action = swapped;
+        this.lastAnalysis.adjusted = true; // selection was overridden by the subclass backstop
+        const k = this._key(action);
+        for (const c of this.lastAnalysis.candidates ?? []) c.chosen = c.key === k;
+      }
+    }
     if (game.onActionCommitted) game.onActionCommitted(observation, me, action);
     return action;
   }
+
+  // Subclass hook: adjust/veto the chosen action just before it is committed.
+  // Return a replacement action (must be legal) or null to keep the choice.
+  _adjustChosenAction(/* observation, action, legalActions */) { return null; }
 
   // Assemble the human-inspectable record of this decision (candidate moves, the
   // equilibrium mixed strategy over them, per-move values) for the AI-analysis

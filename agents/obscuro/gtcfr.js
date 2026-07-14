@@ -73,14 +73,22 @@ export function warmStartInfoset(tree, I) {
 // Expand a frontier node: create its children, evaluate them (batched), attach it
 // to its infoset, and initialise a brand-new infoset's minimizer to the best
 // child (App. C.5, avoids the max→average value lurch when an infoset is born).
-export async function expandNode(tree, hooks, node) {
+//
+// `forceInfoset` overrides the observation-derived infoset. The root worlds are
+// BY CONSTRUCTION in the searcher's one true infoset, but recomputing the
+// observation inside a sampled world can differ from the real observation
+// (imagined hidden pieces change blocking/visibility), which used to scatter
+// the root worlds across singleton infosets — the search then purified a root
+// strategy supported by only the world(s) whose recomputed key happened to
+// match, i.e. it was effectively a single-world search.
+export async function expandNode(tree, hooks, node, forceInfoset = null) {
   if (node.expanded || node.terminal) return;
   const p = node.player;
   const myLegal = hooks.legal(node.state, p);
   // A node with no legal moves is a leaf: keep its heuristic value rather than
   // expanding into an empty infoset (whose value would collapse to 0).
   if (!myLegal || myLegal.length === 0) { node.terminal = true; return; }
-  const I = getOrCreateInfoset(tree, hooks, node);
+  const I = forceInfoset ?? getOrCreateInfoset(tree, hooks, node);
   const K = I.actions.length;
   const myKeys = new Set(myLegal.map(hooks.key));
 
@@ -154,13 +162,27 @@ export async function expandNode(tree, hooks, node) {
 // root infoset that every other world (and the rest of the search) needs.
 export async function expandRoot(tree, hooks, opts = {}) {
   const deadline = opts.deadline ?? Infinity;
+  if (!tree.worlds.length) { tree.rootInfoset = null; return; }
+  // Every root world shares the searcher's ONE real infoset (they were sampled
+  // from it), so they are forced into a single shared infoset rather than
+  // re-keyed per world (see expandNode). Prefer the infoset pinned by the
+  // caller (runObscuroSearch pins the true legal action set); otherwise create
+  // it from the first world.
+  let rootI = tree.infosets.get(hooks.obsKey(tree.worlds[0].node.state, hooks.me)) ?? null;
+  // Guarantee a floor of expanded root worlds even past the deadline: a root
+  // world that misses expansion contributes NOTHING this move (cfrDescend skips
+  // unexpanded nodes), and on a cold engine cache the per-world leaf evaluation
+  // can eat the whole budget after only a world or two — silently degrading the
+  // search to a near-single-world one. Eight worlds bounds the overrun to a few
+  // engine calls while keeping the belief genuinely multi-world.
+  const minWorlds = Math.min(opts.minWorlds ?? 8, tree.worlds.length);
   for (let i = 0; i < tree.worlds.length; i++) {
-    if (i > 0 && Date.now() > deadline) break;
-    await expandNode(tree, hooks, tree.worlds[i].node);
+    if (i >= minWorlds && Date.now() > deadline) break;
+    const node = tree.worlds[i].node;
+    await expandNode(tree, hooks, node, rootI);
+    if (!rootI) rootI = node.infoset; // first world created it
   }
-  tree.rootInfoset = tree.worlds.length
-    ? tree.infosets.get(hooks.obsKey(tree.worlds[0].node.state, hooks.me))
-    : null;
+  tree.rootInfoset = rootI;
 }
 
 // The exploring player's perturbed strategy at I: ½ uniform-over-support (xMax)
@@ -183,7 +205,33 @@ function expansionStrategy(I) {
   return out;
 }
 
-function sampleWorld(tree, rng) {
+// Root sampling for an expansion descent (paper Fig. 12 lines 7/14–18): the
+// descent starts at the GADGET root, where the opponent selects the infoset
+// class J — with its current gadget reach π_▼(J) when it is the non-exploring
+// player, or an exploration mix (½ uniform over classes + ½ ∝ π_▼) when it is
+// the exploring player — and chance then picks a world within J ∝ its weight.
+// Without this the expander sampled worlds by prior belief mass, so the tree
+// never grew toward the classes the gadget's opponent actually plays into.
+function sampleWorld(tree, rng, exploringIsOpp) {
+  const g = tree.gadget;
+  if (g && g.J.length) {
+    const J = g.J;
+    let tot = 0;
+    const wts = new Array(J.length);
+    for (let i = 0; i < J.length; i++) {
+      const piv = J[i].piv ?? J[i].mass;
+      wts[i] = exploringIsOpp ? 0.5 / J.length + 0.5 * piv : piv;
+      tot += wts[i];
+    }
+    if (tot > 0) {
+      let r = rng() * tot, cls = J[J.length - 1];
+      for (let i = 0; i < J.length; i++) { r -= wts[i]; if (r <= 0) { cls = J[i]; break; } }
+      let cw = 0; for (const w of cls.worlds) cw += w.cw;
+      let rr = rng() * (cw || 1);
+      for (const w of cls.worlds) { rr -= w.cw; if (rr <= 0) return w.node; }
+      return cls.worlds[cls.worlds.length - 1].node;
+    }
+  }
   let tot = 0; for (const w of tree.worlds) tot += w.prob;
   let r = rng() * tot;
   for (const w of tree.worlds) { r -= w.prob; if (r <= 0) return w.node; }
@@ -210,7 +258,7 @@ function sampleAvailable(node, pi, rng) {
 // sampled world to a frontier leaf and expand it.
 export async function doExpansionStep(tree, hooks, exploringPlayer, rng) {
   if (!tree.worlds.length) return;
-  let node = sampleWorld(tree, rng);
+  let node = sampleWorld(tree, rng, exploringPlayer !== hooks.me);
   while (node.expanded) {
     if (node.chance) { // descend through a chance node by sampling an outcome
       let r = rng(), acc = 0, picked = node.chanceChildren[0].node;
@@ -229,5 +277,7 @@ export async function doExpansionStep(tree, hooks, exploringPlayer, rng) {
     if (node == null) return;
   }
   if (node.terminal) return;
-  await expandNode(tree, hooks, node);
+  // A root world expanded lazily (past the expandRoot deadline floor) must still
+  // join the shared root infoset, not re-derive a fragmented per-world key.
+  await expandNode(tree, hooks, node, node.rootWorld ? tree.rootInfoset : null);
 }

@@ -24,9 +24,17 @@ import { RegretMinimizer } from './pcfr.js';
 // sequence — sound for games, like FoW chess, whose current observation
 // determines legal moves). Falls back to the whole state when a game has no
 // getVisibleState (perfect information → every node is its own singleton).
+//
+// The key is scoped by (player, turnNumber): the same visible board reached at
+// different plies is NOT the same information state (different history length
+// is itself observable), and merging across plies let far-apart tree layers
+// share one strategy. turnNumber is absolute game time, so blueprint keys stay
+// stable across successive searches (KLUSS warm-start still matches). Merging
+// different HISTORIES that produce the same observation at the same ply remains
+// a deliberate abstraction.
 export function observationKey(game, state, player) {
   const obs = game.getVisibleState ? game.getVisibleState(state, player) : state;
-  return player + '|' + stableStringify(obs?.board ?? obs);
+  return player + '|' + (state?.turnNumber ?? '') + '|' + stableStringify(obs?.board ?? obs);
 }
 
 function stableStringify(v) {
@@ -186,12 +194,19 @@ export function cfrDescend(node, me, reachMe, reachOpp) {
   }
   // Counterfactual reach = product of everyone-but-the-acting-player.
   const cfReach = p === me ? reachOpp : reachMe;
-  const piReach = p === me ? reachMe : reachOpp; // acting player's own reach
   const sign = p === me ? 1 : -1;                // acting player's utility sign
+  // Full reach π(h): the weight of THIS node inside its infoset. uCond must be
+  // the paper's conditional value u(x,y|I,a) (App. B.1) — the expectation over
+  // the infoset's nodes weighted by the probability of actually reaching each
+  // one, INCLUDING the opponent's (and the KLUSS gadget's) reach. Weighting by
+  // the acting player's own reach alone made every belief world count equally
+  // at the root, so a catastrophic world the gadget's opponent steers into was
+  // averaged away by optimistic ones — the exact king-safety leak.
+  const wReach = reachMe * reachOpp;
   for (let k = 0; k < K; k++) {
     I.iterUtil[k] += cfReach * sign * childVals[k];
-    I.qNum[k] += piReach * sign * childVals[k];
+    I.qNum[k] += wReach * sign * childVals[k];
   }
-  I.visitReach += piReach;
+  I.visitReach += wReach;
   return nodeVal;
 }

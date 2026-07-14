@@ -539,7 +539,7 @@ export const ChessAgent = {
     }
 
     const belief = getBelief(state, color);
-    belief.beginTurn(board);
+    belief.beginTurn(board, state.turnNumber ?? null);
     let particles = belief.sample(board, cfg.fog.particles);
     if (particles.length === 0) particles = [board]; // fallback: trust the visible board
     const action = search(board, gameSpecific, color, legalActions, particles, {

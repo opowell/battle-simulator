@@ -59,14 +59,17 @@ export function purify(dist, actions, opts = {}) {
   }
   if (kept.length === 1) return pure();
 
-  // The played distribution is the kept mass, renormalised (excluded mass is
-  // implicitly shifted onto a*, which keeps its own share and wins ties).
-  let tot = 0; for (const k of kept) tot += k.p;
-  if (tot <= 0) return pure();
-  for (const k of kept) played[k.i] = k.p / tot;
+  // The played distribution: every kept action retains its own probability and
+  // ALL excluded mass is shifted onto a* (paper Fig. 8 lines 18–20) — not
+  // renormalised across the support, which would over-play the runners-up.
+  let totAll = 0; for (const r of ranked) totAll += r.p;
+  if (totAll <= 0) return pure();
+  let keptMass = 0; for (const k of kept) keptMass += k.p;
+  for (const k of kept) played[k.i] = k.p / totAll;
+  played[top.i] += (totAll - keptMass) / totAll;
 
-  let pick = rng() * tot;
+  let pick = rng();
   let action = top.a;
-  for (const k of kept) { pick -= k.p; if (pick <= 0) { action = k.a; break; } }
+  for (const k of kept) { pick -= played[k.i]; if (pick <= 0) { action = k.a; break; } }
   return { action, dist: played };
 }
