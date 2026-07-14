@@ -37,6 +37,22 @@ export function observationKey(game, state, player) {
   return player + '|' + (state?.turnNumber ?? '') + '|' + stableStringify(obs?.board ?? obs);
 }
 
+// Chain hash for observation-sequence infoset keys (cyrb53-style, 64-bit-ish):
+// seq(child) = chainHash(seq(parent), step). Collision odds are negligible at
+// tree scale, and hashing keeps per-node keys O(1) instead of O(path).
+export function chainHash(prev, step) {
+  const s = prev + '' + step;
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
+}
+
 function stableStringify(v) {
   if (v === null || typeof v !== 'object') return JSON.stringify(v);
   if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';

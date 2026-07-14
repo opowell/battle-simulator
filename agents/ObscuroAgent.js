@@ -73,11 +73,14 @@ export class ObscuroAgent {
     this.id = opts.id ?? 'obscuro';
     this.name = opts.name ?? 'Obscuro (CFR)';
     this._rng = opts.rng ?? Math.random;
-    // KLUSS blueprint: the previous move's solved tree, kept per side (an agent
-    // instance may be shared between both players) so each perspective warm-starts
-    // from its own last computation. Alongside it, the previous search value v*
-    // (per side) bounds the gadget's alternate values.
-    this._blueprints = new Map();
+    // KLUSS carryover, kept per side (an agent instance may be shared between
+    // both players): the previous move's ENTIRE solved tree plus the action we
+    // actually played — the paper's Γ̂. The next search grafts the consistent
+    // subtrees in as root worlds (node-level carryover) and additionally
+    // warm-starts any re-derived infoset from the old tree's infoset map.
+    // Alongside it, the previous search value v* (per side) bounds the fresh
+    // classes' alternate values.
+    this._carry = new Map();
     this._prevValues = new Map();
   }
 
@@ -206,10 +209,12 @@ export class ObscuroAgent {
       rng, leafEval: this._leafEval(observation, me), searchRes,
       win: this._winValue(observation) ?? undefined,
     });
+    const carry = this._carry.get(me);
     const res = await runObscuroSearch(hooks, worlds, {
       opp: this._oppId(observation, me),
       rootActions,
-      blueprint: this._blueprints.get(me),
+      carry,
+      blueprint: carry?.tree?.infosets ?? null,
       prevValue: this._prevValues.get(me),
       rng,
       timeBudgetMs: cfg.timeBudgetMs,
@@ -220,9 +225,6 @@ export class ObscuroAgent {
       finalCfr: cfg.finalCfr,
       purifyMax: cfg.purifyMax,
     });
-    // Save the solved tree as this side's blueprint, and its value as v*, for the
-    // next move's KLUSS reuse and gadget alternate-value bound.
-    this._blueprints.set(me, res.tree?.infosets ?? null);
     this._prevValues.set(me, res.value);
 
     // Map the chosen action back onto the caller's own legalActions array so the
@@ -250,6 +252,9 @@ export class ObscuroAgent {
         for (const c of this.lastAnalysis.candidates ?? []) c.chosen = c.key === k;
       }
     }
+    // Carry the solved tree + the action ACTUALLY played (post-adjustment) so
+    // the next move can graft the consistent subtrees in (paper's Γ̂ reuse).
+    this._carry.set(me, { tree: res.tree, actionKey: this._key(action) });
     if (game.onActionCommitted) game.onActionCommitted(observation, me, action);
     return action;
   }
@@ -284,6 +289,7 @@ export class ObscuroAgent {
       difficulty: cfg.difficulty ?? null,
       timeBudgetMs: cfg.timeBudgetMs ?? null,
       worlds: nWorlds,
+      carried: res.tree?.carriedWorlds ?? 0,
       value: round3(res.value),
       pmax: typeof res.pmax === 'number' ? round3(res.pmax) : null,
       candidates: cands.slice(0, 12),

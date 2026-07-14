@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { observationKey, Infoset } from './infoset.js';
-import { makeLeaf, expandRoot, doExpansionStep, warmStartInfoset } from './gtcfr.js';
+import { makeLeaf, expandRoot, doExpansionStep, warmStartInfoset, harvestCarried } from './gtcfr.js';
 import { buildGadget, runGadgetCFR } from './kluss.js';
 import { purify } from './purify.js';
 
@@ -87,14 +87,47 @@ export function makeHooks(game, me, opts = {}) {
  */
 export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   const rng = cfg.rng ?? Math.random;
-  const nW = worlds.length;
+
+  // Node-level tree carryover (paper §3.1 / Fig. 9): harvest the previous
+  // tree's our-move nodes reached via the action we actually played, keep the
+  // ones consistent with our NEW observation, and use them as root worlds with
+  // their subtrees, infosets, and carried alternate values intact. Fresh belief
+  // samples fill the rest (duplicates of carried states are dropped — the
+  // carried copy is strictly richer). Carry requires a pinned root action set.
+  let carried = [];
+  if (cfg.carry?.tree && cfg.carry.actionKey != null && cfg.rootActions?.length && worlds.length) {
+    const rootKey = hooks.obsKey(worlds[0], hooks.me);
+    carried = harvestCarried(cfg.carry.tree, cfg.carry.actionKey, hooks)
+      .filter(c => hooks.obsKey(c.node.state, hooks.me) === rootKey)
+      .slice(0, Math.max(16, worlds.length)); // bound the root width
+  }
+  const stateSig = s => { try { return JSON.stringify(s.board ?? s.units ?? s); } catch { return null; } };
+  const carriedSigs = new Set(carried.map(c => stateSig(c.node.state)).filter(s => s != null));
+  const freshStates = carried.length ? worlds.filter(s => !carriedSigs.has(stateSig(s))) : worlds;
+
+  const rootWorlds = [
+    ...carried.map(c => ({ node: c.node, prob: 0, carried: true, clsKey: c.clsKey, altOverride: c.altOverride })),
+    ...freshStates.map((s, i) => {
+      const node = makeLeaf(hooks, s);
+      // A freshly sampled world is its own opponent infoset class (Fig. 9 line
+      // 13: the opponent is assumed perfectly informed at sampled states), and
+      // that identity also seeds the opponent's observation-sequence chain for
+      // the subtree below it. Carried worlds keep the chain from the old tree.
+      node.oppSeq = 'fresh|' + i;
+      return { node, prob: 0, clsKey: 'fresh|' + i };
+    }),
+  ];
+  for (const w of rootWorlds) w.prob = 1 / rootWorlds.length;
+
   const tree = {
     me: hooks.me,
-    worlds: worlds.map(s => ({ node: makeLeaf(hooks, s), prob: 1 / nW })),
+    opp: cfg.opp ?? null,
+    worlds: rootWorlds,
     infosets: new Map(),
     rootInfoset: null,
     blueprint: cfg.blueprint ?? null, // previous move's infosets (KLUSS reuse)
     blueprintHits: 0,
+    carriedWorlds: carried.length,
   };
   // Root worlds share the searcher's ONE real infoset (see expandRoot); tag them
   // so a lazy expansion later in the round loop also lands there.
@@ -104,7 +137,7 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   // pin the root infoset's action set to the true legal moves rather than a
   // sampled world's. This guarantees the chosen move is legal in the real game
   // even when belief phantoms would change a sampled world's move set.
-  if (cfg.rootActions && cfg.rootActions.length && nW) {
+  if (cfg.rootActions && cfg.rootActions.length && tree.worlds.length) {
     const key = hooks.obsKey(worlds[0], hooks.me);
     const rootI = new Infoset(key, hooks.me, cfg.rootActions, cfg.rootActions.map(hooks.key));
     tree.infosets.set(key, rootI);

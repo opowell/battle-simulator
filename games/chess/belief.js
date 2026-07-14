@@ -104,6 +104,14 @@ function reachableSquares(board, type, color, sq, hidden) {
   for (const a of pseudoLegalForUnit(board, unit, { castlingRights: NO_CASTLING, enPassantTarget: null }, true)) {
     if (a.to && hidden.has(a.to)) out.push(a.to);
   }
+  // Castling is not generated above (rights are stubbed off), but a hidden king
+  // or rook may really have castled. Add the castle destination squares so a
+  // piece's possible-set stays a SUPERSET of where it can truly be — the exact
+  // belief's re-acquisition relies on that superset property.
+  const home = color === 'white' ? 1 : 8;
+  const castleTo = { king: { ['e' + home]: ['g' + home, 'c' + home] },
+                     rook: { ['h' + home]: ['f' + home], ['a' + home]: ['d' + home] } }[type]?.[sq];
+  if (castleTo) for (const c of castleTo) if (hidden.has(c) && !board[c]) out.push(c);
   return out;
 }
 
@@ -140,9 +148,20 @@ export class Belief {
       for (const sq of pc.possible) {
         for (const dest of reachableSquares(board, pc.type, this.oppColor, sq, hidden)) next.add(dest);
       }
-      pc.possible = next.size > MAX_POSSIBLE
-        ? new Set([...next].sort((a, b) => chebyshev(a, pc.anchor) - chebyshev(b, pc.anchor)).slice(0, MAX_POSSIBLE))
-        : next;
+      if (next.size > MAX_POSSIBLE) {
+        pc.possible = new Set([...next].sort((a, b) => chebyshev(a, pc.anchor) - chebyshev(b, pc.anchor)).slice(0, MAX_POSSIBLE));
+        // The set is no longer a guaranteed superset of the truth. The exact
+        // belief's re-acquisition must not trust a truncated piece.
+        pc.truncated = true;
+      } else {
+        pc.possible = next;
+      }
+      // A hidden pawn whose set reaches the last rank may have PROMOTED, which
+      // per-piece type tracking cannot represent — flag it for the same reason.
+      if (pc.type === 'pawn') {
+        const last = this.oppColor === 'white' ? '8' : '1';
+        for (const sq of pc.possible) if (sq[1] === last) { pc.truncated = true; break; }
+      }
     }
   }
 

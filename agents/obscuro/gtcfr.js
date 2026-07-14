@@ -14,7 +14,7 @@
 // This module also builds the tree: makeLeaf / expandNode / expandRoot.
 // ---------------------------------------------------------------------------
 
-import { Node, Infoset } from './infoset.js';
+import { Node, Infoset, evalNode, chainHash } from './infoset.js';
 
 // Wrap a concrete state as a leaf node: terminal (with its result value) or a
 // heuristic-valued frontier node awaiting expansion.
@@ -37,9 +37,19 @@ function makeChanceNode(hooks, state, outcomes) {
   return cn;
 }
 
+// Infoset identity. OUR infosets key on the (player, turn, visible-board)
+// observation — a deliberate Markov coarsening of our own information (safe:
+// a strategy that is a function of less of one's OWN information is just a
+// restricted strategy, and it buys transposition sharing). The OPPONENT's
+// infosets key on their chain-hashed observation SEQUENCE (node.oppSeq):
+// coarsening the opponent's information UNDERESTIMATES their play (it assumes
+// they can't tell histories apart that they truly can), which is the unsafe
+// direction — so their infosets are kept exact-fine.
 function getOrCreateInfoset(tree, hooks, node) {
   const p = node.player;
-  const key = hooks.obsKey(node.state, p);
+  const key = (tree.opp != null && p === tree.opp && node.oppSeq != null)
+    ? 'seq|' + p + '|' + node.oppSeq
+    : hooks.obsKey(node.state, p);
   let I = tree.infosets.get(key);
   if (!I) {
     const acts = hooks.legal(node.state, p);
@@ -128,6 +138,32 @@ export async function expandNode(tree, hooks, node, forceInfoset = null) {
     }
   }
 
+  // Extend the opponent's observation-sequence chain onto each child: their
+  // own action when they are the mover here, and their observation whenever a
+  // child is one of their decision nodes (between their turns, observations
+  // collapse into the next decision point — turn-based equivalence).
+  const oppId = tree.opp;
+  if (oppId != null && node.oppSeq != null) {
+    for (let k = 0; k < K; k++) {
+      const c = children[k];
+      if (!c) continue;
+      let seq = node.oppSeq;
+      if (p === oppId) seq = chainHash(seq, 'a:' + I.actionKeys[k]);
+      const target = c.chance ? null : c;
+      if (target && !target.terminal && target.player === oppId) {
+        seq = chainHash(seq, 'o:' + hooks.obsKey(target.state, oppId));
+      }
+      c.oppSeq = seq;
+      if (c.chance && c.chanceChildren) {
+        for (const oc of c.chanceChildren) {
+          oc.node.oppSeq = (!oc.node.terminal && oc.node.player === oppId)
+            ? chainHash(seq, 'o:' + hooks.obsKey(oc.node.state, oppId))
+            : seq;
+        }
+      }
+    }
+  }
+
   node.children = children;
   node.infoset = I;
   node.expanded = true;
@@ -145,6 +181,96 @@ export async function expandNode(tree, hooks, node, forceInfoset = null) {
     }
     if (best >= 0) I.rm.seed(best);
     I._seeded = true;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Node-level tree carryover (Zhang & Sandholm 2026 §3.1 / Fig. 9): the previous
+// move's solved tree Γ̂ IS the starting material for the new subgame. After we
+// played action a and observed o, the nodes of Γ̂ two plies below the old root
+// (our-move nodes reached via a and some opponent reply b) that are consistent
+// with o become root worlds of the NEW search — with their entire subtrees,
+// infoset objects, regrets and values intact. Each carried world also brings:
+//   • its true opponent-infoset identity (the pair (J′, b) — the opponent's
+//     old decision infoset plus the reply that led here), used as its gadget
+//     class so opponent knowledge is not coarsened, and
+//   • the paper's carried alternate value u(x,y|J) − ĝ(J): the world's value
+//     under the carried strategies minus the reach-gift the opponent conceded
+//     by choosing b (App. C.2, computed from the carried infoset's uCond).
+// ---------------------------------------------------------------------------
+export function harvestCarried(oldTree, actionKey, hooks) {
+  const out = [];
+  if (!oldTree?.worlds?.length || actionKey == null) return out;
+  const me = hooks.me;
+  for (const w of oldTree.worlds) {
+    const rn = w.node;
+    if (!rn?.expanded || !rn.children || !rn.infoset) continue;
+    const k = rn.infoset.indexOfKey(actionKey);
+    if (k < 0) continue;
+    const on = rn.children[k]; // opponent node after our move
+    if (!on || on.terminal || !on.expanded || !on.children || !on.infoset) continue;
+    const J = on.infoset;
+    // Opponent's mistake margin ("gift") for each reply b, in OUR units:
+    // myU(b) − Σ_b′ σ(b′)·myU(b′), positive part (App. C.2). uCond stores the
+    // acting player's (opponent's) values, so negate.
+    const strat = J.rm.lastStrategy();
+    let base = 0;
+    for (let i = 0; i < J.actions.length; i++) base += strat[i] * -J.uCond[i];
+    for (let b = 0; b < on.children.length; b++) {
+      const c = on.children[b];
+      if (!c || c.terminal) continue;
+      out.push({
+        node: c,
+        clsKey: 'carried|' + J.key + '|' + J.actionKeys[b],
+        gift: Math.max(0, -J.uCond[b] - base),
+      });
+    }
+  }
+  // The carried value u(x,y|world) under the carried strategies, minus the
+  // gift, becomes the gadget's alternate value for this world's class.
+  // (Consistency with the NEW observation is the caller's filter — it owns the
+  // root key.)
+  for (const c of out) c.altOverride = evalNode(c.node, me) - c.gift;
+  return out;
+}
+
+// Graft a carried our-move node onto the new search's pinned root infoset: its
+// children (aligned to its OLD per-world infoset) are remapped onto the new
+// root action list by action key, and its subtree's infosets are re-registered
+// into the new tree with membership rebuilt from what is actually reachable
+// (the paper's "delete all game tree nodes not reachable from ∅").
+export function attachCarriedRoot(tree, node, rootI, walkTag) {
+  const old = node.infoset;
+  const kids = new Array(rootI.actions.length).fill(null);
+  if (old && node.children) {
+    for (let k = 0; k < rootI.actions.length; k++) {
+      const oi = old.indexOfKey(rootI.actionKeys[k]);
+      if (oi >= 0) kids[k] = node.children[oi];
+    }
+  }
+  node.children = kids;
+  node.infoset = rootI;
+  rootI.nodes.push(node);
+  registerSubtree(tree, node, walkTag);
+}
+
+function registerSubtree(tree, node, walkTag) {
+  const kids = node.chance ? node.chanceChildren?.map(o => o.node) : node.children;
+  if (!kids) return;
+  for (const c of kids) {
+    if (!c) continue;
+    const I = c.infoset;
+    if (c.expanded && !c.terminal && I) {
+      const existing = tree.infosets.get(I.key);
+      if (existing !== I) {
+        if (!existing) tree.infosets.set(I.key, I);
+        // (a different object under the same key cannot arise from one old
+        // tree; if it ever did, the walked object simply keeps its identity)
+      }
+      if (I._walkTag !== walkTag) { I._walkTag = walkTag; I.nodes = []; }
+      I.nodes.push(c);
+    }
+    registerSubtree(tree, c, walkTag);
   }
 }
 
@@ -176,9 +302,18 @@ export async function expandRoot(tree, hooks, opts = {}) {
   // search to a near-single-world one. Eight worlds bounds the overrun to a few
   // engine calls while keeping the belief genuinely multi-world.
   const minWorlds = Math.min(opts.minWorlds ?? 8, tree.worlds.length);
+  const walkTag = Symbol('carry-walk');
   for (let i = 0; i < tree.worlds.length; i++) {
+    const w = tree.worlds[i];
+    const node = w.node;
+    // A carried world arrives already expanded with its old subtree: graft it
+    // onto the shared root infoset (free — no engine calls) instead of
+    // re-expanding. Carried grafting ignores the deadline for that reason.
+    if (w.carried && node.expanded && rootI) {
+      attachCarriedRoot(tree, node, rootI, walkTag);
+      continue;
+    }
     if (i >= minWorlds && Date.now() > deadline) break;
-    const node = tree.worlds[i].node;
     await expandNode(tree, hooks, node, rootI);
     if (!rootI) rootI = node.infoset; // first world created it
   }

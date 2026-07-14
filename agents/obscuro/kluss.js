@@ -45,14 +45,21 @@ export function buildGadget(tree, hooks, cfg = {}) {
   const opp = cfg.opp ?? null;
   const vStar = cfg.prevValue ?? Infinity; // previous search value v*; no clamp on move 1
 
+  // Class identity (the opponent's root infoset J), per the paper (Fig. 9):
+  //   • a CARRIED world knows its true opponent infoset — the previous move's
+  //     opponent decision infoset J′ plus the reply b that led here (w.clsKey,
+  //     set at harvest) — so opponent knowledge is never coarsened;
+  //   • a freshly SAMPLED world is a singleton class J = {s}: the opponent is
+  //     assumed perfectly informed there (Fig. 9 line 13).
   const groups = new Map();
   tree.worlds.forEach((w, i) => {
-    const key = opp != null ? hooks.obsKey(w.node.state, opp) : 'J' + i;
+    const key = w.clsKey ?? 'J' + i;
     let g = groups.get(key);
     if (!g) { g = { key, worlds: [], mass: 0 }; groups.set(key, g); }
     g.worlds.push(w);
     g.mass += w.prob;
   });
+  void opp;
 
   const J = [...groups.values()];
   const m = J.length;
@@ -60,15 +67,20 @@ export function buildGadget(tree, hooks, cfg = {}) {
   for (const g of J) {
     // Within-class chance weights: h ∈ J chosen ∝ our reach π_{-▼}(h) (≈ belief mass).
     for (const w of g.worlds) w.cw = w.prob / (g.mass || 1);
-    // Alternate value to me if ▼ exits at J: min{ṽ(h), v*} (Fig. 9 line 14),
-    // where ṽ(h) is the node heuristic of the world — the value of the MOVER's
-    // best child as scored at root expansion (paper: "Stockfish's evaluation").
-    // This is the engine's view of the position itself; measuring alt from our
-    // seeded play, or from a cruder static heuristic, put the alternate values
-    // on a different scale from the resolved enter values, so enter/exit went
-    // one-hot and the subgame tunnel-visioned onto one or two belief worlds.
+    // Alternate value to me if ▼ exits at J.
+    //   Fresh world (Fig. 9 line 14): min{ṽ(h), v*}, where ṽ(h) is the value
+    //   of the MOVER's best child as scored at root expansion (paper:
+    //   "Stockfish's evaluation"). Measuring alt from our seeded play, or from
+    //   a cruder static heuristic, put the alternate values on a different
+    //   scale from the resolved enter values, so enter/exit went one-hot and
+    //   the subgame tunnel-visioned onto one or two belief worlds.
+    //   Carried world (Fig. 9 line 8): u(x,y|J) − ĝ(J), precomputed at harvest
+    //   from the carried strategies and the opponent's reach-gift
+    //   (w.altOverride).
     let alt = 0;
-    for (const w of g.worlds) alt += w.cw * Math.min(bestChildValue(w.node, me), vStar);
+    for (const w of g.worlds) {
+      alt += w.cw * (w.altOverride != null ? w.altOverride : Math.min(bestChildValue(w.node, me), vStar));
+    }
     g.altMe = alt;
     g.R = new RegretMinimizer(2); // [enter, exit]
     g.y = g.mass;                  // blueprint opponent reach to J (≈ belief mass)

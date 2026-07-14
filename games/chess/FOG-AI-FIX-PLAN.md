@@ -167,22 +167,55 @@ Also fixed while in there (paper fidelity, not king-safety):
   the guard is KEPT as a cheap tail-risk backstop (it only breaks ≤2.5-pawn near-ties
   toward safety, so its interference with deliberate risk-taking is negligible).
 
-## Future work (nothing blocking; strength/fidelity upside)
+## Second follow-up round: the former future-work list, executed
 
-- **Node-level tree carryover**: keep the previous move's tree nodes (not just
-  infoset regrets) so the paper's carried-infoset alternate values u(x,y|J) − ĝ(J)
-  (Fig. 9 l. 8) and non-acting-player infosets become implementable, and Γ̂ reuse
-  matches the paper fully.
-- **Sequence-scoped deeper infosets**: deeper nodes still key by (player, turn,
-  visible board); keying by observation SEQUENCE would remove the path-independence
-  abstraction (finer infosets, truer bluff coherence, bigger trees).
-- **Exact-belief longevity**: P held exact for 56–92% of self-play plies (cap 30k,
-  3s guard). A compact board encoding + incremental visibility could raise the cap;
-  re-acquiring exactness after a fallback (when information collapses) is also
-  possible in principle.
-- The recorded `b6-b5`-class inaccuracy (~330cp in a lost position) still appears in
-  ≲1/6 seeded runs at power 86 — acceptable for the dial, and the fog-blunders
-  oracle (400cp) is calibrated to catch only the gross class.
+- **Node-level tree carryover** (`gtcfr.js harvestCarried`/`attachCarriedRoot`,
+  `search.js`, agent `_carry`): the previous move's ENTIRE solved tree plus the
+  action actually played is kept per side; the our-move grandchildren consistent
+  with the new observation are grafted in as root worlds with subtrees, infoset
+  objects, regrets and values intact (remapped onto the pinned root action set,
+  infoset membership rebuilt from reachability). Carried worlds bring the paper's
+  carried alternate values u(x,y|J) − ĝ(J) (gift ĝ from the old opponent infoset's
+  uCond, App. C.2) and their true opponent-class identity (J′, b). Freshly sampled
+  worlds are now SINGLETON classes with a perfectly-informed opponent — exactly
+  Fig. 9 line 13. Live: grafts on ~72% of plies, ~7 carried worlds per move
+  (test: `games/chess/carryover.test.js`).
+- **Sequence-scoped opponent infosets** (`infoset.js chainHash`, `gtcfr.js`): the
+  opponent's in-tree infosets key on their chain-hashed observation SEQUENCE
+  (own actions + observations at their decision nodes), seeded per root world.
+  OUR infosets deliberately stay Markov-keyed (player|turn|board): coarsening
+  one's OWN information is a safe strategy restriction that buys transposition
+  sharing, while coarsening the OPPONENT's would underestimate their play.
+- **Exact-belief longevity** (`exactBelief.js`): cap 30k → 50k, guard 3s → 4s
+  (max observed |P| was 26k), and RE-ACQUISITION: when exact tracking was lost,
+  P is re-enumerated from the heuristic belief's per-piece possible-sets once
+  they are small (cross-product bound 60k), yielding a tight SUPERSET (marked
+  `approx`) that is advanced exactly thereafter. Guards: refuses truncated or
+  possibly-promoted possible-sets (belief.js now flags truncation and adds
+  castle destinations so sets stay supersets); forced-capture squares must be
+  occupied. Live at power 80 the exact set now holds ~100% of plies, so
+  re-acquisition is a rare-path safety net.
+- **b5-class inaccuracy: gone.** With singleton fresh classes + carried values,
+  12/12 seeded runs on the befd position choose engine-approved moves (fxe6 ×8,
+  Nf6 ×4); febb remains 0/8 king-hangs with stable Ne7/Qe7 play.
+
+Post-carryover self-play spot-check (2×4 games, power 80): grafts on ~72% of
+plies (7–13 carried worlds/move), exact P held ~93% of plies (avg |P| ≈ 950),
+latency unchanged (~1.5s avg), mixing ~45% of CFR moves. King-hangs-with-safe
+measured 8/375 ≈ 2.1% vs 3/373 ≈ 0.8% pre-carryover — statistically
+indistinguishable (the metric also counts deliberate calculated risks, and
+logged games show coherent, theory-like play), but WATCH this number in future
+self-play runs; if it firms up, suspect the carried-world distribution bias
+(carried states over-represent the old search's predicted replies) or the
+perfectly-informed singleton classes sharpening play.
+
+## Future work (remaining)
+
+- Re-acquired P is a superset, not the literal history-exact set; a compact board
+  encoding could raise the cap further if middlegame |P| ever exceeds 50k.
+- Deeper OUR-infosets remain Markov-keyed by design (documented trade-off above).
+- Opponent-model-weighted sampling from P (paper's closing suggestion) and a
+  learned leaf evaluation for the non-chess games remain unexplored.
 
 ## Key files
 - `games/chess/ObscuroAgent.js` — chess leaf eval (`makeChessLeafEval`, `LEAF_CLAMP`,

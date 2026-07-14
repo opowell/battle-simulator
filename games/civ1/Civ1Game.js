@@ -365,6 +365,62 @@ function buildIslandTestMap() {
   return { width, height, tiles };
 }
 
+// 13×13 board: a grassland octagon island (a 9×9 square with 3-tile triangular
+// corners clipped to ocean) with a 5×5 diamond lake carved out of the centre,
+// and a 2-tile ocean strip around the whole island out to the map edge.
+// Octagon = square max(|dx|,|dy|)≤4 ∩ diamond |dx|+|dy|≤6 about centre (6,6);
+// the central lake is the diamond |dx|+|dy|≤2 (5 tiles wide at its middle).
+function buildOctagonLakeMap() {
+  const width = 13, height = 13;
+  const cx = 6, cy = 6;
+  const tiles = {};
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const dx = Math.abs(x - cx), dy = Math.abs(y - cy);
+      const inOctagon = Math.max(dx, dy) <= 4 && dx + dy <= 6;
+      const inLake = dx + dy <= 2;
+      const terrain = (inOctagon && !inLake) ? 'grassland' : 'ocean';
+      tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver: false, fortress: false };
+    }
+  }
+  return { width, height, tiles };
+}
+
+function createOctagonLakeState(players, config) {
+  const { width, height, tiles } = buildOctagonLakeMap();
+  const board = { width, height, tiles };
+  const [p1, p2] = players;
+
+  // Opposite sides of the ring of land around the lake.
+  let idCtr = 0;
+  const units = [
+    makeUnit(`u${idCtr++}`, p1.id, 'settlers', 4, 4, UNITS.settlers.moves),
+    makeUnit(`u${idCtr++}`, p1.id, 'militia',  5, 4, UNITS.militia.moves),
+    makeUnit(`u${idCtr++}`, p2.id, 'settlers', 8, 8, UNITS.settlers.moves),
+    makeUnit(`u${idCtr++}`, p2.id, 'militia',  7, 8, UNITS.militia.moves),
+  ];
+
+  return {
+    gameName: 'Civ1',
+    turnNumber: 1,
+    activePlayers: [p1.id],
+    currentPhase: 'action',
+    players,
+    board,
+    units,
+    cities: [],
+    lastActions: null,
+    gameSpecific: {
+      nextId: idCtr,
+      fogOfWar: config.fogOfWar ?? true,
+      startRoster: {
+        units: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
+        cities: [],
+      },
+    },
+  };
+}
+
 function createIslandTestState(players, config) {
   const { width, height, tiles } = buildIslandTestMap();
   const board = { width, height, tiles };
@@ -406,6 +462,7 @@ function createIslandTestState(players, config) {
 
 function createInitialState(players, config = {}) {
   if (config.scenario === 'island-test') return createIslandTestState(players, config);
+  if (config.scenario === 'octagon-lake') return createOctagonLakeState(players, config);
 
   const width  = config.width  ?? 50;
   const height = config.height ?? 30;
@@ -533,6 +590,7 @@ export const Civ1Game = {
   scenarios: [
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
     { id: 'island-test', name: 'Tiny Island', description: 'Fixed 5×5 map: a 3×3 grassland island ringed by ocean — for testing coastline rendering', config: {} },
+    { id: 'octagon-lake', name: 'Octagon Lake', description: 'Fixed 9×9 map: a grassland octagon island with a 5×5 diamond lake in its centre', config: {} },
   ],
   // Water is the authentic Civ1 palette sampled from images/terrain (deep ocean
   // #5448a0 matches ocean.png exactly; coast is the shallow-blue ramp). The

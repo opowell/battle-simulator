@@ -19,6 +19,12 @@ const SHAPES = [
   { file: 'coast_e',      edges: { N: true,  S: false, E: true,  W: false }, corners: { NW: false, NE: true,  SW: false, SE: true  } },
   { file: 'coast_sw',     edges: { N: false, S: true,  E: false, W: true  }, corners: { NW: false, NE: false, SW: true,  SE: true  } },
   { file: 'coast_e_wide', edges: { N: true,  S: true,  E: true,  W: false }, corners: { NW: false, NE: true,  SW: false, SE: true  } },
+  // Convex-corner nub: a small shore in one corner for an ocean tile whose only
+  // land neighbour is that diagonal (e.g. the outer corners of a small island).
+  // The sheet has no such piece — every stock shape draws a full edge — so this
+  // one was synthesised from the SE cove's corner over open water. Without it a
+  // diagonal-only tile stays flat ocean, breaking the coastline ring.
+  { file: 'coast_corner', edges: { N: false, S: false, E: false, W: false }, corners: { NW: false, NE: false, SW: false, SE: true } },
 ];
 
 const FEATURES = ['N', 'S', 'E', 'W', 'NW', 'NE', 'SW', 'SE'];
@@ -60,14 +66,11 @@ function score(target, shape) {
 }
 
 // target: { N, S, E, W, NW, NE, SW, SE } booleans — is land present in that
-// direction from the ocean tile being drawn. Returns null for open water (no
-// land in any of the 8 directions — the flat deep-ocean colour already covers
-// it) or { file, flipX, flipY } otherwise. A diagonal-only touch (corner but
-// neither adjacent edge) still gets a shape — none of the 8 sheet shapes draw
-// a corner without also drawing a full edge, but leaving it blank opens a
-// one-tile gap in what should read as a continuous coastline, which looks far
-// worse than a corner tile slightly over-drawing land into an edge that a
-// neighbouring tile is already drawing anyway.
+// direction from the ocean tile being drawn. Returns null (flat deep-ocean
+// colour, no sprite) only for fully open water, otherwise { file, flipX,
+// flipY }. A diagonal-only touch resolves to the convex-corner nub above; the
+// heavy false-positive edge penalty in score() keeps a stock edge shape from
+// stealing that case (which would jut a false strip of land into the sea).
 export function pickCoastSprite(target) {
   if (!FEATURES.some(f => target[f])) return null;
   let best = null;

@@ -494,6 +494,10 @@ export const ChessGame = {
     exact.beginTurn(observation, turnKey);
     const belief = getBelief(observation, playerId);
     belief.beginTurn(observation.board, turnKey);
+    // If exact tracking was lost, information may since have collapsed enough
+    // (few hidden pieces, small possible-sets) to re-enumerate P from the
+    // heuristic belief — a tight superset, still far better than particles.
+    if (!exact.exact) exact.tryReacquire(observation, belief, turnKey);
     if (exact.exact) {
       const picks = exact.samplePositions(n, rng);
       if (picks && picks.length) {

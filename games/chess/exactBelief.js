@@ -35,10 +35,14 @@ const ALL_SQUARES = [];
 for (const f of FILES) for (let r = 1; r <= 8; r++) ALL_SQUARES.push(f + r);
 
 // Give up on exactness above this many positions (paper: |P| usually ≤ 10⁶ in
-// C++; the average is ~17k. This cap keeps a JS turn update affordable).
-const CAP = 30000;
+// C++; the average is ~17k. This cap keeps a JS turn update affordable —
+// self-play at power 80–100 saw max |P| ≈ 26k, so 50k covers most middlegames).
+const CAP = 50000;
 // ... or when a single update exceeds this much wall clock.
-const TIME_GUARD_MS = 3000;
+const TIME_GUARD_MS = 4000;
+// Re-acquisition (below): only attempt to re-enumerate a lost P when the
+// pre-filter cross-product bound is at most this many placements.
+const REACQUIRE_BOUND = 60000;
 
 const other = c => (c === 'white' ? 'black' : 'white');
 
@@ -246,6 +250,87 @@ export class ExactBelief {
       for (const s of vis) if (!visSet.has(s)) return false;
       return true;
     };
+  }
+
+  /**
+   * Try to RE-ACQUIRE a lost position set from the heuristic belief's
+   * per-piece possible-square sets. Only possible when every hidden piece's
+   * set is still a guaranteed superset of the truth (never truncated, no
+   * possible promotion) and the cross-product of placements is small — in
+   * practice late-game positions with few hidden pieces. The result is a
+   * TIGHT SUPERSET of the true P (per-piece sets can't encode inter-piece
+   * move-history correlations), marked `approx`; from here on it is advanced
+   * exactly again, so it stays a superset — strictly better than particles.
+   */
+  tryReacquire(observation, belief, turnKey = null) {
+    if (this.exact || !belief) return;
+    if (turnKey != null) {
+      if (this._lastReacqKey === turnKey) return;
+      this._lastReacqKey = turnKey;
+    }
+    const obsBoard = observation.board;
+    const seen = new Set();
+    for (const sq of Object.keys(obsBoard)) {
+      const p = obsBoard[sq];
+      if (p && p.ownerId === this.oppColor) seen.add(p.id);
+    }
+    const visSet = new Set(observation.visibleSquares ?? []);
+    const hidden = [];
+    for (const pc of belief.pieces.values()) {
+      if (!pc.alive || seen.has(pc.id)) continue;
+      if (pc.truncated) return; // set may exclude the truth — cannot re-acquire
+      const cands = [...pc.possible].filter(sq => !visSet.has(sq) && !obsBoard[sq]);
+      if (cands.length === 0) return; // contradiction — leave it to the particles
+      hidden.push({ pc, cands });
+    }
+    let bound = 1;
+    for (const h of hidden) { bound *= h.cands.length; if (bound > REACQUIRE_BOUND) return; }
+
+    // Enumerate every collision-free placement of the hidden pieces onto the
+    // observed board, then keep the ones consistent with the observation.
+    const filter = this._makeFilter(observation);
+    const forced = belief.forcedEnemy ?? new Set();
+    const out = [];
+    const t0 = Date.now();
+    const homeRank = this.oppColor === 'white' ? '1' : '8';
+    const place = (i, board) => {
+      if (out.length > CAP || Date.now() - t0 > TIME_GUARD_MS) return false;
+      if (i === hidden.length) {
+        for (const fsq of forced) { // a piece of ours was just captured there
+          const f = board[fsq];
+          if (!f || f.ownerId !== this.oppColor) return true; // inconsistent placement, skip
+        }
+        // Castling rights for the opponent: grant when king+rook stand on their
+        // home squares (necessary condition; over-granting is the safe
+        // direction — it credits the opponent with more options).
+        const k = board['e' + homeRank];
+        const kingHome = k && k.ownerId === this.oppColor && k.type === 'king';
+        const rookAt = f => { const r = board[f + homeRank]; return kingHome && r && r.ownerId === this.oppColor && r.type === 'rook'; };
+        const oppCr = { kingSide: rookAt('h'), queenSide: rookAt('a') };
+        const cr = this.aiColor === 'white'
+          ? { white: observation.gameSpecific?.castlingRights?.white ?? { kingSide: false, queenSide: false }, black: oppCr }
+          : { white: oppCr, black: observation.gameSpecific?.castlingRights?.black ?? { kingSide: false, queenSide: false } };
+        const pos = { board, cr, ep: null };
+        if (filter(pos)) out.push(pos);
+        return true;
+      }
+      const { pc, cands } = hidden[i];
+      for (const sq of cands) {
+        if (board[sq]) continue;
+        const nb = { ...board };
+        nb[sq] = { id: pc.id, ownerId: this.oppColor, type: pc.type, position: sq, alive: true };
+        if (!place(i + 1, nb)) return false;
+      }
+      return true;
+    };
+    if (!place(0, { ...obsBoard })) return; // bailed on cap/time
+    if (out.length === 0 || out.length > CAP) return;
+    // Dedupe as states and resume exact tracking from here.
+    const seenSig = new Set();
+    this.positions = out.filter(p => { const s = signature(p); if (seenSig.has(s)) return false; seenSig.add(s); return true; });
+    this.exact = true;
+    this.approx = true;              // superset, not the literal history-exact P
+    this._lastTurnKey = turnKey;     // this turn is done; advance resumes next turn
   }
 
   /** Uniform sample of up to n positions from P, without replacement. */
