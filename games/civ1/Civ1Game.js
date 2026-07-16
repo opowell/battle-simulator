@@ -1,10 +1,11 @@
+import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
-import { pickCoastSprites } from './coastSprites.js';
+import { pickCoastTile } from './coastSprites.js';
 import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
 
 const BASE = '/images/civ1';
@@ -516,8 +517,12 @@ export const Civ1Game = {
   // Water is the authentic Civ1 palette sampled from images/terrain (deep ocean
   // #5448a0 matches ocean.png exactly; coast is the shallow-blue ramp). The
   // coastline dither in toGrid stipples between them and greens the shore.
-  colors: { ocean: '#5448a0', coast: '#6474cc', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
+  // Recovered from the real game's art: Civ1 paints one green base under EVERY
+  // land terrain (the terrain sprite supplies all the distinguishing texture), so
+  // every land colour here is that same green; ocean matches the real water tile.
+  colors: { ocean: '#5046a0', coast: '#5046a0', plains: '#719230', grassland: '#719230', forest: '#719230', hills: '#719230', mountains: '#719230', desert: '#719230', tundra: '#719230', arctic: '#719230', jungle: '#719230', swamp: '#719230' },
   gameOptions: [
+    HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: true },
     { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
     { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },
@@ -557,6 +562,19 @@ export const Civ1Game = {
       const t = tiles[`${wrapX(x, width)},${y}`];
       return !!t && t.terrain !== 'ocean';
     };
+    // Land terrain blends with its like neighbours exactly as the original does: each
+    // terrain has 16 variants picked by which cardinal neighbours share the terrain
+    // (n,e,s,w in the filename, e.g. forest_nes.png). Bit order N,E,S,W was recovered
+    // from the real game's own art the same way as the coast — see coastSprites.js.
+    const terrainSprite = (x, y, terrain) => {
+      const same = (nx, ny) => tiles[`${wrapX(nx, width)},${ny}`]?.terrain === terrain;
+      let d = '';
+      if (same(x, y - 1)) d += 'n';
+      if (same(x + 1, y)) d += 'e';
+      if (same(x, y + 1)) d += 's';
+      if (same(x - 1, y)) d += 'w';
+      return `${BASE}/terrain/${terrain}${d ? `_${d}` : ''}`;
+    };
     const riverOrSea = (x, y) => {
       const t = tiles[`${wrapX(x, width)},${y}`];
       return !!t && (t.hasRiver || t.terrain === 'ocean');
@@ -571,18 +589,15 @@ export const Civ1Game = {
     };
     const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
 
-    // Coastline sprites: the stacked coast_*.png shore pieces (see coastSprites.js)
-    // matching this ocean tile's 8 land neighbours, so the shoreline reads as a
-    // curved coast instead of a hard land/sea square edge. An array of
-    // {image, flipX, flipY} painted in order (an edge/cove piece plus any convex
-    // corner nubs), or null for open water — the flat deep-ocean colour covers that.
+    // Coastline: the real Civ1 ocean tile for this square — one of 16, picked by
+    // which of the four cardinal neighbours are land (see coastSprites.js). The
+    // tiles are the game's own art, so the shore matches the original exactly.
     const coastSprite = (x, y) => {
       if (!isOcean(x, y)) return null;
-      const picks = pickCoastSprites({
+      const pick = pickCoastTile({
         N: isLand(x, y - 1), S: isLand(x, y + 1), E: isLand(x + 1, y), W: isLand(x - 1, y),
-        NW: isLand(x - 1, y - 1), NE: isLand(x + 1, y - 1), SW: isLand(x - 1, y + 1), SE: isLand(x + 1, y + 1),
       });
-      return picks ? picks.map(p => ({ image: `${BASE}/terrain/${p.file}`, flipX: p.flipX, flipY: p.flipY, qx: p.qx, qy: p.qy })) : null;
+      return { image: `${BASE}/terrain/${pick.image}` };
     };
 
     const cells = [];
@@ -596,10 +611,9 @@ export const Civ1Game = {
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
           unitId: u?.id ?? null,
           imagePath: u ? (UNIT_IMAGES[u.type] ?? null) : null,
-          // Water is drawn as flat colour (deep ocean dark blue, coast lighter
-          // blue) rather than the purple ocean sprite — real Civ1's sea is blue,
-          // and a two-tone deep/shallow split is what makes coastlines read.
-          bgImage: tile.terrain === 'ocean' ? null : (tile.terrain ? `${BASE}/terrain/${tile.terrain}` : null),
+          // Ocean draws no terrain sprite — coastSprite (below) supplies the real
+          // ocean tile. Land draws its authentic tile, blended with like neighbours.
+          bgImage: tile.terrain === 'ocean' ? null : (tile.terrain ? terrainSprite(x, y, tile.terrain) : null),
           coastSprite: tile.terrain === 'ocean' ? coastSprite(x, y) : null,
           overlayImage: tile.hasRiver ? riverSprite(x, y) : null,
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,

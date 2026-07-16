@@ -1,3 +1,5 @@
+import { HTML_RENDERER_OPTION } from '../renderOptions.js';
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const COSTS = {
@@ -330,6 +332,7 @@ function createInitialState(players, config = {}) {
 export const SimCityGame = {
   name: 'SimCity',
   gameOptions: [
+    HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Land beyond your developed area starts unsurveyed', type: 'boolean', default: false },
   ],
   createInitialState,

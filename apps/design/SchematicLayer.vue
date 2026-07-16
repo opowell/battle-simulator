@@ -505,27 +505,15 @@ function segBorderColor(seg) {
   return darken(raw, 0.55);
 }
 
-// Optional per-tile coastline sprites (see Civ1Game.toGrid/coastSprites.js): an
-// array of small shore-shape PNGs, each mirrored (per flipX/flipY) to match this
-// ocean tile's land neighbours and stacked (an edge/cove piece plus any convex
-// corner nubs). Hidden under fog like the tile's own colour.
-function tileCoastSprites(tile) {
+// Optional per-tile coastline sprite (see Civ1Game.toGrid/coastSprites.js): one
+// full-tile ocean PNG (mirrored per flipX/flipY) matching this ocean tile's land
+// neighbours. Hidden under fog like the tile's own colour.
+function tileCoastSprite(tile) {
   if (!tile.coastSprite) return null;
   if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
   return tile.coastSprite;
 }
 
-// Mirrors one coast quadrant piece around its own quadrant centre — translate by
-// twice the centre coordinate then scale by -1 lands x (or y) back on (2*c - x).
-// qsize is the quadrant's screen size (half a tile, plus the anti-seam overdraw).
-function coastPieceTransform(tile, piece, qsize) {
-  if (!piece.flipX && !piece.flipY) return null;
-  const cx = props.fit.x(tile.x) + props.fit.len(piece.qx) + qsize / 2;
-  const cy = props.fit.y(tile.y) + props.fit.len(piece.qy) + qsize / 2;
-  const tx = piece.flipX ? 2 * cx : 0, ty = piece.flipY ? 2 * cy : 0;
-  const sx = piece.flipX ? -1 : 1, sy = piece.flipY ? -1 : 1;
-  return `translate(${tx},${ty}) scale(${sx},${sy})`;
-}
 
 function tileBgImage(tile) {
   if (!tile.bgImage) return null;
@@ -874,21 +862,16 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               :width="fit.len(1) + 0.75" :height="fit.len(1) + 0.75"
               shape-rendering="crispEdges"
               :fill="tileColor(tile)"/>
-        <!-- Coastline sprites: per-quadrant shore pieces (each an 8×8 PNG mirrored
-             via flipX/flipY, placed in one quarter of the tile at qx/qy) matching
-             this ocean tile's land neighbours (games opt in via tile.coastSprite,
-             e.g. civ1's water shoreline — see coastSprites.js). Native-resolution
-             quarters instead of one stretched tile → finer shore. -->
+        <!-- Coastline sprite: the real Civ1 ocean tile for this square (one of 16,
+             chosen by its cardinal land neighbours — see coastSprites.js). Games opt
+             in via tile.coastSprite. Drawn over the flat colour, under terrain. -->
         <template v-for="(tile, i) in (field.tiles ?? [])" :key="'tcs'+i">
-          <template v-for="(piece, pi) in (tileCoastSprites(tile) ?? [])" :key="'tcs'+i+'-'+pi">
-            <g :transform="coastPieceTransform(tile, piece, fit.len(0.5) + 0.75)">
-              <image :x="fit.x(tile.x) + fit.len(piece.qx)" :y="fit.y(tile.y) + fit.len(piece.qy)"
-                     :width="fit.len(0.5) + 0.75" :height="fit.len(0.5) + 0.75"
-                     :href="imgSrc(piece.image)"
-                     preserveAspectRatio="xMidYMid slice"
-                     class="sl-noevents sl-pixel"/>
-            </g>
-          </template>
+          <image v-if="tileCoastSprite(tile)"
+                 :x="fit.x(tile.x)" :y="fit.y(tile.y)"
+                 :width="fit.len(1) + 0.75" :height="fit.len(1) + 0.75"
+                 :href="imgSrc(tileCoastSprite(tile).image)"
+                 preserveAspectRatio="xMidYMid slice"
+                 class="sl-noevents sl-pixel"/>
         </template>
         <!-- Terrain images (overlaid on color; absent when fogged) -->
         <template v-for="(tile, i) in (field.tiles ?? [])" :key="'ti'+i">

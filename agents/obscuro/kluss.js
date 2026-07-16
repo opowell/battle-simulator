@@ -125,23 +125,20 @@ export function runGadgetCFR(tree, hooks, gadget, iterations) {
     const smm = maxmargin.strategy().slice();
     maxmargin.observe(J.map(g => g.altMe - g.enterMe)); // utility to ▼ = −margin
 
-    // Blend Resolve and Maxmargin into the opponent's root reach (Fig. 10 l.12),
-    // then FLOOR it with the prior α: every class keeps half its prior reach.
+    // Blend Resolve and Maxmargin into the opponent's root reach (Fig. 10 l.12).
     // (Σ π_▼ need not equal 1 when Resolve is entering — that is expected.)
     //
-    // The floor is a deliberate deviation from the pure gadget. With singleton
-    // per-world classes and approximate alternate values, the pure blend
-    // routinely drove the reach of most classes to ~0 (all-exit, or one junk
-    // class capturing pmax), so the strategy was optimised against one or two
-    // belief worlds and swung wildly between runs. The paper can afford exact
-    // exit semantics because its alternate values come from a real blueprint;
-    // ours are engine estimates, so we keep every world voting and let the
-    // gadget TILT emphasis rather than silence classes outright. (The paper
-    // itself notes — App. B.2 fn. 12 — that safety semantics are already
-    // strained in this setting.)
+    // HISTORY: for a while this was floored at ½·α per class because the pure
+    // blend tunnel-visioned onto one or two belief worlds. That was a symptom
+    // of two since-fixed calibration bugs — alternate values measured off a
+    // static heuristic / seeded self-play instead of the engine's ṽ(h), and
+    // root-infoset fragmentation — plus the pre-carryover lack of carried
+    // u(x,y|J) values. With those fixed the pure paper blend is used again; if
+    // per-seed instability or single-world tunnel vision reappears, check the
+    // alternate-value calibration BEFORE re-adding a floor.
     for (let i = 0; i < J.length; i++) {
       const g = J[i];
-      g.piv = 0.5 * g.alpha + 0.5 * (pmax * g.alpha * g.pEnter + (1 - pmax) * smm[i]);
+      g.piv = pmax * g.alpha * g.pEnter + (1 - pmax) * smm[i];
     }
 
     // Accumulate tree regrets with reachOpp = π_▼(J) · (within-class chance).

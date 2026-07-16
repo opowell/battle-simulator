@@ -94,14 +94,14 @@ Repro sessions (recordings under `sessions/`):
 6. **Gadget alternate-value miscalibration → class tunnel vision.** With per-world
    singleton classes, alt values on a different scale from the resolved enter values
    made enter/exit go one-hot: measured, the opponent exited 41/42 classes (piv sum
-   0.043) and the whole strategy optimised against 1–2 junk worlds. Two changes in
-   `kluss.js`: (a) alt = min{ṽ(h), v*} with ṽ(h) the world's engine-informed
-   best-child value (the paper's "Stockfish's evaluation of h"), not a static
-   heuristic; (b) the opponent's root reach is FLOORED at half its prior α — a
-   deliberate deviation from the pure gadget so every belief world keeps voting and
-   the gadget tilts emphasis instead of silencing classes (our alts are estimates,
-   not real blueprint values; the paper itself notes safety semantics are strained
-   here, App. B.2 fn. 12).
+   0.043) and the whole strategy optimised against 1–2 junk worlds. Fixed in
+   `kluss.js`: alt = min{ṽ(h), v*} with ṽ(h) the world's engine-informed best-child
+   value (the paper's "Stockfish's evaluation of h"), not a static heuristic.
+   (A ½·α reach FLOOR was temporarily added as a second mitigation; after tree
+   carryover supplied real carried alternate values it was removed again — the pure
+   paper blend validated clean. Same for a since-removed purify shortcut that forced
+   pure play at ≥0.9 mass. If tunnel vision ever reappears, fix alt calibration, do
+   not re-add the floor.)
 
 Also fixed while in there (paper fidelity, not king-safety):
 - **Purification** now shifts ALL excluded probability onto a\* (paper App. C.8) instead
@@ -163,9 +163,9 @@ Also fixed while in there (paper fidelity, not king-safety):
 - **Mixing confirmed in live play** (open item resolved): with v* carryover the agent
   plays genuinely mixed strategies on half its CFR moves; fresh-agent single-position
   probes sit in Resolve (pure) because v* = ∞ there — expected, not a defect.
-- `_kingSafetyGuard` fired 3 times in ~750 plies (0.4%): play is equilibrium-driven;
-  the guard is KEPT as a cheap tail-risk backstop (it only breaks ≤2.5-pawn near-ties
-  toward safety, so its interference with deliberate risk-taking is negligible).
+- `_kingSafetyGuard` fired 3 times in ~750 plies (0.4%): play is equilibrium-driven.
+  (Initially kept as a backstop; REMOVED after the 24-game validation below showed
+  zero-guard batches meet the target on their own — Phase 4 complete.)
 
 ## Second follow-up round: the former future-work list, executed
 
@@ -208,23 +208,52 @@ exact P held 60–95% of plies with re-acquisition firing 67 times (a real
 working path), max |P| 40.5k (under the 50k cap), latency stable ~1.5s avg,
 mixing ~45–50% of CFR moves. The guard fired 6/1787 plies (0.34%); batches
 with ZERO guard fires still measured 1.0–1.3%, so the search meets the target
-on its own — the guard remains as a near-inert backstop.
+on its own — `_kingSafetyGuard` was therefore DELETED (2026-07-16): play is
+genuinely equilibrium-driven, completing Phase 4. The generic
+`_adjustChosenAction` hook it rode on remains as a documented extension point.
+
+## Third follow-up round: exact-P capacity (Tier 1)
+
+`exactBelief.js` was rewritten on a compact representation: positions are
+Int8Array(66) (64 signed piece codes + castling bits + en-passant index), with
+array-based fog move generation and application (mirroring `moves.js` exactly,
+castle quirks and 4-way promotions included), visibility as a 2×32-bit mask
+compared with two integer equalities (mirroring `getVisibleSquares`, pawn-block
+rule included), and a fixed-seed 53-bit Zobrist hash for state dedupe. ~10×
+faster per candidate and ~15× smaller per position → CAP raised 50k → 200k
+within the same 4s guard. The public API (beginTurn/commitOurMove/
+samplePositions/tryReacquire) is unchanged; sampled worlds synthesize piece ids.
+
+That surfaced a latent identity bug: `observationKey` (and the carried-world
+dedupe) serialized boards INCLUDING piece ids, so synthesized-id worlds never
+matched engine-id carried nodes and tree carryover silently died. Piece
+identity is not observable — keys now use an identity-free canonical board
+serialization (`infoset.js canonicalBoardSig`: owner+type per square).
+
+Measured (4 games, power 80): max |P| 128k (old cap clipped at 41k), avg |P|
+held 7.2k (was ~1–3k), ~1µs per advance candidate, per-move latency max DOWN to
+2.4s (was 3–5.4s); 91 plies re-acquired; hangs-with-safe 0.9%, mixing 83%,
+carryover grafting 81% of plies. The remaining exactness ceiling is the 4s time
+guard in explosive middlegames, not memory. All rollout games (14/15, `aow`
+pre-existing) unaffected by the identity-free keys.
 
 ## Future work (remaining)
 
-- Re-acquired P is a superset, not the literal history-exact set; a compact board
-  encoding could raise the cap further if middlegame |P| ever exceeds 50k.
+- Re-acquired P is a superset, not the literal history-exact set.
 - Deeper OUR-infosets remain Markov-keyed by design (documented trade-off above).
 - Opponent-model-weighted sampling from P (paper's closing suggestion) and a
   learned leaf evaluation for the non-chess games remain unexplored.
+- If 200k ever proves tight: incremental ray-patched visibility and speculative
+  advance during the opponent's thinking time (Tier 2), bitboards (Tier 3).
 
 ## Key files
 - `games/chess/ObscuroAgent.js` — chess leaf eval (`makeChessLeafEval`, `LEAF_CLAMP`,
-  `SEARCH_WIN`/`KING_HANG`), `_winValue`, `_kingSafetyGuard` (via
-  `_adjustChosenAction`), difficulty scaling, perfect-info Stockfish path (pure at
-  power 100).
+  `SEARCH_WIN`/`KING_HANG`), `_winValue`, difficulty scaling, perfect-info Stockfish
+  path (pure at power 100). (The former `_kingSafetyGuard` backstop was removed
+  after Phase-4 validation.)
 - `agents/ObscuroAgent.js` — generic agent, `_config` difficulty knobs, `_winValue` +
-  `_adjustChosenAction` hooks, `lastAnalysis` (`.adjusted` flags a guard override).
+  `_adjustChosenAction` hooks (the latter currently unused; `.adjusted` in
+  `lastAnalysis` flags an override), `lastAnalysis`.
 - `agents/obscuro/search.js` — `makeHooks` (action-set hook caveats), `runObscuroSearch`.
 - `agents/obscuro/kluss.js` — Resolve/Maxmargin gadget; engine-informed alternate
   values; opponent reach floored at ½·prior.

@@ -270,6 +270,25 @@ watch(() => props.liveState?.id, (id) => {
   if (id) showRuler.value = ui.value.showRuler ?? true;
 }, { immediate: true });
 
+// ── HTML board renderer (opt-in; see HtmlLayer.vue) ────────────
+// Local override driven by the live menu toggle: null follows the game's own setting,
+// true/false forces the HTML or SVG renderer for this session.
+const htmlRenderOverride = ref(null);
+// The game's own preference: the `htmlRenderer` game option (live sessions carry it in
+// params.config) or a static ui.htmlRenderer flag from the game definition.
+const gameHtmlRenderer = computed(() =>
+  props.liveState?.params?.config?.htmlRenderer ?? ui.value.htmlRenderer ?? false);
+// HtmlLayer only handles square tile grids (not hexes, non-grid shapes or continuous
+// maps) — this gates both the toggle's availability and, as a safety net, actual use.
+const isGridBoard = computed(() =>
+  displayField.value?.grid === 'square'
+  && (displayField.value?.tiles?.length ?? 0) > 0
+  && !(displayField.value?.shapes?.length));
+const useHtmlRenderer = computed(() =>
+  isGridBoard.value && (htmlRenderOverride.value ?? gameHtmlRenderer.value));
+// Each game starts from its own setting — drop any manual override on game switch.
+watch(() => props.liveState?.id, () => { htmlRenderOverride.value = null; });
+
 // ── world → screen transform ──────────────────────────────────
 const fit = computed(() => makeFitter(props.field.world, { w: stageW.value, h: stageH.value }, 24));
 
@@ -650,7 +669,9 @@ onUnmounted(() => {
           :field="field" :liveState="liveState" :isLive="isLive"
           :isDone="isDone" :isPending="isPending" :pendingPlayerId="pendingPlayerId"
           :showMenu="showMenu" :ui="ui"
+          :showRenderer="isGridBoard" :htmlRenderer="useHtmlRenderer"
           @toggle-menu="showMenu = !showMenu"
+          @set-renderer="v => htmlRenderOverride = v"
           @show-help="showHelp = true"/>
 
         <SelectedUnitDetail v-if="selectedUnit"
@@ -687,8 +708,10 @@ onUnmounted(() => {
           :revealAll="revealAll" :viewerTeam="viewerTeam"
           @select="selectUnit"
           @sq-click="handleSqClick"/>
-        <HtmlLayer v-else-if="ui.htmlRenderer"
-          :field="displayField" :fit="fit" :units="displayUnits"
+        <!-- Derives its own integer-snapped geometry from the stage (no `fit` prop) so every
+             board cell is a whole number of pixels — see HtmlLayer.vue's header. -->
+        <HtmlLayer v-else-if="useHtmlRenderer"
+          :field="displayField" :units="displayUnits"
           :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
           :showRuler="showRuler" :rdr="rdr"
           :legalSquares="unitMoves"
@@ -696,7 +719,6 @@ onUnmounted(() => {
           :dragToMove="ui.dragToMove ?? false"
           :revealAll="revealAll" :viewerTeam="viewerTeam"
           :selectedEmptySquare="selectedSquare"
-          :selectedShape="selectedShape"
           :aiming="aiming"
           @select="selectUnit"
           @sq-click="handleSqClick"

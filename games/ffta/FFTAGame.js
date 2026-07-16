@@ -1,3 +1,4 @@
+import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { unitStrengthEval } from '../evalHelpers.js';
 import { ABILITIES } from './abilities.js';
 import { JOB_DEFS, createUnit } from './units.js';
@@ -939,6 +940,7 @@ export const FFTAGame = {
   // each job has separate N/E/S/W sprite art (see toGrid's imagePath), same as XComGame.
   ui: { moveAnimation: 'hop', combatFx: true, isometric: true, strictActiveUnit: true, showFacing: false },
   gameOptions: [
+    HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
   ],
   createInitialState,

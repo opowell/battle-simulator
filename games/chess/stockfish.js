@@ -74,22 +74,32 @@ let sqliteSize = 0, lruSeq = 0;
 let sfCache = null;
 
 function loadCache() {
-  if (DatabaseSync) {
+  if (DatabaseSync && !sfCache) {
     if (db) return;
-    db = new DatabaseSync(CACHE_PATH_SQLITE);
-    db.exec(`CREATE TABLE IF NOT EXISTS cache (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      lru   INTEGER NOT NULL DEFAULT 0
-    )`);
-    db.exec('CREATE INDEX IF NOT EXISTS cache_lru ON cache(lru)');
-    stmtGet   = db.prepare('SELECT value FROM cache WHERE key = ?');
-    stmtSet   = db.prepare('INSERT OR REPLACE INTO cache(key, value, lru) VALUES(?, ?, ?)');
-    stmtTouch = db.prepare('UPDATE cache SET lru = ? WHERE key = ?');
-    stmtEvict = db.prepare('DELETE FROM cache WHERE key = (SELECT key FROM cache ORDER BY lru LIMIT 1)');
-    const row = db.prepare('SELECT COUNT(*) as n, COALESCE(MAX(lru), 0) as m FROM cache').get();
-    sqliteSize = row.n; lruSeq = row.m;
-  } else {
+    // Concurrent processes (e.g. parallel test files) share this DB; a busy
+    // lock can throw anywhere in here. Never leave `db` half-initialised —
+    // fall back to the in-memory/NDJSON path instead of crashing callers.
+    try {
+      db = new DatabaseSync(CACHE_PATH_SQLITE);
+      db.exec(`CREATE TABLE IF NOT EXISTS cache (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        lru   INTEGER NOT NULL DEFAULT 0
+      )`);
+      db.exec('CREATE INDEX IF NOT EXISTS cache_lru ON cache(lru)');
+      stmtGet   = db.prepare('SELECT value FROM cache WHERE key = ?');
+      stmtSet   = db.prepare('INSERT OR REPLACE INTO cache(key, value, lru) VALUES(?, ?, ?)');
+      stmtTouch = db.prepare('UPDATE cache SET lru = ? WHERE key = ?');
+      stmtEvict = db.prepare('DELETE FROM cache WHERE key = (SELECT key FROM cache ORDER BY lru LIMIT 1)');
+      const row = db.prepare('SELECT COUNT(*) as n, COALESCE(MAX(lru), 0) as m FROM cache').get();
+      sqliteSize = row.n; lruSeq = row.m;
+      return;
+    } catch {
+      try { db?.close(); } catch { /* ignore */ }
+      db = null; // degrade to the NDJSON/in-memory path below
+    }
+  }
+  {
     if (sfCache) return;
     sfCache = new Map();
     let lineCount = 0;
@@ -112,11 +122,16 @@ function compactNdjson() {
 
 function cacheGet(key) {
   if (db) {
-    const row = stmtGet.get(key);
-    if (!row) return undefined;
-    stmtTouch.run(++lruSeq, key);
-    return JSON.parse(row.value);
+    // A concurrent writer can make any sqlite op throw (SQLITE_BUSY); a cache
+    // miss is always an acceptable answer.
+    try {
+      const row = stmtGet.get(key);
+      if (!row) return undefined;
+      stmtTouch.run(++lruSeq, key);
+      return JSON.parse(row.value);
+    } catch { return undefined; }
   }
+  if (!sfCache) return undefined;
   const v = sfCache.get(key);
   if (v === undefined) return undefined;
   sfCache.delete(key); sfCache.set(key, v); // move to end (LRU)
@@ -125,11 +140,13 @@ function cacheGet(key) {
 
 function cacheSet(key, value) {
   if (db) {
-    const isNew = !stmtGet.get(key);
-    if (isNew && sqliteSize >= CACHE_MAX) { stmtEvict.run(); sqliteSize--; }
-    stmtSet.run(key, JSON.stringify(value), ++lruSeq);
-    if (isNew) sqliteSize++;
-  } else {
+    try {
+      const isNew = !stmtGet.get(key);
+      if (isNew && sqliteSize >= CACHE_MAX) { stmtEvict.run(); sqliteSize--; }
+      stmtSet.run(key, JSON.stringify(value), ++lruSeq);
+      if (isNew) sqliteSize++;
+    } catch { /* busy — skip this write */ }
+  } else if (sfCache) {
     if (sfCache.size >= CACHE_MAX && !sfCache.has(key)) sfCache.delete(sfCache.keys().next().value);
     sfCache.delete(key); sfCache.set(key, value);
     try { fs.appendFileSync(CACHE_PATH_NDJSON, JSON.stringify([key, value]) + '\n'); } catch { /* ignore */ }

@@ -8,8 +8,12 @@ defineProps({
   pendingPlayerId: { type: String, default: null },
   showMenu:        Boolean,
   ui:              Object,
+  // Board renderer switch — only offered for square tile grids, the boards HtmlLayer can
+  // draw (see Battlefield's isGridBoard). Lets you A/B the SVG and HTML renderers live.
+  showRenderer:    { type: Boolean, default: false },
+  htmlRenderer:    { type: Boolean, default: false },
 });
-defineEmits(['toggle-menu', 'show-help']);
+defineEmits(['toggle-menu', 'show-help', 'set-renderer']);
 </script>
 
 <template>
@@ -41,6 +45,17 @@ defineEmits(['toggle-menu', 'show-help']);
         ○ AI thinking…
       </span>
     </div>
+    <div v-if="showRenderer" class="gh-rdr">
+      <span class="gh-rdr-label">Board</span>
+      <div class="seg gh-seg">
+        <button :class="{ on: !htmlRenderer }" class="gh-seg-btn"
+                title="Draw the board with the SVG renderer"
+                @click="$emit('set-renderer', false)">SVG</button>
+        <button :class="{ on: htmlRenderer }" class="gh-seg-btn"
+                title="Draw the board with the HTML renderer"
+                @click="$emit('set-renderer', true)">HTML</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -54,6 +69,10 @@ defineEmits(['toggle-menu', 'show-help']);
 .gh-menu-btn--on { border-color: var(--accent); }
 .gh-turn { font-size: 11px; color: var(--faint); margin-left: auto; }
 .gh-status { display: flex; }
+.gh-rdr { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.gh-rdr-label { font-size: 10px; color: var(--faint); letter-spacing: .06em; text-transform: uppercase; }
+.gh-seg { font-size: 10px; margin-left: auto; }
+.gh-seg-btn { padding: 2px 8px; }
 .gh-chip { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .gh-chip--ok { background: rgba(70,211,154,.1); color: var(--ok); }
 .gh-chip--warn { background: rgba(242,180,65,.1); color: var(--warn); }

@@ -115,9 +115,11 @@ test('purify: unsafe / perfect-info play is pure', () => {
   assert.deepEqual(dist, [1, 0, 0]);
 });
 
-test('purify: a dominant action is pure even when mixing is allowed', () => {
-  const { dist } = purify([0.95, 0.03, 0.02], ['a', 'b', 'c'], { safe: true, rng: () => 0 });
-  assert.deepEqual(dist, [1, 0, 0]);
+test('purify: a dominant action still mixes with stable runners when safe (App. C.8)', () => {
+  const { action, dist } = purify([0.95, 0.03, 0.02], ['a', 'b', 'c'], { safe: true, rng: () => 0 });
+  assert.equal(action, 'a');
+  assert.ok(Math.abs(dist[0] - 0.95) < 1e-9, 'a keeps its own mass');
+  assert.ok(dist[1] > 0 && dist[2] > 0, 'stable runners stay in the played support');
 });
 
 test('purify: excludes an unstable runner-up from the mix', () => {

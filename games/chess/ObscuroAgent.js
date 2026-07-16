@@ -180,56 +180,15 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     return super.chooseAction(state, legalActions);
   }
 
-  // Selection-time adjustment (runs inside the generic chooseAction BEFORE the
-  // move is committed to the belief trackers): the fog king-safety backstop.
-  _adjustChosenAction(observation, action, legalActions) {
-    const gs = observation.gameSpecific;
-    if (!gs?.fogOfWar) return null;
-    return this._kingSafetyGuard(observation, action, legalActions);
-  }
-
-  // Fog king-safety safeguard. Under fog the equilibrium value of a move can
-  // AVERAGE a catastrophic king-hang (in belief worlds we cannot see) against
-  // optimistic worlds, so the search sometimes commits to a move that loses the
-  // king in most consistent worlds — e.g. walking the king onto a square a hidden
-  // pawn attacks. This is a research-hard flaw in the subgame's worst-case pricing;
-  // as a robust guard we measure, over a fresh belief sample, the fraction of worlds
-  // in which each comparably-valued candidate leaves our own king capturable, and
-  // switch to a materially safer one when the chosen move is dangerous. It never
-  // overrides a decisive value gap (TOL) — only breaks near-ties toward king safety.
-  _kingSafetyGuard(state, chosen, legalActions) {
-    try {
-      const me = state.activePlayers[0];
-      const cands = this.lastAnalysis?.candidates;
-      if (!chosen || !this.game?.sampleWorlds || !cands?.length) return chosen;
-      const worlds = this.game.sampleWorlds(state, me, 24, this._rng);
-      if (!worlds || worlds.length < 4) return chosen;
-      const them = me === 'white' ? 'black' : 'white';
-      const hangFrac = (mv) => {
-        let hung = 0;
-        for (const w of worlds) {
-          const child = this.game.applyActions(w, [{ playerId: me, action: mv }]);
-          const b = child?.board;
-          let ks = null;
-          if (b) for (const sq in b) { const p = b[sq]; if (p && p.ownerId === me && p.type === 'king') { ks = sq; break; } }
-          if (!b || !ks || isAttackedBy(b, ks, them)) hung++;
-        }
-        return hung / worlds.length;
-      };
-      const chosenHang = hangFrac(chosen);
-      if (chosenHang <= 0.15) return chosen; // already safe enough — respect the search
-
-      const byKey = new Map(legalActions.map(a => [this._key(a), a]));
-      const pool = cands.map(c => ({ action: byKey.get(c.key), value: c.value ?? -Infinity })).filter(c => c.action);
-      if (pool.length < 2) return chosen;
-      const bestVal = Math.max(...pool.map(c => c.value));
-      const TOL = 250; // ~2.5 pawns: only break value-ties, never overturn a real edge
-      const eligible = pool.filter(c => c.value >= bestVal - TOL).map(c => ({ ...c, hang: hangFrac(c.action) }));
-      eligible.sort((a, b) => (a.hang - b.hang) || (b.value - a.value));
-      const safest = eligible[0];
-      return safest && chosenHang - safest.hang >= 0.15 ? safest.action : chosen;
-    } catch { return chosen; }
-  }
+  // NOTE: there is deliberately no selection-time king-safety backstop any more.
+  // An earlier `_kingSafetyGuard` (via _adjustChosenAction) re-sampled the belief
+  // and vetoed near-tie moves that hung the king in many worlds, back when the
+  // search itself mispriced king-hangs. After the search fixes (infoset
+  // action-set invariant, uCond reach weighting, bounded terminals, exact belief,
+  // tree carryover) a 24-game / 1787-ply validation measured the with-safe-move
+  // king-hang rate at 1.4% with the guard firing on only 0.34% of plies — and
+  // batches where it never fired still met the <2% target — so it was removed:
+  // play is now genuinely equilibrium-driven (plan doc Phase 4).
 
   // Power mode, perfect information: score every legal move at full strength, then
   // pick one at random weighted by its score. Scores are converted to win

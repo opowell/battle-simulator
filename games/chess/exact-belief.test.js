@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ChessGame } from './ChessGame.js';
-import { ExactBelief } from './exactBelief.js';
+import { ExactBelief, toBoardObject } from './exactBelief.js';
 
 const SESSIONS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'sessions');
 
@@ -39,7 +39,7 @@ function replayWithTracker(file, aiColor, maxPlies = Infinity) {
       tracker.beginTurn(view, view.turnNumber ?? null);
       assert.equal(tracker.exact, true, `tracker gave up at ply ${i}`);
       const trueSig = placementSig(state.board);
-      const inP = tracker.positions.some(pos => placementSig(pos.board) === trueSig);
+      const inP = tracker.positions.some(pos => placementSig(toBoardObject(pos)) === trueSig);
       assert.ok(inP, `true position not in P at ply ${i} (|P|=${tracker.positions.length})`);
       sizes.push(tracker.positions.length);
       tracker.commitOurMove(pa.action);
@@ -106,7 +106,7 @@ test('exact belief: re-acquisition from the heuristic belief (few hidden pieces)
   assert.equal(tracker.exact, true, 're-acquisition should succeed with 2 hidden pieces');
   assert.equal(tracker.approx, true, 're-acquired P is marked approximate');
   const trueSig = placementSig(endState.board);
-  assert.ok(tracker.positions.some(p => placementSig(p.board) === trueSig),
+  assert.ok(tracker.positions.some(p => placementSig(toBoardObject(p)) === trueSig),
     'true position must be in the re-acquired P');
 });
 

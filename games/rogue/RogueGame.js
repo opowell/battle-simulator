@@ -1,3 +1,4 @@
+import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { generateFloor, MAP_W, MAP_H } from './dungeon.js';
 import { isWalkable, manhattan, hasLOS, stepToward, stepRandom, randomFloorPos, renderMap } from './map.js';
 import { createHero, createMonster, spawnMonsters, MONSTER_DEFS } from './units.js';
@@ -1202,6 +1203,7 @@ function toGrid(state) {
 export const RogueGame = {
   name: 'Rogue: Dungeons of Doom',
   gameOptions: [
+    HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Hide unexplored dungeon tiles and monsters outside the hero\'s sight/line-of-sight', type: 'boolean', default: false },
   ],
   createInitialState,

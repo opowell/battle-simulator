@@ -47,8 +47,11 @@ export function purify(dist, actions, opts = {}) {
   const top = ranked[0];
   const pure = () => { played[top.i] = 1; return { action: top.a, dist: played }; };
 
-  // Resolve regime (unsafe / perfect information) or a dominant action → a* pure.
-  if (!safe || top.p >= 0.9) return pure();
+  // Resolve regime (unsafe / perfect information) → a* pure. (An earlier
+  // version also forced pure play whenever a* held ≥0.9 mass — a shortcut the
+  // paper doesn't have; App. C.8 allows mixing among stable actions whenever
+  // the position is safe, however lopsided the mass.)
+  if (!safe) return pure();
 
   // Keep a* plus the stable, non-negligible runners-up, capped at maxSupport.
   const stable = (idx) => (I?.stableSince != null ? I.stableSince[idx] : true);

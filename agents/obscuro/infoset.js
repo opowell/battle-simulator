@@ -34,7 +34,27 @@ import { RegretMinimizer } from './pcfr.js';
 // a deliberate abstraction.
 export function observationKey(game, state, player) {
   const obs = game.getVisibleState ? game.getVisibleState(state, player) : state;
-  return player + '|' + (state?.turnNumber ?? '') + '|' + stableStringify(obs?.board ?? obs);
+  return player + '|' + (state?.turnNumber ?? '') + '|' + canonicalBoardSig(obs?.board ?? obs);
+}
+
+// Identity-free serialization of a board-like object: an observation is what
+// the player SEES (owner + type per square), never which physical piece it is —
+// belief samplers may synthesize piece ids, and two boards that differ only in
+// ids are the same information state. Non-board values fall back to a full
+// stable stringify.
+export function canonicalBoardSig(board) {
+  if (!board || typeof board !== 'object' || Array.isArray(board)) return stableStringify(board);
+  const parts = [];
+  for (const sq of Object.keys(board).sort()) {
+    const p = board[sq];
+    if (p == null) continue;
+    if (typeof p === 'object' && (p.ownerId != null || p.type != null)) {
+      parts.push(sq + ':' + (p.ownerId ?? '') + ':' + (p.type ?? ''));
+    } else {
+      parts.push(sq + ':' + stableStringify(p));
+    }
+  }
+  return parts.join(',');
 }
 
 // Chain hash for observation-sequence infoset keys (cyrb53-style, 64-bit-ish):

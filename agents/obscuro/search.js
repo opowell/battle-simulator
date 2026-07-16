@@ -13,7 +13,7 @@
 // chess supplies Stockfish, every other game falls back to `evaluateState`).
 // ---------------------------------------------------------------------------
 
-import { observationKey, Infoset } from './infoset.js';
+import { observationKey, canonicalBoardSig, Infoset } from './infoset.js';
 import { makeLeaf, expandRoot, doExpansionStep, warmStartInfoset, harvestCarried } from './gtcfr.js';
 import { buildGadget, runGadgetCFR } from './kluss.js';
 import { purify } from './purify.js';
@@ -101,7 +101,9 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
       .filter(c => hooks.obsKey(c.node.state, hooks.me) === rootKey)
       .slice(0, Math.max(16, worlds.length)); // bound the root width
   }
-  const stateSig = s => { try { return JSON.stringify(s.board ?? s.units ?? s); } catch { return null; } };
+  // Identity-free state signature: carried states carry engine piece ids while
+  // sampled worlds may synthesize theirs, and the same placement must dedupe.
+  const stateSig = s => { try { return canonicalBoardSig(s.board ?? s.units ?? s); } catch { return null; } };
   const carriedSigs = new Set(carried.map(c => stateSig(c.node.state)).filter(s => s != null));
   const freshStates = carried.length ? worlds.filter(s => !carriedSigs.has(stateSig(s))) : worlds;
 
