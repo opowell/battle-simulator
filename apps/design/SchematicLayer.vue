@@ -284,6 +284,10 @@ function zoneColor(kind) {
 function teamIdx(id) { return props.field.teams.findIndex(t => t.id === id); }
 
 const boardSquares = computed(() => {
+  // Games that already colour their tiles as a checkerboard (chess) opt out — the synthetic
+  // darken-the-odd-squares overlay would just double-darken them and, being drawn a hair
+  // smaller than the tiles beneath, leave a faint fringe on each dark square.
+  if (props.field.ui?.ownTileColors) return [];
   if (props.field.grid !== 'square' || props.field.world.w > 10) return [];
   const out = [];
   for (let y = 0; y < props.field.world.h; y++)
@@ -362,6 +366,23 @@ const fogSquares = computed(() => {
     for (let x = 0; x < W; x++)
       if (!gridFogVisibleSet.value.has(`${x},${y}`)) out.push({ x, y });
   return out;
+});
+
+// The hidden cells as a SINGLE path, so the translucent fog is one uniform fill with no
+// internal seams. Per-cell rects can't tile a translucent colour cleanly — an anti-aliased
+// gap shows the bright board through as a light grid line, and an overlap double-darkens
+// into a dark one. A union path anti-aliases only its outer edge; interior cell borders
+// vanish. Each cell is expanded a hair so shared edges are interior (nonzero fill counts
+// the overlap as "inside" once, so it never double-darkens).
+const fogPathD = computed(() => {
+  const cells = fogSquares.value;
+  if (!cells.length) return '';
+  const fit = props.fit;
+  return cells.map(({ x, y }) => {
+    const x0 = fit.x(x) - 0.5, y0 = fit.y(y) - 0.5;
+    const x1 = fit.x(x + 1) + 0.5, y1 = fit.y(y + 1) + 0.5;
+    return `M${x0},${y0}H${x1}V${y1}H${x0}Z`;
+  }).join('');
 });
 
 // Field-of-vision tile set for square-grid fog (non-chess). Facing-aware: a unit sees a
@@ -494,11 +515,13 @@ function tileCoastSprites(tile) {
   return tile.coastSprite;
 }
 
-// Mirrors one coast piece around the tile's own centre — translate by twice the
-// centre coordinate then scale by -1 lands x (or y) back on (2*c - x).
-function coastPieceTransform(tile, piece, size) {
+// Mirrors one coast quadrant piece around its own quadrant centre — translate by
+// twice the centre coordinate then scale by -1 lands x (or y) back on (2*c - x).
+// qsize is the quadrant's screen size (half a tile, plus the anti-seam overdraw).
+function coastPieceTransform(tile, piece, qsize) {
   if (!piece.flipX && !piece.flipY) return null;
-  const cx = props.fit.x(tile.x) + size / 2, cy = props.fit.y(tile.y) + size / 2;
+  const cx = props.fit.x(tile.x) + props.fit.len(piece.qx) + qsize / 2;
+  const cy = props.fit.y(tile.y) + props.fit.len(piece.qy) + qsize / 2;
   const tx = piece.flipX ? 2 * cx : 0, ty = piece.flipY ? 2 * cy : 0;
   const sx = piece.flipX ? -1 : 1, sy = piece.flipY ? -1 : 1;
   return `translate(${tx},${ty}) scale(${sx},${sy})`;
@@ -851,15 +874,16 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               :width="fit.len(1) + 0.75" :height="fit.len(1) + 0.75"
               shape-rendering="crispEdges"
               :fill="tileColor(tile)"/>
-        <!-- Coastline sprites: stacked small shore-shape PNGs, each mirrored per
-             flipX/flipY to match this ocean tile's land neighbours (games opt in
-             via tile.coastSprite, e.g. civ1's water shoreline — see
-             coastSprites.js). Painted over the flat colour, in array order. -->
+        <!-- Coastline sprites: per-quadrant shore pieces (each an 8×8 PNG mirrored
+             via flipX/flipY, placed in one quarter of the tile at qx/qy) matching
+             this ocean tile's land neighbours (games opt in via tile.coastSprite,
+             e.g. civ1's water shoreline — see coastSprites.js). Native-resolution
+             quarters instead of one stretched tile → finer shore. -->
         <template v-for="(tile, i) in (field.tiles ?? [])" :key="'tcs'+i">
           <template v-for="(piece, pi) in (tileCoastSprites(tile) ?? [])" :key="'tcs'+i+'-'+pi">
-            <g :transform="coastPieceTransform(tile, piece, fit.len(1) + 0.75)">
-              <image :x="fit.x(tile.x)" :y="fit.y(tile.y)"
-                     :width="fit.len(1) + 0.75" :height="fit.len(1) + 0.75"
+            <g :transform="coastPieceTransform(tile, piece, fit.len(0.5) + 0.75)">
+              <image :x="fit.x(tile.x) + fit.len(piece.qx)" :y="fit.y(tile.y) + fit.len(piece.qy)"
+                     :width="fit.len(0.5) + 0.75" :height="fit.len(0.5) + 0.75"
                      :href="imgSrc(piece.image)"
                      preserveAspectRatio="xMidYMid slice"
                      class="sl-noevents sl-pixel"/>
@@ -997,14 +1021,14 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
       <rect v-for="(sq, i) in boardSquares" :key="'bs'+i"
             :x="fit.x(sq.x)" :y="fit.y(sq.y)"
             :width="fit.len(1)" :height="fit.len(1)"
+            shape-rendering="crispEdges"
             fill="rgba(0,0,0,0.22)"/>
 
-      <!-- Fog of war squares (grid-aligned, from field.ui.gridFog) -->
-      <rect v-for="(fs, i) in fogSquares" :key="'fs'+i"
-            :x="fit.x(fs.x)" :y="fit.y(fs.y)"
-            :width="fit.len(1)" :height="fit.len(1)"
-            :fill="rdr.fogA"
-            class="sl-noevents"/>
+      <!-- Fog of war (grid-aligned, from field.ui.gridFog). One union path for ALL hidden
+           cells so the translucent fill has no internal seams — see fogPathD. Per-cell rects
+           leave a bright grid line (anti-aliased gaps) or a dark one (overlap double-darken)
+           against the board showing through. -->
+      <path v-if="fogPathD" :d="fogPathD" :fill="rdr.fogA" class="sl-noevents"/>
 
       <!-- Selected unit's own vision, traced on top of the team-wide fog shading above -->
       <rect v-for="(sv, i) in selectedVisionTiles" :key="'sv'+i"

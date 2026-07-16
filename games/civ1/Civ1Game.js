@@ -5,6 +5,7 @@ import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastSprites } from './coastSprites.js';
+import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
 
 const BASE = '/images/civ1';
 
@@ -344,103 +345,23 @@ function renderState(state) {
   ].join('\n');
 }
 
-// ── Fixed test scenarios ─────────────────────────────────────────────────────
+// ── Fixed scenarios ──────────────────────────────────────────────────────────
 //
-// Unlike the standard scenario (always procedurally generated — see
-// generateMap in map.js), these are literal hand-built boards for exercising
-// specific rendering/gameplay cases in isolation (e.g. coastline sprites
-// around a small island) without fighting the random generator for one.
-
-// 5×5 board: a solid 3×3 grassland island (x,y ∈ [1,3]) ringed by open ocean,
-// no poles/rivers/roads — the simplest possible "coast surrounds land" case.
-function buildIslandTestMap() {
-  const width = 5, height = 5;
-  const tiles = {};
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const isIsland = x >= 1 && x <= 3 && y >= 1 && y <= 3;
-      tiles[`${x},${y}`] = { terrain: isIsland ? 'grassland' : 'ocean', hasRoad: false, hasRiver: false, fortress: false };
-    }
-  }
-  return { width, height, tiles };
-}
-
-// 13×13 board: a grassland octagon island (a 9×9 square with 3-tile triangular
-// corners clipped to ocean) with a 5×5 diamond lake carved out of the centre,
-// and a 2-tile ocean strip around the whole island out to the map edge.
-// Octagon = square max(|dx|,|dy|)≤4 ∩ diamond |dx|+|dy|≤6 about centre (6,6);
-// the central lake is the diamond |dx|+|dy|≤2 (5 tiles wide at its middle).
-function buildOctagonLakeMap() {
-  const width = 13, height = 13;
-  const cx = 6, cy = 6;
-  const tiles = {};
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const dx = Math.abs(x - cx), dy = Math.abs(y - cy);
-      const inOctagon = Math.max(dx, dy) <= 4 && dx + dy <= 6;
-      const inLake = dx + dy <= 2;
-      const terrain = (inOctagon && !inLake) ? 'grassland' : 'ocean';
-      tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver: false, fortress: false };
-    }
-  }
-  return { width, height, tiles };
-}
-
-function createOctagonLakeState(players, config) {
-  const { width, height, tiles } = buildOctagonLakeMap();
+// Hand-built boards (ASCII art + unit placements) authored in fixedMaps.js.
+// Build a full initial state from one of those map definitions.
+function createFixedMapState(map, players, config) {
+  const { width, height, tiles } = parseFixedMap(map);
   const board = { width, height, tiles };
-  const [p1, p2] = players;
+  const sides = [players[0], players[1]];
 
-  // Opposite sides of the ring of land around the lake.
   let idCtr = 0;
-  const units = [
-    makeUnit(`u${idCtr++}`, p1.id, 'settlers', 4, 4, UNITS.settlers.moves),
-    makeUnit(`u${idCtr++}`, p1.id, 'militia',  5, 4, UNITS.militia.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'settlers', 8, 8, UNITS.settlers.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'militia',  7, 8, UNITS.militia.moves),
-  ];
+  const units = map.units.map(u =>
+    makeUnit(`u${idCtr++}`, sides[u.side - 1].id, u.type, u.x, u.y, UNITS[u.type].moves));
 
   return {
     gameName: 'Civ1',
     turnNumber: 1,
-    activePlayers: [p1.id],
-    currentPhase: 'action',
-    players,
-    board,
-    units,
-    cities: [],
-    lastActions: null,
-    gameSpecific: {
-      nextId: idCtr,
-      fogOfWar: config.fogOfWar ?? true,
-      startRoster: {
-        units: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
-        cities: [],
-      },
-    },
-  };
-}
-
-function createIslandTestState(players, config) {
-  const { width, height, tiles } = buildIslandTestMap();
-  const board = { width, height, tiles };
-  const [p1, p2] = players;
-
-  // Opposite corners of the island so all four starting units land on
-  // distinct tiles — the default random near-the-settler placement used by
-  // the standard scenario has no room to avoid overlap on a map this small.
-  let idCtr = 0;
-  const units = [
-    makeUnit(`u${idCtr++}`, p1.id, 'settlers', 1, 1, UNITS.settlers.moves),
-    makeUnit(`u${idCtr++}`, p1.id, 'militia',  1, 2, UNITS.militia.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'settlers', 3, 3, UNITS.settlers.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'militia',  3, 2, UNITS.militia.moves),
-  ];
-
-  return {
-    gameName: 'Civ1',
-    turnNumber: 1,
-    activePlayers: [p1.id],
+    activePlayers: [players[0].id],
     currentPhase: 'action',
     players,
     board,
@@ -461,8 +382,8 @@ function createIslandTestState(players, config) {
 // ── createInitialState ────────────────────────────────────────────────────────
 
 function createInitialState(players, config = {}) {
-  if (config.scenario === 'island-test') return createIslandTestState(players, config);
-  if (config.scenario === 'octagon-lake') return createOctagonLakeState(players, config);
+  const fixed = getFixedMap(config.scenario);
+  if (fixed) return createFixedMapState(fixed, players, config);
 
   const width  = config.width  ?? 50;
   const height = config.height ?? 30;
@@ -589,8 +510,8 @@ export const Civ1Game = {
   ui: { hideGridLines: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true },
   scenarios: [
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
-    { id: 'island-test', name: 'Tiny Island', description: 'Fixed 5×5 map: a 3×3 grassland island ringed by ocean — for testing coastline rendering', config: {} },
-    { id: 'octagon-lake', name: 'Octagon Lake', description: 'Fixed 9×9 map: a grassland octagon island with a 5×5 diamond lake in its centre', config: {} },
+    // Hand-built fixed maps (see fixedMaps.js).
+    ...FIXED_MAPS.map(m => ({ id: m.id, name: m.name, description: m.description, config: {} })),
   ],
   // Water is the authentic Civ1 palette sampled from images/terrain (deep ocean
   // #5448a0 matches ocean.png exactly; coast is the shallow-blue ramp). The
@@ -648,16 +569,6 @@ export const Civ1Game = {
       if (riverOrSea(x - 1, y)) d += 'w';
       return `${BASE}/terrain/${d ? `river_${d}` : 'river'}`;
     };
-    // Shallow "coast" water: any ocean tile touching land (incl. diagonally).
-    // Civ1 draws these lighter than deep ocean, which is what gives continents a
-    // visible shoreline instead of the sea butting hard against a block of land.
-    // Purely cosmetic — the engine terrain stays 'ocean', so rules are unchanged.
-    const isCoast = (x, y) => {
-      for (let dy = -1; dy <= 1; dy++)
-        for (let dx = -1; dx <= 1; dx++)
-          if ((dx || dy) && isLand(x + dx, y + dy)) return true;
-      return false;
-    };
     const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
 
     // Coastline sprites: the stacked coast_*.png shore pieces (see coastSprites.js)
@@ -671,7 +582,7 @@ export const Civ1Game = {
         N: isLand(x, y - 1), S: isLand(x, y + 1), E: isLand(x + 1, y), W: isLand(x - 1, y),
         NW: isLand(x - 1, y - 1), NE: isLand(x + 1, y - 1), SW: isLand(x - 1, y + 1), SE: isLand(x + 1, y + 1),
       });
-      return picks ? picks.map(p => ({ image: `${BASE}/terrain/${p.file}`, flipX: p.flipX, flipY: p.flipY })) : null;
+      return picks ? picks.map(p => ({ image: `${BASE}/terrain/${p.file}`, flipX: p.flipX, flipY: p.flipY, qx: p.qx, qy: p.qy })) : null;
     };
 
     const cells = [];
@@ -680,7 +591,6 @@ export const Civ1Game = {
         const tile = tiles[`${x},${y}`] ?? {};
         const u = umap[`${x},${y}`];
         const city = cmap[`${x},${y}`];
-        const coast = tile.terrain === 'ocean' && isCoast(x, y);
         cells.push({
           x, y,
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
@@ -697,7 +607,9 @@ export const Civ1Game = {
           // land-facing shoreline art from coast_*.png on top, so shorelines
           // curve instead of snapping to whole lighter tiles.
           color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
-          terrain: coast ? { ...terrainInfo(tile), name: 'Coast' } : terrainInfo(tile),
+          // "Coast" is purely a rendering distinction (shallow-water shading); the
+          // engine terrain is always 'ocean', so inspection reports it as Ocean.
+          terrain: terrainInfo(tile),
           hp: u?.hp, maxHp: u?.maxHp,
         });
       }

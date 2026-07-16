@@ -199,15 +199,16 @@ Also fixed while in there (paper fidelity, not king-safety):
   12/12 seeded runs on the befd position choose engine-approved moves (fxe6 ×8,
   Nf6 ×4); febb remains 0/8 king-hangs with stable Ne7/Qe7 play.
 
-Post-carryover self-play spot-check (2×4 games, power 80): grafts on ~72% of
-plies (7–13 carried worlds/move), exact P held ~93% of plies (avg |P| ≈ 950),
-latency unchanged (~1.5s avg), mixing ~45% of CFR moves. King-hangs-with-safe
-measured 8/375 ≈ 2.1% vs 3/373 ≈ 0.8% pre-carryover — statistically
-indistinguishable (the metric also counts deliberate calculated risks, and
-logged games show coherent, theory-like play), but WATCH this number in future
-self-play runs; if it firms up, suspect the carried-world distribution bias
-(carried states over-represent the old search's predicted replies) or the
-perfectly-informed singleton classes sharpening play.
+Post-carryover self-play validation — CLOSED (24 games / 1787 plies, power 80,
+seven seeded batches): king-hangs-with-safe-move 25/1787 = **1.4%** (95% CI
+0.9–1.95%), entirely under the 2% target and not significantly different from
+the pre-carryover 0.8% (z ≈ 0.9, p ≈ 0.35); the early "2.1%" reading was
+small-sample noise. Grafts on ~65–75% of plies (9–13 carried worlds/move),
+exact P held 60–95% of plies with re-acquisition firing 67 times (a real
+working path), max |P| 40.5k (under the 50k cap), latency stable ~1.5s avg,
+mixing ~45–50% of CFR moves. The guard fired 6/1787 plies (0.34%); batches
+with ZERO guard fires still measured 1.0–1.3%, so the search meets the target
+on its own — the guard remains as a near-inert backstop.
 
 ## Future work (remaining)
 

@@ -180,6 +180,7 @@ export const ChessGame = {
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
     { id: 'debugAI',  label: 'Debug AI',   description: 'Show all AI-controlled pieces even through Fog of War', type: 'boolean', default: false },
+    { id: 'initialMarkers', label: 'Initial piece markers', description: "Start with fog markers on every hidden enemy piece's opening square (Fog of War only)", type: 'boolean', default: false },
     {
       id: 'difficulty', label: 'AI Difficulty', type: 'ai-difficulty', default: 25,
       timeKey: 'aiTimeMs', maxTimeMs: 600000, timeDefault: 5000,
@@ -202,6 +203,8 @@ export const ChessGame = {
     highlightLastMove: true,
     dragToMove: true,
     highlightSelectedSquare: true, // selection shown as a square tint, not a ring around the piece
+    hideGridLines: true,   // the light/dark checkerboard already delineates squares; extra per-cell borders look busy
+    ownTileColors: true,   // tiles are coloured as the checkerboard already — skip the synthetic square overlay
   },
 
   createInitialState(players, config = {}) {
@@ -230,7 +233,11 @@ export const ChessGame = {
         aiTimeMs:    typeof config.aiTimeMs === 'number' ? config.aiTimeMs : null,
         difficulty:  typeof config.aiTimeMs === 'number' ? null : (config.difficulty ?? 25),
         // Per-player, per-square fog markers (see `seedMarkers`/`updateMarkers` above).
-        markers: config.fogOfWar ? seedMarkers(board) : undefined,
+        // With `initialMarkers` off (the default) fog starts with no markers at all —
+        // the player only accrues them from pieces that actually pass out of view.
+        markers: config.fogOfWar
+          ? (config.initialMarkers ? seedMarkers(board) : { white: {}, black: {} })
+          : undefined,
       },
     };
   },

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import SchematicLayer    from './SchematicLayer.vue';
+import HtmlLayer         from './HtmlLayer.vue';
 import IsoLayer          from './IsoLayer.vue';
 import GameHeader        from './battlefield/GameHeader.vue';
 import SelectedUnitDetail from './battlefield/SelectedUnitDetail.vue';
@@ -282,6 +283,15 @@ const isPending       = computed(() => isLive.value && props.liveState.pendingPl
 const isDone          = computed(() => isLive.value && props.liveState.status !== 'active');
 const legalActions    = computed(() => props.liveState?.legalActions ?? []);
 const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
+
+// Chime when control passes to a human — i.e. isPending flips false→true (an AI or the
+// other player just finished). The watcher isn't `immediate`, so opening a game that's
+// already waiting on you doesn't beep; only an actual transition does. Keying on
+// `pendingPlayerId` (not just isPending) also catches the rarer human→human handoff
+// (two humans in one session), where isPending stays true across the switch.
+watch(() => (isPending.value ? pendingPlayerId.value : null), (pending, prev) => {
+  if (pending && pending !== prev) window.playTurnSound?.();
+});
 
 // ── move highlights ───────────────────────────────────────────
 const displayUnits = units;
@@ -677,6 +687,20 @@ onUnmounted(() => {
           :revealAll="revealAll" :viewerTeam="viewerTeam"
           @select="selectUnit"
           @sq-click="handleSqClick"/>
+        <HtmlLayer v-else-if="ui.htmlRenderer"
+          :field="displayField" :fit="fit" :units="displayUnits"
+          :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
+          :showRuler="showRuler" :rdr="rdr"
+          :legalSquares="unitMoves"
+          :lastMoveSquares="lastMoveSquares"
+          :dragToMove="ui.dragToMove ?? false"
+          :revealAll="revealAll" :viewerTeam="viewerTeam"
+          :selectedEmptySquare="selectedSquare"
+          :selectedShape="selectedShape"
+          :aiming="aiming"
+          @select="selectUnit"
+          @sq-click="handleSqClick"
+          @set-marker="handleSetMarker"/>
         <SchematicLayer v-else
           :field="displayField" :fit="fit" :units="displayUnits"
           :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
