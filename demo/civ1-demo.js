@@ -1,52 +1,9 @@
 import { GameEngine } from '../engine/index.js';
 import { Civ1Game } from '../games/civ1/index.js';
+import { makeCiv1Agent, makeGreedyAgent } from '../games/civ1/ai.js';
 import { HumanAgent } from '../agents/index.js';
 
-function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
-
-const GreedyAgent = {
-  id: 'greedy',
-  chooseAction(state, legalActions) {
-    const attack = legalActions.find(a => a.type === 'attack');
-    if (attack) return attack;
-
-    const found = legalActions.find(a => a.type === 'found-city');
-    if (found) return found;
-
-    const myId = state.activePlayers[0];
-    const enemies = state.units.filter(u => u.alive && u.ownerId !== myId);
-    const enemyCities = state.cities.filter(c => c.ownerId !== myId);
-    const targets = [...enemies.map(u => u.position), ...enemyCities.map(c => c.position)];
-
-    const moves = legalActions.filter(a => a.type === 'move');
-    if (moves.length && targets.length) {
-      const byUnit = new Map();
-      for (const m of moves) {
-        if (!byUnit.has(m.unitId)) byUnit.set(m.unitId, []);
-        byUnit.get(m.unitId).push(m);
-      }
-
-      let bestMove = null, bestScore = Infinity;
-      for (const [, unitMoves] of byUnit) {
-        const from = unitMoves[0].from;
-        const nearestTarget = targets.reduce((best, t) => dist(from, t) < dist(from, best) ? t : best, targets[0]);
-        for (const m of unitMoves) {
-          const d = dist(m.to, nearestTarget);
-          if (d < bestScore) { bestScore = d; bestMove = m; }
-        }
-      }
-      if (bestMove) return bestMove;
-    }
-
-    if (moves.length) {
-      const cx = state.board.width / 2, cy = state.board.height / 2;
-      const center = { x: cx, y: cy };
-      return moves.reduce((best, m) => dist(m.to, center) < dist(best.to, center) ? m : best);
-    }
-
-    return { type: 'end-turn', unitId: '__player__' };
-  },
-};
+const GreedyAgent = makeGreedyAgent();
 
 function makeRandom() {
   return {
@@ -62,9 +19,13 @@ function makeRandom() {
 
 const isAuto   = process.argv.includes('--auto');
 const isGreedy = process.argv.includes('--greedy');
+// --heuristic: the EV-attacking agent (games/civ1/ai.js) vs the greedy baseline.
+const isHeuristic = process.argv.includes('--heuristic');
 
-const agent1 = isAuto   ? (isGreedy ? GreedyAgent : makeRandom()) : new HumanAgent('You');
-const agent2 = isGreedy ? GreedyAgent : makeRandom();
+const makeBot = () => isHeuristic ? makeCiv1Agent() : (isGreedy ? GreedyAgent : makeRandom());
+
+const agent1 = isAuto ? makeBot() : new HumanAgent('You');
+const agent2 = isHeuristic ? GreedyAgent : makeBot();
 
 const players = [
   { id: 'player-1', name: 'Player 1', agent: agent1 },

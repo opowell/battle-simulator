@@ -20,6 +20,8 @@ const ICON_PATHS = {
   eye:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 100 6 3 3 0 000-6z',
   check:'M5 12l5 5 9-11',
   sliders:'M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M11 15v6',
+  zoomin:'M11 4a7 7 0 100 14 7 7 0 000-14zM16 16l4 4M11 8v6M8 11h6',
+  zoomout:'M11 4a7 7 0 100 14 7 7 0 000-14zM16 16l4 4M8 11h6',
 };
 
 /* ==================== RENDERER PALETTES ==================== */
@@ -93,11 +95,16 @@ function samplePath(path, u) {
   return { x: path[n][0], y: path[n][1], ang: 0 };
 }
 
-function makeFitter(world, box, pad) {
+// world → screen transform. By default the whole world is scaled to fit the padded box and
+// centred in it. `opts.scale` (px per world unit) and `opts.center` (the world point to put
+// at the box's middle) override that for the zoom/pan controls — see Battlefield.vue.
+function makeFitter(world, box, pad, opts) {
   pad = pad || 0;
   const bw = box.w - pad*2, bh = box.h - pad*2;
-  const s = Math.min(bw / world.w, bh / world.h);
-  const ox = pad + (bw - world.w*s)/2, oy = pad + (bh - world.h*s)/2;
+  const s = (opts && opts.scale) || Math.min(bw / world.w, bh / world.h);
+  const cx = opts && opts.center ? opts.center.x : world.w/2;
+  const cy = opts && opts.center ? opts.center.y : world.h/2;
+  const ox = pad + bw/2 - cx*s, oy = pad + bh/2 - cy*s;
   return { s, x: (wx) => ox + wx*s, y: (wy) => oy + wy*s, len: (w) => w*s };
 }
 

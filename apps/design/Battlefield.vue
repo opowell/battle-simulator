@@ -276,12 +276,18 @@ watch(() => props.liveState?.id, (id) => {
 const htmlRenderOverride = ref(null);
 // The game's own preference: the `htmlRenderer` game option (live sessions carry it in
 // params.config) or a static ui.htmlRenderer flag from the game definition.
+// HtmlLayer is the default for grid boards; SVG is the opt-out (via the `htmlRenderer`
+// game option, or the header switch). The `?? true` covers sessions created before the
+// option existed, replays, and grid games that don't declare it.
 const gameHtmlRenderer = computed(() =>
-  props.liveState?.params?.config?.htmlRenderer ?? ui.value.htmlRenderer ?? false);
+  props.liveState?.params?.config?.htmlRenderer ?? ui.value.htmlRenderer ?? true);
 // HtmlLayer only handles square tile grids (not hexes, non-grid shapes or continuous
-// maps) — this gates both the toggle's availability and, as a safety net, actual use.
+// maps) — this gates both the switch's availability and, as a safety net, actual use.
+// Isometric games (civ2/xcom/ffta) are drawn by IsoLayer, which wins outright below, so
+// they're excluded too: offering an SVG/HTML switch there would do nothing.
 const isGridBoard = computed(() =>
-  displayField.value?.grid === 'square'
+  !ui.value.isometric
+  && displayField.value?.grid === 'square'
   && (displayField.value?.tiles?.length ?? 0) > 0
   && !(displayField.value?.shapes?.length));
 const useHtmlRenderer = computed(() =>
@@ -289,8 +295,65 @@ const useHtmlRenderer = computed(() =>
 // Each game starts from its own setting — drop any manual override on game switch.
 watch(() => props.liveState?.id, () => { htmlRenderOverride.value = null; });
 
+// ── zoom & pan (the `mapZoom` game option) ────────────────────
+// `zoomPx` is the tile size in screen px (null = fitted to the stage, the old behaviour);
+// `center` is the world point held at the middle of the stage (null = the board's middle).
+// Both feed the fitter below and, for the HTML renderer, HtmlLayer's own geometry.
+const MIN_TILE_PX = 4, MAX_TILE_PX = 240, ZOOM_STEP = 1.25;
+const zoomPx = ref(null);
+const center = ref(null);
+
+const zoomEnabled = computed(() =>
+  props.liveState?.params?.config?.mapZoom ?? ui.value.mapZoom ?? false);
+
+// Each game starts at its own default tile size (or fitted), centred on the board.
+watch(() => props.liveState?.id, () => {
+  zoomPx.value = zoomEnabled.value ? (ui.value.defaultTileSize ?? null) : null;
+  center.value = null;
+}, { immediate: true });
+
+// What a zoom step works from when the view is still fitted rather than explicitly zoomed.
+const baseFit  = computed(() => makeFitter(props.field.world, { w: stageW.value, h: stageH.value }, 24));
+const tilePx   = computed(() => zoomPx.value ?? baseFit.value.s);
+const canZoomIn  = computed(() => zoomEnabled.value && tilePx.value < MAX_TILE_PX);
+const canZoomOut = computed(() => zoomEnabled.value && tilePx.value > MIN_TILE_PX);
+
+function zoomBy(factor) {
+  // Pin the current view centre so zooming doesn't drift the map out from under the cursor.
+  if (!center.value) center.value = { x: props.field.world.w / 2, y: props.field.world.h / 2 };
+  zoomPx.value = Math.min(MAX_TILE_PX, Math.max(MIN_TILE_PX, tilePx.value * factor));
+}
+
+function centerOn(x, y) {
+  center.value = { x, y };
+}
+
+// Panning stops at the map's edges rather than letting the board drift off into empty
+// stage: the requested centre is pulled back until the board still covers the stage. An
+// axis whose whole extent already fits just stays centred, exactly as an unzoomed board
+// does. This is applied here (not in centerOn) because the limit moves with the scale —
+// zooming out has to re-clamp a centre that was legal at the previous zoom.
+function clampAxis(c, worldLen, stageLen, s) {
+  const half = stageLen / 2 / s;          // half the visible stage, in world units
+  if (worldLen <= half * 2) return worldLen / 2;
+  return Math.min(worldLen - half, Math.max(half, c));
+}
+
+// The centre actually rendered (null = let the fitter centre the whole board).
+const viewCenter = computed(() => {
+  if (!zoomEnabled.value || !center.value) return null;
+  const w = props.field.world;
+  return {
+    x: clampAxis(center.value.x, w.w, stageW.value, tilePx.value),
+    y: clampAxis(center.value.y, w.h, stageH.value, tilePx.value),
+  };
+});
+
 // ── world → screen transform ──────────────────────────────────
-const fit = computed(() => makeFitter(props.field.world, { w: stageW.value, h: stageH.value }, 24));
+const fit = computed(() => zoomEnabled.value
+  ? makeFitter(props.field.world, { w: stageW.value, h: stageH.value }, 24,
+               { scale: zoomPx.value, center: viewCenter.value })
+  : baseFit.value);
 
 // ── live units at current time ────────────────────────────────
 const units = computed(() => computeUnits(displayField.value, tFloat.value));
@@ -387,6 +450,25 @@ function handleSetMarker(col, row, type) {
   if (!humanPlayerId.value) return;
   emit('set-marker', { playerId: humanPlayerId.value, col, row, type });
 }
+
+// ── opening view ──────────────────────────────────────────────
+// A zoomable map is bigger than the stage, so opening it centred on the board drops the
+// player somewhere they own nothing. Instead start on their first unit, selected — the
+// same state a click on it would produce. Scoped to mapZoom games so fixed-board games
+// (chess) still open with nothing selected, as they always have.
+// Units aren't in `field` on the first watch fire, so this waits for them and then runs
+// once per session; any click afterwards is the player's own and must not be overridden.
+const initedView = ref(false);
+watch(() => props.liveState?.id, () => { initedView.value = false; });
+watch([displayUnits, zoomEnabled], () => {
+  if (initedView.value || !zoomEnabled.value || !isLive.value) return;
+  const mine = displayUnits.value.find(u => !u.dead &&
+    (humanPlayerId.value ? u.team === humanPlayerId.value : u.friendly));
+  if (!mine) return;
+  initedView.value = true;
+  selectUnit(mine.id);
+  centerOn(mine.x, mine.y);
+}, { immediate: true });
 
 // Territory-click games (kdice): every hex belongs to some territory, but only
 // one hex (the "capital") carries a unit token — clicking anywhere in a
@@ -503,7 +585,11 @@ function handleSqClick(col, row, x, y) {
     }
   }
   // A plain click (not armed via "Inspect terrain…") never selects terrain — it just
-  // clears whatever was selected, same as clicking empty space always has.
+  // clears whatever was selected, same as clicking empty space always has. With the
+  // zoom controls on it also recentres the map here: every other click (a unit, a legal
+  // destination, an aimed shot, terrain inspection) has already returned above, so only
+  // clicks that would otherwise merely deselect pan the view.
+  if (zoomEnabled.value) centerOn(x ?? col + 0.5, y ?? row + 0.5);
   selectedId.value = null;
   selectedShape.value = null;
   selectedSquare.value = null;
@@ -720,6 +806,8 @@ onUnmounted(() => {
           :revealAll="revealAll" :viewerTeam="viewerTeam"
           :selectedEmptySquare="selectedSquare"
           :aiming="aiming"
+          :zoomPx="zoomEnabled ? zoomPx : null"
+          :center="viewCenter"
           @select="selectUnit"
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>
@@ -767,9 +855,11 @@ onUnmounted(() => {
       :liveState="liveState" :isDone="isDone" :isPending="isPending"
       :pendingPlayerId="pendingPlayerId"
       :canReveal="canReveal" :revealAll="revealAll"
+      :showZoom="zoomEnabled" :canZoomIn="canZoomIn" :canZoomOut="canZoomOut"
       @step-back="stepBack" @step-fwd="stepFwd" @toggle-play="togglePlay"
       @scrub="scrub" @go-back="goBack" @go-forward="goForward"
-      @toggle-reveal="toggleReveal"/>
+      @toggle-reveal="toggleReveal"
+      @zoom-in="zoomBy(ZOOM_STEP)" @zoom-out="zoomBy(1 / ZOOM_STEP)"/>
   </div>
 
   <MenuOverlay

@@ -1,4 +1,4 @@
-import { HTML_RENDERER_OPTION } from '../renderOptions.js';
+import { HTML_RENDERER_OPTION, MAP_ZOOM_OPTION } from '../renderOptions.js';
 import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
@@ -11,9 +11,15 @@ import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
 const BASE = '/images/civ1';
 
 // Shortest horizontal distance between two columns on a map that wraps east/west.
-function wrapDX(ax, bx, width) {
+export function wrapDX(ax, bx, width) {
   const d = Math.abs(ax - bx);
   return width ? Math.min(d, width - d) : d;
+}
+
+// Turns-apart distance between two squares: units step to any of the 8 neighbours,
+// so a diagonal step costs the same as an orthogonal one, and the map wraps east/west.
+export function chebyshevWrapped(a, b, width) {
+  return Math.max(wrapDX(a.x, b.x, width), Math.abs(a.y - b.y));
 }
 
 const UNIT_IMAGES = {
@@ -456,8 +462,8 @@ function getVisibleState(state, playerId) {
   const myCities = state.cities.filter(c => c.ownerId === playerId);
   const W = state.board.width;
   const canSee = pos =>
-    myUnits.some(m  => Math.max(wrapDX(m.position.x, pos.x, W), Math.abs(m.position.y - pos.y)) <= VISION) ||
-    myCities.some(c => Math.max(wrapDX(c.position.x, pos.x, W), Math.abs(c.position.y - pos.y)) <= VISION);
+    myUnits.some(m  => chebyshevWrapped(m.position, pos, W) <= VISION) ||
+    myCities.some(c => chebyshevWrapped(c.position, pos, W) <= VISION);
   return {
     ...state,
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
@@ -482,7 +488,7 @@ function getActionDuration(state, action) {
     const unit = state.units.find(u => u.id === action.unitId);
     if (!unit) return 1;
     const from = action.from ?? unit.position;
-    const dist = Math.max(wrapDX(action.to.x, from.x, state.board.width), Math.abs(action.to.y - from.y));
+    const dist = chebyshevWrapped(action.to, from, state.board.width);
     return dist / (UNITS[unit.type]?.moves ?? 1);
   }
   if (action.type === 'attack') return 1;
@@ -508,7 +514,9 @@ export const Civ1Game = {
   evaluateState: (state, playerId) =>
     unitStrengthEval(state, playerId) + sidesEval(state.cities, playerId, () => 100),
   name: 'Civ1',
-  ui: { hideGridLines: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true },
+  // defaultTileSize: the map runs to 100x60 tiles, far more than fits legibly on the stage
+  // at once — start at the original game's rough tile scale and let the player pan/zoom.
+  ui: { hideGridLines: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true, defaultTileSize: 40 },
   scenarios: [
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
     // Hand-built fixed maps (see fixedMaps.js).
@@ -523,6 +531,7 @@ export const Civ1Game = {
   colors: { ocean: '#5046a0', coast: '#5046a0', plains: '#719230', grassland: '#719230', forest: '#719230', hills: '#719230', mountains: '#719230', desert: '#719230', tundra: '#719230', arctic: '#719230', jungle: '#719230', swamp: '#719230' },
   gameOptions: [
     HTML_RENDERER_OPTION,
+    MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: true },
     { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
     { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },
@@ -587,6 +596,19 @@ export const Civ1Game = {
       if (riverOrSea(x - 1, y)) d += 'w';
       return `${BASE}/terrain/${d ? `river_${d}` : 'river'}`;
     };
+    // Roads are drawn the way the original does: not one tile per pattern, but a
+    // short segment from the tile centre out to each neighbour that also has a road,
+    // stacked. Eight directional sprites (road_n .. road_nw, lifted from SP257.PIC);
+    // an unconnected road draws nothing, as in the game.
+    const ROAD_DIRS = [['n',0,-1],['ne',1,-1],['e',1,0],['se',1,1],['s',0,1],['sw',-1,1],['w',-1,0],['nw',-1,-1]];
+    const hasRoad = (x, y) => !!tiles[`${wrapX(x, width)},${y}`]?.hasRoad;
+    const roadSprites = (x, y) => {
+      if (!hasRoad(x, y)) return [];
+      return ROAD_DIRS
+        .filter(([, dx, dy]) => hasRoad(x + dx, y + dy))
+        .map(([d]) => `${BASE}/terrain/road_${d}`);
+    };
+
     const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
 
     // Coastline: the real Civ1 ocean tile for this square — one of 16, picked by
@@ -615,7 +637,8 @@ export const Civ1Game = {
           // ocean tile. Land draws its authentic tile, blended with like neighbours.
           bgImage: tile.terrain === 'ocean' ? null : (tile.terrain ? terrainSprite(x, y, tile.terrain) : null),
           coastSprite: tile.terrain === 'ocean' ? coastSprite(x, y) : null,
-          overlayImage: tile.hasRiver ? riverSprite(x, y) : null,
+          // Rivers first, then any road segments, painted in order over the terrain.
+          overlayImage: [...(tile.hasRiver ? [riverSprite(x, y)] : []), ...roadSprites(x, y)],
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,
           // All ocean tiles paint deep flat colour — coastSprite (above) draws the
           // land-facing shoreline art from coast_*.png on top, so shorelines

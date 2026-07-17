@@ -309,13 +309,12 @@ function unitR(u) {
 // Used when field.ui.gridFog is true. Piece types are lowercase glyph letters: k/q/r/b/n/p.
 // Friendly pieces move up the board — decreasing y (y = 8 - rank).
 const gridFogVisibleSet = computed(() => {
-  if (!props.fog || !props.field.ui?.gridFog) return null;
+  // Reveal mode shows the true board with no fog shading at all.
+  if (!props.fog || !props.field.ui?.gridFog || props.revealAll) return null;
   // Prefer the server's authoritative visibility set: the client cannot reproduce it from
   // the filtered board, where hidden enemies (which block sliders and occupy push squares)
   // have been stripped and would wrongly read as empty + visible (e.g. a hidden pawn on e5).
-  // In reveal mode we always recompute: the board is full (every blocker present) so the
-  // derivation is accurate, and we need the viewer's perspective, not the server's white set.
-  if (!props.revealAll && props.field.fogVisible) return props.field.fogVisible;
+  if (props.field.fogVisible) return props.field.fogVisible;
   const W = props.field.world.w, H = props.field.world.h;
   // Pawns advance toward rank 8 (lower y) for white, toward rank 1 (higher y) for black.
   const pDir     = viewerIsBlack.value ? 1 : -1;
@@ -393,6 +392,7 @@ const fogPathD = computed(() => {
 const squareFogVisibleSet = computed(() => {
   if (!props.fog || props.field.ui?.gridFog || props.field.grid !== 'square') return null;
   if (props.field.locationType === 'continuous') return null;
+  if (props.revealAll) return null; // reveal mode: no fog shading at all
   return VISION.visibleTileSet(props.field, VISION.visionSources(props.units, viewerId.value, null));
 });
 
@@ -521,12 +521,14 @@ function tileBgImage(tile) {
   return imgSrc(tile.bgImage);
 }
 
-// A second sprite drawn on top of the terrain (e.g. a river overlay whose art is
-// transparent except for the feature itself). Fogged the same as the base tile.
-function tileOverlayImage(tile) {
-  if (!tile.overlayImage) return null;
-  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
-  return imgSrc(tile.overlayImage);
+// Sprites drawn on top of the terrain, each transparent except for the feature
+// itself. `overlayImage` may be a single path or a list painted in order — civ1
+// stacks a river plus one segment per road direction. Fogged like the base tile.
+function tileOverlayImages(tile) {
+  if (!tile.overlayImage) return [];
+  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return [];
+  const list = Array.isArray(tile.overlayImage) ? tile.overlayImage : [tile.overlayImage];
+  return list.map(imgSrc);
 }
 
 // Design rule: grid-based games get a square marker (a game can override per unit
@@ -580,22 +582,9 @@ const squareMarkerList = computed(() => {
   return (props.field.fogMarkers ?? []).map(m => ({ col: m.x, row: m.y, type: m.type, img: m.imagePath }));
 });
 
-// Reveal mode: every piece the viewer can't see is drawn as a translucent marker at its
-// true square (using its own colour's sprite), so hidden positions are exposed.
-const revealMarkerList = computed(() => {
-  if (!props.revealAll) return [];
-  const vis = gridFogVisibleSet.value;
-  if (!vis) return [];
-  const out = [];
-  for (const u of props.units) {
-    if (u.dead) continue;
-    const col = Math.floor(u.x), row = Math.floor(u.y);
-    if (!vis.has(`${col},${row}`)) out.push({ col, row, type: u.type, img: u.imagePath });
-  }
-  return out;
-});
-
-const displayMarkers = computed(() => props.revealAll ? revealMarkerList.value : squareMarkerList.value);
+// Reveal mode shows every piece at its true position directly (no fog, see isVisible), so
+// no markers are needed there.
+const displayMarkers = computed(() => props.revealAll ? [] : squareMarkerList.value);
 
 // ── drag-to-move ──────────────────────────────────────────────────────────────
 const svgEl       = ref(null);
@@ -712,13 +701,7 @@ function hpColor(frac, raw) {
 }
 
 function isVisible(u) {
-  if (!props.fog) return true;
-  // Reveal mode: pieces the viewer can see render normally; the rest are drawn as
-  // translucent markers (see revealMarkerList), so hide their normal token here.
-  if (props.revealAll) {
-    const vis = gridFogVisibleSet.value;
-    return !vis || vis.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
-  }
+  if (!props.fog || props.revealAll) return true; // reveal mode: every piece shown, no fog
   if (u.friendly) return true;
   if (gridFogVisibleSet.value) return gridFogVisibleSet.value.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
   return u.visible;
@@ -882,12 +865,13 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                  preserveAspectRatio="xMidYMid slice"
                  class="sl-noevents sl-pixel"/>
         </template>
-        <!-- Terrain overlay sprites (e.g. rivers) drawn on top of the base terrain -->
+        <!-- Terrain overlay sprites (rivers, road segments) on top of the base
+             terrain. A tile may stack several — see tileOverlayImages. -->
         <template v-for="(tile, i) in (field.tiles ?? [])" :key="'to'+i">
-          <image v-if="tileOverlayImage(tile)"
+          <image v-for="(ov, oi) in tileOverlayImages(tile)" :key="'to'+i+'-'+oi"
                  :x="fit.x(tile.x)" :y="fit.y(tile.y)"
                  :width="fit.len(1)" :height="fit.len(1)"
-                 :href="tileOverlayImage(tile)"
+                 :href="ov"
                  preserveAspectRatio="xMidYMid slice"
                  class="sl-noevents sl-pixel"/>
         </template>
@@ -1298,9 +1282,9 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
       <!-- Continuous-map fog: a single semi-transparent veil with each shown unit's vision
            punched out (base terrain → shapes → units → fog). Square grids shade per-tile
            instead (fogSquares above), so this only runs for continuous maps. -->
-      <FogOverlay v-if="fog && field.locationType === 'continuous'"
+      <FogOverlay v-if="fog && field.locationType === 'continuous' && !revealAll"
                   :field="field" :fit="fit" :units="units" :rdr="rdr"
-                  :viewerId="viewerId" :selectedId="revealAll ? null : selectedId"/>
+                  :viewerId="viewerId" :selectedId="selectedId"/>
 
       <!-- Combat flashes (damage / heal numbers, action pulse) drawn above units -->
       <g v-for="fx in fxList" :key="'fx'+fx.key"

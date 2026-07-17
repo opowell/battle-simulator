@@ -13,8 +13,12 @@ defineProps({
   pendingPlayerId: { type: String, default: null },
   canReveal:       Boolean,
   revealAll:       Boolean,
+  showZoom:        Boolean,
+  canZoomIn:       { type: Boolean, default: true },
+  canZoomOut:      { type: Boolean, default: true },
 });
-defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-forward', 'toggle-reveal']);
+defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-forward',
+             'toggle-reveal', 'zoom-in', 'zoom-out']);
 </script>
 
 <template>
@@ -72,6 +76,14 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
     <template v-else>
       <span class="mono bb-label">{{field.label}}</span>
       <div class="bb-spacer"/>
+    </template>
+    <template v-if="showZoom">
+      <button class="iconbtn bb-icon" :disabled="!canZoomOut" @click="$emit('zoom-out')" title="Zoom out">
+        <BsIcon name="zoomout" :size="15" color="var(--dim)"/>
+      </button>
+      <button class="iconbtn bb-icon" :disabled="!canZoomIn" @click="$emit('zoom-in')" title="Zoom in">
+        <BsIcon name="zoomin" :size="15" color="var(--dim)"/>
+      </button>
     </template>
     <BsIcon name="clock" :size="14" color="var(--faint)"/>
   </div>

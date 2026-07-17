@@ -1,4 +1,3 @@
-import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
@@ -1040,9 +1039,6 @@ export const Sc2Game = {
     + sidesEval(state.buildings, playerId, b =>
         ['command-center', 'hatchery', 'lair', 'hive', 'nexus'].includes(b.type) ? 300 : 80),
   name: 'SC2',
-  gameOptions: [
-    HTML_RENDERER_OPTION,
-  ],
   scenarios: [
     { id: 'tvz', name: 'Terran vs Zerg',    description: 'Marines & siege tanks vs the Swarm',    config: { race1: 'terran',  race2: 'zerg' } },
     { id: 'pvt', name: 'Protoss vs Terran', description: 'High Templar vs Marauder bio ball',      config: { race1: 'protoss', race2: 'terran' } },

@@ -1,3 +1,4 @@
+import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { getWarodDotsBelief } from './belief.js';
 import { forEachCell } from '../terrainShapes.js';
 
@@ -478,6 +479,10 @@ function simStep(state, dt, rng) {
 
 export const WarodDotsGame = {
   name: 'War of Dots',
+
+  gameOptions: [
+    HTML_RENDERER_OPTION,
+  ],
 
   ui: {
     help: {

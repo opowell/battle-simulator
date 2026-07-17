@@ -19,8 +19,8 @@ import HtmlUnit from './battlefield/HtmlUnit.vue';
 // move arrows) stays absolutely positioned against the same integer origin.
 //
 // Not covered (these keep using the SVG SchematicLayer): hexes, non-grid shape maps,
-// continuous-map radial fog, aiming overlays, drag-to-move ghosts, coast sprites and
-// sprite-layer units. Globals (window.*) come from data.js / vision.js / teamSprite.js,
+// continuous-map radial fog, aiming overlays and sprite-layer units.
+// Globals (window.*) come from data.js / vision.js / teamSprite.js,
 // loaded as classic <script>s in index.html — vue3-sfc-loader can't parse an ESM import
 // of a plain .js.
 
@@ -40,6 +40,10 @@ const props = defineProps({
   viewerTeam:      { type: String, default: null },
   selectedEmptySquare: { type: Object, default: null },
   aiming:          { type: Object, default: null },
+  // Zoom/pan overrides (the `mapZoom` game option, driven from Battlefield): tile size in
+  // screen px, and the world point to hold at the middle of the stage. Null = fit + centre.
+  zoomPx:          { type: Number, default: null },
+  center:          { type: Object, default: null },
 });
 const emit = defineEmits(['select', 'sq-click', 'set-marker']);
 const imgSrc   = window.api.imgSrc;
@@ -65,13 +69,22 @@ onMounted(() => {
 onUnmounted(() => ro?.disconnect());
 
 // Whole pixels per cell — floored, so the board is never larger than the space it has.
-const cellPx  = computed(() => Math.max(1, Math.floor(Math.min(
-  (boxW.value - PAD * 2) / W.value,
-  (boxH.value - PAD * 2) / H.value))));
+// A zoomPx override is rounded rather than floored (it's a chosen size, not a fit), keeping
+// the integer-cell invariant this renderer is built on either way.
+const cellPx  = computed(() => props.zoomPx
+  ? Math.max(1, Math.round(props.zoomPx))
+  : Math.max(1, Math.floor(Math.min(
+      (boxW.value - PAD * 2) / W.value,
+      (boxH.value - PAD * 2) / H.value))));
 const boardW  = computed(() => cellPx.value * W.value);
 const boardH  = computed(() => cellPx.value * H.value);
-const originX = computed(() => Math.round((boxW.value - boardW.value) / 2));
-const originY = computed(() => Math.round((boxH.value - boardH.value) / 2));
+// Panned: hold props.center at the middle of the box. Otherwise centre the whole board.
+const originX = computed(() => props.center
+  ? Math.round(boxW.value / 2 - props.center.x * cellPx.value)
+  : Math.round((boxW.value - boardW.value) / 2));
+const originY = computed(() => props.center
+  ? Math.round(boxH.value / 2 - props.center.y * cellPx.value)
+  : Math.round((boxH.value - boardH.value) / 2));
 
 // world → screen. Cell-aligned inputs land on exact integers by construction.
 function px(wx)   { return originX.value + wx * cellPx.value; }
@@ -103,10 +116,11 @@ const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.
 //  • vision fog (tactical etc., via VISION): hidden tiles are painted with the fog colour
 //    and their terrain art withheld — no separate veil.
 const gridFogVisibleSet = computed(() => {
-  if (!props.fog || !props.field.ui?.gridFog) return null;
+  // Reveal mode shows the true board with no fog shading at all.
+  if (!props.fog || !props.field.ui?.gridFog || props.revealAll) return null;
   // Prefer the server's authoritative set (the filtered client board strips hidden
-  // blockers and can't reproduce it). Reveal mode recomputes from the full board.
-  if (!props.revealAll && props.field.fogVisible) return props.field.fogVisible;
+  // blockers and can't reproduce it).
+  if (props.field.fogVisible) return props.field.fogVisible;
   const w = W.value, h = H.value;
   const pDir      = viewerIsBlack.value ? 1 : -1;
   const pStartRow = viewerIsBlack.value ? 1 : 6;
@@ -146,6 +160,7 @@ const gridFogVisibleSet = computed(() => {
 const squareFogVisibleSet = computed(() => {
   if (!props.fog || props.field.ui?.gridFog || props.field.grid !== 'square') return null;
   if (props.field.locationType === 'continuous') return null;
+  if (props.revealAll) return null; // reveal mode: no fog shading at all
   return VISION.visibleTileSet(props.field, VISION.visionSources(props.units, viewerId.value, null));
 });
 
@@ -175,28 +190,13 @@ const squareMarkerList = computed(() => {
   if (!props.fog || props.revealAll) return [];
   return (props.field.fogMarkers ?? []).map(m => ({ col: m.x, row: m.y, type: m.type, img: m.imagePath }));
 });
-const revealMarkerList = computed(() => {
-  if (!props.revealAll) return [];
-  const vis = gridFogVisibleSet.value;
-  if (!vis) return [];
-  const out = [];
-  for (const u of props.units) {
-    if (u.dead) continue;
-    const col = Math.floor(u.x), row = Math.floor(u.y);
-    if (!vis.has(`${col},${row}`)) out.push({ col, row, type: u.type, img: u.imagePath });
-  }
-  return out;
-});
-const displayMarkers = computed(() => props.revealAll ? revealMarkerList.value : squareMarkerList.value);
+// Reveal mode shows every piece at its true position directly (no fog, see isVisible), so
+// no markers are needed there.
+const displayMarkers = computed(() => props.revealAll ? [] : squareMarkerList.value);
 
 // ── per-unit presentation ─────────────────────────────────────────────────────
 function isVisible(u) {
-  if (!props.fog) return true;
-  // Reveal mode: seen pieces render normally, the rest as translucent markers.
-  if (props.revealAll) {
-    const vis = gridFogVisibleSet.value;
-    return !vis || vis.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
-  }
+  if (!props.fog || props.revealAll) return true; // reveal mode: every piece shown, no fog
   if (u.friendly) return true;
   if (gridFogVisibleSet.value) return gridFogVisibleSet.value.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
   return u.visible;
@@ -214,6 +214,15 @@ function unitShape(u) {
 // Under vision fog a hidden tile is painted with the fog colour and its art withheld.
 function tileFogged(tile) {
   return !!squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`);
+}
+
+// Sprites drawn on top of the terrain, each transparent except for the feature itself.
+// `overlayImage` may be a single path or a list painted in order — civ1 stacks a river
+// plus one segment per road direction (see SchematicLayer's tileOverlayImages).
+function tileOverlays(tile) {
+  if (!tile || !tile.overlayImage || tileFogged(tile)) return [];
+  const list = Array.isArray(tile.overlayImage) ? tile.overlayImage : [tile.overlayImage];
+  return list.map(imgSrc);
 }
 
 // ── cells: one entry per board square, in row-major order for grid auto-placement ──
@@ -250,8 +259,11 @@ const cells = computed(() => {
       out.push({
         k, x, y,
         color:   tile ? (tileFogged(tile) ? props.rdr.fogA : tile.color) : null,
-        bg:      (tile && !tileFogged(tile) && tile.bgImage)      ? imgSrc(tile.bgImage)      : null,
-        overlay: (tile && !tileFogged(tile) && tile.overlayImage) ? imgSrc(tile.overlayImage) : null,
+        // Painted in SchematicLayer's order: flat colour, then the coastline tile, then
+        // terrain art, then any overlays stacked on top.
+        coast:   (tile && !tileFogged(tile) && tile.coastSprite) ? imgSrc(tile.coastSprite.image) : null,
+        bg:      (tile && !tileFogged(tile) && tile.bgImage)     ? imgSrc(tile.bgImage)           : null,
+        overlays: tileOverlays(tile),
         fogged:  !!gridFogVisibleSet.value && !gridFogVisibleSet.value.has(k),
         vision:  !!vis && vis.has(k),
         marker:  markers.get(k) ?? null,
@@ -398,8 +410,11 @@ function handleUnitClick(e, u) {
       <div v-for="c in cells" :key="c.k" class="hl-cell"
            :style="{ background: c.color }"
            @click.stop="handleCellClick(c)">
-        <img v-if="c.bg"      class="hl-fill hl-pixel hl-cover" :src="c.bg" draggable="false"/>
-        <img v-if="c.overlay" class="hl-fill hl-pixel hl-cover" :src="c.overlay" draggable="false"/>
+        <!-- Coastline tile (civ1 oceans) under the terrain art, then any stacked overlays -->
+        <img v-if="c.coast" class="hl-fill hl-pixel hl-cover" :src="c.coast" draggable="false"/>
+        <img v-if="c.bg"    class="hl-fill hl-pixel hl-cover" :src="c.bg" draggable="false"/>
+        <img v-for="(ov, oi) in c.overlays" :key="'ov'+oi"
+             class="hl-fill hl-pixel hl-cover" :src="ov" draggable="false"/>
         <div v-if="c.checker" class="hl-fill hl-checker"/>
         <!-- gridFog veil (vision fog is already baked into c.color) -->
         <div v-if="c.fogged"  class="hl-fill" :style="{ background: rdr.fogA }"/>
@@ -500,6 +515,13 @@ function handleUnitClick(e, u) {
 .hl-cell { display: grid; cursor: pointer; }
 .hl-cell > * { grid-area: 1 / 1; }
 .hl-fill { pointer-events: none; }
+/* Images must be sized explicitly rather than left to the grid's default `stretch`:
+   per CSS Box Alignment, stretch behaves as `start` for a replaced element with an
+   intrinsic aspect ratio, so an <img> draws at its native size instead of filling the
+   cell. Every browser does this. It's easy to miss because civ1's tiles are 16px and a
+   fitted board often lands near that — the art only looks obviously wrong once the cell
+   grows past the sprite (a big window, or zoomed in). */
+img.hl-fill { display: block; width: 100%; height: 100%; }
 
 .hl-checker  { background: rgba(0,0,0,0.22); }
 .hl-vision   { border: 1.5px solid rgba(255,255,255,0.55); }

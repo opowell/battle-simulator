@@ -137,6 +137,42 @@ static eval remains (zero regression risk by construction).
   2019) for the game-theoretic issues of node-based evals under imperfect
   info — is noted but out of scope.
 
+## Status (2026-07-17)
+
+Phase 0 is BUILT and tested (`agents/learned/`: mlp.js, encoder.js, leafEval.js,
+train.mjs; 6/6 unit tests — gradient check, permutation invariance, antisymmetry,
+serialization). All 15 roster games are wired with `installLearnedEval` (a no-op
+without a gate-passing model.json — regenerate any time with
+`node agents/learned/train.mjs --game <name>` or `--all`; deferred games need
+`--include-deferred`).
+
+**Pilot finding 1 (important for all attrition games):** the first tactical gate
+came out at exactly 50.0% because searcher-vs-searcher games NEVER finished —
+under a material-only eval, mutual avoidance is the equilibrium (measured: 5/5
+Obscuro-vs-Obscuro games truncated with all units alive, margin 0), so every
+gate game was adjudicated at the neutral 0.5. Random-involved games DO finish,
+so training labels were real. Fix: the gate now gives BOTH sides the same small
+ε (0.05) of random moves — symmetric noise forces skirmishes, and converting
+them better is exactly what a stronger evaluator should demonstrate. Defaults
+were also retuned (games 200, gens 2, gate 100, agent-ms 60, max-plies 120)
+after the first pilot's 3.1-hour runtime (now ~2–15 min per game).
+
+**Pilot finding 2 — Phase 1 gate result: NOT passed (no models shipped).**
+- tactical: 53.8% (100 games), then 52.7% over 300 games with 2.5× training —
+  a real but small edge (~+19 Elo) that plateaued; the hp-sum heuristic is
+  near-optimal for this game, as the risks section predicted.
+- xcom: 51.5% (100 games) despite very low training loss (0.026) — the net
+  PREDICTS outcomes well but that doesn't convert to stronger play than the
+  hand heuristic.
+Diagnosis: the deep-sets pooled encoding cannot represent relative-position /
+threat structure ("who can shoot whom", cover, contested ground) — exactly the
+information a value function would need to beat material-plus-tweaks
+heuristics. The infrastructure works end to end and the gates correctly
+refused to ship marginal models; the next lever is FEATURES, not more data:
+pairwise-distance summaries (own↔enemy nearest-distance histograms, threat
+counts per unit, attackable-target counts), plus TD(λ) targets (Phase 4).
+Everything is re-runnable standalone: `node agents/learned/train.mjs --all`.
+
 ## Risks / open questions
 
 - **Heuristics may be hard to beat** in material-dominated games (tactical's

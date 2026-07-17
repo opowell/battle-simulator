@@ -9,6 +9,10 @@
 // character per tile; `rows` is a list of equal-length strings, top row first.
 // The map's width is the row length and its height is the number of rows.
 //
+// A map may also carry an optional `rivers` layer: same dimensions as `rows`, with
+// '~' marking a tile that has a river (anything else means none). It is a separate
+// layer because a river sits *on* a terrain rather than replacing it.
+//
 // Starting units are `{ side: 1|2, type, x, y }`; side 1 → players[0],
 // side 2 → players[1]. Coordinates are 0-indexed from the top-left.
 
@@ -136,6 +140,60 @@ export const FIXED_MAPS = [
       '................................................................................',
       'T.T.........T...........TT..T.......TTTT..TT........TT..............T...T...T...',
     ],
+    // Rivers read off the same source image (land tiles carrying a ribbon of
+    // water): the Mississippi, Amazon, Nile, Congo, Danube/Volga and the great
+    // Asian rivers all land where you'd expect.
+    rivers: [
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                               ~                                                ',
+      '                                          ~    ~             ~                  ',
+      '                                          ~~ ~~~                                ',
+      '        ~ ~   ~~                  ~        ~ ~                                  ',
+      '        ~ ~                       ~        ~ ~~                                 ',
+      '        ~~~                            ~~  ~                                    ',
+      '         ~                              ~                                       ',
+      '         ~                                                                      ',
+      '                                                                                ',
+      '                                             ~~                                 ',
+      '                                              ~~       ~           ~~~          ',
+      '                                         ~            ~~                        ',
+      '                                         ~           ~~    ~                    ',
+      '                                        ~~~                ~~                   ',
+      '                                         ~                                      ',
+      '                                         ~                                      ',
+      '                                                                                ',
+      '                                                                                ',
+      '                   ~                                                            ',
+      '              ~  ~~~                                                            ',
+      '              ~~~~                                                              ',
+      '                                       ~~~                                      ',
+      '                                     ~~~                                        ',
+      '                                     ~                                          ',
+      '                                    ~~                                          ',
+      '                  ~                                                             ',
+      '                  ~                                                             ',
+      '                  ~~                                                            ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+      '                                                                                ',
+    ],
     // Opposite hemispheres: North America vs. eastern Asia.
     units: [
       { side: 1, type: 'settlers', x: 8,  y: 16 },
@@ -156,7 +214,8 @@ export function parseFixedMap(map) {
     for (let x = 0; x < width; x++) {
       const ch = rows[y][x];
       const terrain = TERRAIN_LEGEND[ch] ?? 'ocean';
-      tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver: false, fortress: false };
+      const hasRiver = map.rivers?.[y]?.[x] === '~';
+      tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver, fortress: false };
     }
   }
   return { width, height, tiles };

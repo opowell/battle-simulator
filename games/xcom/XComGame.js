@@ -1,4 +1,3 @@
-import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { unitStrengthEval } from '../evalHelpers.js';
 import { createMap, renderMap } from './map.js';
 import { getReachable, manhattan } from './grid.js';
@@ -35,7 +34,6 @@ export const XComGame = {
     { id: 'ufo-crash', name: 'UFO Crash Site', description: 'Secure a downed UFO against alien survivors', config: {} },
   ],
   gameOptions: [
-    HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
   ],
   colors: { floor: '#9a8c7a', wall: '#2a2018', 'cover-low': '#c8943a', 'cover-high': '#8a5a18' },
