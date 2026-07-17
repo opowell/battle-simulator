@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import SchematicLayer    from './SchematicLayer.vue';
 import HtmlLayer         from './HtmlLayer.vue';
 import IsoLayer          from './IsoLayer.vue';
+import HtmlIsoLayer      from './HtmlIsoLayer.vue';
 import GameHeader        from './battlefield/GameHeader.vue';
 import SelectedUnitDetail from './battlefield/SelectedUnitDetail.vue';
 import SelectedSquareDetail from './battlefield/SelectedSquareDetail.vue';
@@ -283,15 +284,22 @@ const gameHtmlRenderer = computed(() =>
   props.liveState?.params?.config?.htmlRenderer ?? ui.value.htmlRenderer ?? true);
 // HtmlLayer only handles square tile grids (not hexes, non-grid shapes or continuous
 // maps) — this gates both the switch's availability and, as a safety net, actual use.
-// Isometric games (civ2/xcom/ffta) are drawn by IsoLayer, which wins outright below, so
-// they're excluded too: offering an SVG/HTML switch there would do nothing.
 const isGridBoard = computed(() =>
   !ui.value.isometric
   && displayField.value?.grid === 'square'
   && (displayField.value?.tiles?.length ?? 0) > 0
   && !(displayField.value?.shapes?.length));
+// Isometric boards have their own HTML renderer (HtmlIsoLayer), which covers the same
+// slice of IsoLayer that IsoLayer's 'sprite' tile mode does: flat boards of pre-drawn
+// diamond art (civ2). 'texture' mode (ffta/xcom) skews terrain onto the ground plane and
+// extrudes cliffs per tile height — SVG-only, so those games get no switch.
+const isIsoSpriteBoard = computed(() =>
+  !!ui.value.isometric && ui.value.isoTileMode === 'sprite');
+// Where an HTML/SVG choice exists at all — gates the header switch and, as a safety net,
+// actual use of either HTML renderer.
+const canSwitchRenderer = computed(() => isGridBoard.value || isIsoSpriteBoard.value);
 const useHtmlRenderer = computed(() =>
-  isGridBoard.value && (htmlRenderOverride.value ?? gameHtmlRenderer.value));
+  canSwitchRenderer.value && (htmlRenderOverride.value ?? gameHtmlRenderer.value));
 // Each game starts from its own setting — drop any manual override on game switch.
 watch(() => props.liveState?.id, () => { htmlRenderOverride.value = null; });
 
@@ -755,7 +763,7 @@ onUnmounted(() => {
           :field="field" :liveState="liveState" :isLive="isLive"
           :isDone="isDone" :isPending="isPending" :pendingPlayerId="pendingPlayerId"
           :showMenu="showMenu" :ui="ui"
-          :showRenderer="isGridBoard" :htmlRenderer="useHtmlRenderer"
+          :showRenderer="canSwitchRenderer" :htmlRenderer="useHtmlRenderer"
           @toggle-menu="showMenu = !showMenu"
           @set-renderer="v => htmlRenderOverride = v"
           @show-help="showHelp = true"/>
@@ -785,7 +793,16 @@ onUnmounted(() => {
 
       <!-- Stage -->
       <div ref="stageEl" class="bf-stage-area">
-        <IsoLayer v-if="ui.isometric"
+        <HtmlIsoLayer v-if="ui.isometric && useHtmlRenderer"
+          :field="displayField" :units="displayUnits"
+          :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
+          :rdr="rdr"
+          :legalSquares="unitMoves"
+          :lastMoveSquares="lastMoveSquares"
+          :revealAll="revealAll" :viewerTeam="viewerTeam"
+          @select="selectUnit"
+          @sq-click="handleSqClick"/>
+        <IsoLayer v-else-if="ui.isometric"
           :field="displayField" :fit="fit" :units="displayUnits"
           :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
           :rdr="rdr"

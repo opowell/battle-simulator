@@ -1,3 +1,4 @@
+import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
@@ -450,6 +451,7 @@ export const Civ2Game = {
   // units/cities as owner-tinted tokens. See apps/design/IsoLayer.vue.
   ui: { isometric: true, isoTileMode: 'sprite', isoUnitStyle: 'token', freeSelection: true, allowDiagonalHopsWhileMoving: true },
   gameOptions: [
+    HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: true },
     { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
     { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },

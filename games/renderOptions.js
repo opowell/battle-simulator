@@ -2,10 +2,12 @@
 // game rules — the engine ignores them). Spread into a game's `gameOptions` so they show
 // up in the configure modal like any other option.
 
-// Opt into the experimental HTML/CSS board renderer (apps/design/HtmlLayer.vue) instead of
-// the default SVG one (SchematicLayer.vue). Only meaningful for square tile-grid boards;
-// Battlefield falls back to SVG for anything else. Also live-toggleable from the in-game
-// menu (see MenuOverlay's "HTML board renderer" toggle).
+// Opt into the HTML/CSS board renderer instead of the SVG one — HtmlLayer.vue rather than
+// SchematicLayer.vue for square tile grids, HtmlIsoLayer.vue rather than IsoLayer.vue for
+// isometric boards drawn from pre-drawn diamond art (`ui.isoTileMode: 'sprite'`, civ2).
+// Battlefield falls back to SVG for anything else (hexes, shape maps, and IsoLayer's
+// cliff-extruding 'texture' mode, which has no HTML equivalent). Also live-toggleable from
+// the in-game menu (see MenuOverlay's "HTML board renderer" toggle).
 export const HTML_RENDERER_OPTION = {
   id: 'htmlRenderer',
   label: 'HTML board renderer',
@@ -22,7 +24,7 @@ export const HTML_RENDERER_OPTION = {
 //
 // Only for the SVG (SchematicLayer) and HTML (HtmlLayer) renderers, which both take their
 // geometry from Battlefield's fitter. ISOMETRIC games (civ2's `ui.isometric`) must NOT add
-// this: IsoLayer solves its own scale/origin from its own box and ignores the fitter, so
+// this: IsoLayer and HtmlIsoLayer solve their own scale/origin from their own box and ignore the fitter, so
 // the buttons would render but do nothing. Teaching it to zoom means threading the scale
 // and centre through that solver — its diamond half-width isn't a tile size, and the
 // world-axis pan clamp doesn't map onto iso screen space.
