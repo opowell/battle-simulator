@@ -6,7 +6,14 @@ import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
+import { specialAt, tileYield } from './specials.js';
 import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
+import { TECHS, researchableTechs } from './tech.js';
+import { IMPROVEMENTS, WONDERS } from './improvements.js';
+import { GOVERNMENTS, availableGovernments } from './governments.js';
+import { foodBox } from './city.js';
+import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy } from './economy.js';
+import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '../moveQueue.js';
 
 const BASE = '/images/civ1';
 
@@ -92,90 +99,181 @@ function makeUnit(id, ownerId, type, x, y, movesLeft) {
     maxHp: stats.hp,
     movesLeft: movesLeft ?? stats.moves,
     attrs: {},
+    // Waypoints ({x,y}) queued while the unit has no moves left this turn — consumed
+    // automatically, oldest first, as the unit's moves refresh on each of its future
+    // turns (see runQueuedMoves, called from the 'end-turn' handler below).
+    queue: [],
   };
 }
 
 // ── City production ───────────────────────────────────────────────────────────
 
-const CITY_SHIELDS_PER_TURN = size => size * 2 + 1;
-
-function processCityProduction(state, playerId, nextId) {
-  let { units, cities } = state;
-  let idCounter = nextId;
-
-  const updatedCities = cities.map(city => {
-    if (city.ownerId !== playerId) return city;
-
-    const gained = CITY_SHIELDS_PER_TURN(city.size);
-    const newShields = city.shields + gained;
-    const item = city.production;
-    const itemCost = UNITS[item]?.cost ?? 10;
-
-    if (newShields >= itemCost) {
-      const spawnPos = findAdjacentFree(city.position, state.board, units);
-      if (spawnPos) {
-        const newUnit = makeUnit(`u${idCounter++}`, city.ownerId, item, spawnPos.x, spawnPos.y, 0);
-        units = [...units, newUnit];
-      }
-      return { ...city, shields: newShields - itemCost };
-    }
-    return { ...city, shields: newShields };
-  });
-
-  return { cities: updatedCities, units, nextId: idCounter };
-}
+// What a city may be told to build. There is no tech tree yet, so this is capped
+// at the ancient units the era actually offers — exposing every unit in units.js
+// would just mean everyone builds Armor from turn 1. Settlers are the important
+// entry: without them there is no expansion and no way to win.
+export const BUILDABLE = ['settlers', 'militia', 'phalanx', 'archers', 'legion', 'cavalry', 'chariot', 'catapult'];
 
 // ── Legal actions ─────────────────────────────────────────────────────────────
 
 function getLegalActions(state, playerId) {
   const { units, cities, board } = state;
-  const myUnits = units.filter(u => u.alive && u.ownerId === playerId && u.movesLeft > 0);
+  const myUnits = units.filter(u => u.alive && u.ownerId === playerId);
   const actions = [];
 
   for (const unit of myUnits) {
     const stats = UNITS[unit.type];
 
-    // Movement
-    const reachable = getReachableTiles(unit, board, units, playerId);
-    for (const to of reachable) {
-      actions.push({ type: 'move', unitId: unit.id, from: unit.position, to });
-    }
+    if (unit.movesLeft > 0) {
+      // Movement
+      const reachable = getReachableTiles(unit, board, units, playerId);
+      for (const to of reachable) {
+        actions.push({ type: 'move', unitId: unit.id, from: unit.position, to });
+      }
 
-    // Attack: enemies in adjacent squares (Chebyshev distance ≤ 1)
-    if (stats.attack > 0) {
-      for (const enemy of units.filter(u => u.alive && u.ownerId !== playerId)) {
-        const dx = wrapDX(enemy.position.x, unit.position.x, board.width);
-        const dy = Math.abs(enemy.position.y - unit.position.y);
-        if (dx <= 1 && dy <= 1 && (dx + dy) > 0) {
-          actions.push({ type: 'attack', unitId: unit.id, targetId: enemy.id });
+      // Attack: enemies in adjacent squares (Chebyshev distance ≤ 1)
+      if (stats.attack > 0) {
+        for (const enemy of units.filter(u => u.alive && u.ownerId !== playerId)) {
+          const dx = wrapDX(enemy.position.x, unit.position.x, board.width);
+          const dy = Math.abs(enemy.position.y - unit.position.y);
+          if (dx <= 1 && dy <= 1 && (dx + dy) > 0) {
+            actions.push({ type: 'attack', unitId: unit.id, targetId: enemy.id });
+          }
         }
       }
-    }
 
-    // Found city (settlers)
-    if (stats.special.includes('found-city')) {
-      const k = `${unit.position.x},${unit.position.y}`;
-      const tile = board.tiles[k];
-      const hasCity = cities.some(c => c.position.x === unit.position.x && c.position.y === unit.position.y);
-      if (tile && tile.terrain !== 'ocean' && !hasCity) {
-        actions.push({ type: 'found-city', unitId: unit.id });
+      // Found city (settlers)
+      if (stats.special.includes('found-city')) {
+        const k = `${unit.position.x},${unit.position.y}`;
+        const tile = board.tiles[k];
+        const hasCity = cities.some(c => c.position.x === unit.position.x && c.position.y === unit.position.y);
+        if (tile && tile.terrain !== 'ocean' && !hasCity) {
+          actions.push({ type: 'found-city', unitId: unit.id });
+        }
       }
-    }
 
-    // Build road (settlers on non-ocean land without a road)
-    if (stats.special.includes('build-road')) {
+      // Terrain improvements (settlers): road, irrigation, mine, clear forest/jungle.
       const k = `${unit.position.x},${unit.position.y}`;
       const tile = board.tiles[k];
-      if (tile && tile.terrain !== 'ocean' && !tile.hasRoad) {
+      const isLand = tile && tile.terrain !== 'ocean';
+      if (stats.special.includes('build-road') && isLand && !tile.hasRoad) {
         actions.push({ type: 'build-road', unitId: unit.id });
       }
+      if (stats.special.includes('irrigate') && isLand && !tile.irrigated && IRRIGABLE_TERRAIN.has(tile.terrain)) {
+        actions.push({ type: 'irrigate', unitId: unit.id });
+      }
+      if (stats.special.includes('mine') && isLand && !tile.mined && MINEABLE_TERRAIN.has(tile.terrain)) {
+        actions.push({ type: 'build-mine', unitId: unit.id });
+      }
+      if (stats.special.includes('irrigate') && isLand && (tile.terrain === 'forest' || tile.terrain === 'jungle' || tile.terrain === 'swamp')) {
+        actions.push({ type: 'clear-terrain', unitId: unit.id });
+      }
+
+      actions.push({ type: 'skip-unit', unitId: unit.id });
+    } else {
+      // No moves left this turn: further clicks plan a route instead of acting right
+      // away (see games/moveQueue.js) — one queued waypoint per future turn, consumed
+      // by runQueuedMoves in the 'end-turn' handling below.
+      actions.push(...queueMoveActions(unit, playerId, stats.moves,
+        (virtualUnit, pid) => getReachableTiles(virtualUnit, board, units, pid)));
     }
 
-    actions.push({ type: 'skip-unit', unitId: unit.id });
+    const popAction = queuePopAction(unit);
+    if (popAction) actions.push(popAction);
+  }
+
+  // Production: at most one change per city per turn. The cap matters — without it
+  // an agent can sit in a set-production loop and never end its turn.
+  const ctx = state.gameSpecific.civ ? buildOwnerCtx(state, playerId) : null;
+  for (const city of cities) {
+    if (city.ownerId !== playerId) continue;
+    if (city.productionSetTurn === state.turnNumber) continue;
+    for (const item of buildableForCity(state, city, ctx)) {
+      if (item === city.production) continue;
+      actions.push({ type: 'set-production', cityId: city.id, item, unitId: '__player__' });
+    }
+  }
+
+  // Empire-wide choices (once per turn each): research target, tax rate, government.
+  const civ = state.gameSpecific.civ?.[playerId];
+  if (civ) {
+    const known = new Set(civ.techs);
+    if (civ.researchSetTurn !== state.turnNumber) {
+      for (const t of researchableTechs(known)) {
+        if (t !== civ.research) actions.push({ type: 'set-research', tech: t, unitId: '__player__' });
+      }
+    }
+    const max = GOVERNMENTS[civ.government].taxMax;
+    if (civ.taxSetTurn !== state.turnNumber) {
+      for (let tax = 0; tax <= max && tax + civ.luxRate <= 100; tax += 10) {
+        if (tax !== civ.taxRate) actions.push({ type: 'set-tax', taxRate: tax, unitId: '__player__' });
+      }
+    }
+    if (civ.luxSetTurn !== state.turnNumber) {
+      for (let lux = 0; lux <= max && lux + civ.taxRate <= 100; lux += 10) {
+        if (lux !== civ.luxRate) actions.push({ type: 'set-luxury', luxRate: lux, unitId: '__player__' });
+      }
+    }
+    if (!civ.anarchyTurns) {
+      for (const g of availableGovernments(known)) {
+        if (g !== civ.government) actions.push({ type: 'change-government', government: g, unitId: '__player__' });
+      }
+    }
   }
 
   actions.push({ type: 'end-turn', unitId: '__player__' });
   return actions;
+}
+
+// Terrain sets the settler's terraforming actions apply to.
+const IRRIGABLE_TERRAIN = new Set(['desert', 'grassland', 'plains', 'hills', 'swamp', 'tundra']);
+const MINEABLE_TERRAIN = new Set(['hills', 'mountains']);
+
+// ── Movement (shared by the 'move' action and queued-waypoint execution) ──────
+
+// Single-tile step cost: air is flat, roads are cheap, otherwise the destination
+// tile's terrain cost. Matches the original: a jump onto a far reachable tile
+// (getReachableTiles floods multiple tiles per turn) is still only charged for
+// the tile actually landed on, not the accumulated path.
+function moveCost(unit, tile) {
+  if (UNITS[unit.type].domain === 'air') return 1;
+  if (tile?.hasRoad) return 1 / 3;
+  return (tile ? TERRAIN[tile.terrain]?.moveCost : null) ?? 1;
+}
+
+// Moves `unit` onto `to`, deducting its cost and handling the "walking into an
+// undefended enemy city takes it" rule. Movement onto tiles held by enemy *units*
+// is blocked earlier (map.js getReachableTiles / isMoveTargetLegal below), so
+// reaching an enemy city tile at all means nothing was left standing on it.
+function applyMove(units, cities, board, playerId, unit, to) {
+  const tile = board.tiles[`${to.x},${to.y}`];
+  const newMovesLeft = Math.max(0, unit.movesLeft - moveCost(unit, tile));
+  const newUnits = units.map(u =>
+    u.id === unit.id ? { ...u, position: to, movesLeft: newMovesLeft } : u);
+
+  const enemyCity = cities.find(c => c.ownerId !== playerId && c.position.x === to.x && c.position.y === to.y);
+  const newCities = enemyCity
+    ? cities.map(c => c.id === enemyCity.id ? { ...c, ownerId: playerId, shields: 0 } : c)
+    : cities;
+
+  return { units: newUnits, cities: newCities };
+}
+
+// Re-validates a queued waypoint at execution time (occupancy may have changed
+// since it was planned): still on the board, still passable for this unit's
+// domain, and not currently blocked by a friendly unit or (for land units) an
+// enemy one.
+function isMoveTargetLegal(to, board, units, playerId, domain) {
+  const tile = board.tiles[`${to.x},${to.y}`];
+  if (!tile) return false;
+  const td = TERRAIN[tile.terrain];
+  if (!td) return false;
+  if (domain === 'land' && !td.passable.land) return false;
+  if (domain === 'sea' && !td.passable.sea) return false;
+  const atTarget = u => u.alive && u.position.x === to.x && u.position.y === to.y;
+  if (domain === 'land' && units.some(u => u.ownerId !== playerId && atTarget(u))) return false;
+  if (units.some(u => u.ownerId === playerId && atTarget(u))) return false;
+  return true;
 }
 
 // ── Apply actions ─────────────────────────────────────────────────────────────
@@ -189,10 +287,13 @@ function applyActions(state, playerActions, rng = Math.random) {
 
   // ── end-turn ──────────────────────────────────────────────────────────────
   if (action.type === 'end-turn') {
-    const prod = processCityProduction({ ...state, units, cities }, playerId, nextId);
-    units = prod.units;
-    cities = prod.cities;
-    nextId = prod.nextId;
+    // Run the ending player's whole economy: cities work, grow, build, earn gold and
+    // science, pay upkeep, and advance research (see economy.js).
+    const eco = processOwnerEconomy({ ...state, units, cities }, playerId, nextId, makeUnit);
+    units = eco.units;
+    cities = eco.cities;
+    nextId = eco.nextId;
+    const civ = { ...state.gameSpecific.civ, [playerId]: eco.civ };
 
     const nextIdx = (currentIdx + 1) % playerIds.length;
     const nextPlayerId = playerIds[nextIdx];
@@ -204,6 +305,13 @@ function applyActions(state, playerActions, rng = Math.random) {
       }
       return u;
     });
+    units = runQueuedMoves(units, nextPlayerId,
+      (to, unit, pid, curUnits) => isMoveTargetLegal(to, board, curUnits, pid, UNITS[unit.type].domain),
+      (curUnits, pid, unit, to) => {
+        const applied = applyMove(curUnits, cities, board, pid, unit, to);
+        cities = applied.cities;
+        return applied.units;
+      });
 
     return {
       ...state,
@@ -212,29 +320,29 @@ function applyActions(state, playerActions, rng = Math.random) {
       activePlayers: [nextPlayerId],
       turnNumber: newTurn,
       lastActions: playerActions,
-      gameSpecific: { ...state.gameSpecific, nextId },
+      gameSpecific: { ...state.gameSpecific, nextId, civ },
     };
   }
 
   // ── move ──────────────────────────────────────────────────────────────────
   if (action.type === 'move') {
     const unit = units.find(u => u.id === action.unitId);
-    const tile = board.tiles[`${action.to.x},${action.to.y}`];
-    const td = tile ? TERRAIN[tile.terrain] : null;
+    const applied = applyMove(units, cities, board, playerId, unit, action.to);
+    return { ...state, units: applied.units, cities: applied.cities, lastActions: playerActions };
+  }
 
-    let cost;
-    if (UNITS[unit.type].domain === 'air') {
-      cost = 1;
-    } else if (tile?.hasRoad) {
-      cost = 1 / 3;
-    } else {
-      cost = td?.moveCost ?? 1;
-    }
+  // ── queue-move ────────────────────────────────────────────────────────────
+  // The unit has no moves left this turn; remember the destination and run it
+  // automatically once moves refresh (see runQueuedMoves, called on 'end-turn').
+  if (action.type === 'queue-move') {
+    units = enqueueWaypoint(units, action.unitId, action.to);
+    return { ...state, units, lastActions: playerActions };
+  }
 
-    const newMovesLeft = Math.max(0, unit.movesLeft - cost);
-    units = units.map(u =>
-      u.id === action.unitId ? { ...u, position: action.to, movesLeft: newMovesLeft } : u
-    );
+  // ── queue-pop ─────────────────────────────────────────────────────────────
+  // Backspace / "undo last queued move": drops the most recently queued waypoint.
+  if (action.type === 'queue-pop') {
+    units = dequeueLastWaypoint(units, action.unitId);
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -273,10 +381,22 @@ function applyActions(state, playerActions, rng = Math.random) {
     return { ...state, units, cities, lastActions: playerActions };
   }
 
+  // ── set-production ────────────────────────────────────────────────────────
+  if (action.type === 'set-production') {
+    cities = cities.map(c =>
+      c.id === action.cityId && c.ownerId === playerId
+        ? { ...c, production: action.item, productionSetTurn: state.turnNumber }
+        : c
+    );
+    return { ...state, cities, lastActions: playerActions };
+  }
+
   // ── found-city ────────────────────────────────────────────────────────────
   if (action.type === 'found-city') {
     const unit = units.find(u => u.id === action.unitId);
     const name = getNextCityName(cities, playerId);
+    // The owner's first city is the capital and comes with the Palace.
+    const isFirst = !cities.some(c => c.ownerId === playerId);
     const newCity = {
       id: `city-${nextId++}`,
       name,
@@ -286,6 +406,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       shields: 0,
       food: 0,
       production: 'militia',
+      buildings: isFirst ? ['palace'] : [],
     };
     cities = [...cities, newCity];
     units = units.filter(u => u.id !== action.unitId);
@@ -295,13 +416,51 @@ function applyActions(state, playerActions, rng = Math.random) {
     };
   }
 
-  // ── build-road ────────────────────────────────────────────────────────────
-  if (action.type === 'build-road') {
+  // ── terrain improvements (settlers) ─────────────────────────────────────────
+  if (action.type === 'build-road' || action.type === 'irrigate' || action.type === 'build-mine' || action.type === 'clear-terrain') {
     const unit = units.find(u => u.id === action.unitId);
     const k = `${unit.position.x},${unit.position.y}`;
-    const newTiles = { ...board.tiles, [k]: { ...board.tiles[k], hasRoad: true } };
+    const tile = board.tiles[k];
+    let patch;
+    if (action.type === 'build-road') patch = { hasRoad: true };
+    else if (action.type === 'irrigate') patch = { irrigated: true, mined: false };
+    else if (action.type === 'build-mine') patch = { mined: true, irrigated: false };
+    else patch = { terrain: CLEARS_TO[tile.terrain] ?? 'plains', irrigated: false, mined: false };
+    const newTiles = { ...board.tiles, [k]: { ...tile, ...patch } };
     units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0 } : u);
     return { ...state, units, board: { ...board, tiles: newTiles }, lastActions: playerActions };
+  }
+
+  // ── set-research ────────────────────────────────────────────────────────────
+  if (action.type === 'set-research') {
+    const civ = { ...state.gameSpecific.civ[playerId], research: action.tech, researchSetTurn: state.turnNumber };
+    return { ...state, lastActions: playerActions, gameSpecific: { ...state.gameSpecific, civ: { ...state.gameSpecific.civ, [playerId]: civ } } };
+  }
+
+  // ── set-tax / set-luxury (science gets whatever the two leave) ──────────────
+  if (action.type === 'set-tax') {
+    const cur = state.gameSpecific.civ[playerId];
+    const civ = { ...cur, taxRate: action.taxRate, luxRate: Math.min(cur.luxRate, 100 - action.taxRate), taxSetTurn: state.turnNumber };
+    return { ...state, lastActions: playerActions, gameSpecific: { ...state.gameSpecific, civ: { ...state.gameSpecific.civ, [playerId]: civ } } };
+  }
+  if (action.type === 'set-luxury') {
+    const cur = state.gameSpecific.civ[playerId];
+    const civ = { ...cur, luxRate: action.luxRate, taxRate: Math.min(cur.taxRate, 100 - action.luxRate), luxSetTurn: state.turnNumber };
+    return { ...state, lastActions: playerActions, gameSpecific: { ...state.gameSpecific, civ: { ...state.gameSpecific.civ, [playerId]: civ } } };
+  }
+
+  // ── change-government (triggers a 2-turn revolution / Anarchy) ───────────────
+  if (action.type === 'change-government') {
+    const cur = state.gameSpecific.civ[playerId];
+    const taxMax = GOVERNMENTS[action.government].taxMax;
+    const civ = {
+      ...cur,
+      government: 'anarchy',
+      pendingGovernment: action.government,
+      anarchyTurns: 2,
+      taxRate: Math.min(cur.taxRate, taxMax),
+    };
+    return { ...state, lastActions: playerActions, gameSpecific: { ...state.gameSpecific, civ: { ...state.gameSpecific.civ, [playerId]: civ } } };
   }
 
   // ── skip-unit ─────────────────────────────────────────────────────────────
@@ -312,6 +471,9 @@ function applyActions(state, playerActions, rng = Math.random) {
 
   return state;
 }
+
+// What a cleared forest/jungle/swamp becomes when a settler clears it.
+const CLEARS_TO = { forest: 'plains', jungle: 'grassland', swamp: 'grassland' };
 
 // ── Win condition ─────────────────────────────────────────────────────────────
 
@@ -337,8 +499,11 @@ function renderState(state) {
   const summarize = pid => {
     const alive = units.filter(u => u.alive && u.ownerId === pid);
     const ownCities = cities.filter(c => c.ownerId === pid);
+    const civ = state.gameSpecific?.civ?.[pid];
+    const cityStr = ownCities.map(c => `${c.name}(${c.size})`).join(',') || 'none';
     const unitStr = alive.map(u => `${u.type}(${u.hp}hp)`).join(', ') || '—';
-    return `${pid}: cities=${ownCities.map(c => c.name).join(',')||'none'} | units: ${unitStr}`;
+    const econ = civ ? ` | ${GOVERNMENTS[civ.government].name} gold=${civ.gold} techs=${civ.techs.length} researching=${civ.research ? (TECHS[civ.research]?.name ?? civ.research) : '—'}` : '';
+    return `${pid}: cities=${cityStr}${econ}\n    units: ${unitStr}`;
   };
 
   return [
@@ -378,6 +543,7 @@ function createFixedMapState(map, players, config) {
     gameSpecific: {
       nextId: idCtr,
       fogOfWar: config.fogOfWar ?? true,
+      civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
       startRoster: {
         units: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
         cities: [],
@@ -443,6 +609,7 @@ function createInitialState(players, config = {}) {
     gameSpecific: {
       nextId: idCtr,
       fogOfWar: config.fogOfWar ?? true,
+      civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
       // Common-knowledge starting deployment: cities are founded later so this
       // only seeds units; the belief tracker (belief.js) learns enemy cities
       // the first time it sees them.
@@ -495,28 +662,61 @@ function getActionDuration(state, action) {
   return 1;
 }
 
-function terrainInfo(tile) {
+// `special` is this square's resource (see specials.js), if any: it renames the tile
+// the way the original does ("Gold" rather than "Mountains") and adds its yield.
+function terrainInfo(tile, x = null, y = null) {
   const key = typeof tile === 'string' ? tile : tile?.terrain;
   const t = TERRAIN[key] ?? TERRAIN.plains;
-  const name = key ? key[0].toUpperCase() + key.slice(1) : 'Plains';
-  const parts = [`Food ${t.food}`, `Shields ${t.shields}`, `Trade ${t.trade}`];
+  const special = (x != null && key) ? specialAt(x, y, key) : null;
+  const y3 = (x != null && key) ? tileYield(t, key, x, y) : t;
+  const name = special ? special.name : (key ? key[0].toUpperCase() + key.slice(1) : 'Plains');
+  const parts = [`Food ${y3.food}`, `Shields ${y3.shields}`, `Trade ${y3.trade}`];
   if (!t.passable.land) parts.push('impassable to land units');
   else parts.push(`move cost ${t.moveCost}`);
   if (t.defBonus) parts.push(`+${Math.round(t.defBonus * 100)}% defense`);
+  if (tile?.irrigated) parts.push('irrigated');
+  if (tile?.mined) parts.push('mine');
   if (tile?.hasRoad) parts.push('road');
   if (tile?.hasRiver) parts.push('river');
   return { name, description: parts.join(' · ') };
 }
 
+// Inspector text for a city tile: name, size, what it is building, and its buildings.
+function cityInfo(city, tile, x, y) {
+  const built = (city.buildings ?? [])
+    .map(id => IMPROVEMENTS[id]?.name ?? WONDERS[id]?.name ?? id)
+    .join(', ') || 'none';
+  const prod = UNITS[city.production] ? city.production
+    : (IMPROVEMENTS[city.production]?.name ?? WONDERS[city.production]?.name ?? city.production);
+  const parts = [
+    `Size ${city.size}`,
+    `building ${prod} (${city.shields}/${buildCost(city.production)}▪)`,
+    `food ${city.food}/${foodBox(city.size)}`,
+    `improvements: ${built}`,
+    `on ${terrainInfo(tile, x, y).name}`,
+  ];
+  return { name: `${city.name}`, description: parts.join(' · ') };
+}
+
 export const Civ1Game = {
-  // Units plus cities (cities weighted heavily — losing your last city loses the
-  // game). Heuristic leaf for the generic ObscuroAgent; see games/evalHelpers.js.
-  evaluateState: (state, playerId) =>
-    unitStrengthEval(state, playerId) + sidesEval(state.cities, playerId, () => 100),
+  // Units, plus cities weighted heavily (losing your last city loses the game),
+  // plus the economy the new systems create: bigger cities, more advances, and a
+  // treasury are all progress the search should value. Heuristic leaf for the
+  // generic ObscuroAgent; see games/evalHelpers.js.
+  evaluateState: (state, playerId) => {
+    let score = unitStrengthEval(state, playerId)
+      + sidesEval(state.cities, playerId, c => 100 + (c.size ?? 1) * 20 + (c.buildings?.length ?? 0) * 8);
+    const civ = state.gameSpecific?.civ?.[playerId];
+    if (civ) score += civ.techs.length * 15 + civ.gold * 0.2;
+    return score;
+  },
   name: 'Civ1',
   // defaultTileSize: the map runs to 100x60 tiles, far more than fits legibly on the stage
   // at once — start at the original game's rough tile scale and let the player pan/zoom.
-  ui: { hideGridLines: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true, defaultTileSize: 40 },
+  // moveQueue: the goto-queue mechanic (games/moveQueue.js) — on by default for every game,
+  // stated here explicitly since civ1 is the one that actually wires it up (queue-move/
+  // queue-pop, see getLegalActions/applyActions above).
+  ui: { hideGridLines: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true, defaultTileSize: 40, moveQueue: true },
   scenarios: [
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
     // Hand-built fixed maps (see fixedMaps.js).
@@ -638,7 +838,13 @@ export const Civ1Game = {
           bgImage: tile.terrain === 'ocean' ? null : (tile.terrain ? terrainSprite(x, y, tile.terrain) : null),
           coastSprite: tile.terrain === 'ocean' ? coastSprite(x, y) : null,
           // Rivers first, then any road segments, painted in order over the terrain.
-          overlayImage: [...(tile.hasRiver ? [riverSprite(x, y)] : []), ...roadSprites(x, y)],
+          // Rivers, then road segments, then this square's special resource (if any) —
+          // painted in order over the terrain.
+          overlayImage: [
+            ...(tile.hasRiver ? [riverSprite(x, y)] : []),
+            ...roadSprites(x, y),
+            ...(specialAt(x, y, tile.terrain) ? [`${BASE}/terrain/${specialAt(x, y, tile.terrain).icon}`] : []),
+          ],
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,
           // All ocean tiles paint deep flat colour — coastSprite (above) draws the
           // land-facing shoreline art from coast_*.png on top, so shorelines
@@ -646,8 +852,13 @@ export const Civ1Game = {
           color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
           // "Coast" is purely a rendering distinction (shallow-water shading); the
           // engine terrain is always 'ocean', so inspection reports it as Ocean.
-          terrain: terrainInfo(tile),
+          // On a city tile the inspector shows the city (name, size, buildings) instead.
+          terrain: city ? cityInfo(city, tile, x, y) : terrainInfo(tile, x, y),
           hp: u?.hp, maxHp: u?.maxHp,
+          // Moves left this turn (drives the MP bar) and any queued future waypoints
+          // (drives the goto-path overlay drawn for every unit — see App.vue/HtmlLayer).
+          mp: u?.movesLeft, maxMp: u ? UNITS[u.type].moves : undefined,
+          queue: u?.queue?.length ? u.queue : null,
         });
       }
     }

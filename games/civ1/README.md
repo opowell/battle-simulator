@@ -99,24 +99,36 @@ All units have `firepower: 1` (damage per combat hit). Combat continues round-by
 
 Roads halve movement cost on the tile.
 
+Roads add trade on desert/plains/grassland; irrigation adds +1 food; mines add shields on hills/mountains.
+
 ## Actions
 
 | Type | Notes |
 |---|---|
 | `move` | Move unit up to its movement range |
 | `attack` | Attack adjacent enemy unit; combat is probabilistic |
-| `found-city` | Settler founds a city at current position |
-| `build-road` | Settler builds a road on current tile |
+| `found-city` | Settler founds a city at current position (first city gets the Palace) |
+| `build-road` / `irrigate` / `build-mine` / `clear-terrain` | Settler terrain improvements |
+| `set-production` | Set a city to build a unit, improvement, or wonder (tech-gated) |
+| `set-research` | Choose the advance to research next |
+| `set-tax` | Set the tax/science split (rest of trade goes to science) |
+| `change-government` | Start a revolution toward a new government (2-turn Anarchy) |
 | `skip-unit` | Pass for this unit |
-| `end-turn` | End the player's turn; all units reset |
+| `end-turn` | Run the economy, then end the player's turn |
 
-## Special mechanics
+## Economy & growth systems
 
-- **Cities** — produce shields each turn; when accumulated shields reach a unit's cost, the unit spawns at the city
-- **Combat** — round-by-round; attacker wins each round with `P = ATK / (ATK + DEF × terrainBonus)`; loser takes 1 HP damage per round (firepower=1 for all Civ1 units); fight ends when either side reaches 0 HP
-- **City defense** — units defending a city tile gain +50% DEF
-- **Veteran status** — units that win combat may gain veteran status, granting +50% ATK and DEF
-- **Fog of war** — vision radius 2; `getVisibleState` hides unseen tiles and enemy units
+Data lives in `tech.js`, `improvements.js`, `governments.js`; the per-turn maths in
+`city.js` (single city) and `economy.js` (whole civilization).
+
+- **Population** — a city works its centre plus one tile per citizen from the 21-square "fat cross". Food feeds citizens (2 each); surplus fills a box of `(size+1)×10`, and filling it grows the city (a Granary keeps half; growth past size 8 needs an Aqueduct). A food deficit starves a citizen.
+- **Trade** — split into tax (gold), luxuries, and science by the government's rates, after corruption (worse far from the capital). Marketplace/Bank boost tax & luxury; Library/University and the science wonders boost science.
+- **Technology** — the full 68-advance tree with prerequisites; accumulated science buys the current research target, whose cost rises with advances known.
+- **City improvements** — 21 buildings (Temple → Mfg. Plant) plus 22 Wonders of the World, each gated by an advance and (for buildings) a gold upkeep. Wonders are one per world with civ-wide or one-shot effects.
+- **Happiness** — citizens beyond a baseline turn unhappy; temples, colosseums, cathedrals, luxuries, martial law and wonders pacify them. If unhappy outnumber happy the city falls into **civil disorder** and produces nothing.
+- **Governments** — Despotism → Monarchy / Communism / Republic / Democracy, each with its own tax cap, corruption, trade bonus, and martial-law/unhappiness rules. Despotism/Anarchy dock 1 from any tile yielding 3+ (the Pyramids cancel this).
+- **Combat** — round-by-round; attacker wins each round with `P = ATK / (ATK + DEF × terrainBonus)`; loser takes 1 HP per round; fight ends at 0 HP. Defending a city gives +50% DEF; City Walls / Great Wall add more.
+- **Fog of war** — vision radius 2; `getVisibleState` hides unseen tiles and enemy units.
 
 ## Win conditions
 

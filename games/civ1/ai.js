@@ -12,7 +12,7 @@
 
 import { UNITS } from './units.js';
 import { getCombatStrengths } from './combat.js';
-import { chebyshevWrapped } from './Civ1Game.js';
+import { chebyshevWrapped, BUILDABLE } from './Civ1Game.js';
 
 // Freeciv README.AI: amortize(benefit, delay) = benefit * ((MORT-1)/MORT)^delay,
 // discounting a future payoff to its present value (MORT=24 ~ 4.3% per turn).
@@ -115,13 +115,132 @@ export function makeGreedyAgent({ id = 'greedy' } = {}) {
   };
 }
 
-export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB } = {}) {
+// How many cities to aim for before production swings from settlers to military.
+// Freeciv's AI plays "small-pox" — many small cities — and expansion compounds,
+// so this is deliberately not small.
+const CITY_TARGET = 6;
+
+// Minimum gap between our own cities, in turns of movement. Cities founded on the
+// capital's doorstep add nothing; Civ1's workable radius is ~2 tiles either way.
+const MIN_CITY_SPACING = 4;
+
+/**
+ * Production choice, in the shape of Freeciv's military_advisor_choose_build:
+ * cover the defenders first, and only shop for offense once home is safe. The
+ * attacker pick uses their first-approximation heuristic, attack_power * speed,
+ * per shield spent.
+ */
+// Economic buildings worth queueing once expansion is under way, best first. The
+// agent builds the first of these the city can build and does not already have.
+const IMPROVEMENT_PRIORITY = ['temple', 'granary', 'marketplace', 'library', 'aqueduct', 'bank', 'university', 'city-walls', 'colosseum', 'factory'];
+
+function chooseProduction(state, myId, city, prodActions, cityTarget) {
+  const items = new Set(prodActions.map(a => a.item));
+  const pick = id => prodActions.find(a => a.item === id) ?? null;
+
+  // Cover the defenders first: is a real defensive unit standing on the city?
+  const defended = state.units.some(
+    u => u.alive && u.ownerId === myId && u.type !== 'settlers' && (UNITS[u.type]?.defense ?? 0) > 0 &&
+      u.position.x === city.position.x && u.position.y === city.position.y
+  );
+  if (!defended) {
+    for (const d of ['musketeers', 'phalanx', 'militia']) if (items.has(d)) return pick(d);
+  }
+
+  // Expand while below the city target (only worth a settler once the city can spare
+  // the population).
+  const myCities = state.cities.filter(c => c.ownerId === myId).length;
+  const settlersOut = state.units.filter(u => u.alive && u.ownerId === myId && u.type === 'settlers').length;
+  if (myCities + settlersOut < cityTarget && items.has('settlers') && city.size >= 2) return pick('settlers');
+
+  // Invest surplus production in the best economic building the city still lacks.
+  for (const b of IMPROVEMENT_PRIORITY) {
+    if (b === 'temple' && city.size < 3) continue;
+    if (b === 'aqueduct' && city.size < 6) continue;
+    if (items.has(b)) return pick(b);
+  }
+
+  // Otherwise the best attacker available: attack_power * speed, per shield.
+  let best = null, bestScore = -Infinity;
+  for (const item of items) {
+    const s = UNITS[item];
+    if (!s || s.attack <= 0) continue;
+    const score = (s.attack * s.moves) / s.cost;
+    if (score > bestScore) { bestScore = score; best = item; }
+  }
+  return best ? pick(best) : null;
+}
+
+// Advances the agent steers toward, in order: an economy-and-government backbone
+// followed by the ancient military line. Anything not listed is picked only once
+// these are exhausted.
+const RESEARCH_PRIORITY = [
+  'bronze-working', 'ceremonial-burial', 'code-of-laws', 'monarchy', 'pottery',
+  'currency', 'trade', 'writing', 'literacy', 'masonry', 'construction',
+  'iron-working', 'mathematics', 'the-wheel', 'the-republic', 'philosophy',
+  'university', 'banking', 'the-corporation', 'gunpowder', 'invention',
+];
+
+function chooseResearch(researchActions) {
+  const byTech = new Map(researchActions.map(a => [a.tech, a]));
+  for (const t of RESEARCH_PRIORITY) if (byTech.has(t)) return byTech.get(t);
+  return researchActions[0] ?? null;
+}
+
+export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cityTarget = CITY_TARGET } = {}) {
   return {
     id,
     chooseAction(state, legalActions) {
       const W = state.board.width;
       const myId = state.activePlayers[0];
       const unitById = new Map(state.units.map(u => [u.id, u]));
+
+      // ── Empire management: research target, government, tax rate ─────────
+      // Each of these is offered at most once per turn (the game caps it), so
+      // returning one here just spends one decision; it does not loop.
+      const research = chooseResearch(legalActions.filter(a => a.type === 'set-research'));
+      if (research) return research;
+
+      // Move up to Monarchy (then the Republic) as soon as it is available — a big
+      // jump over Despotism. Ignore the transient Anarchy while a revolution runs.
+      const gov = state.gameSpecific?.civ?.[myId]?.government;
+      const govActions = legalActions.filter(a => a.type === 'change-government');
+      if (gov && gov !== 'anarchy' && govActions.length) {
+        for (const target of ['republic', 'monarchy']) {
+          if (gov === target) break; // already at or past our preferred government
+          const a = govActions.find(x => x.government === target);
+          if (a) return a;
+        }
+      }
+
+      // Bias the treasury toward science (40% tax) once we have some gold buffer.
+      const gold = state.gameSpecific?.civ?.[myId]?.gold ?? 0;
+      const wantTax = gold > 80 ? 40 : 60;
+      const taxAction = legalActions.find(a => a.type === 'set-tax' && a.taxRate === wantTax);
+      if (taxAction) return taxAction;
+
+      // Run 20% luxuries once any of our cities is large enough to risk disorder;
+      // drop back to 0 when every city is small and content on its own.
+      const biggest = Math.max(0, ...state.cities.filter(c => c.ownerId === myId).map(c => c.size));
+      const wantLux = biggest >= 5 ? 20 : 0;
+      const luxAction = legalActions.find(a => a.type === 'set-luxury' && a.luxRate === wantLux);
+      if (luxAction) return luxAction;
+
+      // ── Production: cheap, and only offered once per city per turn ───────
+      const prodActions = legalActions.filter(a => a.type === 'set-production');
+      if (prodActions.length) {
+        const byCity = new Map();
+        for (const a of prodActions) {
+          if (!byCity.has(a.cityId)) byCity.set(a.cityId, []);
+          byCity.get(a.cityId).push(a);
+        }
+        for (const [cityId, acts] of byCity) {
+          const city = state.cities.find(c => c.id === cityId);
+          if (!city) continue;
+          const choice = chooseProduction(state, myId, city, acts, cityTarget);
+          if (choice) return choice;
+        }
+      }
 
       // ── Attack: only when the exchange pays for itself ──────────────────
       let bestAttack = null, bestWant = 0;
@@ -136,15 +255,66 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB } = 
       }
       if (bestAttack) return bestAttack;
 
+      // ── Garrison: one unit per city, and it stays there ──────────────────
+      // Production asks for a defender whenever a city is empty, so if every unit
+      // marches on the enemy the city is permanently undefended and the build queue
+      // never gets past defenders. Pin one unit per city before anything else moves.
+      const myCities = state.cities.filter(c => c.ownerId === myId);
+      const myUnits = state.units.filter(u => u.alive && u.ownerId === myId);
+      const garrison = new Map(); // unitId -> city position it is holding
+      const claimed = new Set();
+      for (const city of myCities) {
+        const onTile = myUnits.find(
+          u => !claimed.has(u.id) && u.position.x === city.position.x && u.position.y === city.position.y
+        );
+        const holder = onTile ?? myUnits
+          .filter(u => !claimed.has(u.id) && u.type !== 'settlers' && (UNITS[u.type]?.defense ?? 0) > 0)
+          .sort((a, b) => chebyshevWrapped(a.position, city.position, W) - chebyshevWrapped(b.position, city.position, W))[0];
+        if (holder) { garrison.set(holder.id, city.position); claimed.add(holder.id); }
+      }
+      for (const [unitId, cityPos] of garrison) {
+        const unit = unitById.get(unitId);
+        if (!unit) continue;
+        const atHome = unit.position.x === cityPos.x && unit.position.y === cityPos.y;
+        if (atHome) {
+          const skip = legalActions.find(a => a.type === 'skip-unit' && a.unitId === unitId);
+          if (skip) return skip;
+          continue;
+        }
+        const homeward = legalActions.filter(a => a.type === 'move' && a.unitId === unitId);
+        if (homeward.length) {
+          return homeward.reduce(
+            (best, m) => chebyshevWrapped(m.to, cityPos, W) < chebyshevWrapped(best.to, cityPos, W) ? m : best,
+          );
+        }
+      }
+
+      // ── Settle, but not on top of ourselves ─────────────────────────────
+      const myCityPositions = myCities.map(c => c.position);
+      const nearestOwnCity = pos => myCityPositions.reduce(
+        (d, c) => Math.min(d, chebyshevWrapped(pos, c, W)), Infinity,
+      );
       const found = legalActions.find(a => a.type === 'found-city');
-      if (found) return found;
+      if (found) {
+        const here = unitById.get(found.unitId)?.position;
+        if (here && nearestOwnCity(here) >= MIN_CITY_SPACING) return found;
+        // Too close to home — walk the settler outward instead of wasting it.
+        const settlerMoves = legalActions.filter(a => a.type === 'move' && a.unitId === found.unitId);
+        if (settlerMoves.length) {
+          return settlerMoves.reduce(
+            (best, m) => nearestOwnCity(m.to) > nearestOwnCity(best.to) ? m : best,
+          );
+        }
+        if (here && nearestOwnCity(here) > 1) return found; // boxed in; take what we can get
+      }
 
       // ── Move: close on the nearest target, in turns rather than tiles ────
       const enemies = state.units.filter(u => u.alive && u.ownerId !== myId);
       const enemyCities = state.cities.filter(c => c.ownerId !== myId);
       const targets = [...enemies.map(u => u.position), ...enemyCities.map(c => c.position)];
 
-      const moves = legalActions.filter(a => a.type === 'move');
+      // Garrisoned units are spoken for; everyone else advances.
+      const moves = legalActions.filter(a => a.type === 'move' && !garrison.has(a.unitId));
       if (moves.length && targets.length) {
         const byUnit = new Map();
         for (const m of moves) {

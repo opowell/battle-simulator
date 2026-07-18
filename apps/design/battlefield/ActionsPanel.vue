@@ -59,6 +59,16 @@ const activeMoney = computed(() => {
   return u?.money ?? null;
 });
 
+// The generic goto-queue mechanic (games/moveQueue.js, ui.moveQueue !== false by
+// default): once the selected unit has spent all its moves for the turn, tapping a
+// highlighted square queues a future move instead of moving right away — swap the
+// hint text to say so.
+const selectedUnitOutOfMoves = computed(() => {
+  if (!props.selectedId || props.ui?.moveQueue === false) return false;
+  const u = props.units.find(x => x.id === props.selectedId);
+  return u?.maxMp != null && (u?.mp ?? 0) === 0;
+});
+
 function fmtAction(action) {
   const t = action.type ?? '';
   if (t === 'move') {
@@ -82,8 +92,21 @@ function fmtAction(action) {
   if (t === 'punch')     return 'Punch…';
   if (t === 'buy')       return action.name ? `Buy ${action.name}` : `Buy ${action.item ?? ''}`;
   if (t === 'end-buy')   return 'Done Buying';
+  if (t === 'queue-pop') return 'Undo last queued move';
   if (t === 'crouch')    return 'Crouch';
   if (t === 'stand')     return 'Stand Up';
+  // Civ1 empire/settler actions.
+  if (t === 'set-production') return `Build ${action.item}`;
+  if (t === 'set-research')   return `Research ${action.tech}`;
+  if (t === 'set-tax')        return `Tax rate ${action.taxRate}%`;
+  if (t === 'set-luxury')     return `Luxuries ${action.luxRate}%`;
+  if (t === 'change-government') return `Revolution → ${action.government}`;
+  if (t === 'found-city')     return 'Found City';
+  if (t === 'build-road')     return 'Build Road';
+  if (t === 'irrigate')       return 'Irrigate';
+  if (t === 'build-mine')     return 'Build Mine';
+  if (t === 'clear-terrain')  return 'Clear Terrain';
+  if (t === 'skip-unit')      return 'Skip Unit';
   if (t === 'end-turn')  return action.direction ? `End Turn · Face ${action.direction}` : 'End Turn';
   if (t === 'end-phase') return 'End Phase';
   if (t === 'pass')      return 'Pass';
@@ -134,7 +157,7 @@ function fmtAction(action) {
       </template>
       <template v-else>
         <div v-if="unitMoves.length && !ui?.aimedActionTypes?.includes('move')" class="mono ap-hint">
-          Tap a highlighted square to move
+          {{selectedUnitOutOfMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
         </div>
         <div class="ap-list">
           <button v-for="(action, i) in aimedActions" :key="i"
