@@ -130,9 +130,16 @@ const MIN_CITY_SPACING = 4;
  * attacker pick uses their first-approximation heuristic, attack_power * speed,
  * per shield spent.
  */
-// Economic buildings worth queueing once expansion is under way, best first. The
-// agent builds the first of these the city can build and does not already have.
-const IMPROVEMENT_PRIORITY = ['temple', 'granary', 'marketplace', 'library', 'aqueduct', 'bank', 'university', 'city-walls', 'colosseum', 'factory'];
+// Economic buildings and wonders worth queueing once expansion is under way, best
+// first. The agent builds the first of these the city can build and does not already
+// have. Wonders are interleaved after the cheap staples: they are dear, so only a city
+// with spare production and the right advance ever reaches them.
+const IMPROVEMENT_PRIORITY = [
+  'temple', 'granary', 'marketplace', 'library',
+  'pyramids', 'hanging-gardens', 'great-library',
+  'aqueduct', 'bank', 'university', 'copernicus', 'michelangelo',
+  'city-walls', 'colosseum', 'factory',
+];
 
 function chooseProduction(state, myId, city, prodActions, cityTarget) {
   const items = new Set(prodActions.map(a => a.item));
