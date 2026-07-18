@@ -181,7 +181,12 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
       } else if (UNITS[production]) {
         const spawn = findAdjacentFree(city.position, state.board, units);
         if (spawn) {
-          units = [...units, { ...makeUnit(`u${idCounter++}`, ownerId, production, spawn.x, spawn.y, 0), homeCityId: city.id }];
+          const u = { ...makeUnit(`u${idCounter++}`, ownerId, production, spawn.x, spawn.y, 0), homeCityId: city.id };
+          // Barracks make every unit a veteran; the Lighthouse does the same for ships.
+          if (buildings.includes('barracks') || (UNITS[production].domain === 'sea' && ctx.wonderEffects.has('naval-veteran'))) {
+            u.attrs = { ...u.attrs, veteran: true };
+          }
+          units = [...units, u];
           shields -= cost;
         }
       }
@@ -216,6 +221,19 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
   // Apply any free advances granted by finishing a wonder this turn (Darwin's Voyage).
   for (const ev of events) if (ev.type === 'free-tech') { const t = pickResearch(known); if (t) known.add(t); }
 
+  // Leonardo's Workshop upgrades one obsolete unit per turn to its successor, once the
+  // successor's advance is known (the original quietly modernises the whole army; one
+  // a turn keeps it cheap and visible).
+  if (ctx.wonderEffects.has('auto-upgrade')) {
+    const idx = units.findIndex(u => u.alive && u.ownerId === ownerId
+      && UNIT_UPGRADE[u.type] && known.has(UNITS[UNIT_UPGRADE[u.type]].tech));
+    if (idx >= 0) {
+      const to = UNIT_UPGRADE[units[idx].type];
+      units = units.slice();
+      units[idx] = { ...units[idx], type: to, hp: UNITS[to].hp, maxHp: UNITS[to].hp };
+    }
+  }
+
   civ.techs = [...known];
   civ.bulbs = Math.max(0, bulbs);
   civ.gold = Math.max(0, Math.round(gold));
@@ -232,6 +250,15 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
   const cleanCities = cities.map(({ _out, ...c }) => c);
   return { cities: cleanCities, units, civ, nextId: idCounter, events };
 }
+
+// Successor unit for Leonardo's Workshop upgrades — old type -> the modern unit of the
+// same role. Each successor is gated by its own advance (checked at upgrade time).
+const UNIT_UPGRADE = {
+  militia: 'phalanx', phalanx: 'musketeers', musketeers: 'riflemen', riflemen: 'infantry',
+  archers: 'legion', legion: 'musketeers', catapult: 'cannon', cannon: 'artillery',
+  cavalry: 'knights', chariot: 'knights', knights: 'cav-modern', crusaders: 'cav-modern',
+  trireme: 'sail', sail: 'frigate', frigate: 'ironclad', ironclad: 'destroyer',
+};
 
 // Effects that fire the moment a wonder is completed (as opposed to the ongoing
 // civ-wide effects handled in city.js). Darwin's Voyage yields two free advances.

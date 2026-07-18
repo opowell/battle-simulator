@@ -1,5 +1,6 @@
 import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
+import { wonderEffectsFor } from './improvements.js';
 
 export function getCombatStrengths(attacker, defender, state) {
   const atkStats = UNITS[attacker.type];
@@ -14,11 +15,17 @@ export function getCombatStrengths(attacker, defender, state) {
     if (terrainDef) def *= (1 + terrainDef.defBonus);
   }
 
-  // City defense: +50% (city walls not modeled separately)
-  const inCity = state.cities.some(
+  // City defense: +50% base. City Walls (or the Great Wall, which acts as walls in
+  // every city) triple the defence against land attackers, as in the original.
+  const city = state.cities.find(
     c => c.position.x === defender.position.x && c.position.y === defender.position.y
   );
-  if (inCity) def *= 1.5;
+  if (city) {
+    def *= 1.5;
+    const walls = (city.buildings ?? []).includes('city-walls')
+      || wonderEffectsFor(state.cities, city.ownerId).has('walls-all');
+    if (walls && atkStats.domain === 'land') def *= 3;
+  }
 
   // Veteran bonus: +50% to both
   if (attacker.attrs?.veteran) att *= 1.5;

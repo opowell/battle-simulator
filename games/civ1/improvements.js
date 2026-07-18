@@ -83,3 +83,15 @@ export function ownerHasEffect(wonderSet, effect) {
   for (const id of wonderSet) if (WONDERS[id]?.effect === effect) return true;
   return false;
 }
+
+// The set of wonder effects an owner currently has, read straight from their cities'
+// buildings. A light helper for callers (combat, movement, fog) that only need the
+// effects and not the full economy context.
+export function wonderEffectsFor(cities, ownerId) {
+  const s = new Set();
+  for (const c of cities ?? []) {
+    if (c.ownerId !== ownerId) continue;
+    for (const b of c.buildings ?? []) { const e = WONDERS[b]?.effect; if (e) s.add(e); }
+  }
+  return s;
+}

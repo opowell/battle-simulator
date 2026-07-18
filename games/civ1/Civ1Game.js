@@ -9,7 +9,7 @@ import { pickCoastTile } from './coastSprites.js';
 import { specialAt, tileYield } from './specials.js';
 import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
 import { TECHS, researchableTechs } from './tech.js';
-import { IMPROVEMENTS, WONDERS } from './improvements.js';
+import { IMPROVEMENTS, WONDERS, wonderEffectsFor } from './improvements.js';
 import { GOVERNMENTS, availableGovernments } from './governments.js';
 import { foodBox } from './city.js';
 import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy } from './economy.js';
@@ -299,9 +299,14 @@ function applyActions(state, playerActions, rng = Math.random) {
     const nextPlayerId = playerIds[nextIdx];
     const newTurn = nextIdx === 0 ? state.turnNumber + 1 : state.turnNumber;
 
+    // Refresh the next player's units. Magellan's Expedition grants +2 movement to
+    // their ships.
+    const nextEffects = wonderEffectsFor(cities, nextPlayerId);
+    const navalBonus = nextEffects.has('naval-move') ? 2 : 0;
     units = units.map(u => {
       if (u.ownerId === nextPlayerId) {
-        return { ...u, movesLeft: UNITS[u.type].moves };
+        const base = UNITS[u.type].moves + (UNITS[u.type].domain === 'sea' ? navalBonus : 0);
+        return { ...u, movesLeft: base };
       }
       return u;
     });
@@ -631,10 +636,18 @@ function getVisibleState(state, playerId) {
   const canSee = pos =>
     myUnits.some(m  => chebyshevWrapped(m.position, pos, W) <= VISION) ||
     myCities.some(c => chebyshevWrapped(c.position, pos, W) <= VISION);
+
+  // Wonder effects on vision: the Apollo Program lifts the fog entirely (the whole
+  // map is known); Marco Polo's Embassy gives an embassy with every rival, so all
+  // their cities are visible even in the dark.
+  const effects = wonderEffectsFor(state.cities, playerId);
+  if (effects.has('reveal-map')) return state;
+  const embassy = effects.has('embassy-all');
+
   return {
     ...state,
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
-    cities: state.cities.filter(c => c.ownerId  === playerId || canSee(c.position)),
+    cities: state.cities.filter(c => c.ownerId  === playerId || embassy || canSee(c.position)),
   };
 }
 
