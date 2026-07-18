@@ -25,7 +25,7 @@
 // per-enemy possible-set cap and fades as the round resets.
 // ---------------------------------------------------------------------------
 
-import { isWalkable, getReachable } from './map.js';
+import { isWalkable, getReachable, perimeterBlockShapes } from './map.js';
 import { num, tilePos } from '../coord.js';
 import { euclidean, seesPoint } from '../vision.js';
 import { segmentClearOf } from '../terrainShapes.js';
@@ -37,11 +37,14 @@ import { SMOKE_RADIUS } from './weapons.js';
 // authored wall shapes) and smoke clouds.
 export const CS_VISION = { range: 4, fovDegrees: 90, metric: euclidean };
 
-// The opaque shapes that block CS sight: the map's authored walls plus every active smoke
-// cloud (an oval of SMOKE_RADIUS). Used both server-side and by the design UI's fog veil,
-// so what the veil hides is exactly what the engine hides.
+// The opaque shapes that block CS sight: the map border, its authored walls, and every
+// active smoke cloud (an oval of SMOKE_RADIUS). Used both server-side and by the design
+// UI's fog veil, so what the veil hides is exactly what the engine hides. The border strips
+// matter because the map's perimeter wall is render-only (see map.js's perimeterWallShapes)
+// — without them here, sight would carry on past the map edge into the void instead of
+// stopping at it like movement already does (isWalkableContinuous).
 export function csLosBlockers(map, smokeZones = []) {
-  const out = [];
+  const out = [...perimeterBlockShapes(map.width, map.height)];
   for (const s of map.terrainShapes ?? [])
     if (s.tile === 'wall') out.push({ shape: s.shape, x: s.x, y: s.y, w: s.w, h: s.h });
   for (const sz of smokeZones) {

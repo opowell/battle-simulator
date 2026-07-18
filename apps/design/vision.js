@@ -354,12 +354,27 @@ function shapeExit(ox, oy, ang, shapes, R, mode) {
   return { dist: cur, gov: { kind: 'shape', shape: govShape, entry: false } };
 }
 
-// Exact boundary point along `ang` on a known governing element.
-function shapeBoundaryPoint(ox, oy, ang, gov, R) {
+// Exact boundary point along `ang` on a known governing element. `shapes`/`mode`, when
+// given, are a safety net: two shapes that share a corner (e.g. two crates butted together)
+// seed the identical event angle, but float rounding can still leave a hairline-thin gap
+// whose governor was sampled on one side of the corner and no longer actually bounds the ray
+// at the OTHER side's exact angle (`iv` comes back null there). Blindly falling back to R
+// then would render that sliver as if sight carried on to the far range circle — a visible
+// "leak" through the shapes' shared corner. Recomputing the true nearest occluder for that
+// one ray instead keeps the boundary pinned to whatever is actually closest.
+function shapeBoundaryPoint(ox, oy, ang, gov, R, shapes, mode) {
   const dx = Math.cos(ang), dy = Math.sin(ang);
   if (gov.kind === 'range') return { x: ox + dx * R, y: oy + dy * R };
   const iv = rayShapeIv(ox, oy, dx, dy, gov.shape);
-  let t = iv ? (gov.entry ? iv.tin : iv.tout) : R;
+  let t;
+  if (iv) {
+    t = gov.entry ? iv.tin : iv.tout;
+  } else if (shapes && mode) {
+    const fresh = shapeExit(ox, oy, ang, shapes, R, mode);
+    t = fresh ? fresh.dist : R;
+  } else {
+    t = R;
+  }
   t = Math.min(Math.max(t, 0), R);
   return { x: ox + dx * t, y: oy + dy * t };
 }
@@ -485,20 +500,20 @@ function shapeOccludedRegion(los, ox, oy, range, full, heading, fovRad) {
         emitGap(n0, nm, depth + 1); emitGap(nm, n1, depth + 1); return;
       }
     }
-    const ps = shapeBoundaryPoint(ox, oy, aStart + n0, gov, range);
+    const ps = shapeBoundaryPoint(ox, oy, aStart + n0, gov, range, shapes, mode);
     points.push({ x: ps.x, y: ps.y, arc: 0, large: 0 });
     if (gov.kind === 'range') {
-      const pe = shapeBoundaryPoint(ox, oy, aStart + n1, gov, range);
+      const pe = shapeBoundaryPoint(ox, oy, aStart + n1, gov, range, shapes, mode);
       points.push({ x: pe.x, y: pe.y, arc: 1, large: (n1 - n0) > Math.PI ? 1 : 0 });
     } else if (gov.shape.shape === 'oval') {
       // Tessellate the oval-bounded edge into exact on-curve points.
       const steps = Math.max(1, Math.ceil((n1 - n0) / 0.05));
       for (let k = 1; k <= steps; k++) {
-        const p = shapeBoundaryPoint(ox, oy, aStart + n0 + (n1 - n0) * k / steps, gov, range);
+        const p = shapeBoundaryPoint(ox, oy, aStart + n0 + (n1 - n0) * k / steps, gov, range, shapes, mode);
         points.push({ x: p.x, y: p.y, arc: 0, large: 0 });
       }
     } else {
-      const pe = shapeBoundaryPoint(ox, oy, aStart + n1, gov, range);
+      const pe = shapeBoundaryPoint(ox, oy, aStart + n1, gov, range, shapes, mode);
       points.push({ x: pe.x, y: pe.y, arc: 0, large: 0 });
     }
   };

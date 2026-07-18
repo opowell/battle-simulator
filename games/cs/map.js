@@ -58,6 +58,18 @@ const CS_SHAPE_STYLES = {
 // conveyed entirely by the shapes, so the raster grid stays a plain backdrop.
 export const CS_SHAPE_FLOOR = '#c8c0a8';
 
+// The 4 border strips as bare LOS/render geometry (shape/x/y/w/h only) — shared by the
+// render helper below and belief.js's csLosBlockers, which needs the same strips as sight
+// occluders so vision (like movement) can't cross the map edge.
+export function perimeterBlockShapes(W, H) {
+  return [
+    { shape: 'rect', x: 0,     y: 0,     w: W, h: 1 },
+    { shape: 'rect', x: 0,     y: H - 1, w: W, h: 1 },
+    { shape: 'rect', x: 0,     y: 0,     w: 1, h: H },
+    { shape: 'rect', x: W - 1, y: 0,     w: 1, h: H },
+  ];
+}
+
 // The map border is always solid (buildBase stamps 'wall' around the edge), but that was
 // never given a render shape — only whatever a map's own terrain drew showed up, so the
 // edge looked like open background. Draw it explicitly so every shape-based map reads as
@@ -66,12 +78,7 @@ export const CS_SHAPE_FLOOR = '#c8c0a8';
 function perimeterWallShapes(W, H) {
   const render = CS_SHAPE_STYLES.wall.render;
   const info   = { name: CS_SHAPE_STYLES.wall.name, description: CS_SHAPE_STYLES.wall.description, label: null };
-  return [
-    { shape: 'rect', x: 0,     y: 0,     w: W, h: 1, ...render, ...info },
-    { shape: 'rect', x: 0,     y: H - 1, w: W, h: 1, ...render, ...info },
-    { shape: 'rect', x: 0,     y: 0,     w: 1, h: H, ...render, ...info },
-    { shape: 'rect', x: W - 1, y: 0,     w: 1, h: H, ...render, ...info },
-  ];
+  return perimeterBlockShapes(W, H).map(s => ({ ...s, ...render, ...info }));
 }
 
 function buildFromShapes(def) {
