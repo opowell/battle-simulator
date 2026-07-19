@@ -8,7 +8,7 @@
 
 import { UNITS } from './units.js';
 import { TECHS, researchableTechs, techCost } from './tech.js';
-import { IMPROVEMENTS, WONDERS, improvementDef } from './improvements.js';
+import { IMPROVEMENTS, WONDERS, SPACESHIP, improvementDef, wonderBuiltInWorld } from './improvements.js';
 import { GOVERNMENTS } from './governments.js';
 import { computeCity, cityMaintenance, foodBox } from './city.js';
 import { findAdjacentFree } from './map.js';
@@ -25,6 +25,9 @@ export function newCivState() {
     gold: 0,
     taxRate: 50,           // % of trade to the treasury
     luxRate: 0,            // % of trade to luxuries; science gets the rest
+    // Space race: parts accumulate here; once launched the ship travels to Alpha
+    // Centauri and its owner wins on arrival (see getResult in Civ1Game).
+    spaceship: { structural: 0, component: 0, module: 0, launched: false, arrivesTurn: null },
   };
 }
 
@@ -84,10 +87,16 @@ function claimedWonders(state) {
 export function buildableForCity(state, city, ctx = null) {
   const known = ctx ? ctx.techs : new Set(state.gameSpecific.civ[city.ownerId].techs);
   const has = new Set(city.buildings ?? []);
+  const manhattan = wonderBuiltInWorld(state.cities, 'manhattan');
+  const apollo = wonderBuiltInWorld(state.cities, 'apollo');
+  const ship = state.gameSpecific.civ[city.ownerId]?.spaceship;
   const out = [];
 
   for (const [id, u] of Object.entries(UNITS)) {
-    if (u.tech == null || known.has(u.tech)) out.push(id);
+    if (u.tech != null && !known.has(u.tech)) continue;
+    // The Nuclear missile also needs the Manhattan Project to exist somewhere.
+    if (u.special?.includes('nuclear') && !manhattan) continue;
+    out.push(id);
   }
   for (const [id, imp] of Object.entries(IMPROVEMENTS)) {
     if (has.has(id)) continue;
@@ -102,12 +111,21 @@ export function buildableForCity(state, city, ctx = null) {
     if (w.tech != null && !known.has(w.tech)) continue;
     out.push(id);
   }
+  // Spaceship parts: need the Apollo Program built, the part's advance, and room left
+  // on the ship for another of that part.
+  if (apollo) {
+    for (const [id, p] of Object.entries(SPACESHIP)) {
+      if (p.tech != null && !known.has(p.tech)) continue;
+      if (ship && ship[p.part] >= p.cap) continue;
+      out.push(id);
+    }
+  }
   return out;
 }
 
-// Cost in shields of any buildable id (unit, improvement, or wonder).
+// Cost in shields of any buildable id (unit, improvement, wonder, or spaceship part).
 export function buildCost(id) {
-  return UNITS[id]?.cost ?? IMPROVEMENTS[id]?.cost ?? WONDERS[id]?.cost ?? 10;
+  return UNITS[id]?.cost ?? IMPROVEMENTS[id]?.cost ?? WONDERS[id]?.cost ?? SPACESHIP[id]?.cost ?? 10;
 }
 
 // Pick the next advance to research when none is chosen: the cheapest reachable one,
@@ -132,6 +150,7 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
   let bulbs = civ.bulbs;
 
   const wonderClaimed = claimedWonders(state);
+  const spaceship = { ...civ.spaceship };
   const events = [];
 
   const ownerCityIds = new Set(state.cities.filter(c => c.ownerId === ownerId).map(c => c.id));
@@ -178,6 +197,11 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
           }
           shields -= cost;
         }
+      } else if (SPACESHIP[production]) {
+        // A spaceship part: adds to the owner's ship (capped) rather than the city.
+        const part = SPACESHIP[production].part;
+        if (spaceship[part] < SPACESHIP[production].cap) spaceship[part] += 1;
+        shields -= cost;
       } else if (UNITS[production]) {
         const spawn = findAdjacentFree(city.position, state.board, units);
         if (spawn) {
@@ -237,6 +261,7 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
   civ.techs = [...known];
   civ.bulbs = Math.max(0, bulbs);
   civ.gold = Math.max(0, Math.round(gold));
+  civ.spaceship = spaceship;
 
   // Revolution countdown: after the anarchy period the pending government takes hold.
   if (civ.anarchyTurns > 0) {

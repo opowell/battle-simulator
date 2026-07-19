@@ -45,6 +45,12 @@ export const UNITS = {
   paratroopers:{ attack:6,  defense:4,  moves:1, hp:20, firepower:1, cost:60,  domain:'land', tech:'the-corporation',  special:['paradrop'] },
   marines:     { attack:8,  defense:5,  moves:1, hp:20, firepower:1, cost:60,  domain:'land', tech:'combustion',       special:['amphibious'] },
 
+  // ── Missile ────────────────────────────────────────────────────────────────
+  // The Nuclear missile: buildable only once the Manhattan Project exists (checked in
+  // economy.js), one-use, and detonates over its target destroying everything in the
+  // blast (see the 'attack' handler in Civ1Game.js). Domain 'air' so it flies to range.
+  nuclear:     { attack:99, defense:0,  moves:16, hp:10, firepower:1, cost:160, domain:'air', tech:'rocketry',         special:['nuclear'] },
+
   // ── Air ──────────────────────────────────────────────────────────────────
   fighter:     { attack:4,  defense:2,  moves:10, hp:20, firepower:1, cost:60,  domain:'air', tech:'flight',           special:['intercept'] },
   bomber:      { attack:12, defense:1,  moves:8,  hp:20, firepower:1, cost:120, domain:'air', tech:'advanced-flight',  special:['strategic-bomb'] },

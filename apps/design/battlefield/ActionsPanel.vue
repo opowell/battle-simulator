@@ -8,6 +8,9 @@ const props = defineProps({
   activeUnitId:     { type: String, default: null },
   ui:               Object,
   unitMoves:        { type: Array, default: () => [] },
+  // Whether unitMoves are 'queue-move' actions rather than 'move' — see
+  // Battlefield.vue's queuingMoves (games/moveQueue.js).
+  queuingMoves:     { type: Boolean, default: false },
   displayedActions: { type: Array, default: () => [] },
   pendingPlayerId:  { type: String, default: null },
   liveState:        Object,
@@ -59,16 +62,6 @@ const activeMoney = computed(() => {
   return u?.money ?? null;
 });
 
-// The generic goto-queue mechanic (games/moveQueue.js, ui.moveQueue !== false by
-// default): once the selected unit has spent all its moves for the turn, tapping a
-// highlighted square queues a future move instead of moving right away — swap the
-// hint text to say so.
-const selectedUnitOutOfMoves = computed(() => {
-  if (!props.selectedId || props.ui?.moveQueue === false) return false;
-  const u = props.units.find(x => x.id === props.selectedId);
-  return u?.maxMp != null && (u?.mp ?? 0) === 0;
-});
-
 function fmtAction(action) {
   const t = action.type ?? '';
   if (t === 'move') {
@@ -101,6 +94,7 @@ function fmtAction(action) {
   if (t === 'set-tax')        return `Tax rate ${action.taxRate}%`;
   if (t === 'set-luxury')     return `Luxuries ${action.luxRate}%`;
   if (t === 'change-government') return `Revolution → ${action.government}`;
+  if (t === 'launch-spaceship') return '🚀 Launch Spaceship';
   if (t === 'found-city')     return 'Found City';
   if (t === 'build-road')     return 'Build Road';
   if (t === 'irrigate')       return 'Irrigate';
@@ -157,7 +151,7 @@ function fmtAction(action) {
       </template>
       <template v-else>
         <div v-if="unitMoves.length && !ui?.aimedActionTypes?.includes('move')" class="mono ap-hint">
-          {{selectedUnitOutOfMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
+          {{queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
         </div>
         <div class="ap-list">
           <button v-for="(action, i) in aimedActions" :key="i"

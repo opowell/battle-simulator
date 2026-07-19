@@ -9,7 +9,7 @@ import { pickCoastTile } from './coastSprites.js';
 import { specialAt, tileYield } from './specials.js';
 import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
 import { TECHS, researchableTechs } from './tech.js';
-import { IMPROVEMENTS, WONDERS, wonderEffectsFor } from './improvements.js';
+import { IMPROVEMENTS, WONDERS, SPACESHIP, SPACESHIP_MIN, wonderEffectsFor, wonderBuiltInWorld } from './improvements.js';
 import { GOVERNMENTS, availableGovernments } from './governments.js';
 import { foodBox } from './city.js';
 import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy } from './economy.js';
@@ -54,6 +54,7 @@ const UNIT_IMAGES = {
   fighter:       `${BASE}/units/fighter`,
   bomber:        `${BASE}/units/bomber`,
   helicopter:    `${BASE}/units/combat_5`,
+  nuclear:       `${BASE}/units/nuclear`,
   trireme:       `${BASE}/units/trireme`,
   sail:          `${BASE}/units/sail`,
   frigate:       `${BASE}/units/frigate`,
@@ -219,6 +220,11 @@ function getLegalActions(state, playerId) {
         if (g !== civ.government) actions.push({ type: 'change-government', government: g, unitId: '__player__' });
       }
     }
+    // Launch the spaceship once it has the minimum parts and hasn't already flown.
+    const ship = civ.spaceship;
+    if (ship && !ship.launched && spaceshipReady(ship)) {
+      actions.push({ type: 'launch-spaceship', unitId: '__player__' });
+    }
   }
 
   actions.push({ type: 'end-turn', unitId: '__player__' });
@@ -228,6 +234,20 @@ function getLegalActions(state, playerId) {
 // Terrain sets the settler's terraforming actions apply to.
 const IRRIGABLE_TERRAIN = new Set(['desert', 'grassland', 'plains', 'hills', 'swamp', 'tundra']);
 const MINEABLE_TERRAIN = new Set(['hills', 'mountains']);
+
+// A spaceship has enough of every part to launch.
+function spaceshipReady(ship) {
+  return ship.structural >= SPACESHIP_MIN.structural
+    && ship.component >= SPACESHIP_MIN.component
+    && ship.module >= SPACESHIP_MIN.module;
+}
+
+// Turns the ship takes to reach Alpha Centauri — faster with more propulsion
+// (components) and life support (modules) beyond the minimum.
+function spaceshipTravelTime(ship) {
+  const extra = (ship.component - SPACESHIP_MIN.component) + (ship.module - SPACESHIP_MIN.module);
+  return Math.max(5, 15 - extra);
+}
 
 // ── Movement (shared by the 'move' action and queued-waypoint execution) ──────
 
@@ -351,6 +371,33 @@ function applyActions(state, playerActions, rng = Math.random) {
     return { ...state, units, lastActions: playerActions };
   }
 
+  // ── nuclear strike ──────────────────────────────────────────────────────────
+  // A Nuclear missile detonates over its target: everything on that tile and the
+  // eight around it is destroyed and any city there loses half its population. The
+  // missile is consumed. SDI Defense in (or adjacent to) the blast intercepts it —
+  // the warhead is wasted with no damage.
+  if (action.type === 'attack' && UNITS[units.find(u => u.id === action.unitId)?.type]?.special.includes('nuclear')) {
+    const attacker = units.find(u => u.id === action.unitId);
+    const defender = units.find(u => u.id === action.targetId);
+    if (!attacker || !defender) return state;
+    const center = defender.position;
+    const inBlast = pos => wrapDX(pos.x, center.x, board.width) <= 1 && Math.abs(pos.y - center.y) <= 1;
+
+    const intercepted = cities.some(c => inBlast(c.position) && (c.buildings ?? []).includes('sdi-defense'));
+    if (intercepted) {
+      units = units.map(u => u.id === attacker.id ? { ...u, alive: false, hp: 0, movesLeft: 0 } : u);
+      return { ...state, units, lastActions: playerActions };
+    }
+
+    units = units.map(u => {
+      if (u.id === attacker.id) return { ...u, alive: false, hp: 0, movesLeft: 0 };
+      if (u.alive && inBlast(u.position)) return { ...u, alive: false, hp: 0 };
+      return u;
+    });
+    cities = cities.map(c => inBlast(c.position) ? { ...c, size: Math.max(1, Math.floor(c.size / 2)) } : c);
+    return { ...state, units, cities, lastActions: playerActions };
+  }
+
   // ── attack ────────────────────────────────────────────────────────────────
   if (action.type === 'attack') {
     const attacker = units.find(u => u.id === action.unitId);
@@ -454,6 +501,15 @@ function applyActions(state, playerActions, rng = Math.random) {
     return { ...state, lastActions: playerActions, gameSpecific: { ...state.gameSpecific, civ: { ...state.gameSpecific.civ, [playerId]: civ } } };
   }
 
+  // ── launch-spaceship ────────────────────────────────────────────────────────
+  if (action.type === 'launch-spaceship') {
+    const cur = state.gameSpecific.civ[playerId];
+    if (!cur.spaceship || cur.spaceship.launched || !spaceshipReady(cur.spaceship)) return state;
+    const spaceship = { ...cur.spaceship, launched: true, arrivesTurn: state.turnNumber + spaceshipTravelTime(cur.spaceship) };
+    const civ = { ...cur, spaceship };
+    return { ...state, lastActions: playerActions, gameSpecific: { ...state.gameSpecific, civ: { ...state.gameSpecific.civ, [playerId]: civ } } };
+  }
+
   // ── change-government (triggers a 2-turn revolution / Anarchy) ───────────────
   if (action.type === 'change-government') {
     const cur = state.gameSpecific.civ[playerId];
@@ -484,6 +540,17 @@ const CLEARS_TO = { forest: 'plains', jungle: 'grassland', swamp: 'grassland' };
 
 function getResult(state) {
   const playerIds = state.players.map(p => p.id);
+
+  // Space race: a launched spaceship that has reached Alpha Centauri wins — provided
+  // its owner still holds a capital (losing the capital destroys the ship).
+  for (const pid of playerIds) {
+    const ship = state.gameSpecific?.civ?.[pid]?.spaceship;
+    if (ship?.launched && state.turnNumber >= ship.arrivesTurn) {
+      const hasCapital = state.cities.some(c => c.ownerId === pid && (c.buildings ?? []).includes('palace'));
+      if (hasCapital) return { outcome: 'win', winnerId: pid, reason: 'space-race' };
+    }
+  }
+
   for (const pid of playerIds) {
     const hasCities = state.cities.some(c => c.ownerId === pid);
     const hasUnits  = state.units.some(u => u.alive && u.ownerId === pid);
@@ -508,7 +575,11 @@ function renderState(state) {
     const cityStr = ownCities.map(c => `${c.name}(${c.size})`).join(',') || 'none';
     const unitStr = alive.map(u => `${u.type}(${u.hp}hp)`).join(', ') || '—';
     const econ = civ ? ` | ${GOVERNMENTS[civ.government].name} gold=${civ.gold} techs=${civ.techs.length} researching=${civ.research ? (TECHS[civ.research]?.name ?? civ.research) : '—'}` : '';
-    return `${pid}: cities=${cityStr}${econ}\n    units: ${unitStr}`;
+    const ship = civ?.spaceship;
+    const shipStr = ship && (ship.launched || ship.structural + ship.component + ship.module > 0)
+      ? ` | spaceship ${ship.structural}S/${ship.component}C/${ship.module}M${ship.launched ? ` LAUNCHED→arrives T${ship.arrivesTurn}` : ''}`
+      : '';
+    return `${pid}: cities=${cityStr}${econ}${shipStr}\n    units: ${unitStr}`;
   };
 
   return [
@@ -629,13 +700,16 @@ function createInitialState(players, config = {}) {
 // ── Fog of war ────────────────────────────────────────────────────────────────
 
 function getVisibleState(state, playerId) {
-  const VISION = 2;
+  // Most units see only their 8 neighbours, as in the original; cities (bigger,
+  // garrisoned, elevated) see a little further.
+  const UNIT_VISION = 1;
+  const CITY_VISION = 2;
   const myUnits  = state.units.filter(u => u.alive && u.ownerId === playerId);
   const myCities = state.cities.filter(c => c.ownerId === playerId);
   const W = state.board.width;
   const canSee = pos =>
-    myUnits.some(m  => chebyshevWrapped(m.position, pos, W) <= VISION) ||
-    myCities.some(c => chebyshevWrapped(c.position, pos, W) <= VISION);
+    myUnits.some(m  => chebyshevWrapped(m.position, pos, W) <= UNIT_VISION) ||
+    myCities.some(c => chebyshevWrapped(c.position, pos, W) <= CITY_VISION);
 
   // Wonder effects on vision: the Apollo Program lifts the fog entirely (the whole
   // map is known); Marco Polo's Embassy gives an embassy with every rival, so all
@@ -700,7 +774,7 @@ function cityInfo(city, tile, x, y) {
     .map(id => IMPROVEMENTS[id]?.name ?? WONDERS[id]?.name ?? id)
     .join(', ') || 'none';
   const prod = UNITS[city.production] ? city.production
-    : (IMPROVEMENTS[city.production]?.name ?? WONDERS[city.production]?.name ?? city.production);
+    : (IMPROVEMENTS[city.production]?.name ?? WONDERS[city.production]?.name ?? SPACESHIP[city.production]?.name ?? city.production);
   const parts = [
     `Size ${city.size}`,
     `building ${prod} (${city.shields}/${buildCost(city.production)}▪)`,
@@ -729,7 +803,22 @@ export const Civ1Game = {
   // moveQueue: the goto-queue mechanic (games/moveQueue.js) — on by default for every game,
   // stated here explicitly since civ1 is the one that actually wires it up (queue-move/
   // queue-pop, see getLegalActions/applyActions above).
-  ui: { hideGridLines: true, freeSelection: true, showHpBars: true, dragToMove: true, showFacing: false, blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true, defaultTileSize: 40, moveQueue: true },
+  ui: {
+    hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
+    blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
+    defaultTileSize: 40, moveQueue: true,
+    // Health bars read as clutter on a strategy map at this zoom — off by default,
+    // toggleable from the menu's settings overlay (see games/civ1/gameOptions).
+    showHpBars: false,
+    // Matches the server's UNIT_VISION (see getVisibleState) — without this the
+    // client's default sight radius is 30% of the board's larger side, which both
+    // misrepresents what's actually fogged and, when a unit is selected, paints a
+    // huge lattice of per-tile borders that reads as a stray grid.
+    visionRange: 1,
+    // Coordinates aren't part of the original game's UI; hidden by default, toggle
+    // from the menu ("Show ruler").
+    showRuler: false,
+  },
   scenarios: [
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
     // Hand-built fixed maps (see fixedMaps.js).
@@ -875,6 +964,9 @@ export const Civ1Game = {
         });
       }
     }
-    return { width, height, cells };
+    // wrap: true tells the client the map is a horizontal cylinder (see wrapX above) —
+    // Battlefield's click-to-pan centres on any column instead of clamping near the
+    // east/west seam, and HtmlLayer draws duplicate columns there so panning stays seamless.
+    return { width, height, cells, wrap: true };
   },
 };

@@ -59,10 +59,11 @@ All units have `firepower: 1` (damage per combat hit). Combat continues round-by
 | `paratroopers` | 6 | 4 | 1 | 20 | 60 | `paradrop` |
 | `marines` | 8 | 5 | 1 | 20 | 60 | `amphibious` |
 
-### Air
+### Missile & Air
 
 | Type | ATK | DEF | Move | HP | Cost | Specials |
 |---|---|---|---|---|---|---|
+| `nuclear` | 99 | 0 | 16 | 10 | 160 | `nuclear` — needs the Manhattan Project; detonates over its target |
 | `fighter` | 4 | 2 | 10 | 20 | 60 | `intercept` |
 | `bomber` | 12 | 1 | 8 | 20 | 120 | `strategic-bomb` |
 | `helicopter` | 6 | 3 | 6 | 20 | 60 | `hover` |
@@ -113,6 +114,7 @@ Roads add trade on desert/plains/grassland; irrigation adds +1 food; mines add s
 | `set-research` | Choose the advance to research next |
 | `set-tax` | Set the tax/science split (rest of trade goes to science) |
 | `change-government` | Start a revolution toward a new government (2-turn Anarchy) |
+| `launch-spaceship` | Launch a spaceship that has the minimum parts toward Alpha Centauri |
 | `skip-unit` | Pass for this unit |
 | `end-turn` | Run the economy, then end the player's turn |
 
@@ -128,13 +130,16 @@ Data lives in `tech.js`, `improvements.js`, `governments.js`; the per-turn maths
 - **Happiness** — citizens beyond a baseline turn unhappy; temples, colosseums, cathedrals, luxuries, martial law and wonders pacify them. If unhappy outnumber happy the city falls into **civil disorder** and produces nothing.
 - **Governments** — Despotism → Monarchy / Communism / Republic / Democracy, each with its own tax cap, corruption, trade bonus, and martial-law/unhappiness rules. Despotism/Anarchy dock 1 from any tile yielding 3+ (the Pyramids cancel this).
 - **Combat** — round-by-round; attacker wins each round with `P = ATK / (ATK + DEF × terrainBonus)`; loser takes 1 HP per round; fight ends at 0 HP. Defending a city gives +50% DEF; City Walls / Great Wall add more.
+- **Nuclear weapons** — once the Manhattan Project exists, any civ can build the Nuclear missile. A strike wipes out every unit on the target tile and the eight around it and halves the target city; SDI Defense in the blast intercepts it. The missile is single-use.
+- **Space race** — after the Apollo Program is built, cities produce spaceship parts (Structural / Component / Module) that accumulate on the civ's ship. With the minimum parts it can be launched; it reaches Alpha Centauri after a travel time (shorter with more parts) and its owner wins on arrival — unless the capital is lost first, which destroys the ship.
 - **Fog of war** — vision radius 2; `getVisibleState` hides unseen tiles and enemy units.
 
 ## Win conditions
 
 | Outcome | Reason |
 |---|---|
-| Win | `conquest` — all opponent cities and units destroyed |
+| Win | `civilization-destroyed` — all opponent cities and units destroyed |
+| Win | `space-race` — your spaceship reaches Alpha Centauri |
 | Draw | `max-turns` |
 
 ## Run

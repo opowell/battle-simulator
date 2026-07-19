@@ -66,12 +66,32 @@ export const WONDERS = {
   'cure-for-cancer': { name: 'Cure for Cancer',         cost: 600, tech: 'genetic-engineering', effect: 'happy-all', happy: 1 },
 };
 
+// Spaceship parts. Unlike buildings these are not one-per-city — each completed part
+// adds to the owner's spaceship (economy.js tracks the running count in civ.spaceship).
+// Buildable only once the Apollo Program exists in the world and the part's advance is
+// known; `cap` limits how many of each a complete ship needs.
+export const SPACESHIP = {
+  'ss-structural': { name: 'Space Structural', cost: 80,  tech: 'space-flight',   part: 'structural', cap: 8 },
+  'ss-component':  { name: 'Space Component',  cost: 160, tech: 'superconductor', part: 'component',  cap: 6 },
+  'ss-module':     { name: 'Space Module',     cost: 320, tech: 'robotics',       part: 'module',     cap: 4 },
+};
+
+// Minimum parts a spaceship needs before it can be launched.
+export const SPACESHIP_MIN = { structural: 4, component: 3, module: 2 };
+
 // Combined lookup: given any buildable id return its definition and whether it is a
-// wonder. Units are not here — the caller checks UNITS separately.
+// wonder. Units and spaceship parts are not here — the caller checks those separately.
 export function improvementDef(id) {
   if (IMPROVEMENTS[id]) return { def: IMPROVEMENTS[id], wonder: false };
   if (WONDERS[id]) return { def: WONDERS[id], wonder: true };
   return null;
+}
+
+// Whether a specific wonder has been built anywhere in the world (wonders are unique,
+// but some — Manhattan Project, Apollo Program — unlock things for every civ).
+export function wonderBuiltInWorld(cities, wonderId) {
+  for (const c of cities ?? []) if ((c.buildings ?? []).includes(wonderId)) return true;
+  return false;
 }
 
 export const ALL_IMPROVEMENT_IDS = Object.keys(IMPROVEMENTS);

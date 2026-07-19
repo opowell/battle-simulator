@@ -139,6 +139,8 @@ const IMPROVEMENT_PRIORITY = [
   'pyramids', 'hanging-gardens', 'great-library',
   'aqueduct', 'bank', 'university', 'copernicus', 'michelangelo',
   'city-walls', 'colosseum', 'factory',
+  // Endgame: race to build and stock the spaceship once Apollo is up.
+  'apollo', 'ss-structural', 'ss-component', 'ss-module',
 ];
 
 function chooseProduction(state, myId, city, prodActions, cityTarget) {
@@ -201,6 +203,10 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
       const W = state.board.width;
       const myId = state.activePlayers[0];
       const unitById = new Map(state.units.map(u => [u.id, u]));
+
+      // ── Win outright if the spaceship is ready ───────────────────────────
+      const launch = legalActions.find(a => a.type === 'launch-spaceship');
+      if (launch) return launch;
 
       // ── Empire management: research target, government, tax rate ─────────
       // Each of these is offered at most once per turn (the game caps it), so
