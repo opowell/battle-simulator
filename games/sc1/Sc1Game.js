@@ -8,6 +8,7 @@ import { getSc1Belief } from './belief.js';
 import { lineCost, isClearOfUnits } from '../continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 import { scSpriteLayers } from '../starcraftSprite.js';
+import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 // Unit types with a sprite in images/units/. Each PNG stores its player-color
 // region as a magenta ramp; the design app tints it to the owner's team color at
@@ -807,6 +808,9 @@ export const Sc1Game = {
     { id: 'zvp', name: 'Zerg vs Protoss',   description: 'Hive swarm vs shielded Templar',       config: { race1: 'zerg',     race2: 'protoss' } },
   ],
   colors: { open: '#6a7a50', elevated: '#8a7060', ramp: '#9a8868', minerals: '#2060a0', vespene: '#20884a', obstacle: '#3a2818' },
+  gameOptions: [
+    MAP_ZOOM_OPTION,
+  ],
   createInitialState,
   getLegalActions,
   isActionLegal,

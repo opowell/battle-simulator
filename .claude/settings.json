@@ -86,6 +86,9 @@
       "Bash(printf *)"
     ]
   },
+  "worktree": {
+    "bgIsolation": "worktree"
+  },
   "_globalSyncedPermissions": [
     "Bash(awk *)",
     "Bash(brew *)",

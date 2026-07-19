@@ -68,7 +68,7 @@ export const BASE_LOSS_REWARD = 1400;
 export const KILL_REWARD      = 300;
 export const MAX_MONEY        = 16000;
 
-export const GRENADE_THROW_RANGE = 8;
+export const GRENADE_THROW_RANGE = 16; // doubled alongside the 3x map/vision resize (2026-07-17) to keep grenades usable at the new scale
 export const HE_RADIUS           = 2;
 export const HE_DAMAGE           = 50;
 export const FLASH_RADIUS        = 3;

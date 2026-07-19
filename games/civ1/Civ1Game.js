@@ -829,7 +829,12 @@ export const Civ1Game = {
     // client's default sight radius is 30% of the board's larger side, which both
     // misrepresents what's actually fogged and, when a unit is selected, paints a
     // huge lattice of per-tile borders that reads as a stray grid.
-    visionRange: 1,
+    // vision.js measures range as a Euclidean radius (Math.hypot), not Chebyshev —
+    // a range of exactly 1 clips the 4 diagonal neighbours (distance √2) as if water
+    // or terrain were blocking them, when nothing is; units see all 8 neighbours
+    // equally. Math.SQRT2 + a hair covers the diagonal without reaching the next
+    // ring out (distance 2 orthogonally, √5 as a knight's move).
+    visionRange: Math.SQRT2 + 0.01,
     // Coordinates aren't part of the original game's UI; hidden by default, toggle
     // from the menu ("Show ruler").
     showRuler: false,

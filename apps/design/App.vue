@@ -105,6 +105,34 @@ function triggerTerritoryFx(territoryId, blinks, holdOwner) {
   }, blinks * TERRITORY_BLINK_MS));
 }
 
+// ── turn replay (simultaneous mode) ───────────────────────────
+// The server samples each resolved simultaneous round into evenly spaced
+// position frames (liveState.playback — see GameEngine._buildPlayback): units
+// glide along their exact resolution-timeline paths. Replay steps through the
+// frames on a wall-clock timer, overriding unit positions in activeField, so
+// players can re-watch the resolved turn as often as they like.
+const REPLAY_MS_PER_FRAME = 100; // 61 frames ≈ 6s per replay
+const replayAnim = ref(null);    // { frames, idx } while replaying
+let replayTimer = null;
+
+function replayTurn() {
+  const frames = liveState.value?.playback?.frames;
+  if (!frames?.length) return;
+  stopReplay();
+  replayAnim.value = { frames, idx: 0 };
+  replayTimer = setInterval(() => {
+    if (!replayAnim.value) return;
+    const next = replayAnim.value.idx + 1;
+    if (next >= replayAnim.value.frames.length) { stopReplay(); return; }
+    replayAnim.value = { ...replayAnim.value, idx: next };
+  }, REPLAY_MS_PER_FRAME);
+}
+
+function stopReplay() {
+  if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+  replayAnim.value = null;
+}
+
 function buildHopPath(from, to, diagonal = false) {
   const path = [{ x: from.x, y: from.y }];
   let { x, y } = from;
@@ -159,6 +187,8 @@ watch(liveState, (newState, oldState) => {
 
   const newEntries = log.slice(seenLogLength);
   seenLogLength = log.length;
+  // A new round arrived — any in-progress replay is of a stale turn.
+  if (newEntries.length) stopReplay();
 
   const ui = activeField.value?.ui ?? {};
   const hopsOn = (ui.moveAnimation ?? 'hop') !== 'none';
@@ -390,6 +420,11 @@ function buildField(g, s) {
       visionRange:   c.visionRange,
       mp:            c.mp,
       maxMp:         c.maxMp,
+      // Queued future waypoints ({x,y}[], oldest first) — a game's toGrid may set this
+      // (see Civ1Game.js) to support planning several moves ahead; drives both the
+      // goto-path overlay on the map (every unit) and the queue list in the side panel
+      // (selected unit only). Absent for games with no move-queue mechanic.
+      queue:         c.queue ?? [],
       apNow:         c.apNow,
       apMax:         c.apMax,
       stats:         c.stats,
@@ -409,6 +444,9 @@ function buildField(g, s) {
       description:   c.description,
       job:           c.job,
       moveRange:     c.moveRange,
+      // Small corner badge (e.g. civ1 city size) — a game's toGrid may set this on a
+      // glyph cell; absent for games with nothing to badge.
+      badge:         c.badge,
       // Per-unit money (CS buy phase) — a game's toGrid may set it; drives the buy
       // panel's affordability display. Absent for games with no economy.
       money:         c.money,
@@ -479,6 +517,10 @@ function buildField(g, s) {
     // Server-persisted per-square fog markers (seeded from the last real sighting,
     // freely re-cyclable by the player), so a reload doesn't forget them.
     fogMarkers: g.markers ?? [],
+    // Per-owner economy snapshot (civ1's tax/luxury/science rates, gold, government) —
+    // keyed by player id; a game's toGrid may set this, absent for games with no
+    // per-player economy (see ActionsPanel's rates overlay).
+    civ: g.civ ?? null,
   };
 }
 
@@ -513,6 +555,19 @@ const activeField = computed(() => {
     return u;
   });
 
+  // Turn replay (simultaneous mode): while replaying, every unit renders at its
+  // sampled/interpolated position from the current playback frame — this wins
+  // over the hop overrides above, since a replay re-enacts the whole round.
+  if (replayAnim.value) {
+    const frame = replayAnim.value.frames[replayAnim.value.idx];
+    const byId = new Map(frame.units.map(u => [u.id, u]));
+    field.units = field.units.map(u => {
+      const f = byId.get(u.id);
+      if (!f || f.x == null) return u;
+      return { ...u, path: [[f.x + off, f.y + off]] };
+    });
+  }
+
   return field;
 });
 
@@ -543,16 +598,35 @@ let _sub = null;
 
 function stopPoll() { if (_sub) { _sub.close(); _sub = null; } }
 
-function fogHumanId(s) {
-  return s?.fog ? (s.humanPlayers?.[0] ?? null) : null;
+// Player to view/subscribe as. Fog needs it so the server can filter the board;
+// simultaneous-turns needs it so the server can render this player's private
+// plan state (their queued orders) during the planning window.
+function viewAsId(s) {
+  const simultaneous = !!s?.params?.config?.simultaneousTurns;
+  return (s?.fog || simultaneous) ? (s.humanPlayers?.[0] ?? null) : null;
+}
+
+// A session we watch read-only: it allows observers and we hold no human seat
+// (the server auto-connects the creator of an all-AI game as an observer).
+function isObserverSession(s) {
+  return !!s?.observer || (!!s?.allowObservers && (s?.humanPlayers?.length ?? 0) === 0);
 }
 
 function maybeStartPoll(s) {
   stopPoll();
   if (!s || s.status !== 'active') return;
+  // Observer: subscribe read-only for the full (delayed) game state; there is no
+  // seat to play, so the pending-human short-circuit below doesn't apply.
+  if (isObserverSession(s)) {
+    _sub = api.subscribeSession(s.id, null, (fresh) => {
+      liveState.value = fresh;
+      if (fresh.status !== 'active') stopPoll();
+    }, true);
+    return;
+  }
   const pendingHuman = s.pendingPlayer && s.humanPlayers?.includes(s.pendingPlayer);
   if (pendingHuman) return; // human's turn — nothing to wait on
-  const humanId = fogHumanId(s);
+  const humanId = viewAsId(s);
   _sub = api.subscribeSession(s.id, humanId, (fresh) => {
     liveState.value = fresh;
     if (fresh.status !== 'active') { stopPoll(); return; }
@@ -588,7 +662,7 @@ onMounted(async () => {
   if (route.params.id) await enterSession(route.params.id, { push: false });
 });
 
-onUnmounted(stopPoll);
+onUnmounted(() => { stopPoll(); stopReplay(); });
 
 // ── session flow ─────────────────────────────────────────────
 async function loadHistory(id, state) {
@@ -626,13 +700,13 @@ async function enterSession(id, { push = true } = {}) {
   historyFields.value = [];
   try {
     let state = await api.session(id);
-    const humanId = fogHumanId(state);
+    const humanId = viewAsId(state);
     if (humanId) state = await api.session(id, humanId);
     liveState.value = state;
     view.value = 'battle';
     if (push) router.push('/session/' + id);
     maybeStartPoll(state);
-    if (!humanId) loadHistory(id, state); // skip history in fog mode (would reveal all pieces)
+    if (!state.fog) loadHistory(id, state); // skip history in fog mode (would reveal all pieces)
   } catch (e) {
     if (/session not found/i.test(e.message)) {
       router.replace('/');
@@ -680,6 +754,33 @@ async function setMarker({ playerId, col, row, type }) {
     liveState.value = await api.setMarker(liveState.value.id, playerId, col, row, type);
   } catch (e) { serverErr.value = e.message; }
 }
+
+// ── analysis-panel replay forking ───────────────────────────────
+// A "what if" sandbox branched off a live/historical position (Battlefield.vue's
+// fork-move emit, AnalysisPanel.vue's select-move — see api-server.js's
+// POST /sessions/:id/fork-move). Never touches liveState/the real session; holds
+// its own display field (built the same way activeField is, from the fork's raw
+// grid) plus the raw session-shape bits (state/legalActions/activePlayers)
+// Battlefield needs to keep chaining further moves within the same fork.
+const forkState = ref(null);
+const forkError = ref('');
+
+function exitFork() { forkState.value = null; forkError.value = ''; }
+
+async function doForkMove({ forkState: fs, ply, playerId, action }) {
+  if (!liveState.value) return;
+  try {
+    const resp = await api.forkMove(liveState.value.id, { forkState: fs, ply, playerId, action });
+    const field = buildField(resp.grid, liveState.value);
+    forkState.value = { field, state: resp.state, legalActions: resp.legalActions, activePlayers: resp.activePlayers };
+    forkError.value = '';
+  } catch (e) { forkError.value = e.message; }
+}
+
+// The real game moving on (or switching sessions entirely) leaves any fork stale —
+// it was a detour off one position, not something that follows the game forward.
+watch(() => liveState.value?.id, () => { forkState.value = null; forkError.value = ''; });
+watch(() => liveState.value?.log?.length ?? 0, () => { forkState.value = null; forkError.value = ''; });
 
 async function deleteSession(id) {
   try { await api.del(id); await refresh(); } catch {}
@@ -779,11 +880,18 @@ async function restartGame() {
                    :fog="liveState?.fog ?? false"
                    :games-count="apiGames.length"
                    :server-err="serverErr"
+                   :can-replay-turn="!!liveState?.playback"
+                   :replaying="!!replayAnim"
+                   :fork-state="forkState"
+                   :fork-error="forkError"
                    @exit="exitBattle"
                    @new-game="restartGame"
                    @open-settings="openSettings"
                    @submit-action="submitAction"
-                   @set-marker="setMarker"/>
+                   @set-marker="setMarker"
+                   @replay-turn="replayTurn"
+                   @fork-move="doForkMove"
+                   @exit-fork="exitFork"/>
       <div v-else class="app-loading">
         Loading…
       </div>

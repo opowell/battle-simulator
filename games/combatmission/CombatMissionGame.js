@@ -9,6 +9,7 @@ import { SHAPE_SCENARIOS } from './scenarios.js';
 import { tilesToShapes } from '../terrainShapes.js';
 import { lineCost, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { parsePos, num, posToWire } from '../coord.js';
+import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
 
@@ -424,6 +425,7 @@ export const CombatMissionGame = {
     { id: 'ambush',      name: 'Ambush',        description: 'Platoon-level infantry ambush on the original mixed-terrain grid', config: { scenario: 'ambush' } },
   ],
   gameOptions: [
+    MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
   ],
   createInitialState,

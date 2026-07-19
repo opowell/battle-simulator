@@ -12,6 +12,7 @@ import RosterPanel       from './battlefield/RosterPanel.vue';
 import UnitsLostPanel    from './battlefield/UnitsLostPanel.vue';
 import GameLog           from './battlefield/GameLog.vue';
 import AiAnalysisPanel   from './battlefield/AiAnalysisPanel.vue';
+import AnalysisPanel     from './battlefield/AnalysisPanel.vue';
 import BottomBar         from './battlefield/BottomBar.vue';
 import MenuOverlay       from './battlefield/MenuOverlay.vue';
 import GameOverOverlay   from './battlefield/GameOverOverlay.vue';
@@ -31,17 +32,27 @@ const props = defineProps({
   fog:           { type: Boolean, default: false },
   gamesCount:    { type: Number, default: 0 },
   serverErr:     { type: String, default: '' },
+  // Turn replay (simultaneous mode): a resolved round's sampled frames exist
+  // server-side, so the bottom bar offers a "Replay" that re-enacts the turn.
+  canReplayTurn: { type: Boolean, default: false },
+  replaying:     { type: Boolean, default: false },
+  // Analysis-panel replay fork sandbox (App.vue owns the actual /fork-move calls
+  // and builds `forkState.field` the same way it builds activeField — see
+  // App.vue's doForkMove). Non-null means the board is showing the sandbox.
+  forkState:     { type: Object, default: null },
+  forkError:     { type: String, default: '' },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork']);
 
 // ── playback ──────────────────────────────────────────────────
 const tFloat  = ref(0);
 const playing = ref(false);
 
 // ── view toggles ──────────────────────────────────────────────
-const showRuler = ref(false);
-const showMenu  = ref(false);
-const showHelp  = ref(false);
+const showRuler  = ref(false);
+const showHpBars = ref(true);
+const showMenu   = ref(false);
+const showHelp   = ref(false);
 
 // ── selection ─────────────────────────────────────────────────
 const selectedId = ref(null);
@@ -181,7 +192,72 @@ watch(() => props.liveState?.fog ? props.liveState?.pendingPlayer : null, (pendi
   }
 });
 
+// ── analysis panel + replay forking ─────────────────────────────
+// A "what if" sandbox branched off a live or historical position (see
+// AnalysisPanel.vue's select-move / api.forkMove, api-server.js's
+// POST /sessions/:id/fork-move). App.vue owns the actual fetch + turning the
+// fork's raw grid into a proper display field (buildField needs App-scoped
+// context — apiGames/sessionMeta — that doesn't live here); this component
+// just reads the result via the forkState/forkError props and emits
+// fork-move/exit-fork to drive it. Non-null forkState means the board is
+// currently showing the sandbox, not the real game.
+const forking = computed(() => !!props.forkState);
+
+function exitFork() { emit('exit-fork'); }
+
+// The `showAnalysisPanel` game option (default true for chess, absent/false —
+// and so hidden — for every other game). Read from session config exactly
+// like the other opt-in panels/switches above (gameHtmlRenderer, zoomEnabled).
+const analysisEnabled = computed(() => props.liveState?.params?.config?.showAnalysisPanel ?? false);
+// Analyze the position currently on screen: the live position while at the
+// latest ply (server resolves it from the authoritative session state), or
+// the exact historical ply being viewed while scrubbing replay — same
+// definition of "ply" as fieldHistory's index (see the historyFields watcher
+// above: index 0 = before any moves, index N = after N real moves).
+const analysisPly = computed(() => (forking.value || atLatest.value) ? null : histPos.value);
+const analysisCandidates = ref([]);
+const hoveredSuggestion   = ref(null);
+
+// Whoever is to move at the CURRENTLY DISPLAYED ply (not necessarily the live
+// game's pending player — while browsing replay these differ). Chess strictly
+// alternates one mover per ply starting with the first team, so the ply's
+// parity alone determines it; the same trick viewerTeam above already uses
+// for fog-reveal perspective.
+const plyToMoveTeam = computed(() => {
+  const teams = props.field.teams;
+  return teams[histPos.value % 2]?.id ?? teams[0]?.id ?? null;
+});
+
+// Top few ranked suggestions as board arrows, chess.com-style; the hovered
+// candidate (if any) is emphasised instead of just always-rank-1. Uses the
+// grid [col,row] pairs ChessGame.getLegalActions already stamps onto every
+// action (gridFrom/gridTo) — the same numeric coordinates HtmlLayer's own
+// px()/py() geometry expects, not algebraic square notation.
+const suggestionArrows = computed(() => {
+  if (!analysisEnabled.value || forking.value) return [];
+  return analysisCandidates.value.slice(0, 3).map((c, i) => ({
+    from: c.move?.gridFrom, to: c.move?.gridTo,
+    rank: i + 1, hovered: hoveredSuggestion.value === c.move,
+  })).filter(a => a.from && a.to);
+});
+
+// Any move played while browsing replay, or already inside a fork, branches
+// into (or continues) the sandbox instead of being submitted for real — see
+// submitAction below, and AnalysisPanel.vue's select-move (which always
+// routes here too, even on the human's own live turn). App.vue does the
+// actual fetch (doForkMove) and hands the result back via the forkState prop.
+function forkPlayMove(action) {
+  if (!action || !props.liveState?.id) return;
+  const playerId = forking.value ? (props.forkState.activePlayers?.[0] ?? null) : plyToMoveTeam.value;
+  if (!playerId) return;
+  const body = forking.value
+    ? { forkState: props.forkState.state, playerId, action }
+    : { ply: histPos.value, playerId, action };
+  emit('fork-move', body);
+}
+
 const displayField = computed(() => {
+  if (forking.value) return props.forkState.field;
   if (revealAll.value && props.revealFields.length)
     return props.revealFields[Math.min(histPos.value, props.revealFields.length - 1)];
   // At the latest ply, follow the live reactive field rather than the frozen history
@@ -268,7 +344,10 @@ const rdr = computed(() => RDR[props.theme] || RDR.military);
 const ui = computed(() => props.field.ui ?? {});
 
 watch(() => props.liveState?.id, (id) => {
-  if (id) showRuler.value = ui.value.showRuler ?? true;
+  if (id) {
+    showRuler.value  = ui.value.showRuler ?? true;
+    showHpBars.value = ui.value.showHpBars ?? true;
+  }
 }, { immediate: true });
 
 // ── HTML board renderer (opt-in; see HtmlLayer.vue) ────────────
@@ -376,8 +455,15 @@ const isLive          = computed(() => !!props.liveState);
 const isPending       = computed(() => isLive.value && props.liveState.pendingPlayer &&
                                       props.liveState.humanPlayers?.includes(props.liveState.pendingPlayer));
 const isDone          = computed(() => isLive.value && props.liveState.status !== 'active');
-const legalActions    = computed(() => props.liveState?.legalActions ?? []);
+// While forking, the board interacts against the sandbox's own legal moves
+// (from the last /fork-move response), not the live game's.
+const legalActions    = computed(() => forking.value ? (props.forkState?.legalActions ?? []) : (props.liveState?.legalActions ?? []));
 const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
+// Board interaction (destination highlights, click-to-move) is live for the
+// real game's pending player as usual, or — while browsing replay/forking —
+// for whichever side forkPlayMove would move next, so a suggested/forked line
+// can be played out on the board the same way a live turn is.
+const canMove = computed(() => isPending.value || (analysisEnabled.value && (forking.value || !atLatest.value)));
 
 // Chime when control passes to a human — i.e. isPending flips false→true (an AI or the
 // other player just finished). The watcher isn't `immediate`, so opening a game that's
@@ -429,11 +515,23 @@ function actionGridCoord(action, field) {
 }
 
 const unitMoves = computed(() => {
-  if (!isPending.value || !moveUnitId.value) return [];
+  if (!canMove.value || !moveUnitId.value) return [];
   return legalActions.value
     .filter(a => a.unitId === moveUnitId.value)
     .map(a => actionGridCoord(a, 'to'))
     .filter(Boolean);
+});
+
+// Whether unitMoves are currently backed by 'queue-move' actions rather than 'move'
+// — i.e. moveUnitId's unit has spent its moves for now and further clicks plan a
+// future move instead of moving right away (the generic goto-queue mechanic, see
+// games/moveQueue.js; ui.moveQueue !== false by default). Derived from action type,
+// not any per-game stat field — games use `mp`/`maxMp` for different things (civ1:
+// movement points; FFTA: real magic points), so type is the only universal signal.
+const queuingMoves = computed(() => {
+  if (!moveUnitId.value || ui.value.moveQueue === false) return false;
+  const acts = legalActions.value.filter(a => a.unitId === moveUnitId.value && actionGridCoord(a, 'to'));
+  return acts.length > 0 && acts.every(a => a.type === 'queue-move');
 });
 
 // Selection is click-driven only (see handleSqClick/selectUnit) — nothing here ever
@@ -463,6 +561,19 @@ function handleSetMarker(col, row, type) {
   if (!humanPlayerId.value) return;
   emit('set-marker', { playerId: humanPlayerId.value, col, row, type });
 }
+
+// Which human seat the analysis panel analyzes for. Prefers whoever's turn it
+// currently is (when that's a human seat) over humanPlayerId's fixed "first
+// human" — in a hotseat game (both seats human) humanPlayerId would otherwise
+// always resolve to the same seat and show that side's analysis even during
+// the other seat's turn. Falls back to humanPlayerId when the AI is pending
+// (the ordinary human-vs-AI case: preview my own side ahead of my next turn).
+const analysisPlayerId = computed(() => {
+  const humans = props.liveState?.humanPlayers ?? [];
+  const pending = props.liveState?.pendingPlayer;
+  if (pending && humans.includes(pending)) return pending;
+  return humanPlayerId.value;
+});
 
 // ── opening view ──────────────────────────────────────────────
 // A zoomable map is bigger than the stage, so opening it centred on the board drops the
@@ -570,7 +681,7 @@ function handleSqClick(col, row, x, y) {
     aiming.value = null;
     return;
   }
-  if (isPending.value && moveUnitId.value) {
+  if (canMove.value && moveUnitId.value) {
     // Continuous-location maps (see games/coord.js): movement is a straight-line slide to
     // the exact point clicked — no grid to snap to. The server (each game's isActionLegal)
     // is the real authority on walls/occupancy/cost; here we only gate on the unit's move
@@ -687,6 +798,9 @@ const displayedActions = computed(() => {
 
 function submitAction(action) {
   if (ui.value.clearSelectedAtEndOfTurn) selectedId.value = null;
+  // Moving while browsing replay (or already inside a fork) explores a sandbox
+  // instead of playing a real move — see forkPlayMove above.
+  if (analysisEnabled.value && (forking.value || !atLatest.value)) { forkPlayMove(action); return; }
   emit('submit-action', { playerId: pendingPlayerId.value, action });
 }
 
@@ -740,6 +854,14 @@ function onKeyDown(e) {
     else showMenu.value = !showMenu.value;
   } else if (e.key === 'ArrowLeft')  goBack();
   else if (e.key === 'ArrowRight') goForward();
+  else if (e.key === 'Backspace') {
+    // Undoes the most recently queued move for the selected unit (the generic
+    // goto-queue mechanic, games/moveQueue.js — see ActionsPanel's "Undo last queued
+    // move" button, the mouse equivalent). ui.moveQueue defaults true.
+    if (!isPending.value || !selectedId.value || ui.value.moveQueue === false) return;
+    const action = legalActions.value.find(a => a.type === 'queue-pop' && a.unitId === selectedId.value);
+    if (action) { e.preventDefault(); submitAction(action); }
+  }
 }
 
 onMounted(() => {
@@ -767,6 +889,7 @@ onUnmounted(() => {
         <GameHeader
           :field="field" :liveState="liveState" :isLive="isLive"
           :isDone="isDone" :isPending="isPending" :pendingPlayerId="pendingPlayerId"
+          :statusPlayerId="analysisPlayerId"
           :showMenu="showMenu" :ui="ui"
           :showRenderer="canSwitchRenderer" :htmlRenderer="useHtmlRenderer"
           @toggle-menu="showMenu = !showMenu"
@@ -774,7 +897,7 @@ onUnmounted(() => {
           @show-help="showHelp = true"/>
 
         <SelectedUnitDetail v-if="selectedUnit"
-          :unit="selectedUnit" :field="field" :rdr="rdr"
+          :unit="selectedUnit" :field="field" :rdr="rdr" :showHpBars="showHpBars"
           @open-info="openInfo"
           @open-ability-info="openAbilityInfo"/>
         <SelectedSquareDetail v-else-if="selectedTerrain" :terrain="selectedTerrain"/>
@@ -790,14 +913,19 @@ onUnmounted(() => {
         <ActionsPanel v-if="isLive"
           :isDone="isDone" :atLatest="atLatest" :isPending="isPending"
           :selectedId="selectedId" :activeUnitId="activeUnitId" :ui="ui"
-          :unitMoves="unitMoves" :displayedActions="displayedActions"
+          :unitMoves="unitMoves" :queuingMoves="queuingMoves" :displayedActions="displayedActions"
           :pendingPlayerId="pendingPlayerId" :liveState="liveState" :units="displayUnits"
-          :aiming="aiming"
+          :aiming="aiming" :civ="field.civ"
           @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim"/>
       </div>
 
       <!-- Stage -->
       <div ref="stageEl" class="bf-stage-area">
+        <div v-if="forking" class="bf-fork-banner">
+          <span>Exploring a forked line — not the real game</span>
+          <span v-if="forkError" class="bf-fork-err">{{ forkError }}</span>
+          <button class="action-btn bf-fork-back" @click="exitFork">← Back to game</button>
+        </div>
         <HtmlIsoLayer v-if="ui.isometric && useHtmlRenderer"
           :field="displayField" :units="displayUnits"
           :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
@@ -821,7 +949,7 @@ onUnmounted(() => {
         <HtmlLayer v-else-if="useHtmlRenderer"
           :field="displayField" :units="displayUnits"
           :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
-          :showRuler="showRuler" :rdr="rdr"
+          :showRuler="showRuler" :showHpBars="showHpBars" :rdr="rdr"
           :legalSquares="unitMoves"
           :lastMoveSquares="lastMoveSquares"
           :dragToMove="ui.dragToMove ?? false"
@@ -830,13 +958,14 @@ onUnmounted(() => {
           :aiming="aiming"
           :zoomPx="zoomEnabled ? zoomPx : null"
           :center="viewCenter"
+          :suggestionArrows="suggestionArrows"
           @select="selectUnit"
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>
         <SchematicLayer v-else
           :field="displayField" :fit="fit" :units="displayUnits"
           :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
-          :showRuler="showRuler" :rdr="rdr"
+          :showRuler="showRuler" :showHpBars="showHpBars" :rdr="rdr"
           :unitFx="(atLatest && !revealAll) ? unitFx : {}"
           :territoryFx="(atLatest && !revealAll) ? territoryFx : {}"
           :legalSquares="unitMoves"
@@ -853,8 +982,16 @@ onUnmounted(() => {
 
       <!-- Right sidebar -->
       <div class="bf-col bf-col--right">
+        <AnalysisPanel v-if="isLive"
+          :enabled="analysisEnabled && !forking" :sessionId="liveState.id" :gameName="liveState.game"
+          :playerId="analysisPlayerId" :ply="analysisPly" :logRevision="liveState?.turn ?? 0"
+          :fog="fog"
+          @candidates="analysisCandidates = $event"
+          @hover-move="hoveredSuggestion = $event"
+          @select-move="forkPlayMove"/>
+
         <RosterPanel v-if="ui.showRoster !== false"
-          :teams="rosterTeams" :selectedId="selectedId" :rdr="rdr" :field="field"
+          :teams="rosterTeams" :selectedId="selectedId" :rdr="rdr" :field="field" :showHpBars="showHpBars"
           @select="selectUnit"
           @hover="id => hoveredId = id"/>
 
@@ -877,19 +1014,23 @@ onUnmounted(() => {
       :liveState="liveState" :isDone="isDone" :isPending="isPending"
       :pendingPlayerId="pendingPlayerId"
       :canReveal="canReveal" :revealAll="revealAll"
+      :canReplayTurn="canReplayTurn" :replaying="replaying"
       :showZoom="zoomEnabled" :canZoomIn="canZoomIn" :canZoomOut="canZoomOut"
       @step-back="stepBack" @step-fwd="stepFwd" @toggle-play="togglePlay"
       @scrub="scrub" @go-back="goBack" @go-forward="goForward"
       @toggle-reveal="toggleReveal"
+      @replay-turn="$emit('replay-turn')"
       @zoom-in="zoomBy(ZOOM_STEP)" @zoom-out="zoomBy(1 / ZOOM_STEP)"/>
   </div>
 
   <MenuOverlay
-    :show="showMenu" :serverErr="serverErr" :gamesCount="gamesCount" :showRuler="showRuler"
+    :show="showMenu" :serverErr="serverErr" :gamesCount="gamesCount"
+    :showRuler="showRuler" :showHpBars="showHpBars"
     @close="showMenu = false"
     @exit="$emit('exit')"
     @open-settings="$emit('open-settings')"
-    @toggle-ruler="showRuler = !showRuler"/>
+    @toggle-ruler="showRuler = !showRuler"
+    @toggle-hp-bars="showHpBars = !showHpBars"/>
 
   <GameOverOverlay
     :isDone="isDone" :dismissed="dismissedResult" :liveState="liveState"
@@ -922,4 +1063,12 @@ onUnmounted(() => {
 .bf-empty { padding: 12px 14px; font-size: 11px; color: var(--faint); }
 .bf-inspect-btn { margin: 0 14px 12px; width: calc(100% - 28px); }
 .bf-inspect-btn--on { border-color: var(--accent); color: var(--accent); }
+.bf-fork-banner {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg2); border: 1px solid var(--warn); border-radius: var(--r);
+  padding: 6px 10px; font-size: 11px; color: var(--warn);
+}
+.bf-fork-err { color: var(--danger); }
+.bf-fork-back { padding: 3px 9px; font-size: 11px; }
 </style>

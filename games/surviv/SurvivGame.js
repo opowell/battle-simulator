@@ -17,6 +17,7 @@ import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.
 import { orientToEnemies } from '../vision.js';
 import { segmentClearOf, nearestPointOnShape } from '../terrainShapes.js';
 import { makePos, parsePos, num, posToWire } from '../coord.js';
+import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 const MOVE_EPS = 0.05; // see games/cs/CsGame.js's identical constant for why this floor exists
 const ROTATE_COST = 1; // flat moveAllowance tax for a 'rotate' action (turn in place, no move)
@@ -865,6 +866,7 @@ function survivEval(state, teamId) {
 export const SurvivGame = {
   evaluateState: withTeam((state, teamId) => survivEval(state, teamId)),
   gameOptions: [
+    MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies near its own players (bushes conceal at close range)', type: 'boolean', default: true },
   ],
   sampleWorlds: withTeam(survivSampleWorlds),

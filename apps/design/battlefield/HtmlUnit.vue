@@ -63,6 +63,8 @@ function hpColor(frac, raw) {
            :src="teamSpriteHref(unit.imagePath, unit.teamObj?.raw, recolor)"/>
       <span v-else-if="showLetter" class="hl-letter"
             :style="{ fontFamily: rdr.font, fontSize: r+'px' }">{{ unit.name[0].toUpperCase() }}</span>
+      <span v-if="unit.badge != null" class="hl-badge"
+            :style="{ background: unit.teamObj.raw, fontFamily: rdr.font }">{{ unit.badge }}</span>
     </div>
 
     <!-- HP bar, stacked under the body by the flex column -->
@@ -79,7 +81,8 @@ function hpColor(frac, raw) {
 .hl-unit { place-self: center; z-index: 1; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .hl-unit--grab { cursor: grab; }
 .hl-unit--dim { opacity: 0.25; }
-.hl-body { display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex: none; }
+.hl-body { position: relative; display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex: none; }
+.hl-badge { position: absolute; right: -3px; bottom: -3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 7px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; line-height: 1; color: #fff; border: 1px solid rgba(0,0,0,.5); pointer-events: none; }
 .hl-dead { font-weight: 700; opacity: 0.4; }
 .hl-sprite { width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; }
 .hl-letter { font-weight: 800; line-height: 1; }

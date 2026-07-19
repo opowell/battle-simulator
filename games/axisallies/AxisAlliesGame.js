@@ -3,6 +3,7 @@ import { TERRITORIES, ADJACENCY, STARTING_OWNERS, STARTING_UNITS, CAPITALS } fro
 import { resolveBattle } from './combat.js';
 import { getAxisAlliesBelief } from './belief.js';
 import { sidesEval } from '../evalHelpers.js';
+import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -761,6 +762,7 @@ export const AxisAlliesGame = {
     { id: 'wwii-1942', name: 'WWII 1942', description: 'Classic Axis & Allies global setup — Allies vs Axis powers', config: {} },
   ],
   gameOptions: [
+    MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Enemy garrison composition is hidden unless you occupy or border the territory', type: 'boolean', default: false },
   ],
   createInitialState,

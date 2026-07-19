@@ -5,6 +5,7 @@ import { createMap, renderMap, getTile } from './map.js';
 import { getReachable, getInRange, getAoeTiles, manhattan, attackDirection } from './grid.js';
 import { getFftaBelief, FFTA_VISION } from './belief.js';
 import { filterVisibleUnits } from '../vision.js';
+import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '../moveQueue.js';
 
 // ── Scenario definitions ──────────────────────────────────────────────────────
 
@@ -476,6 +477,22 @@ function advanceTurn(state) {
 
   const nextOwner = units.find(u => u.id === nextId)?.ownerId ?? state.players[0].id;
 
+  // Run the incoming unit's queued move, if any (games/moveQueue.js): the
+  // synthetic `movesLeft` gate is 1 for just this unit (its CT turn just started,
+  // so this is its one shot to move) and 0 for everyone else, then stripped back
+  // off — FFTA's own move-availability signal is `moved`, not `movesLeft`.
+  units = units.map(u => ({ ...u, movesLeft: u.id === nextId ? 1 : 0 }));
+  units = runQueuedMoves(units, nextOwner,
+    (to, u, pid, curUnits) => {
+      const tile = getTile(state.board, to.x, to.y);
+      return tile.passable && !curUnits.some(o => o.alive && o.id !== u.id && o.position.x === to.x && o.position.y === to.y);
+    },
+    (curUnits, pid, u, to) => curUnits.map(o => o.id !== u.id ? o : {
+      ...o, position: to, movesLeft: 0, moved: true, preMovedPosition: o.position,
+      facing: cardinalAngle(to.x - o.position.x, to.y - o.position.y) ?? o.facing,
+    }));
+  units = units.map(({ movesLeft, ...rest }) => rest);
+
   return {
     units,
     turnNumber,
@@ -577,6 +594,11 @@ function cardinalAngle(dx, dy) {
   return dy > 0 ? Math.PI / 2 : -Math.PI / 2;                     // S / N
 }
 
+// A unit's full per-turn move budget, its job's moveRange plus any move-plus support.
+function effectiveMoveRange(unit) {
+  return JOB_DEFS[unit.job].moveRange + (unit.support === 'move-plus' ? 1 : 0);
+}
+
 // ── Legal actions ─────────────────────────────────────────────────────────────
 
 function getLegalActions(state, playerId) {
@@ -595,9 +617,7 @@ function getLegalActions(state, playerId) {
   const actions = [];
 
   if (!unit.moved) {
-    const { moveRange } = JOB_DEFS[unit.job];
-    const effectiveMoveRange = moveRange + (unit.support === 'move-plus' ? 1 : 0);
-    for (const to of getReachable(state.board, unit.position, effectiveMoveRange, state.units)) {
+    for (const to of getReachable(state.board, unit.position, effectiveMoveRange(unit), state.units)) {
       actions.push({ type: 'move', unitId: unit.id, to });
     }
   } else if (!unit.acted && unit.preMovedPosition) {
@@ -663,6 +683,26 @@ function getLegalActions(state, playerId) {
   for (const direction of Object.keys(DIRECTIONS)) {
     actions.push({ type: 'end-turn', unitId: unit.id, direction });
   }
+
+  // The generic goto-queue mechanic (games/moveQueue.js, ui.moveQueue !== false by
+  // default): FFTA's Charge-Time system only gives one unit a turn at a time, so
+  // every OTHER of the player's own units — including the active one once it has
+  // already moved this turn — can have a future move planned now instead of
+  // waiting idle. It fires automatically the moment that unit's own CT turn
+  // starts (see advanceTurn). Appended last so the active unit's own actions
+  // always come first in the array — apps/design/Battlefield.vue's activeUnitId
+  // (strictActiveUnit mode) reads the *first* legal action's unitId as "the" active
+  // unit, and the active unit's end-turn actions above guarantee that stays true.
+  for (const other of state.units) {
+    if (!other.alive || other.ownerId !== playerId) continue;
+    if (other.id === activeUnitId && !other.moved) continue; // can move right now — handled above
+    const moveRange = effectiveMoveRange(other);
+    actions.push(...queueMoveActions({ ...other, movesLeft: 0 }, playerId, moveRange,
+      virtualUnit => getReachable(state.board, virtualUnit.position, moveRange, state.units)));
+    const popAction = queuePopAction(other);
+    if (popAction) actions.push(popAction);
+  }
+
   return actions;
 }
 
@@ -699,6 +739,17 @@ function applyActions(state, playerActions, rng = Math.random) {
         ? { ...u, position: u.preMovedPosition, moved: false, preMovedPosition: null }
         : u
     );
+    return { ...state, units, lastActions: playerActions };
+  }
+
+  // ── queue-move / queue-pop (games/moveQueue.js) ──────────────────────────────
+  if (action.type === 'queue-move') {
+    const units = enqueueWaypoint(state.units, action.unitId, action.to);
+    return { ...state, units, lastActions: playerActions };
+  }
+
+  if (action.type === 'queue-pop') {
+    const units = dequeueLastWaypoint(state.units, action.unitId);
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -937,7 +988,10 @@ export const FFTAGame = {
   // player must click the game-designated active unit to see its actions.
   // showFacing: false — the isometric renderer's facing arrow is redundant now that
   // each job has separate N/E/S/W sprite art (see toGrid's imagePath), same as XComGame.
-  ui: { moveAnimation: 'hop', combatFx: true, isometric: true, strictActiveUnit: true, showFacing: false },
+  // moveQueue: the goto-queue mechanic (games/moveQueue.js) — on by default for every
+  // game, stated here explicitly since FFTA is the one that wires it up (queue-move/
+  // queue-pop for idle units, see getLegalActions/advanceTurn above).
+  ui: { moveAnimation: 'hop', combatFx: true, isometric: true, strictActiveUnit: true, showFacing: false, moveQueue: true },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
   ],
@@ -1040,6 +1094,10 @@ export const FFTAGame = {
           acted:         u?.acted,
           isActive:      u ? u.id === activeUnitId : false,
           facing:        u?.facing,
+          // Waypoints queued for a future CT turn (games/moveQueue.js) — drives the
+          // goto-path overlay on the map (every unit) and the queue list in the side
+          // panel (selected unit only).
+          queue: u?.queue?.length ? u.queue : null,
         });
       }
     }

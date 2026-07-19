@@ -236,6 +236,18 @@ class Session {
     // Full set of parameters the session was created with (game, players, config) —
     // persisted with the recording so a run can be reproduced/inspected later.
     this.params = params;
+    // Observer support: clients may connect read-only (?observer=1) and see the
+    // full game state, bypassing fog. `observerDelay` holds their view back by N ms.
+    this.allowObservers = params.config?.allowObservers ?? false;
+    this.observerDelay = Math.max(0, Number(params.config?.observerDelay) || 0);
+    // Live playback controls (adjustable at runtime via POST /sessions/:id/control):
+    //  - `aiDelay` paces pure-AI steps so auto-advancing games are watchable.
+    //  - `paused` halts the run loop before its next step (AI won't move until resumed).
+    // `_resumeWaiters` are promise resolvers the loop parks on while paused.
+    this.aiDelay = Math.max(0, Number(params.config?.aiDelay) || 0);
+    this.paused = params.config?.startPaused ?? false;
+    this._resumeWaiters = [];
+    this._sawHumanPending = false;
     this.createdAt = new Date();
     this.status = 'active';
     this.result = null;
@@ -245,23 +257,75 @@ class Session {
     // off each AI agent after every step for the AI-analysis panel. Persists the
     // most recent decision per player so the panel keeps showing it between turns.
     this.aiAnalysis = {};
-    // WebSocket subscribers: Set<{ ws, playerId }>. Each gets a per-player
-    // (fog-filtered) snapshot pushed whenever this session's state changes.
+    // WebSocket subscribers: Set<{ ws, playerId, observer }>. Each player client
+    // gets a per-player (fog-filtered) snapshot pushed whenever this session's
+    // state changes; observer clients get the full unfiltered snapshot, optionally
+    // held back by `observerDelay` ms.
     this.wsClients = new Set();
     // Recording file is named with the creation datetime so runs sort chronologically.
     this._recordPath = resolve(SESSIONS_DIR, `${fileTimestamp(this.createdAt)}-${id.slice(0, 8)}.json`);
     // Push the "your turn" state the moment a human agent starts waiting — the
     // engine is otherwise parked inside `await step()` with nothing to observe.
-    for (const agent of this.apiAgents.values()) agent.onPending = () => this._broadcast();
+    // Seeing a human go pending also marks the current step as human-driven, so the
+    // AI pacing delay below is skipped for it (humans already pace themselves).
+    for (const agent of this.apiAgents.values()) {
+      agent.onPending = () => { this._sawHumanPending = true; this._broadcast(); };
+    }
     this._run();
+  }
+
+  /**
+   * Adjust live playback controls. `paused` halts/resumes the run loop; `aiDelay`
+   * (ms) sets the pacing between auto-advancing AI steps. Both take effect on the
+   * next loop iteration. Returns the applied values.
+   */
+  setControl({ paused, aiDelay } = {}) {
+    if (typeof paused === 'boolean') {
+      this.paused = paused;
+      if (!paused) {
+        const waiters = this._resumeWaiters;
+        this._resumeWaiters = [];
+        for (const resume of waiters) resume();
+      }
+    }
+    if (aiDelay != null && Number.isFinite(Number(aiDelay))) {
+      this.aiDelay = Math.max(0, Number(aiDelay));
+    }
+    this._broadcast();
+    return { paused: this.paused, aiDelay: this.aiDelay };
+  }
+
+  /** Park the run loop while paused; resolves when resumed (or the session ends). */
+  async _waitWhilePaused() {
+    while (this.paused && this.status === 'active') {
+      await new Promise(resolve => { this._resumeWaiters.push(resolve); });
+    }
   }
 
   /** Push the current per-player snapshot to every subscribed WebSocket client. */
   _broadcast() {
     if (this.wsClients.size === 0) return;
-    for (const client of this.wsClients) {
-      if (client.ws.readyState !== 1 /* WebSocket.OPEN */) continue;
-      try { client.ws.send(JSON.stringify(this.toJSON(client.playerId))); } catch {}
+    for (const client of this.wsClients) this._sendTo(client);
+  }
+
+  /**
+   * Send the current snapshot to one WebSocket client. Observers get the full
+   * unfiltered view; the payload is serialized now and, if `observerDelay` is set,
+   * delivered `observerDelay` ms later so observers always trail live players.
+   */
+  _sendTo(client) {
+    if (client.ws.readyState !== 1 /* WebSocket.OPEN */) return;
+    const payload = client.observer
+      ? JSON.stringify(this.toJSON(null, { observer: true }))
+      : JSON.stringify(this.toJSON(client.playerId));
+    const delay = client.observer ? this.observerDelay : 0;
+    if (delay > 0) {
+      setTimeout(() => {
+        if (client.ws.readyState !== 1) return;
+        try { client.ws.send(payload); } catch {}
+      }, delay);
+    } else {
+      try { client.ws.send(payload); } catch {}
     }
   }
 
@@ -308,6 +372,9 @@ class Session {
       if (g0) this.gridHistory.push(g0);
       this._broadcast();
       while (this.status === 'active') {
+        await this._waitWhilePaused();
+        if (this.status !== 'active') break;
+        this._sawHumanPending = false;
         const { done } = await this.engine.step();
         this._collectAnalysis();
         const g = this._captureGrid();
@@ -319,6 +386,11 @@ class Session {
         this._persist();
         this._broadcast();
         if (done) break;
+        // Pace pure-AI advancement so a watcher can follow it; a step that waited
+        // on a human is already self-paced, so skip the delay for it.
+        if (!this._sawHumanPending && this.aiDelay > 0) {
+          await new Promise(r => setTimeout(r, this.aiDelay));
+        }
       }
     } catch (err) {
       if (this.status !== 'closed') {
@@ -331,6 +403,11 @@ class Session {
 
   close() {
     this.status = 'closed';
+    // Release the run loop if it's parked on a pause so it can observe the status change and exit.
+    this.paused = false;
+    const waiters = this._resumeWaiters;
+    this._resumeWaiters = [];
+    for (const resume of waiters) resume();
     for (const agent of this.apiAgents.values()) agent.abort('Session closed');
     for (const client of this.wsClients) {
       try { client.ws.close(); } catch {}
@@ -346,35 +423,69 @@ class Session {
     return null;
   }
 
-  toJSON(playerId = null) {
+  /**
+   * The pending action to report to a given viewer. In simultaneous-turns mode
+   * several humans can be pending at once, so a viewer with their own pending
+   * always gets that one; otherwise fall back to the first pending human
+   * (which is what keeps hotseat play working — one browser drives every
+   * human seat, exactly as in sequential mode).
+   */
+  pendingFor(playerId) {
+    const own = playerId ? this.apiAgents.get(playerId)?.pending : null;
+    if (own) return { playerId, legalActions: own.legalActions };
+    return this.pendingAction();
+  }
+
+  toJSON(playerId = null, { observer = false } = {}) {
     const { game } = GAMES[this.gameName];
-    const rawState = this.engine.state;
+    // Observers see everything: fog is disabled for their view regardless of the
+    // session's fog setting, so the branches below fall through to full-information.
+    const fog = this.fog && !observer;
+    // In a simultaneous planning window each player is shown their own plan state
+    // (turn start + their queued orders) instead of the authoritative state.
+    // Observers never get a private plan state — they watch the authoritative game.
+    const rawState = (!observer && playerId && this.engine.planState?.(playerId)) || this.engine.state;
     // The board is ALWAYS fog-filtered for the requesting player — debugAI never reveals
     // it (it only reveals the move log below). A playerless fog request therefore cannot
     // be given any board/log state; we return session metadata only (so a client can
     // discover the human player and re-request with it) and withhold everything secret.
-    const fogNoPlayer = this.fog && !playerId;
-    const viewState = (this.fog && playerId && game.getVisibleState)
+    const fogNoPlayer = fog && !playerId;
+    const viewState = (fog && playerId && game.getVisibleState)
       ? game.getVisibleState(rawState, playerId)
       : rawState;
-    const pending = this.pendingAction();
+    const pending = this.pendingFor(playerId);
     const summary = (this.status === 'done' && rawState && game.getBattleSummary)
       ? game.getBattleSummary(rawState, this.engine.log)
       : null;
     // In fog mode (without debugAI) hide the opponent's move from log and lastActions.
     const humanIds = new Set(this.apiAgents.keys());
-    const fogFilter = this.fog && !this.debugAI && !!playerId;
+    const fogFilter = fog && !this.debugAI && !!playerId;
     const lastActions = fogNoPlayer ? null : fogFilter
       ? (rawState?.lastActions?.filter(pa => pa.playerId === playerId) ?? null)
       : (rawState?.lastActions ?? null);
     const log = fogNoPlayer ? [] : fogFilter
       ? this.engine.log.filter(e => e.playerActions?.every(pa => humanIds.has(pa.playerId)))
       : this.engine.log;
+    // Sampled position frames of the last resolved simultaneous round, for the
+    // client's replay-turn feature. Under fog, frames are trimmed to the units
+    // currently visible to the viewer (an approximation — true per-frame
+    // visibility would need the game's vision model at every sample instant).
+    let playback = fogNoPlayer ? null : (this.engine.playback ?? null);
+    if (playback && fog && playerId && game.getVisibleState) {
+      const visible = new Set(((game.getVisibleState(this.engine.state, playerId).units) ?? []).map(u => u.id));
+      playback = { ...playback, frames: playback.frames.map(f => ({ ...f, units: f.units.filter(u => visible.has(u.id)) })) };
+    }
     return {
       id: this.id,
       game: this.gameName,
       params: this.params,
       fog: this.fog,
+      // This snapshot is an observer's full-information view (fog bypassed).
+      observer,
+      allowObservers: this.allowObservers,
+      // Live playback controls (see setControl / POST /sessions/:id/control).
+      paused: this.paused,
+      aiDelay: this.aiDelay,
       debugAI: this.debugAI,
       status: this.status,
       result: this.result,
@@ -385,15 +496,18 @@ class Session {
       activePlayers: rawState?.activePlayers ?? [],
       humanPlayers: [...this.apiAgents.keys()],
       pendingPlayer: pending?.playerId ?? null,
+      // All humans currently waited on (simultaneous mode can have several at once).
+      pendingPlayers: [...this.apiAgents.entries()].filter(([, a]) => a.pending).map(([id]) => id),
       legalActions: pending?.legalActions ?? null,
       rendered: fogNoPlayer ? null : (rawState ? game.renderState(viewState) : null),
       grid: fogNoPlayer ? null : (viewState && game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null),
       lastActions,
       log,
+      playback,
       // AI deliberation (candidate moves + rankings). In fog it can leak the AI's
       // own move, so it is only revealed with debugAI on; with full information it
       // is always shown (both sides see the board anyway).
-      aiAnalysis: fogNoPlayer ? null : ((this.debugAI || !this.fog) ? this.aiAnalysis : null),
+      aiAnalysis: fogNoPlayer ? null : ((this.debugAI || !fog) ? this.aiAnalysis : null),
     };
   }
 
@@ -474,6 +588,39 @@ function dedupeAgents(list) {
   return [...byId.values()];
 }
 
+// Engine-level options offered for every game — config flags the GameEngine
+// itself interprets (games never see them), so no game has to declare them.
+const ENGINE_OPTIONS = [
+  {
+    id: 'simultaneousTurns',
+    label: 'Simultaneous turns',
+    description: 'All players give orders at the same time; once everyone has ended their turn, the orders resolve together and play back.',
+    type: 'boolean',
+    default: false,
+  },
+  {
+    id: 'allowObservers',
+    label: 'Allow observers',
+    description: 'Let clients connect as observers who see the full game state — the whole board, log and AI analysis, bypassing fog of war.',
+    type: 'boolean',
+    default: false,
+  },
+  {
+    id: 'observerDelay',
+    label: 'Observer time delay (ms)',
+    description: 'Delay information sent to observers by this many milliseconds (0 = live). Keeps observers behind the live players.',
+    type: 'integer',
+    default: 0,
+  },
+  {
+    id: 'aiDelay',
+    label: 'AI move delay (ms)',
+    description: 'Pause this many milliseconds between AI moves so a fast game is watchable. Adjustable live during play (0 = full speed).',
+    type: 'integer',
+    default: 0,
+  },
+];
+
 async function handleGames(res) {
   send(res, 200, Object.entries(GAMES).map(([name, { game, defaultPlayers, minPlayers, maxPlayers }]) => ({
     name,
@@ -481,9 +628,12 @@ async function handleGames(res) {
     minPlayers,
     maxPlayers,
     scenarios: game.scenarios ?? [],
-    gameOptions: game.gameOptions ?? [],
+    gameOptions: [...(game.gameOptions ?? []), ...ENGINE_OPTIONS],
     ui: game.ui ?? {},
-    agents: dedupeAgents([...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n }) => ({ id, name: n }))]),
+    // `analyzable` tells the client which agents can back the position-analysis
+    // panel (POST /sessions/:id/analyze) — the `analyze` function itself is
+    // server-only and never serialized.
+    agents: dedupeAgents([...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n, analyze }) => ({ id, name: n, analyzable: !!analyze }))]),
   })));
 }
 
@@ -588,8 +738,12 @@ async function handleCreateSession(req, res) {
   const session = new Session(id, gameName, engine, apiAgents, config.fog ?? config.fogOfWar ?? false, config.debugAI ?? false, params);
   sessions.set(id, session);
 
+  // With no human players and observers allowed, connect the creator as an
+  // observer: return the full-information observer snapshot so the client subscribes
+  // read-only (?observer=1) instead of vainly waiting to play a seat it doesn't hold.
   const firstHumanId = [...apiAgents.keys()][0] ?? null;
-  send(res, 201, session.toJSON(firstHumanId));
+  const asObserver = firstHumanId === null && session.allowObservers;
+  send(res, 201, session.toJSON(firstHumanId, { observer: asObserver }));
 }
 
 async function handleListSessions(res) {
@@ -648,7 +802,10 @@ async function handleSubmitAction(req, res, id) {
   // surfacing to players as a bogus "Draw". Rejecting it here as a 400 instead leaves the
   // agent pending so the player can just try a different action.
   try {
-    validateAction(action, agent.pending.legalActions, GAMES[session.gameName].game, session.engine.state, playerId);
+    // In a simultaneous planning window the player's actions are legal against
+    // their private plan state, not the (turn-start) authoritative state.
+    const checkState = session.engine.planState?.(playerId) ?? session.engine.state;
+    validateAction(action, agent.pending.legalActions, GAMES[session.gameName].game, checkState, playerId);
   } catch (e) {
     return err(res, 400, e.message);
   }
@@ -662,6 +819,22 @@ async function handleSubmitAction(req, res, id) {
   // Give the engine a tick to advance before responding
   await new Promise(r => setImmediate(r));
   send(res, 200, session.toJSON(playerId));
+}
+
+// Live playback controls: pause/resume the run loop and set the AI pacing delay.
+// Not a game move — it doesn't touch the authoritative state or consume a turn; it
+// just changes how fast (and whether) the engine auto-advances. The change is
+// broadcast to every subscriber via setControl, so all watchers stay in sync.
+async function handleControl(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+
+  const applied = session.setControl(body);
+  send(res, 200, { ok: true, ...applied });
 }
 
 // Player-placed fog-square annotations (e.g. "I think the queen went here"). Unlike
@@ -693,6 +866,171 @@ async function handleSetMarker(req, res, id) {
   session.engine.patchState(state => game.setManualMarker(state, playerId, square, type ?? null));
   session._broadcast();
   send(res, 200, session.toJSON(playerId));
+}
+
+// Reconstruct the raw (unfiltered) game state after `ply` real moves, by
+// replaying the session's own log through the game's pure `applyActions` —
+// no engine/session involved, so this can never affect the live game. Used by
+// both /analyze and /fork-move to look at (or branch from) a historical ply
+// without the per-ply raw state having ever been stored.
+//
+// Deliberately builds a FRESH players array (new objects, not the session's
+// stored `params.players` reference) on every call: belief-tracking agents key
+// their per-color Belief on `state.players`' object identity (games/chess/belief.js
+// getBelief), and beginTurn() only advances safely when re-entered with the SAME
+// turnKey it already knows about. Reusing one shared array across repeated,
+// possibly out-of-order ply lookups would let a later analyze() call for an
+// EARLIER ply silently re-advance (and corrupt) whatever belief the live game
+// is actually relying on for real play. A brand-new array each call guarantees
+// every reconstruction gets its own throwaway, isolated belief instead.
+function replayStateAtPly(game, session, ply) {
+  const players = (session.params.players ?? []).map(p => ({ id: p.id, name: p.name ?? p.id }));
+  let state = game.createInitialState(players, session.params.config ?? {});
+  const log = session.engine.log;
+  const n = Math.max(0, Math.min(ply, log.length));
+  for (let i = 0; i < n; i++) state = game.applyActions(state, log[i].playerActions);
+  return state;
+}
+
+// Shared setup for both /analyze (single-shot) and /analyze-stream (SSE,
+// live depth/round progress): resolves the position (current or a
+// reconstructed historical ply), fog-filters it exactly like a real agent
+// would see it, and looks up the requested AI's `analyze` function. Never
+// touches the real session/engine.
+//
+// Fog: analysis must only ever see what this viewer could see — the same
+// filter a real agent gets (see Session.toJSON above). It does NOT need to
+// be this player's actual turn: the belief-driven agents (ChessAgent,
+// ObscuroAgent) already reason entirely from the viewer's own fog-limited
+// information, so "what's good for my side right now" stays well-defined
+// (and leaks nothing about the opponent's hidden position) even mid-way
+// through the opponent's turn — pass `color` explicitly so the agent
+// analyzes the REQUESTING player's side rather than inferring it from
+// whoever the true state says is actually to move.
+function resolveAnalysisContext(session, { playerId, agentId, ply }) {
+  if (!playerId) throw new Error('Missing playerId');
+  if (!agentId)  throw new Error('Missing agentId');
+
+  const { game } = GAMES[session.gameName];
+  const rosterEntry = (game.agents ?? []).find(a => a.id === agentId);
+  if (!rosterEntry?.analyze) throw new Error(`${agentId} does not support analysis`);
+
+  const rawState = (ply == null) ? session.engine.state : replayStateAtPly(game, session, ply);
+  if (!rawState) throw new Error('No position available yet');
+
+  const viewState = (session.fog && game.getVisibleState) ? game.getVisibleState(rawState, playerId) : rawState;
+  const color = session.fog ? playerId : (viewState.activePlayers?.[0] ?? null);
+  const legalActions = game.getLegalActions(viewState, color);
+  return { game, rosterEntry, viewState, color, legalActions };
+}
+
+// Read-only "what's good here" analysis for a live or replayed position — the
+// single-shot form (see handleAnalyzeStream below for the live-progress SSE
+// version). Hands the resolved position to the chosen AI's `analyze` function
+// (see games/chess/ChessGame.js `agents[].analyze`).
+async function handleAnalyze(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+
+  let ctx;
+  try { ctx = resolveAnalysisContext(session, body); }
+  catch (e) { return err(res, 400, e.message); }
+
+  try {
+    const result = await ctx.rosterEntry.analyze(ctx.viewState, ctx.legalActions, { game: ctx.game, color: ctx.color });
+    send(res, 200, { ...result, ply: body.ply ?? null });
+  } catch (e) {
+    err(res, 500, `Analysis failed: ${e.message}`);
+  }
+}
+
+// Same analysis as handleAnalyze, but streamed over Server-Sent Events so the
+// client can show live search progress the way lichess does — "depth N/14"
+// ticking up for Stockfish-backed chess-ai, "round N/30" for Obscuro's CFR
+// search (see the onInfo/onRound side channels in stockfish.js / agents/obscuro
+// /search.js). GET + query params (not POST) because EventSource can only do
+// GET. Emits zero or more `data: {..., done:false}` progress frames, then
+// exactly one `data: {..., done:true}` frame (the final result, or an error)
+// and closes the connection — the client doesn't need to know which agent
+// supports progress ticks vs. answers in one shot, it just renders whatever
+// arrives.
+async function handleAnalyzeStream(req, res, id, url) {
+  const session = sessions.get(id);
+  const playerId = url.searchParams.get('playerId');
+  const agentId  = url.searchParams.get('agentId');
+  const plyRaw   = url.searchParams.get('ply');
+  const ply = (plyRaw != null && plyRaw !== '') ? Number(plyRaw) : null;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+  let closed = false;
+  req.on('close', () => { closed = true; });
+  const emit = (obj) => { if (!closed) { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch { closed = true; } } };
+
+  if (!session) { emit({ error: 'Session not found', done: true }); return res.end(); }
+
+  let ctx;
+  try { ctx = resolveAnalysisContext(session, { playerId, agentId, ply }); }
+  catch (e) { emit({ error: e.message, done: true }); return res.end(); }
+
+  try {
+    const result = await ctx.rosterEntry.analyze(ctx.viewState, ctx.legalActions, {
+      game: ctx.game, color: ctx.color,
+      onProgress: (info) => emit({ ...info, ply, done: false }),
+    });
+    emit({ ...result, ply, done: true });
+  } catch (e) {
+    emit({ error: `Analysis failed: ${e.message}`, done: true });
+  }
+  if (!closed) res.end();
+}
+
+// Play any legal move from a live or historical position into a throwaway
+// sandbox — never touches the real session. The client round-trips the
+// returned `state` back in as `forkState` for subsequent moves within the same
+// fork; the very first move of a fork instead passes `ply` to seed from
+// history. Deliberately ignores fog (full-info scratch board, either side
+// movable) since this is exploration, not the real hidden game.
+async function handleForkMove(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+
+  const { ply, forkState, playerId, action } = body;
+  if (!playerId) return err(res, 400, 'Missing playerId');
+  if (!action)   return err(res, 400, 'Missing action');
+
+  const { game } = GAMES[session.gameName];
+  let state;
+  try {
+    state = forkState ?? (ply != null ? replayStateAtPly(game, session, ply) : session.engine.state);
+  } catch (e) { return err(res, 400, `Could not resolve fork position: ${e.message}`); }
+  if (!state) return err(res, 400, 'Missing ply or forkState');
+
+  const legalActions = game.getLegalActions(state, playerId);
+  try {
+    validateAction(action, legalActions, game, state, playerId);
+  } catch (e) { return err(res, 400, e.message); }
+
+  const newState = game.applyActions(state, [{ playerId, action }]);
+  send(res, 200, {
+    state: newState,
+    grid: applyAxisLabels(game, game.toGrid(newState)),
+    legalActions: game.getLegalActions(newState, newState.activePlayers[0]),
+    activePlayers: newState.activePlayers,
+    turnNumber: newState.turnNumber ?? null,
+  });
 }
 
 async function handleGetLog(res, id) {
@@ -853,6 +1191,22 @@ async function handleRequest(req, res) {
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'marker')
       return await handleSetMarker(req, res, parts[1]);
 
+    // POST /sessions/:id/control — pause/resume + AI pacing delay
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'control')
+      return await handleControl(req, res, parts[1]);
+
+    // POST /sessions/:id/analyze
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze')
+      return await handleAnalyze(req, res, parts[1]);
+
+    // GET /sessions/:id/analyze-stream?playerId=&agentId=&ply= (SSE, live progress)
+    if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze-stream')
+      return await handleAnalyzeStream(req, res, parts[1], url);
+
+    // POST /sessions/:id/fork-move
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'fork-move')
+      return await handleForkMove(req, res, parts[1]);
+
     // DELETE /sessions/:id
     if (method === 'DELETE' && parts[0] === 'sessions' && parts.length === 2)
       return await handleDeleteSession(res, parts[1]);
@@ -899,12 +1253,23 @@ function handleUpgrade(req, socket, head, prefix = '') {
     return true;
   }
 
-  const playerId = url.searchParams.get('player') ?? null;
+  const observerParam = url.searchParams.get('observer');
+  const observer = observerParam === '1' || observerParam === 'true';
+  // Observer connections require the session to allow them — reject during the
+  // handshake so a client without permission can't peek at the full state.
+  if (observer && !session.allowObservers) {
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+    socket.destroy();
+    return true;
+  }
+
+  const playerId = observer ? null : (url.searchParams.get('player') ?? null);
   wss.handleUpgrade(req, socket, head, (ws) => {
-    const client = { ws, playerId };
+    const client = { ws, playerId, observer };
     session.wsClients.add(client);
-    // Immediate snapshot so a freshly-connected client is in sync without a REST round-trip.
-    try { ws.send(JSON.stringify(session.toJSON(playerId))); } catch {}
+    // Immediate snapshot so a freshly-connected client is in sync without a REST
+    // round-trip (observers get the delayed, full-information view via _sendTo).
+    session._sendTo(client);
     const drop = () => session.wsClients.delete(client);
     ws.on('close', drop);
     ws.on('error', drop);

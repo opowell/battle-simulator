@@ -21,6 +21,7 @@ const props = defineProps({
   activeUnitId: { type: String, default: null },
   fog:          Boolean,
   showRuler:    Boolean,
+  showHpBars:   { type: Boolean, default: true },
   rdr:          Object,
   legalSquares:    { type: Array, default: () => [] },
   lastMoveSquares: { type: Array, default: () => [] },
@@ -1218,7 +1219,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                 text-anchor="middle" dominant-baseline="central"
                 class="sl-noselect sl-noevents">{{u.name[0].toUpperCase()}}</text>
           <!-- HP bar -->
-          <template v-if="field.ui?.showHpBars !== false">
+          <template v-if="showHpBars">
             <rect :x="-unitR(u)" :y="unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
             <rect :x="-unitR(u)" :y="unitR(u)+3"
                   :width="unitR(u)*2*((u.currentHp ?? u.hpNow)/u.hpMax)" height="3"

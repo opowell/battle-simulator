@@ -35,7 +35,7 @@ import { SMOKE_RADIUS } from './weapons.js';
 // matches the observation exactly (see games/vision.js): Euclidean range (a circle,
 // matching the design UI veil) + facing cone + line-of-sight blocked by walls (the
 // authored wall shapes) and smoke clouds.
-export const CS_VISION = { range: 4, fovDegrees: 90, metric: euclidean };
+export const CS_VISION = { range: 42, fovDegrees: 90, metric: euclidean }; // tripled alongside the 3x map resize (2026-07-17)
 
 // The opaque shapes that block CS sight: the map border, its authored walls, and every
 // active smoke cloud (an oval of SMOKE_RADIUS). Used both server-side and by the design

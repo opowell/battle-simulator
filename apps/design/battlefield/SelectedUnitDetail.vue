@@ -1,8 +1,9 @@
 <script setup>
 defineProps({
-  unit:  Object,
-  field: Object,
-  rdr:   Object,
+  unit:       Object,
+  field:      Object,
+  rdr:        Object,
+  showHpBars: { type: Boolean, default: true },
 });
 defineEmits(['open-info', 'open-ability-info']);
 const imgSrc = window.api.imgSrc;
@@ -32,7 +33,7 @@ const imgSrc = window.api.imgSrc;
     </div>
     <div v-if="unit.dead" class="mono sud-kia">KIA</div>
     <template v-else>
-      <template v-if="unit.hpMax != null && field.ui?.showHpBars !== false">
+      <template v-if="unit.hpMax != null && showHpBars">
         <div class="sud-barlabel">
           <span class="sud-barlabel-k">HP</span>
           <span class="mono sud-barlabel-v">
@@ -57,6 +58,17 @@ const imgSrc = window.api.imgSrc;
           <div class="sud-mp-fill" :style="{width: ((unit.mp ?? 0)/unit.maxMp*100)+'%'}"/>
         </div>
       </template>
+      <!-- Queued future moves (civ1 goto orders) — shown only for the selected unit;
+           the map draws every unit's queue (see HtmlLayer's queueSegments/queueDots). -->
+      <div v-if="unit.queue?.length && field.ui?.moveQueue !== false" class="sud-section">
+        <div class="sud-section-title">Queued moves</div>
+        <div class="sud-queue-list">
+          <span v-for="(wp, i) in unit.queue" :key="i" class="sud-queue-chip">
+            {{i+1}}. ({{wp.x}}, {{wp.y}})
+          </span>
+        </div>
+        <div class="mono sud-queue-hint">Backspace removes the last one</div>
+      </div>
       <template v-if="unit.stats">
         <div class="sud-stats">
           <div v-for="(val, key) in unit.stats" :key="key" class="sud-stat">
@@ -138,6 +150,9 @@ const imgSrc = window.api.imgSrc;
 .sud-status-tag { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(242,180,65,.15); color: #f2b441; }
 .sud-section { margin-bottom: 8px; }
 .sud-section-title { font-size: 9px; color: var(--faint); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.sud-queue-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.sud-queue-chip { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: var(--bg3); color: var(--txt); font-family: var(--mono); }
+.sud-queue-hint { font-size: 9px; color: var(--faint); }
 .sud-eq-list { display: flex; flex-direction: column; gap: 2px; }
 .sud-eq { display: flex; align-items: center; justify-content: space-between; font-size: 10px; }
 .sud-eq-label { color: var(--faint); }

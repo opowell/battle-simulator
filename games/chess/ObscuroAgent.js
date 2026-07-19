@@ -302,7 +302,20 @@ export const ObscuroAgent = new ChessObscuroAgent();
 // ---------------------------------------------------------------------------
 export async function obscuroStrategy(state, legalActions, opts = {}) {
   const rng = opts.rng ?? Math.random;
-  const me = state.activePlayers[0];
+  // Defaults to whoever's actually to move, but a caller may override — e.g.
+  // the analysis API always passes the requesting viewer's own colour under
+  // fog, so "what's good for my side" stays answerable even when it isn't
+  // literally their turn yet (see api-server.js's handleAnalyze). When it
+  // overrides to a colour that ISN'T state.activePlayers[0], the state itself
+  // is patched to match: the generic search's tree-building derives whose
+  // move a node represents from activePlayers at every level it touches, not
+  // just this root call's `me`, so a root that internally still claims "black
+  // to move" while search/tree code is told `me = white` desyncs partway
+  // through and returns nonsense (a piece move for a side that isn't even on
+  // this board). Presenting a state that honestly says "white to move" keeps
+  // the whole tree self-consistent for this hypothetical/counterfactual read.
+  const me = opts.color ?? state.activePlayers[0];
+  if (me !== state.activePlayers[0]) state = { ...state, activePlayers: [me] };
   const game = (await import('./ChessGame.js')).ChessGame;
   const fog = !!state.gameSpecific.fogOfWar;
 
@@ -311,6 +324,11 @@ export async function obscuroStrategy(state, legalActions, opts = {}) {
 
   const hooks = makeHooks(game, me, { rng });
   const opp = (state.players ?? []).find(p => p.id !== me)?.id ?? null;
+  // Live "round N/M" progress (lichess-style depth ticks, but for CFR rounds) —
+  // purely a side channel; see runObscuroSearch's cfg.onRound.
+  const onRound = opts.onProgress
+    ? (round, maxRounds, info) => opts.onProgress({ kind: 'round', round, maxRounds, candidates: rankCandidates(info.rows, info.dist) })
+    : undefined;
   const res = await runObscuroSearch(hooks, worlds, {
     opp, rootActions: legalActions, rng,
     timeBudgetMs: opts.timeBudgetMs ?? 0,
@@ -318,9 +336,31 @@ export async function obscuroStrategy(state, legalActions, opts = {}) {
     expandPerRound: opts.expandPerRound ?? 8,
     cfrPerRound: opts.cfrPerRound ?? 4,
     purifyMax: opts.purifyMax ?? 3,
+    onRound,
   });
 
   const k = game.actionKey;
   const action = legalActions.find(a => k(a) === k(res.action)) ?? res.action ?? legalActions[0];
   return { mode: fog ? 'cfr' : 'minimax', action, dist: res.dist, rows: res.rows, value: res.value, particles: worlds.length };
+}
+
+// Shared with the onRound progress callback above so a mid-search snapshot and
+// the final result are ranked identically.
+function rankCandidates(rows, dist) {
+  return (rows ?? [])
+    .map((action, i) => ({ move: action, prob: dist?.[i] ?? 0 }))
+    .sort((a, b) => b.prob - a.prob);
+}
+
+// ---------------------------------------------------------------------------
+// Read-only position analysis for the UI's "suggest a move" panel: runs the
+// exact same solve as obscuroStrategy (fog-aware via sampleWorlds/belief when
+// applicable, perfect-info minimax otherwise) and reshapes its output into
+// ranked candidates, without ever selecting/committing a move for real play.
+// ---------------------------------------------------------------------------
+export async function analyzeObscuro(state, legalActions, opts = {}) {
+  if (!legalActions?.length) return { engine: 'obscuro', mode: 'none', candidates: [] };
+  const r = await obscuroStrategy(state, legalActions, opts);
+  const candidates = rankCandidates(r.rows, r.dist);
+  return { engine: 'obscuro', mode: r.mode, value: r.value, candidates };
 }

@@ -124,61 +124,85 @@ export function isWalkableContinuous(map, x, y) {
 }
 
 // de_forge — a foundry split by a central oval furnace pit; two sites on opposite corners.
+// Base layout is the original tripled 3x (22x14 -> 66x42); the original had no interior
+// walls at all (just the pit + 4 loose crates), so the flanking west/east corridor walls
+// below are new — they turn the open arena into a proper centre chamber with two hallways
+// leading in, each with clear north/south bypass gaps so nothing gets sealed off.
 const DE_FORGE = {
-  width: 22, height: 14,
+  width: 66, height: 42,
   terrain: [
-    { shape: 'rect', x:  1, y:  5, w: 3, h: 4, kind: 'ctSpawn' },
-    { shape: 'rect', x: 18, y:  5, w: 3, h: 4, kind: 'tSpawn'  },
-    { shape: 'oval', x:  9, y:  5, w: 4, h: 4, kind: 'pit'     },
-    { shape: 'rect', x:  7, y:  2, w: 2, h: 2, kind: 'crate'   },
-    { shape: 'rect', x: 13, y: 10, w: 2, h: 2, kind: 'crate'   },
-    { shape: 'rect', x:  7, y: 10, w: 2, h: 2, kind: 'crate'   },
-    { shape: 'rect', x: 13, y:  2, w: 2, h: 2, kind: 'crate'   },
-    { shape: 'rect', x:  4, y: 10, w: 4, h: 2, kind: 'bombsiteA' },
-    { shape: 'rect', x: 14, y:  2, w: 4, h: 2, kind: 'bombsiteB' },
+    { shape: 'rect', x:  3, y: 15, w:  9, h: 12, kind: 'ctSpawn' },
+    { shape: 'rect', x: 54, y: 15, w:  9, h: 12, kind: 'tSpawn'  },
+    { shape: 'oval', x: 27, y: 15, w: 12, h: 12, kind: 'pit'     },
+    { shape: 'rect', x: 21, y:  6, w:  6, h:  6, kind: 'crate'   },
+    { shape: 'rect', x: 39, y: 30, w:  6, h:  6, kind: 'crate'   },
+    { shape: 'rect', x: 21, y: 30, w:  6, h:  6, kind: 'crate'   },
+    { shape: 'rect', x: 39, y:  6, w:  6, h:  6, kind: 'crate'   },
+    { shape: 'rect', x: 12, y: 30, w: 12, h:  6, kind: 'bombsiteA' },
+    { shape: 'rect', x: 42, y:  6, w: 12, h:  6, kind: 'bombsiteB' },
+    // West/east corridor walls carving the pit chamber out of the open arena — gaps at
+    // y6-9 (south) and y30-36 (north) keep both flanks connected around them.
+    { shape: 'rect', x: 18, y:  9, w:  3, h: 21, kind: 'building' },
+    { shape: 'rect', x: 45, y: 12, w:  3, h: 21, kind: 'building' },
+    { shape: 'rect', x: 12, y: 18, w:  3, h:  3, kind: 'crate'   },
+    { shape: 'rect', x: 48, y: 21, w:  3, h:  3, kind: 'lowWall' },
   ],
-  ctSpawns: [{ x: 1, y: 6 }, { x: 2, y: 6 }, { x: 3, y: 6 }, { x: 2, y: 7 }, { x: 2, y: 8 }],
-  tSpawns:  [{ x: 20, y: 6 }, { x: 19, y: 6 }, { x: 18, y: 6 }, { x: 19, y: 7 }, { x: 19, y: 8 }],
+  ctSpawns: [{ x: 3, y: 18 }, { x: 6, y: 18 }, { x: 9, y: 18 }, { x: 6, y: 21 }, { x: 6, y: 24 }],
+  tSpawns:  [{ x: 60, y: 18 }, { x: 57, y: 18 }, { x: 54, y: 18 }, { x: 57, y: 21 }, { x: 57, y: 24 }],
 };
 
 // de_pond — waterfront with two impassable oval ponds routing play around buildings.
+// Tripled 3x from the original; the two ponds already forced a natural diagonal route
+// around them, so the added detail is a new boathouse room in the gap between the ponds
+// (with cover flanking it) rather than a full re-route.
 const DE_POND = {
-  width: 22, height: 14,
+  width: 66, height: 42,
   terrain: [
-    { shape: 'rect', x:  1, y: 10, w: 3, h: 3, kind: 'ctSpawn' },
-    { shape: 'rect', x: 18, y:  1, w: 3, h: 3, kind: 'tSpawn'  },
-    { shape: 'oval', x:  5, y:  3, w: 5, h: 3, kind: 'water'   },
-    { shape: 'oval', x: 13, y:  8, w: 5, h: 3, kind: 'water'   },
-    { shape: 'rect', x:  9, y:  2, w: 3, h: 2, kind: 'building' },
-    { shape: 'rect', x: 10, y: 10, w: 3, h: 2, kind: 'building' },
-    { shape: 'rect', x:  7, y:  7, w: 1, h: 1, kind: 'crate'   },
-    { shape: 'rect', x: 14, y:  4, w: 1, h: 1, kind: 'crate'   },
-    { shape: 'rect', x:  2, y:  2, w: 3, h: 2, kind: 'bombsiteA' },
-    { shape: 'rect', x: 17, y: 10, w: 3, h: 2, kind: 'bombsiteB' },
+    { shape: 'rect', x:  3, y: 30, w:  9, h:  9, kind: 'ctSpawn' },
+    { shape: 'rect', x: 54, y:  3, w:  9, h:  9, kind: 'tSpawn'  },
+    { shape: 'oval', x: 15, y:  9, w: 15, h:  9, kind: 'water'   },
+    { shape: 'oval', x: 39, y: 24, w: 15, h:  9, kind: 'water'   },
+    { shape: 'rect', x: 27, y:  6, w:  9, h:  6, kind: 'building' },
+    { shape: 'rect', x: 30, y: 30, w:  9, h:  6, kind: 'building' },
+    { shape: 'rect', x: 21, y: 21, w:  3, h:  3, kind: 'crate'   },
+    { shape: 'rect', x: 42, y: 12, w:  3, h:  3, kind: 'crate'   },
+    { shape: 'rect', x:  6, y:  6, w:  9, h:  6, kind: 'bombsiteA' },
+    { shape: 'rect', x: 51, y: 30, w:  9, h:  6, kind: 'bombsiteB' },
+    // New boathouse room in the neck between the two ponds, with cover on both approaches.
+    { shape: 'rect', x: 33, y: 15, w:  6, h:  9, kind: 'building' },
+    { shape: 'rect', x: 24, y: 21, w:  3, h:  3, kind: 'crate'   },
+    { shape: 'rect', x: 39, y: 33, w:  3, h:  3, kind: 'lowWall' },
   ],
-  ctSpawns: [{ x: 1, y: 11 }, { x: 2, y: 11 }, { x: 3, y: 11 }, { x: 2, y: 12 }, { x: 1, y: 12 }],
-  tSpawns:  [{ x: 20, y: 2 }, { x: 19, y: 2 }, { x: 18, y: 2 }, { x: 19, y: 3 }, { x: 20, y: 3 }],
+  ctSpawns: [{ x: 3, y: 33 }, { x: 6, y: 33 }, { x: 9, y: 33 }, { x: 6, y: 36 }, { x: 3, y: 36 }],
+  tSpawns:  [{ x: 60, y: 6 }, { x: 57, y: 6 }, { x: 54, y: 6 }, { x: 57, y: 9 }, { x: 60, y: 9 }],
 };
 
 // de_plaza — an open plaza with a central fountain and market stalls; both sites
 // sit on the pavement. Shows a walkable courtyard under an impassable fountain.
+// Tripled 3x from the original; two small stall buildings flank the fountain to give the
+// plaza some real internal structure without losing its open-courtyard feel.
 const DE_PLAZA = {
-  width: 22, height: 14,
+  width: 66, height: 42,
   terrain: [
-    { shape: 'rect', x:  1, y:  5, w: 3, h: 4, kind: 'ctSpawn' },
-    { shape: 'rect', x: 18, y:  5, w: 3, h: 4, kind: 'tSpawn'  },
-    { shape: 'oval', x: 10, y:  6, w: 2,  h: 2, kind: 'water'  },
-    { shape: 'rect', x:  9, y:  1, w: 4, h: 1, kind: 'building' },
-    { shape: 'rect', x:  9, y: 12, w: 4, h: 1, kind: 'building' },
-    { shape: 'rect', x:  7, y:  4, w: 1, h: 1, kind: 'crate'   },
-    { shape: 'rect', x: 14, y:  4, w: 1, h: 1, kind: 'crate'   },
-    { shape: 'rect', x:  7, y:  9, w: 1, h: 1, kind: 'crate'   },
-    { shape: 'rect', x: 14, y:  9, w: 1, h: 1, kind: 'crate'   },
-    { shape: 'rect', x:  7, y: 10, w: 3, h: 2, kind: 'bombsiteA' },
-    { shape: 'rect', x: 12, y:  2, w: 3, h: 2, kind: 'bombsiteB' },
+    { shape: 'rect', x:  3, y: 15, w:  9, h: 12, kind: 'ctSpawn' },
+    { shape: 'rect', x: 54, y: 15, w:  9, h: 12, kind: 'tSpawn'  },
+    { shape: 'oval', x: 30, y: 18, w:  6, h:  6, kind: 'water'   },
+    { shape: 'rect', x: 27, y:  3, w: 12, h:  3, kind: 'building' },
+    { shape: 'rect', x: 27, y: 36, w: 12, h:  3, kind: 'building' },
+    { shape: 'rect', x: 21, y: 12, w:  3, h:  3, kind: 'crate'   },
+    { shape: 'rect', x: 42, y: 12, w:  3, h:  3, kind: 'crate'   },
+    { shape: 'rect', x: 21, y: 27, w:  3, h:  3, kind: 'crate'   },
+    { shape: 'rect', x: 42, y: 27, w:  3, h:  3, kind: 'crate'   },
+    { shape: 'rect', x: 21, y: 30, w:  9, h:  6, kind: 'bombsiteA' },
+    { shape: 'rect', x: 36, y:  6, w:  9, h:  6, kind: 'bombsiteB' },
+    // Market stalls flanking the fountain, each with a bit of cover beside it.
+    { shape: 'rect', x: 18, y: 21, w:  6, h:  3, kind: 'building' },
+    { shape: 'rect', x: 42, y: 21, w:  6, h:  3, kind: 'building' },
+    { shape: 'rect', x: 15, y: 21, w:  3, h:  3, kind: 'crate'   },
+    { shape: 'rect', x: 48, y: 21, w:  3, h:  3, kind: 'lowWall' },
   ],
-  ctSpawns: [{ x: 1, y: 6 }, { x: 2, y: 6 }, { x: 3, y: 6 }, { x: 2, y: 7 }, { x: 2, y: 8 }],
-  tSpawns:  [{ x: 20, y: 6 }, { x: 19, y: 6 }, { x: 18, y: 6 }, { x: 19, y: 7 }, { x: 19, y: 8 }],
+  ctSpawns: [{ x: 3, y: 18 }, { x: 6, y: 18 }, { x: 9, y: 18 }, { x: 6, y: 21 }, { x: 6, y: 24 }],
+  tSpawns:  [{ x: 60, y: 18 }, { x: 57, y: 18 }, { x: 54, y: 18 }, { x: 57, y: 21 }, { x: 57, y: 24 }],
 };
 
 // ── Classic maps, re-authored as shapes ──────────────────────────────────────────
@@ -187,77 +211,103 @@ const DE_PLAZA = {
 // courtyards) instead of one-cell blocks, while keeping their site/spawn layout.
 
 // dust2 — two sites on the left, mid barrels, T-side cover; CT centre-left, T centre-right.
+// Tripled 3x from the original. Adds a wall splitting the open B-side connector into a
+// proper corridor, and a wall splitting the T-cover ovals into a distinct ramp chokepoint,
+// each with cover — both leave the original top/bottom bypasses clear.
 const DUST2 = {
-  width: 22, height: 14,
+  width: 66, height: 42,
   terrain: [
-    { shape: 'rect', x:  1, y:  6, w: 3, h: 3, kind: 'ctSpawn'   },
-    { shape: 'rect', x: 18, y:  6, w: 3, h: 3, kind: 'tSpawn'    },
-    { shape: 'rect', x:  2, y:  9, w: 4, h: 3, kind: 'bombsiteA' },
-    { shape: 'rect', x:  2, y:  2, w: 4, h: 3, kind: 'bombsiteB' },
-    { shape: 'rect', x:  8, y: 11, w: 5, h: 1, kind: 'building'  }, // long-A wall
-    { shape: 'rect', x:  8, y:  2, w: 5, h: 1, kind: 'building'  }, // long-B wall
-    { shape: 'oval', x:  9, y:  5, w: 4, h: 4, kind: 'crate'     }, // mid barrels
-    { shape: 'oval', x: 14, y:  8, w: 3, h: 3, kind: 'crate'     }, // upper T cover
-    { shape: 'oval', x: 14, y:  3, w: 3, h: 3, kind: 'crate'     }, // lower T cover
+    { shape: 'rect', x:  3, y: 18, w:  9, h:  9, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 54, y: 18, w:  9, h:  9, kind: 'tSpawn'    },
+    { shape: 'rect', x:  6, y: 27, w: 12, h:  9, kind: 'bombsiteA' },
+    { shape: 'rect', x:  6, y:  6, w: 12, h:  9, kind: 'bombsiteB' },
+    { shape: 'rect', x: 24, y: 33, w: 15, h:  3, kind: 'building'  }, // long-A wall
+    { shape: 'rect', x: 24, y:  6, w: 15, h:  3, kind: 'building'  }, // long-B wall
+    { shape: 'oval', x: 27, y: 15, w: 12, h: 12, kind: 'crate'     }, // mid barrels
+    { shape: 'oval', x: 42, y: 24, w:  9, h:  9, kind: 'crate'     }, // upper T cover
+    { shape: 'oval', x: 42, y:  9, w:  9, h:  9, kind: 'crate'     }, // lower T cover
+    { shape: 'rect', x: 18, y: 15, w:  3, h: 12, kind: 'building'  }, // new B connector wall
+    { shape: 'rect', x: 21, y: 21, w:  3, h:  3, kind: 'crate'     },
+    { shape: 'rect', x: 45, y: 15, w:  3, h: 12, kind: 'building'  }, // new T ramp wall
+    { shape: 'rect', x: 48, y: 21, w:  3, h:  3, kind: 'lowWall'   },
   ],
-  ctSpawns: [{ x: 1, y: 7 }, { x: 2, y: 7 }, { x: 3, y: 7 }, { x: 2, y: 8 }, { x: 2, y: 6 }],
-  tSpawns:  [{ x: 20, y: 7 }, { x: 19, y: 7 }, { x: 18, y: 7 }, { x: 19, y: 8 }, { x: 19, y: 6 }],
+  ctSpawns: [{ x: 3, y: 21 }, { x: 6, y: 21 }, { x: 9, y: 21 }, { x: 6, y: 24 }, { x: 6, y: 18 }],
+  tSpawns:  [{ x: 60, y: 21 }, { x: 57, y: 21 }, { x: 54, y: 21 }, { x: 57, y: 24 }, { x: 57, y: 18 }],
 };
 
 // de_dust — symmetric: two mid corridor walls funnel play past an oval barrel stack.
+// Tripled 3x from the original, which already carved a central Mid chamber flanked by
+// two fully open flanks; each flank now gets one splitting wall (+cover) to become a real
+// two-lane corridor instead of open ground, still with clear top/bottom bypasses.
 const DE_DUST = {
-  width: 22, height: 14,
+  width: 66, height: 42,
   terrain: [
-    { shape: 'rect', x:  1, y:  5, w: 3, h: 4, kind: 'ctSpawn'   },
-    { shape: 'rect', x: 18, y:  5, w: 3, h: 4, kind: 'tSpawn'    },
-    { shape: 'rect', x:  2, y:  9, w: 4, h: 3, kind: 'bombsiteA' },
-    { shape: 'rect', x:  2, y:  2, w: 4, h: 3, kind: 'bombsiteB' },
-    { shape: 'rect', x:  8, y:  4, w: 1, h: 6, kind: 'building'  }, // west corridor wall
-    { shape: 'rect', x: 14, y:  4, w: 1, h: 6, kind: 'building'  }, // east corridor wall
-    { shape: 'oval', x: 10, y:  5, w: 3, h: 4, kind: 'crate'     }, // mid stack
-    { shape: 'rect', x:  6, y: 10, w: 3, h: 1, kind: 'building'  }, // upper arch
-    { shape: 'rect', x:  6, y:  3, w: 3, h: 1, kind: 'building'  }, // lower arch
+    { shape: 'rect', x:  3, y: 15, w:  9, h: 12, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 54, y: 15, w:  9, h: 12, kind: 'tSpawn'    },
+    { shape: 'rect', x:  6, y: 27, w: 12, h:  9, kind: 'bombsiteA' },
+    { shape: 'rect', x:  6, y:  6, w: 12, h:  9, kind: 'bombsiteB' },
+    { shape: 'rect', x: 24, y: 12, w:  3, h: 18, kind: 'building'  }, // west corridor wall
+    { shape: 'rect', x: 42, y: 12, w:  3, h: 18, kind: 'building'  }, // east corridor wall
+    { shape: 'oval', x: 30, y: 15, w:  9, h: 12, kind: 'crate'     }, // mid stack
+    { shape: 'rect', x: 18, y: 30, w:  9, h:  3, kind: 'building'  }, // upper arch
+    { shape: 'rect', x: 18, y:  9, w:  9, h:  3, kind: 'building'  }, // lower arch
+    { shape: 'rect', x: 12, y: 18, w:  3, h:  9, kind: 'building'  }, // new west-flank split
+    { shape: 'rect', x: 18, y: 21, w:  3, h:  3, kind: 'crate'     },
+    { shape: 'rect', x: 51, y: 15, w:  3, h:  9, kind: 'building'  }, // new east-flank split
+    { shape: 'rect', x: 45, y: 15, w:  3, h:  3, kind: 'lowWall'   },
   ],
-  ctSpawns: [{ x: 2, y: 6 }, { x: 1, y: 6 }, { x: 2, y: 7 }, { x: 3, y: 6 }, { x: 2, y: 5 }],
-  tSpawns:  [{ x: 19, y: 6 }, { x: 20, y: 6 }, { x: 19, y: 7 }, { x: 18, y: 6 }, { x: 19, y: 5 }],
+  ctSpawns: [{ x: 6, y: 18 }, { x: 3, y: 18 }, { x: 6, y: 21 }, { x: 9, y: 18 }, { x: 6, y: 15 }],
+  tSpawns:  [{ x: 57, y: 18 }, { x: 60, y: 18 }, { x: 57, y: 21 }, { x: 54, y: 18 }, { x: 57, y: 15 }],
 };
 
 // cs_siege — a walled compound (solid block with an oval courtyard carved out) holds both
 // sites and the CTs; a single east gate lets the storming Ts in. Cover ovals sit outside.
+// Tripled 3x from the original. A second (south) gate is cut into the compound wall,
+// reachable via the open south field that already wraps around from the T side — giving
+// attackers a real second route in instead of the single choke, plus a cover crate on it.
 const CS_SIEGE = {
-  width: 22, height: 14,
+  width: 66, height: 42,
   terrain: [
-    { shape: 'rect', x:  2, y:  2, w: 8, h: 10, kind: 'building'  }, // compound block
-    { shape: 'oval', x:  3, y:  3, w: 6, h:  8, kind: 'floor'     }, // carved courtyard
-    { shape: 'rect', x:  9, y:  6, w: 2, h:  2, kind: 'floor'     }, // east gate
-    { shape: 'rect', x:  4, y:  8, w: 3, h:  2, kind: 'bombsiteA' },
-    { shape: 'rect', x:  4, y:  4, w: 3, h:  2, kind: 'bombsiteB' },
-    { shape: 'rect', x:  4, y:  6, w: 2, h:  2, kind: 'ctSpawn'   },
-    { shape: 'rect', x: 17, y:  6, w: 3, h:  3, kind: 'tSpawn'    },
-    { shape: 'oval', x: 12, y:  3, w: 3, h:  3, kind: 'crate'     },
-    { shape: 'oval', x: 12, y:  9, w: 3, h:  3, kind: 'crate'     },
+    { shape: 'rect', x:  6, y:  6, w: 24, h: 30, kind: 'building'  }, // compound block
+    { shape: 'oval', x:  9, y:  9, w: 18, h: 24, kind: 'floor'     }, // carved courtyard
+    { shape: 'rect', x: 27, y: 18, w:  6, h:  6, kind: 'floor'     }, // east gate
+    { shape: 'rect', x: 15, y:  6, w:  6, h:  6, kind: 'floor'     }, // south gate (new)
+    { shape: 'rect', x: 12, y: 24, w:  9, h:  6, kind: 'bombsiteA' },
+    { shape: 'rect', x: 12, y: 12, w:  9, h:  6, kind: 'bombsiteB' },
+    { shape: 'rect', x: 12, y: 18, w:  6, h:  6, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 51, y: 18, w:  9, h:  9, kind: 'tSpawn'    },
+    { shape: 'oval', x: 36, y:  9, w:  9, h:  9, kind: 'crate'     },
+    { shape: 'oval', x: 36, y: 27, w:  9, h:  9, kind: 'crate'     },
+    { shape: 'rect', x: 24, y:  3, w:  3, h:  3, kind: 'crate'     }, // cover on the new south approach
   ],
-  ctSpawns: [{ x: 4, y: 6 }, { x: 5, y: 6 }, { x: 4, y: 7 }, { x: 5, y: 7 }, { x: 4, y: 5 }],
-  tSpawns:  [{ x: 18, y: 7 }, { x: 19, y: 7 }, { x: 17, y: 7 }, { x: 18, y: 8 }, { x: 18, y: 6 }],
+  ctSpawns: [{ x: 12, y: 18 }, { x: 15, y: 18 }, { x: 12, y: 21 }, { x: 15, y: 21 }, { x: 12, y: 15 }],
+  tSpawns:  [{ x: 54, y: 21 }, { x: 57, y: 21 }, { x: 51, y: 21 }, { x: 54, y: 24 }, { x: 54, y: 18 }],
 };
 
 // cs_italy — village: CTs top-left, Ts bottom-right, two market buildings dividing the
 // middle with an oval stall stack; A market (upper-right), B cellar (lower-left).
+// Tripled 3x from the original, which already had a maze-like middle (2 buildings, an oval
+// stall, 2 alley walls). Adds two more alley walls (+cover) to carve genuinely new nooks
+// out of what would otherwise be open ground once tripled.
 const CS_ITALY = {
-  width: 22, height: 14,
+  width: 66, height: 42,
   terrain: [
-    { shape: 'rect', x:  1, y: 10, w: 3, h: 3, kind: 'ctSpawn'   },
-    { shape: 'rect', x: 18, y:  1, w: 3, h: 3, kind: 'tSpawn'    },
-    { shape: 'rect', x: 15, y: 10, w: 4, h: 3, kind: 'bombsiteA' }, // market
-    { shape: 'rect', x:  2, y:  2, w: 4, h: 3, kind: 'bombsiteB' }, // wine cellar
-    { shape: 'rect', x:  6, y:  8, w: 6, h: 3, kind: 'building'  }, // upper building
-    { shape: 'rect', x: 11, y:  3, w: 6, h: 3, kind: 'building'  }, // lower building
-    { shape: 'oval', x:  8, y:  5, w: 3, h: 3, kind: 'crate'     }, // stall stack
-    { shape: 'rect', x:  5, y:  5, w: 1, h: 3, kind: 'building'  }, // left alley wall
-    { shape: 'rect', x: 16, y:  6, w: 1, h: 3, kind: 'building'  }, // right alley wall
+    { shape: 'rect', x:  3, y: 30, w:  9, h:  9, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 54, y:  3, w:  9, h:  9, kind: 'tSpawn'    },
+    { shape: 'rect', x: 45, y: 30, w: 12, h:  9, kind: 'bombsiteA' }, // market
+    { shape: 'rect', x:  6, y:  6, w: 12, h:  9, kind: 'bombsiteB' }, // wine cellar
+    { shape: 'rect', x: 18, y: 24, w: 18, h:  9, kind: 'building'  }, // upper building
+    { shape: 'rect', x: 33, y:  9, w: 18, h:  9, kind: 'building'  }, // lower building
+    { shape: 'oval', x: 24, y: 15, w:  9, h:  9, kind: 'crate'     }, // stall stack
+    { shape: 'rect', x: 15, y: 15, w:  3, h:  9, kind: 'building'  }, // left alley wall
+    { shape: 'rect', x: 48, y: 18, w:  3, h:  9, kind: 'building'  }, // right alley wall
+    { shape: 'rect', x: 36, y: 18, w:  3, h:  9, kind: 'building'  }, // new mid alley wall
+    { shape: 'rect', x: 39, y: 21, w:  3, h:  3, kind: 'crate'     },
+    { shape: 'rect', x: 42, y: 18, w:  3, h:  9, kind: 'building'  }, // new A-approach alley wall
+    { shape: 'rect', x: 45, y: 27, w:  3, h:  3, kind: 'lowWall'   },
   ],
-  ctSpawns: [{ x: 2, y: 11 }, { x: 1, y: 11 }, { x: 3, y: 11 }, { x: 2, y: 12 }, { x: 2, y: 10 }],
-  tSpawns:  [{ x: 19, y: 2 }, { x: 20, y: 2 }, { x: 18, y: 2 }, { x: 19, y: 3 }, { x: 19, y: 1 }],
+  ctSpawns: [{ x: 6, y: 33 }, { x: 3, y: 33 }, { x: 9, y: 33 }, { x: 6, y: 36 }, { x: 6, y: 30 }],
+  tSpawns:  [{ x: 57, y: 6 }, { x: 60, y: 6 }, { x: 54, y: 6 }, { x: 57, y: 9 }, { x: 57, y: 3 }],
 };
 
 // de_dust2 — the flagship map, rebuilt at higher fidelity with named callouts. CTs hold
@@ -278,49 +328,45 @@ const CS_ITALY = {
 //      tile === 'wall'), so — like real elevated cover — you can still see and shoot
 //      across or over it.
 const DE_DUST2 = {
-  width: 22, height: 14,
+  width: 66, height: 42,
   terrain: [
     // ── spawns & sites ──
-    { shape: 'rect', x:  1, y:  9, w: 4, h: 3, kind: 'ctSpawn'   },
-    { shape: 'rect', x: 17, y:  9, w: 3, h: 3, kind: 'tSpawn'    },
-    { shape: 'rect', x:  1, y:  1, w: 5, h: 4, kind: 'bombsiteB' },
-    { shape: 'rect', x: 15, y:  1, w: 5, h: 4, kind: 'bombsiteA' },
+    { shape: 'rect', x:  3, y: 27, w: 12, h:  9, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 51, y: 27, w:  9, h:  9, kind: 'tSpawn'    },
+    { shape: 'rect', x:  3, y:  3, w: 15, h: 12, kind: 'bombsiteB' },
+    { shape: 'rect', x: 45, y:  3, w: 15, h: 12, kind: 'bombsiteA' },
 
     // ── structural walls: Mid corridor (west leg) and Long/Catwalk divider ──
-    { shape: 'rect', x:  5, y:  3, w: 1, h: 6, kind: 'building'  }, // mid west wall (leaves y1-2 open: B Window)
-    { shape: 'rect', x:  9, y:  1, w: 1, h: 7, kind: 'building'  }, // mid east wall
-    { shape: 'rect', x: 13, y:  5, w: 1, h: 4, kind: 'building'  }, // catwalk/long divider (leaves y1-4 open: Short)
+    { shape: 'rect', x: 15, y:  9, w: 3, h: 18, kind: 'building'  }, // mid west wall (leaves y3-9 open: B Window)
+    { shape: 'rect', x: 27, y:  3, w: 3, h: 21, kind: 'building'  }, // mid east wall
+    { shape: 'rect', x: 39, y: 15, w: 3, h: 12, kind: 'building'  }, // catwalk/long divider (leaves y3-15 open: Short)
 
     // ── Long A: right-side corridor from T spawn down into A, with barrel cover ──
     // (labels feed the terrain-details panel on select only — see the note in
     // buildFromShapes; they're not drawn on the map itself.)
-    { shape: 'oval', x: 15, y:  4, w: 3, h: 3, kind: 'crate',   label: 'Blue'   }, // mid-long barrels
-    { shape: 'rect', x: 19, y:  1, w: 1, h: 2, kind: 'lowWall', label: 'Goose'  }, // corner box, shoot-over
-    { shape: 'rect', x: 16, y:  1, w: 1, h: 1, kind: 'lowWall', label: 'Pit'    }, // second A corner box
+    { shape: 'oval', x: 45, y: 12, w: 9, h: 9, kind: 'crate',   label: 'Blue'   }, // mid-long barrels
+    { shape: 'rect', x: 57, y:  3, w: 3, h: 6, kind: 'lowWall', label: 'Goose'  }, // corner box, shoot-over
+    { shape: 'rect', x: 48, y:  3, w: 3, h: 3, kind: 'lowWall', label: 'Pit'    }, // second A corner box
+    { shape: 'rect', x: 54, y: 15, w: 3, h:  9, kind: 'building', label: 'Long corner wall' }, // new: splits Long into two lanes
+    { shape: 'rect', x: 60, y: 18, w: 3, h:  3, kind: 'lowWall',   label: 'Corner box' },
 
     // ── Catwalk / Short A: elevated lane (own path, not stacked) into A's flank ──
-    { shape: 'rect', x: 13, y:  2, w: 1, h: 1, kind: 'lowWall', label: 'Short'  }, // catwalk railing into A, shoot-over
+    { shape: 'rect', x: 39, y:  6, w: 3, h: 3, kind: 'lowWall', label: 'Short'  }, // catwalk railing into A, shoot-over
+    { shape: 'rect', x: 33, y: 18, w: 3, h: 12, kind: 'building', label: 'Shortcut wall' }, // new: splits Catwalk into two lanes
+    { shape: 'rect', x: 30, y: 21, w: 3, h:  3, kind: 'crate',     label: 'Boxes' },
 
     // ── Mid: centre corridor with Xbox cover, opens into B Window ──
-    { shape: 'rect', x:  6, y:  3, w: 2, h: 2, kind: 'crate',   label: 'Xbox'   },
-    { shape: 'rect', x:  6, y:  2, w: 1, h: 1, kind: 'lowWall', label: 'Window' }, // window sill, shoot-through
+    { shape: 'rect', x: 18, y:  9, w: 6, h: 6, kind: 'crate',   label: 'Xbox'   },
+    { shape: 'rect', x: 18, y:  6, w: 3, h: 3, kind: 'lowWall', label: 'Window' }, // window sill, shoot-through
 
     // ── B Tunnel: left-side route from T spawn's plaza down into B ──
-    { shape: 'rect', x:  1, y:  1, w: 2, h: 1, kind: 'crate',   label: 'Car'    },
-    { shape: 'rect', x:  3, y:  3, w: 1, h: 1, kind: 'lowWall', label: 'Elevator' }, // B site platform edge
-
-    // ── scattered debris: small extra cover, one per zone, none blocking the only path ──
-    { shape: 'rect', x:  4, y: 11, w: 1, h: 1, kind: 'debris' }, // CT spawn
-    { shape: 'rect', x: 19, y: 11, w: 1, h: 1, kind: 'debris' }, // T spawn
-    { shape: 'rect', x: 17, y:  3, w: 1, h: 1, kind: 'debris' }, // A site
-    { shape: 'rect', x:  4, y:  3, w: 1, h: 1, kind: 'debris' }, // B site
-    { shape: 'rect', x:  7, y:  6, w: 1, h: 1, kind: 'debris' }, // Mid, east bypass still open
-    { shape: 'rect', x: 11, y:  7, w: 1, h: 1, kind: 'debris' }, // Catwalk
-    { shape: 'rect', x:  3, y:  6, w: 1, h: 1, kind: 'debris' }, // B Tunnel
-    { shape: 'rect', x: 18, y:  6, w: 1, h: 1, kind: 'debris' }, // Long
+    { shape: 'rect', x:  3, y:  3, w: 6, h: 3, kind: 'crate',   label: 'Car'    },
+    { shape: 'rect', x:  9, y:  9, w: 3, h: 3, kind: 'lowWall', label: 'Elevator' }, // B site platform edge
+    { shape: 'rect', x:  8, y: 15, w: 3, h:  9, kind: 'building', label: 'Tunnel wall' }, // new: splits B Tunnel into two lanes
+    { shape: 'rect', x:  4, y: 18, w: 3, h:  3, kind: 'crate',     label: 'Barrels' },
   ],
-  ctSpawns: [{ x: 1, y: 10 }, { x: 2, y: 10 }, { x: 3, y: 10 }, { x: 2, y: 9 }, { x: 2, y: 11 }],
-  tSpawns:  [{ x: 19, y: 10 }, { x: 18, y: 10 }, { x: 17, y: 10 }, { x: 18, y: 9 }, { x: 18, y: 11 }],
+  ctSpawns: [{ x: 3, y: 30 }, { x: 6, y: 30 }, { x: 9, y: 30 }, { x: 6, y: 27 }, { x: 6, y: 33 }],
+  tSpawns:  [{ x: 57, y: 30 }, { x: 54, y: 30 }, { x: 51, y: 30 }, { x: 54, y: 27 }, { x: 54, y: 33 }],
 };
 
 // ── Map registry ──────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CsGame } from './index.js';
 import { WEAPONS } from './weapons.js';
+import { CS_VISION } from './belief.js';
 import { num } from '../coord.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
@@ -150,6 +151,7 @@ test('cs: crouching reduces damage taken from a shot', () => {
 test('cs: crouching halves next-turn move allowance', () => {
   let state = toActionPhase(CsGame.createInitialState(players()));
   const unitId = state.units.find(u => u.ownerId === 'T').id;
+  const standingAllowance = state.units.find(u => u.id === unitId).perTurn.moveAllowance;
 
   state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'crouch', unitId } }]);
   // End T's turn, then CT's turn, so T's perTurn resets for its next turn.
@@ -157,7 +159,7 @@ test('cs: crouching halves next-turn move allowance', () => {
   state = CsGame.applyActions(state, [{ playerId: 'p1', action: { type: 'end-turn', unitId: '__player__' } }]);
 
   const unit = state.units.find(u => u.id === unitId);
-  assert.ok(unit.perTurn.moveAllowance < 4);
+  assert.ok(unit.perTurn.moveAllowance < standingAllowance);
 });
 
 test('cs: crouching shrinks vision range for getVisibleState', () => {
@@ -165,7 +167,7 @@ test('cs: crouching shrinks vision range for getVisibleState', () => {
   const unitId = state.units.find(u => u.ownerId === 'T').id;
   state = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'crouch', unitId } }]);
   const unit = state.units.find(u => u.id === unitId);
-  assert.ok(unit.visionRange < 4);
+  assert.ok(unit.visionRange < CS_VISION.range);
 });
 
 // ---------------------------------------------------------------------------

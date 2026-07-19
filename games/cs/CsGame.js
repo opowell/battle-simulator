@@ -18,9 +18,10 @@ import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.
 import { filterVisibleUnits, orientToEnemies } from '../vision.js';
 import { segmentClearOf } from '../terrainShapes.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
+import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 
-const MOVE_RANGE     = 4; // per-turn move allowance (budget, not a single-move cap) — see perTurn.moveAllowance
+const MOVE_RANGE     = 8; // per-turn move allowance (budget, not a single-move cap) — see perTurn.moveAllowance; doubled alongside the 3x map/vision resize (2026-07-17)
 // Smallest move that actually counts as moving. A unit's move budget is a float64 that shrinks
 // by the exact (continuous) distance travelled, so it routinely lands on a tiny positive residue
 // (e.g. 1e-16) after a near-full move. Without a floor, that residue is still "> 0", so the unit
@@ -1194,6 +1195,7 @@ export const CsGame = {
   // Fog of war: each team sees only enemies near its players; the generic
   // ObscuroAgent samples the unseen enemies via sampleWorlds below.
   gameOptions: [
+    MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies near its own players', type: 'boolean', default: true },
   ],
   sampleWorlds: withTeam(csSampleWorlds),

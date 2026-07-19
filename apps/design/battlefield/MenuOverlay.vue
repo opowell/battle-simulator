@@ -4,8 +4,9 @@ defineProps({
   serverErr:  { type: String, default: '' },
   gamesCount: { type: Number, default: 0 },
   showRuler:  Boolean,
+  showHpBars: { type: Boolean, default: true },
 });
-defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler']);
+defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars']);
 const apiLabel = 'api · ' + window.location.host + window.api.basePath;
 </script>
 
@@ -38,6 +39,11 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
                   @click="$emit('toggle-ruler')">
             <BsIcon name="move" :size="14" :color="showRuler ? 'var(--accent)' : 'var(--dim)'"/>
             {{showRuler ? 'Hide ruler' : 'Show ruler'}}
+          </button>
+          <button class="btn btn-ghost menu-btn"
+                  @click="$emit('toggle-hp-bars')">
+            <BsIcon name="shield" :size="14" :color="showHpBars ? 'var(--accent)' : 'var(--dim)'"/>
+            {{showHpBars ? 'Hide health bars' : 'Show health bars'}}
           </button>
           <button class="btn btn-ghost menu-btn"
                   @click="$emit('close'); $emit('open-settings')">

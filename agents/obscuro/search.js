@@ -187,6 +187,10 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
       if (budgetMs && Date.now() - t0 >= budgetMs) break;
     }
     snapshots.push([...root.rm.lastStrategy()]);
+    // Optional progress side-channel (e.g. a UI "round 12/30" indicator, mirroring
+    // Stockfish's per-depth ticks) — the current last-iterate strategy over the
+    // (fixed) root action set, purely informational and never affects the search.
+    cfg.onRound?.(round + 1, maxRounds, { rows: root.actions, dist: [...root.rm.lastStrategy()] });
     if (budgetMs && Date.now() - t0 >= budgetMs) break;
   }
   // A final, longer solve so the equilibrium settles on the frozen tree (Fig. 8:

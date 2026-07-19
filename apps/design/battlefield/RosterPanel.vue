@@ -4,6 +4,7 @@ defineProps({
   selectedId: { type: String, default: null },
   rdr:        Object,
   field:      Object,
+  showHpBars: { type: Boolean, default: true },
 });
 defineEmits(['select', 'hover']);
 </script>
@@ -44,7 +45,7 @@ defineEmits(['select', 'hover']);
             <div class="mono roster-id">{{u.id}}</div>
           </div>
           <div class="roster-bars">
-            <div v-if="!u.dead && u.hpMax != null && field.ui?.showHpBars !== false"
+            <div v-if="!u.dead && u.hpMax != null && showHpBars"
                  class="roster-hp-track" :style="{background: rdr.hpTrack}">
               <div class="roster-hp-fill"
                    :style="{

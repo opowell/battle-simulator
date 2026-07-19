@@ -32,6 +32,7 @@ const props = defineProps({
   activeUnitId: { type: String, default: null },
   fog:          Boolean,
   showRuler:    Boolean,
+  showHpBars:   { type: Boolean, default: true },
   rdr:          Object,
   legalSquares:    { type: Array, default: () => [] },
   lastMoveSquares: { type: Array, default: () => [] },
@@ -44,6 +45,10 @@ const props = defineProps({
   // screen px, and the world point to hold at the middle of the stage. Null = fit + centre.
   zoomPx:          { type: Number, default: null },
   center:          { type: Object, default: null },
+  // Analysis-panel move suggestions (Battlefield.vue's suggestionArrows): ranked
+  // [{ from: [col,row], to: [col,row], rank, hovered }], drawn as chess.com-style
+  // arrows between cell centres — see AnalysisPanel.vue.
+  suggestionArrows: { type: Array, default: () => [] },
 });
 const emit = defineEmits(['select', 'sq-click', 'set-marker']);
 const imgSrc   = window.api.imgSrc;
@@ -348,6 +353,63 @@ function hasMoveIntent(u) {
   return Math.hypot(plen(u.next.x - u.x), plen(u.next.y - u.y)) >= 3;
 }
 
+// Analysis suggestion arrows: lichess-style thick shafts with a triangular
+// head, scaled to the board's cell size. Between two cell CENTRES (+0.5)
+// since these aren't tied to a unit's actual sub-cell position. The shaft
+// (a rotated zero-height div, same trick as the movement intent arrow above)
+// is shortened by the head's length so it ends at the head's base rather
+// than poking out past its point; the head is a CSS border-triangle rotated
+// around its own tip (transform-origin 100% 50%) so that tip lands exactly
+// on the destination cell centre regardless of angle.
+const suggestionArrowGeom = computed(() => props.suggestionArrows.map(a => {
+  const fx = a.from[0] + 0.5, fy = a.from[1] + 0.5;
+  const tx = a.to[0] + 0.5, ty = a.to[1] + 0.5;
+  const fullLen  = Math.hypot(plen(tx - fx), plen(ty - fy));
+  const rotDeg   = Math.atan2(ty - fy, tx - fx) * 180 / Math.PI;
+  const thick    = Math.max(4, cellPx.value * (a.rank === 1 ? 0.16 : 0.11));
+  const headLen  = Math.max(9, cellPx.value * (a.rank === 1 ? 0.34 : 0.26));
+  const headHalf = headLen * 0.62;
+  return {
+    key: `${a.from.join(',')}-${a.to.join(',')}-${a.rank}`,
+    rank: a.rank, hovered: a.hovered,
+    shaftLeft: px(fx), shaftTop: py(fy), rotDeg,
+    shaftLen: Math.max(0, fullLen - headLen * 0.7), thick,
+    tipX: px(tx), tipY: py(ty), headLen, headHalf,
+  };
+}));
+
+// ── queued move waypoints (the generic goto-queue mechanic, games/moveQueue.js) ──
+// Shown for every unit (not just the selected one) so a plan stays visible on the
+// board turn to turn — a dashed segment per hop plus a numbered dot at each stop,
+// chained from the unit's current square through its queue in order. On by default
+// (ui.moveQueue !== false); a game can opt out if it reuses `queue` for something else.
+const moveQueueOn = computed(() => props.field.ui?.moveQueue !== false);
+const queueSegments = computed(() => {
+  if (!moveQueueOn.value) return [];
+  const segs = [];
+  for (const u of props.units) {
+    if (u.dead || !u.queue?.length || !isVisible(u)) continue;
+    let prev = { x: u.x, y: u.y };
+    u.queue.forEach((wp, i) => {
+      const cur = { x: wp.x + 0.5, y: wp.y + 0.5 };
+      segs.push({ key: `${u.id}-${i}`, from: prev, to: cur, color: u.teamObj?.raw ?? '#fff' });
+      prev = cur;
+    });
+  }
+  return segs;
+});
+const queueDots = computed(() => {
+  if (!moveQueueOn.value) return [];
+  const dots = [];
+  for (const u of props.units) {
+    if (u.dead || !u.queue?.length || !isVisible(u)) continue;
+    u.queue.forEach((wp, i) => {
+      dots.push({ key: `${u.id}-${i}`, x: wp.x + 0.5, y: wp.y + 0.5, n: i + 1, color: u.teamObj?.raw ?? '#fff' });
+    });
+  }
+  return dots;
+});
+
 // ── drag-to-move ──────────────────────────────────────────────────────────────
 // Mirrors SchematicLayer's drag: press a piece, its ghost follows the cursor, release on
 // a legal square to move. The ghost is the one thing here that genuinely can't live in a
@@ -459,7 +521,7 @@ function handleUnitClick(e, u) {
 
         <HtmlUnit v-for="u in c.units" :key="u.id"
           :unit="u" :r="unitR(u)" :rdr="rdr" :shape="unitShape(u)"
-          :showLetter="!field.ui?.showFacing" :showHp="field.ui?.showHpBars !== false"
+          :showLetter="!field.ui?.showFacing" :showHp="showHpBars"
           :recolor="field.ui?.recolorTeamSprites"
           :active="u.id === highlightUnitId && !field.ui?.blinkActiveUnit"
           :selected="u.id === selectedId && !field.ui?.highlightSelectedSquare"
@@ -525,6 +587,40 @@ function handleUnitClick(e, u) {
            }"/>
     </template>
 
+    <!-- Analysis suggestion arrows (AnalysisPanel.vue): ranked candidate moves,
+         rank 1 drawn thicker/brighter, the hovered candidate emphasised. Shaft
+         + triangular head, lichess-style (see suggestionArrowGeom above). -->
+    <template v-for="a in suggestionArrowGeom" :key="'sg'+a.key">
+      <div class="hl-noevents hl-suggest" :class="{ 'hl-suggest--top': a.rank === 1, 'hl-suggest--hovered': a.hovered }"
+           :style="{
+             position:'absolute', left: a.shaftLeft+'px', top: a.shaftTop+'px',
+             width: a.shaftLen+'px', height: a.thick+'px', marginTop: (-a.thick/2)+'px',
+             transform: `rotate(${a.rotDeg}deg)`, transformOrigin: '0 50%',
+           }"/>
+      <div class="hl-noevents hl-suggest-head" :class="{ 'hl-suggest--top': a.rank === 1, 'hl-suggest--hovered': a.hovered }"
+           :style="{
+             position:'absolute', left: (a.tipX - a.headLen)+'px', top: (a.tipY - a.headHalf)+'px',
+             borderWidth: a.headHalf+'px '+0+' '+a.headHalf+'px '+a.headLen+'px',
+             transform: `rotate(${a.rotDeg}deg)`, transformOrigin: (a.headLen)+'px '+a.headHalf+'px',
+           }"/>
+    </template>
+
+    <!-- Queued move waypoints (civ1 goto orders): dashed hop + numbered stop, per unit -->
+    <template v-for="seg in queueSegments" :key="'q'+seg.key">
+      <div class="hl-noevents hl-queue-line"
+           :style="{
+             position:'absolute', left: px(seg.from.x)+'px', top: py(seg.from.y)+'px',
+             width: Math.hypot(plen(seg.to.x - seg.from.x), plen(seg.to.y - seg.from.y))+'px',
+             transform: `rotate(${Math.atan2(seg.to.y - seg.from.y, seg.to.x - seg.from.x)}rad)`,
+             transformOrigin: '0 50%',
+             borderTop: '1.4px dashed ' + seg.color,
+           }"/>
+    </template>
+    <div v-for="dot in queueDots" :key="'qd'+dot.key" class="hl-noevents hl-queue-dot"
+         :style="{ left: px(dot.x)+'px', top: py(dot.y)+'px', borderColor: dot.color, color: dot.color }">
+      {{dot.n}}
+    </div>
+
     <!-- Ruler labels -->
     <template v-if="showRuler">
       <span v-for="r in rulerX" :key="'rx'+r.label" class="hl-noevents hl-ruler"
@@ -573,5 +669,24 @@ img.hl-fill { display: block; width: 100%; height: 100%; }
 .hl-zone { border-radius: 2px; }
 .hl-zone-label { position: absolute; left: 4px; top: 1px; font-size: 10px; letter-spacing: 0.5px; }
 .hl-intent { height: 0; }
+/* Lichess-style suggestion arrow: a thick coloured shaft (a solid block, its
+   height set inline per-arrow) plus a CSS border-triangle head (see
+   suggestionArrowGeom's comment in the script for the geometry). Both pieces
+   share one colour/opacity via border-color/background so rank/hover
+   styling only needs to be set in one place per variant below. */
+.hl-suggest { background: rgba(66,198,230,0.55); border-radius: 2px; opacity: 0.85; }
+.hl-suggest-head { width: 0; height: 0; border-style: solid; border-color: transparent transparent transparent rgba(66,198,230,0.55); opacity: 0.85; }
+.hl-suggest--top { background: rgba(66,198,230,0.85); opacity: 1; }
+.hl-suggest-head.hl-suggest--top { border-left-color: rgba(66,198,230,0.85); background: none; opacity: 1; }
+.hl-suggest--hovered { background: rgba(242,180,65,0.95); opacity: 1; }
+.hl-suggest-head.hl-suggest--hovered { border-left-color: rgba(242,180,65,0.95); background: none; opacity: 1; }
+.hl-queue-line { height: 0; opacity: 0.85; }
+.hl-queue-dot {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 14px; height: 14px; border-radius: 50%; border: 1.4px solid;
+  background: rgba(10,12,16,0.65);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; font-weight: 700; font-family: var(--mono);
+}
 .hl-ruler { position: absolute; font-size: 8px; white-space: nowrap; }
 </style>

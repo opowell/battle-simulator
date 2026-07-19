@@ -6,6 +6,7 @@ import { getDoomBelief, DOOM_VISION } from './belief.js';
 import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { filterVisibleUnits, orientToEnemies } from '../vision.js';
 import { parsePos, num, tileNum, posToWire } from '../coord.js';
+import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 const ROTATE_COST = 1;  // flat AP tax for a 'rotate' action (turn in place, no move)
 
@@ -602,6 +603,7 @@ export const DoomGame = {
     { id: 'e1m1', name: 'Hangar (E1M1)', description: 'The UAC hangar — survive waves of hell-spawned demons', config: {} },
   ],
   gameOptions: [
+    MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: true },
   ],
   createInitialState,

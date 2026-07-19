@@ -1,7 +1,11 @@
 import { getAllLegalMoves } from './moves.js';
 import { applyMoveToBoard, isKingInCheck, fileIndex, rankOf, getVisibleSquares } from './board.js';
 import { getBelief } from './belief.js';
-import { stockfishBestAction, sfOptsForDifficulty, difficultyToNumber } from './stockfish.js';
+import {
+  stockfishBestAction, sfOptsForDifficulty, difficultyToNumber, multiPV,
+  available as stockfishAvailable,
+} from './stockfish.js';
+import { toFEN, uciToAction } from './fen.js';
 
 const FILES = 'abcdefgh';
 
@@ -471,9 +475,15 @@ function aggregateScores(scores) {
 // to ordinary alpha-beta search.
 // ---------------------------------------------------------------------------
 
-function search(board, gs, color, legalActions, particles, opts) {
+// Scores every candidate move (after the same cheap topK prefilter `search` uses)
+// against the belief-particle cloud, without picking one — the read-only half of
+// `search`, reused both by move selection and by `analyze` (which must never
+// mutate anything, only rank). Returns candidates sorted best-first, each
+// `{ move, score }` (no noise applied — noise is a selection-time blunder knob,
+// not part of a move's actual evaluation).
+function scoreAllCandidates(board, gs, color, legalActions, particles, opts) {
   TT = new Map();
-  const { depth, useQuiesce, noise, topK, infoWeight, clamp } = opts;
+  const { depth, useQuiesce, topK, infoWeight, clamp } = opts;
   // Across many uncertain worlds we clamp each particle's score so that a single
   // fantasy line (e.g. a phantom checkmate from imagined hidden pieces) cannot
   // dominate the aggregate and scare the AI out of saving real material.
@@ -491,14 +501,26 @@ function search(board, gs, color, legalActions, particles, opts) {
       .map(x => x.m);
   }
 
-  let bestScore = -Infinity;
-  let bestMove  = candidates[0] ?? legalActions[0];
-  for (const m of candidates) {
+  const scored = candidates.map(m => {
     const scores = particles.map(p => clip(scoreMoveInParticle(p, gs, color, m, depth, useQuiesce)));
     let score = aggregateScores(scores);
     if (infoWeight) score += getVisibleSquares(applyMoveToBoard(board, m), color).size * infoWeight;
-    if (noise > 0)  score += Math.random() * noise * 2 - noise;
-    if (score > bestScore) { bestScore = score; bestMove = m; }
+    return { move: m, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored;
+}
+
+function search(board, gs, color, legalActions, particles, opts) {
+  const scored = scoreAllCandidates(board, gs, color, legalActions, particles, opts);
+  if (!scored.length) return legalActions[0];
+  const { noise } = opts;
+  if (!(noise > 0)) return scored[0].move;
+
+  let bestScore = -Infinity, bestMove = scored[0].move;
+  for (const { move, score } of scored) {
+    const jittered = score + (Math.random() * noise * 2 - noise);
+    if (jittered > bestScore) { bestScore = jittered; bestMove = move; }
   }
   return bestMove;
 }
@@ -547,5 +569,59 @@ export const ChessAgent = {
     });
     belief.commitOurMove(action, board);
     return action;
+  },
+
+  // Read-only position analysis: ranks every legal move without committing one,
+  // for the UI's "suggest a move" panel. Must never mutate the shared belief
+  // store — a viewer opening the analysis panel must not change how the real
+  // AI plays its next turn — so under fog it resyncs the belief to the current
+  // board (`beginTurn`, which just re-derives from ground truth, same as
+  // `chooseAction` does before sampling) but deliberately skips
+  // `commitOurMove`, the step that records a move as actually played.
+  async analyze(state, legalActions, opts = {}) {
+    if (!legalActions?.length) return { engine: 'chess-ai', mode: 'none', candidates: [] };
+
+    // Defaults to whoever's actually to move, but a caller may override — e.g.
+    // the analysis API always passes the requesting viewer's own colour under
+    // fog, so "what's good for my side" stays answerable even when it isn't
+    // literally their turn yet (see api-server.js's handleAnalyze).
+    const color = opts.color ?? state.activePlayers[0];
+    const { board, gameSpecific } = state;
+    const cfg = chessConfigForDifficulty(gameSpecific.difficulty);
+
+    if (!gameSpecific.fogOfWar) {
+      if (await stockfishAvailable()) {
+        try {
+          const fen = toFEN(board, gameSpecific, color === 'white' ? 'w' : 'b', state.turnNumber ?? 1);
+          const maxDepth = 14;
+          const toCandidates = (raw) => raw
+            .map(({ move, cp }) => { const a = uciToAction(move, legalActions); return a ? { move: a, cp } : null; })
+            .filter(Boolean);
+          // Live "depth N/14" progress (lichess-style) — purely a side channel,
+          // fired once per completed iterative-deepening depth; see multiPV.
+          const onInfo = opts.onProgress
+            ? ({ depth, candidates }) => opts.onProgress({ kind: 'depth', depth, maxDepth, candidates: toCandidates(candidates) })
+            : undefined;
+          const pv = await multiPV(fen, { multipv: Math.min(legalActions.length, 8), depth: maxDepth, onInfo });
+          if (pv && pv.length) {
+            const candidates = toCandidates(pv);
+            if (candidates.length) return { engine: 'chess-ai', mode: 'stockfish', candidates };
+          }
+        } catch { /* fall through to the built-in evaluator */ }
+      }
+      const scored = scoreAllCandidates(board, gameSpecific, color, legalActions, [board], {
+        depth: cfg.depth, useQuiesce: cfg.useQuiesce, topK: 0, infoWeight: 0,
+      });
+      return { engine: 'chess-ai', mode: 'minimax', candidates: scored.map(({ move, score }) => ({ move, cp: score })) };
+    }
+
+    const belief = getBelief(state, color);
+    belief.beginTurn(board, state.turnNumber ?? null);
+    let particles = belief.sample(board, opts.particles ?? cfg.fog.particles);
+    if (particles.length === 0) particles = [board];
+    const scored = scoreAllCandidates(board, gameSpecific, color, legalActions, particles, {
+      depth: cfg.fog.depth, useQuiesce: cfg.useQuiesce, topK: cfg.fog.topK, infoWeight: INFO_WEIGHT, clamp: FOG_CLAMP,
+    });
+    return { engine: 'chess-ai', mode: 'fog-minimax', candidates: scored.map(({ move, score }) => ({ move, cp: score })) };
   },
 };

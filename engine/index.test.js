@@ -158,3 +158,171 @@ test('multiple activePlayers all act in one step', async () => {
   assert.deepEqual(engine.state.gameSpecific.actions, ['a', 'b']);
   assert.equal(engine.log[0].playerActions.length, 2);
 });
+
+// ---------------------------------------------------------------------------
+// Simultaneous ("we-go") mode: a tiny 1-D board game — units move ±1 along a
+// 4-square line, one move per unit per turn, explicit end-turn like tactical.
+// ---------------------------------------------------------------------------
+
+const MiniGame = {
+  name: 'mini',
+
+  createInitialState(players, config = {}) {
+    const [a, b] = players.map(p => p.id);
+    const positions = config.positions ?? { ua: 0, ub: 3 };
+    return {
+      gameName: 'mini',
+      turnNumber: 1,
+      activePlayers: [a],
+      currentPhase: 'action',
+      players,
+      board: {},
+      units: [
+        { id: 'ua', ownerId: a, type: 'pawn', position: { x: positions.ua, y: 0 }, alive: true, perTurn: { hasMoved: false } },
+        { id: 'ub', ownerId: b, type: 'pawn', position: { x: positions.ub, y: 0 }, alive: true, perTurn: { hasMoved: false } },
+      ],
+      lastActions: null,
+      gameSpecific: {},
+    };
+  },
+
+  getLegalActions(state, playerId) {
+    const actions = [];
+    for (const u of state.units) {
+      if (!u.alive || u.ownerId !== playerId || u.perTurn.hasMoved) continue;
+      for (const toX of [u.position.x - 1, u.position.x + 1]) {
+        if (toX < 0 || toX > 3) continue;
+        if (state.units.some(o => o.alive && o.position.x === toX)) continue;
+        actions.push({ type: 'move', unitId: u.id, from: { ...u.position }, to: { x: toX, y: 0 } });
+      }
+    }
+    actions.push({ type: 'end-turn', unitId: '__player__' });
+    return actions;
+  },
+
+  applyActions(state, playerActions) {
+    const { playerId, action } = playerActions[0];
+    const ids = state.players.map(p => p.id);
+    if (action.type === 'end-turn') {
+      const nextIdx = (ids.indexOf(playerId) + 1) % ids.length;
+      return {
+        ...state,
+        units: state.units.map(u => u.ownerId === playerId ? { ...u, perTurn: { hasMoved: false } } : u),
+        activePlayers: [ids[nextIdx]],
+        turnNumber: nextIdx === 0 ? state.turnNumber + 1 : state.turnNumber,
+        lastActions: playerActions,
+      };
+    }
+    return {
+      ...state,
+      units: state.units.map(u => u.id === action.unitId ? { ...u, position: { ...action.to }, perTurn: { hasMoved: true } } : u),
+      lastActions: playerActions,
+    };
+  },
+
+  getResult: (s) => s.turnNumber > 2 ? { outcome: 'draw', winnerId: null, reason: 'done' } : null,
+  renderState: () => '',
+};
+
+// Agent that picks each scripted action by predicate, falling back to end-turn.
+function scriptAgent(script) {
+  let i = 0;
+  return {
+    id: 'script',
+    chooseAction: (_s, actions) => {
+      const pick = script[i++];
+      return (pick && actions.find(pick)) ?? actions.find(a => a.type === 'end-turn');
+    },
+  };
+}
+
+test('simultaneous mode resolves plans in exact time order and logs per order', async () => {
+  const players = [
+    { id: 'a', name: 'a', agent: scriptAgent([a => a.type === 'move' && a.to.x === 1]) },
+    { id: 'b', name: 'b', agent: scriptAgent([a => a.type === 'move' && a.to.x === 2]) },
+  ];
+  const engine = new GameEngine(MiniGame, players, { simultaneousTurns: true });
+  engine._init();
+  await engine.step();
+
+  assert.equal(engine.state.units.find(u => u.id === 'ua').position.x, 1);
+  assert.equal(engine.state.units.find(u => u.id === 'ub').position.x, 2);
+  assert.equal(engine.state.turnNumber, 2);
+  // Both moves start at t=0 and complete at t=1 (before either end-turn at t=2),
+  // so resolution interleaves by time, ties broken by seat order.
+  assert.deepEqual(engine.log.map(e => `${e.playerActions[0].playerId}:${e.playerActions[0].action.type}`),
+    ['a:move', 'b:move', 'a:end-turn', 'b:end-turn']);
+  assert.ok(engine.log.every(e => e.simultaneous && e.turnNumber === 1));
+  assert.ok(engine.log.every(e => e.t1 > e.t0 || e.t1 === e.t0));
+});
+
+test('simultaneous mode fizzles orders that are illegal at their completion time', async () => {
+  // Both plan to move into square 2; both complete at t=1, a resolves first
+  // (seat order), so b's move is stale by its own completion.
+  const players = [
+    { id: 'a', name: 'a', agent: scriptAgent([x => x.type === 'move' && x.to.x === 2]) },
+    { id: 'b', name: 'b', agent: scriptAgent([x => x.type === 'move' && x.to.x === 2]) },
+  ];
+  const engine = new GameEngine(MiniGame, players, { simultaneousTurns: true, positions: { ua: 1, ub: 3 } });
+  engine._init();
+  await engine.step();
+
+  assert.equal(engine.state.units.find(u => u.id === 'ua').position.x, 2);
+  assert.equal(engine.state.units.find(u => u.id === 'ub').position.x, 3); // move fizzled
+  assert.deepEqual(engine.log.map(e => `${e.playerActions[0].playerId}:${e.playerActions[0].action.type}`),
+    ['a:move', 'a:end-turn', 'b:end-turn']);
+});
+
+test('simultaneous mode samples playback frames with interpolated positions', async () => {
+  const players = [
+    { id: 'a', name: 'a', agent: scriptAgent([a => a.type === 'move' && a.to.x === 1]) },
+    { id: 'b', name: 'b', agent: scriptAgent([a => a.type === 'move' && a.to.x === 2]) },
+  ];
+  const engine = new GameEngine(MiniGame, players, { simultaneousTurns: true });
+  engine._init();
+  await engine.step();
+
+  const pb = engine.playback;
+  assert.ok(pb);
+  // Round runs t=0..2 (move completes at 1, end-turn at 2), 61 frames.
+  assert.equal(pb.duration, 2);
+  assert.equal(pb.frames.length, 61);
+  const uaAt = (frame) => frame.units.find(u => u.id === 'ua');
+  assert.equal(uaAt(pb.frames[0]).x, 0);
+  assert.equal(uaAt(pb.frames[60]).x, 1);
+  // Mid-move sample: at t=0.5 the unit is halfway along its exact path.
+  const mid = pb.frames.find(f => Math.abs(f.t - 0.5) < 1e-6);
+  assert.ok(Math.abs(uaAt(mid).x - 0.5) < 1e-6);
+});
+
+test('simultaneous planning states hide the other player\'s queued orders', async () => {
+  const seenByB = [];
+  const players = [
+    { id: 'a', name: 'a', agent: scriptAgent([x => x.type === 'move' && x.to.x === 1]) },
+    { id: 'b', name: 'b', agent: {
+      id: 'spy',
+      chooseAction: (state, actions) => {
+        seenByB.push(state.units.find(u => u.id === 'ua').position.x);
+        return actions.find(x => x.type === 'end-turn');
+      },
+    } },
+  ];
+  const engine = new GameEngine(MiniGame, players, { simultaneousTurns: true });
+  engine._init();
+  await engine.step();
+
+  // b planned against the turn-start state: a's queued move (0→1) never visible.
+  assert.ok(seenByB.length > 0);
+  assert.ok(seenByB.every(pos => pos === 0));
+  // But b can read their own plan via planState only during planning; cleared after.
+  assert.equal(engine.planState('a'), null);
+});
+
+test('simultaneous mode works for games whose actions auto-rotate the turn', async () => {
+  // MockGame has no end-turn: one pass per player per round, rotated by the game.
+  const engine = new GameEngine(MockGame, makePlayers(['a', 'b']), { simultaneousTurns: true });
+  const { result, log } = await engine.run();
+  assert.equal(result.reason, 'test-over');
+  assert.equal(log.length, 6); // 3 rounds × 2 players, one entry per order
+  assert.ok(log.every(e => e.simultaneous));
+});

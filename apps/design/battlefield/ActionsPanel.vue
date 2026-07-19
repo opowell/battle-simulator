@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import RatesOverlay from './RatesOverlay.vue';
 const props = defineProps({
   isDone:           Boolean,
   atLatest:         Boolean,
@@ -18,6 +19,9 @@ const props = defineProps({
   // Set while the player is aiming a "button → pick a spot on the map" action (see
   // Battlefield.vue's `aiming`) — swaps the action list for a cancel prompt.
   aiming:           { type: Object, default: null },
+  // Per-owner economy snapshot (civ1 only — see Civ1Game.toGrid's `civ` field),
+  // keyed by player id. Drives the tax/luxury/science rates overlay below.
+  civ:              { type: Object, default: null },
 });
 defineEmits(['submit', 'aim', 'cancel-aim']);
 
@@ -62,6 +66,28 @@ const activeMoney = computed(() => {
   return u?.money ?? null;
 });
 
+// Civ1's set-tax/set-luxury actions come one per legal 10%-step target rate (see
+// Civ1Game.js's getLegalActions) — a dozen-plus buttons that drown out everything
+// else in the empire-actions list. Collapse them into a single button that opens a
+// slider overlay (RatesOverlay.vue) instead.
+const showRates   = ref(false);
+const taxActions  = computed(() => props.displayedActions.filter(a => a.type === 'set-tax'));
+const luxActions  = computed(() => props.displayedActions.filter(a => a.type === 'set-luxury'));
+const myCiv       = computed(() => props.civ?.[props.pendingPlayerId] ?? null);
+const ratesActions = computed(() => {
+  if (!taxActions.value.length && !luxActions.value.length) return aimedActions.value;
+  const out = [];
+  let inserted = false;
+  for (const action of aimedActions.value) {
+    if (action.type === 'set-tax' || action.type === 'set-luxury') {
+      if (!inserted) { out.push({ type: '__rates__' }); inserted = true; }
+      continue;
+    }
+    out.push(action);
+  }
+  return out;
+});
+
 function fmtAction(action) {
   const t = action.type ?? '';
   if (t === 'move') {
@@ -91,6 +117,7 @@ function fmtAction(action) {
   // Civ1 empire/settler actions.
   if (t === 'set-production') return `Build ${action.item}`;
   if (t === 'set-research')   return `Research ${action.tech}`;
+  if (t === '__rates__')      return 'Tax · Luxury · Science…';
   if (t === 'set-tax')        return `Tax rate ${action.taxRate}%`;
   if (t === 'set-luxury')     return `Luxuries ${action.luxRate}%`;
   if (t === 'change-government') return `Revolution → ${action.government}`;
@@ -154,13 +181,13 @@ function fmtAction(action) {
           {{queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
         </div>
         <div class="ap-list">
-          <button v-for="(action, i) in aimedActions" :key="i"
+          <button v-for="(action, i) in ratesActions" :key="i"
                   class="action-btn ap-btn ap-btn--icon"
-                  @click="action.__aim ? $emit('aim', action) : $emit('submit', action)">
+                  @click="action.type === '__rates__' ? (showRates = true) : (action.__aim ? $emit('aim', action) : $emit('submit', action))">
             <img v-if="action.icon" :src="imgSrc(action.icon)" alt="" class="ap-icon"/>
             {{fmtAction(action)}}
           </button>
-          <div v-if="!aimedActions.length" class="ap-empty">No actions.</div>
+          <div v-if="!ratesActions.length" class="ap-empty">No actions.</div>
         </div>
       </template>
     </template>
@@ -170,6 +197,8 @@ function fmtAction(action) {
       </div>
     </template>
     <div v-else class="ap-waiting">Waiting for AI…</div>
+    <RatesOverlay :show="showRates" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
+                  @close="showRates = false" @submit="a => $emit('submit', a)"/>
   </div>
 </template>
 

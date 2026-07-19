@@ -12,6 +12,7 @@ import {
 import { castleShapes, villageShapes, flagShapes } from './decor.js';
 import { movePointLattice } from '../continuousMove.js';
 import { posToWire } from '../coord.js';
+import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 const CONTACT = 0.9;   // squads this close trigger an encounter
@@ -454,6 +455,7 @@ export const AowGame = {
     { id: 'epic',  name: 'War in the Mountains', description: '34×20 expanded front with more forts and villages', config: { width: 34, height: 20 } },
   ],
   gameOptions: [
+    MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemy squads near its own (spies see farther)', type: 'boolean', default: false },
   ],
   createInitialState,

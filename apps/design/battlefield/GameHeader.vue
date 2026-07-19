@@ -1,11 +1,16 @@
 <script setup>
-defineProps({
+import { computed } from 'vue';
+const props = defineProps({
   field:           Object,
   liveState:       Object,
   isLive:          Boolean,
   isDone:          Boolean,
   isPending:       Boolean,
   pendingPlayerId: { type: String, default: null },
+  // Whose economy to show in the status strip below — the human's own side, not
+  // necessarily whoever's turn it currently is (see Battlefield's analysisPlayerId).
+  // Only civ1 populates field.civ, so this renders nothing for every other game.
+  statusPlayerId:  { type: String, default: null },
   showMenu:        Boolean,
   ui:              Object,
   // Board renderer switch — only offered for square tile grids, the boards HtmlLayer can
@@ -14,6 +19,7 @@ defineProps({
   htmlRenderer:    { type: Boolean, default: false },
 });
 defineEmits(['toggle-menu', 'show-help', 'set-renderer']);
+const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
 </script>
 
 <template>
@@ -45,6 +51,17 @@ defineEmits(['toggle-menu', 'show-help', 'set-renderer']);
         ○ AI thinking…
       </span>
     </div>
+    <div v-if="myCiv" class="mono gh-civstat">
+      <span class="gh-civstat-item" title="Treasury">
+        <BsIcon name="zap" :size="10" color="var(--faint)"/>{{myCiv.gold}}
+      </span>
+      <span class="gh-civstat-item" title="Government">{{myCiv.government}}</span>
+      <span class="gh-civstat-item" title="Tax / Luxury / Science">
+        {{myCiv.taxRate}}/{{myCiv.luxRate}}/{{100 - myCiv.taxRate - myCiv.luxRate}}
+      </span>
+      <span v-if="myCiv.research" class="gh-civstat-item" title="Researching">{{myCiv.research}}</span>
+      <span v-if="myCiv.anarchyTurns" class="gh-civstat-item gh-civstat-item--warn">Anarchy</span>
+    </div>
     <div v-if="showRenderer" class="gh-rdr">
       <span class="gh-rdr-label">Board</span>
       <div class="seg gh-seg">
@@ -69,6 +86,9 @@ defineEmits(['toggle-menu', 'show-help', 'set-renderer']);
 .gh-menu-btn--on { border-color: var(--accent); }
 .gh-turn { font-size: 11px; color: var(--faint); margin-left: auto; }
 .gh-status { display: flex; }
+.gh-civstat { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 10px; color: var(--dim); }
+.gh-civstat-item { display: flex; align-items: center; gap: 3px; }
+.gh-civstat-item--warn { color: var(--warn); }
 .gh-rdr { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
 .gh-rdr-label { font-size: 10px; color: var(--faint); letter-spacing: .06em; text-transform: uppercase; }
 .gh-seg { font-size: 10px; margin-left: auto; }

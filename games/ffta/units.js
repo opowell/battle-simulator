@@ -337,5 +337,9 @@ export function createUnit(id, job, ownerId, position, facing = 0) {
     statusEffects: [],
     doomCountdown: null,
     preMovedPosition: null,
+    // Waypoints ({x,y}) queued for this unit's future CT turns while some other
+    // unit is active — see games/moveQueue.js and FFTAGame.js's getLegalActions/
+    // advanceTurn.
+    queue: [],
   };
 }

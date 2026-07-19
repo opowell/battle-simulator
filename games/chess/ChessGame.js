@@ -2,7 +2,7 @@ import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { isKingInCheck, renderBoard, getVisibleSquares, squareToXY, squareToGrid } from './board.js';
 import { getAllLegalMoves, getAllFogMoves } from './moves.js';
 import { ChessAgent, evaluate } from './ChessAgent.js';
-import { ObscuroAgent } from './ObscuroAgent.js';
+import { ObscuroAgent, analyzeObscuro } from './ObscuroAgent.js';
 import { getBelief } from './belief.js';
 import { getExactBelief } from './exactBelief.js';
 
@@ -175,14 +175,15 @@ export const ChessGame = {
   name: 'Chess',
   colors: { light: '#f0d9b5', dark: '#b58863' },
   agents: [
-    { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent },
-    { id: 'obscuro',  name: 'Obscuro (CFR)', agent: ObscuroAgent },
+    { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent, analyze: ChessAgent.analyze },
+    { id: 'obscuro',  name: 'Obscuro (CFR)', agent: ObscuroAgent, analyze: analyzeObscuro },
   ],
   gameOptions: [
     HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
     { id: 'debugAI',  label: 'Debug AI',   description: 'Show all AI-controlled pieces even through Fog of War', type: 'boolean', default: false },
     { id: 'initialMarkers', label: 'Initial piece markers', description: "Start with fog markers on every hidden enemy piece's opening square (Fog of War only)", type: 'boolean', default: false },
+    { id: 'showAnalysisPanel', label: 'Analysis Panel', description: 'Show an AI move-analysis panel with board suggestions, live or during replay', type: 'boolean', default: true },
     {
       id: 'difficulty', label: 'AI Difficulty', type: 'ai-difficulty', default: 25,
       timeKey: 'aiTimeMs', maxTimeMs: 600000, timeDefault: 5000,

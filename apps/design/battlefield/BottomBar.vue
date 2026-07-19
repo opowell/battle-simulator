@@ -13,12 +13,14 @@ defineProps({
   pendingPlayerId: { type: String, default: null },
   canReveal:       Boolean,
   revealAll:       Boolean,
+  canReplayTurn:   Boolean,
+  replaying:       Boolean,
   showZoom:        Boolean,
   canZoomIn:       { type: Boolean, default: true },
   canZoomOut:      { type: Boolean, default: true },
 });
 defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-forward',
-             'toggle-reveal', 'zoom-in', 'zoom-out']);
+             'toggle-reveal', 'replay-turn', 'zoom-in', 'zoom-out']);
 </script>
 
 <template>
@@ -64,6 +66,13 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
             :class="isDone ? 'bb-state--done' : isPending ? 'bb-state--pending' : 'bb-state--ai'">
         {{isDone ? 'game over' : isPending ? ('your turn · ' + pendingPlayerId) : 'ai thinking…'}}
       </span>
+      <button v-if="canReplayTurn" class="btn btn-sm bb-replay"
+              :class="{ 'bb-replay--on': replaying }"
+              @click="$emit('replay-turn')"
+              title="Replay the last resolved turn">
+        <BsIcon name="play" :size="13" :color="replaying ? 'var(--accent)' : 'var(--dim)'"/>
+        {{replaying ? 'Replaying…' : 'Replay turn'}}
+      </button>
       <button v-if="canReveal" class="btn btn-sm bb-reveal"
               :class="{ 'bb-reveal--on': revealAll }"
               @click="$emit('toggle-reveal')"
@@ -106,6 +115,8 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
 .bb-state--pending { color: var(--ok); }
 .bb-state--ai { color: var(--warn); }
 .bb-reveal { gap: 5px; }
+.bb-replay { gap: 5px; }
+.bb-replay--on { border-color: var(--accent); color: var(--accent); }
 .bb-reveal--on { border-color: var(--accent); color: var(--accent); }
 .bb-spacer { flex: 1; }
 .bb-label { font-size: 11px; color: var(--faint); }

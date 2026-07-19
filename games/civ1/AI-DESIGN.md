@@ -220,6 +220,65 @@ the city tile. `getReachableTiles` ([map.js](map.js)) blocks movement onto enemy
 not enemy *cities*, so a unit can walk onto an empty enemy city and simply stand there while it
 stays enemy-owned. Any "capture the undefended city" plan silently fails today.
 
+## Round 2: the game now resolves, and the two metrics disagree
+
+`set-production` + settler production + capture-by-occupation are implemented (see below).
+Games now resolve: decisive outcomes went from **4/80 to 18/80**. Expansion works — the
+heuristic reaches 3–6 cities where it used to be stuck on 1.
+
+But the benchmark now says two contradictory things at once, 40 seeds x 2 sides:
+
+| metric | heuristic vs greedy |
+| --- | --- |
+| truncated games, ahead on `evaluateState` | **60 – 2** (mean margin **+645**) |
+| decisive games (someone actually destroyed) | **2 – 16** |
+
+The heuristic snowballs a bigger empire on every seed it survives, and gets wiped out outright
+far more often than greedy does. **Do not quote the 77.5% "overall score"** — it's an artifact
+of scoring truncated games by a proxy that weights cities at 100 each
+([Civ1Game.js:508](Civ1Game.js#L508)) while the actual win condition is annihilation.
+
+Sweeping `cityTarget` (1/2/3/6) shows the material lead is entirely an expansion effect
+(5% → 43% → 70% → 72% overall) — but the decisive record stays bad at *every* setting
+(1–10, 3–7, 2–9, 0–13). **The fragility is not caused by over-expansion.** Even with expansion
+effectively off, the heuristic loses decisive games ~10:1.
+
+Leading suspects, untested:
+
+- **Militia spam is genuinely strong in this ruleset.** Militia costs 10 and is 1/1; the
+  heuristic's `attack*speed/cost` pick lands on cavalry (2/1, cost 20) — twice the price, and
+  *defense 1*. Greedy fields ~2x the bodies, and with attack≈defense across ancient units,
+  numbers decide.
+- **One garrison per city is too thin** against a 46-militia swarm, now that capture works.
+- The EV gate may make it decline defensive fights it needs to take.
+
+### The long-game run settles it: greedy is actually better
+
+Running to `maxTurns: 600` so most games resolve (12/30 decisive) removes the proxy and gives
+the verdict directly:
+
+- decisive games: heuristic **2 – 10** greedy
+- truncated (still 18/30): heuristic ahead 12 – 5, margin +231
+
+So the disagreement resolves in greedy's favour: **when games actually finish, the "smarter"
+agent loses roughly 1:5.** The empire-building is real but it does not translate into winning,
+and against militia-spam it loses the war. The margin metric was measuring the wrong thing.
+
+Blunt conclusion: cheap-unit spam is a strong strategy in this ruleset (ancient units are
+near-symmetric in attack/defense, so bodies win), and a one-garrison-per-city posture with
+20-shield cavalry can't hold against 10-shield militia in quantity. Beating greedy for real
+needs either matching its unit economics or a defensive stance that actually holds cities —
+not more expansion.
+
+### The evaluation problem is now the blocker
+
+`evaluateState` and the win condition disagree strongly enough that tuning against the margin
+actively misleads (that's how cityTarget=6 looks best while going 0–13). Before more agent
+work: either weight the eval to reflect that annihilation is what wins, or run long enough
+games that decisive outcomes carry the signal. This is the civ1 half of the "truncated-outcome"
+problem in [LEARNED-EVAL-PLAN.md:121](../../agents/LEARNED-EVAL-PLAN.md#L121), and it is no
+longer deferrable.
+
 ## Revised order
 
 The original plan had `set-production` last, as an unlock for the personality material. That
