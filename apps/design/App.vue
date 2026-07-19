@@ -433,7 +433,9 @@ function buildField(g, s) {
     game:  s.game,
     turn:  s.turn ?? null,
     label: `${s.game} · Turn ${s.turn ?? 0}`,
-    world: { w: g.width, h: g.height },
+    // wrap: the map is a horizontal cylinder (civ1) — see Civ1Game.toGrid and
+    // Battlefield.vue's clampAxis / HtmlLayer.vue's column duplication near the seam.
+    world: { w: g.width, h: g.height, wrap: !!g.wrap },
     turns: 1,
     grid:  g.grid ?? 'square',
     // Hex "radius" (center-to-corner) in world units — only set by hexagon-grid

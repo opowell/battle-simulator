@@ -52,6 +52,10 @@ const VISION   = window.VISION;
 
 const W = computed(() => props.field.world.w);
 const H = computed(() => props.field.world.h);
+// A horizontally-wrapping map (civ1 — see Civ1Game.toGrid) has no real east/west edge, so
+// once panning brings the seam into view this renders extra copies of the columns nearest
+// it on both sides (wrapPad below) instead of leaving blank stage past column 0 / W-1.
+const wrap = computed(() => !!props.field.world.wrap);
 
 // ── integer-snapped board geometry ────────────────────────────────────────────
 // Padding matches Battlefield's fitter, so the HTML board sits where the SVG one would.
@@ -86,19 +90,37 @@ const originY = computed(() => props.center
   ? Math.round(boxH.value / 2 - props.center.y * cellPx.value)
   : Math.round((boxH.value - boardH.value) / 2));
 
-// world → screen. Cell-aligned inputs land on exact integers by construction.
+// world → screen. Cell-aligned inputs land on exact integers by construction. These stay
+// defined purely in terms of world x (not the padded render columns wrapPad adds below),
+// so every other consumer (units, arrows, rulers, drag hit-testing) keeps working unchanged.
 function px(wx)   { return originX.value + wx * cellPx.value; }
 function py(wy)   { return originY.value + wy * cellPx.value; }
 function plen(wl) { return wl * cellPx.value; }
 
-const boardStyle = computed(() => ({
-  position: 'absolute',
-  left: originX.value + 'px', top: originY.value + 'px',
-  width: boardW.value + 'px', height: boardH.value + 'px',
-  display: 'grid',
-  gridTemplateColumns: `repeat(${W.value}, ${cellPx.value}px)`,
-  gridTemplateRows:    `repeat(${H.value}, ${cellPx.value}px)`,
-}));
+// How many extra columns of wrap must be drawn past column 0 / W-1 to cover whatever the
+// stage currently shows there — derived from how far the visible screen range actually
+// reaches past the map's true edge, so it's 0 whenever the seam isn't in view (including
+// non-wrapping games and the initial fitted, uncentred view). Capped so duplicate copies
+// can never overlap the primary one on a very narrow map at extreme zoom-out.
+const wrapPad = computed(() => {
+  if (!wrap.value || !props.center || !cellPx.value) return 0;
+  const leftWorldX  = (0 - originX.value) / cellPx.value;
+  const rightWorldX = (boxW.value - originX.value) / cellPx.value;
+  const pad = Math.max(0, Math.ceil(-leftWorldX), Math.ceil(rightWorldX - W.value));
+  return Math.min(pad, Math.floor((W.value - 1) / 2));
+});
+
+const boardStyle = computed(() => {
+  const pad = wrapPad.value;
+  return {
+    position: 'absolute',
+    left: px(-pad) + 'px', top: originY.value + 'px',
+    width: plen(W.value + pad * 2) + 'px', height: boardH.value + 'px',
+    display: 'grid',
+    gridTemplateColumns: `repeat(${W.value + pad * 2}, ${cellPx.value}px)`,
+    gridTemplateRows:    `repeat(${H.value}, ${cellPx.value}px)`,
+  };
+});
 
 const highlightUnitId = computed(() => props.activeUnitId);
 const blinkTargetId   = computed(() => props.field.ui?.freeSelection ? props.selectedId : props.activeUnitId);
@@ -252,12 +274,17 @@ const cells = computed(() => {
     && legal.has(`${dragHoverSq.value[0]},${dragHoverSq.value[1]}`)) ? dragHoverSq.value : null;
 
   const out = [];
+  const pad = wrapPad.value;
   for (let y = 0; y < H.value; y++) {
-    for (let x = 0; x < W.value; x++) {
+    for (let rx = -pad; rx < W.value + pad; rx++) {
+      // rx is the render column (may fall outside [0, W) in the duplicated fringe); x is
+      // its true world column, wrapped back into range, used for every data lookup below
+      // and emitted on click — rx only ever drives this cell's screen/grid position.
+      const x = pad ? ((rx % W.value) + W.value) % W.value : rx;
       const k = `${x},${y}`;
       const tile = tiles.get(k) ?? null;
       out.push({
-        k, x, y,
+        rk: `${rx},${y}`, k, x, y,
         color:   tile ? (tileFogged(tile) ? props.rdr.fogA : tile.color) : null,
         // Painted in SchematicLayer's order: flat colour, then the coastline tile, then
         // terrain art, then any overlays stacked on top.
@@ -268,7 +295,7 @@ const cells = computed(() => {
         vision:  !!vis && vis.has(k),
         marker:  markers.get(k) ?? null,
         units:   unitsAt.get(k) ?? [],
-        checker: checkerOn.value && (x + y) % 2 === 1,
+        checker: checkerOn.value && (rx + y) % 2 === 1,
         legal:   showLegal && legal.has(k),
         dragHover: !!dragSq && dragSq[0] === x && dragSq[1] === y,
         lastMove: last.has(k),
@@ -291,8 +318,9 @@ const selectedSquare = computed(() => {
 // ── board furniture (not cell content) ────────────────────────────────────────
 const gridLines = computed(() => {
   if (props.field.ui?.hideGridLines) return { xs: [], ys: [] };
+  const pad = wrapPad.value;
   const xs = [], ys = [];
-  for (let x = 0; x <= W.value; x++) xs.push(x);
+  for (let x = -pad; x <= W.value + pad; x++) xs.push(x);
   for (let y = 0; y <= H.value; y++) ys.push(y);
   return { xs, ys };
 });
@@ -336,8 +364,11 @@ function _updateDragPos(clientX, clientY) {
   const r = rootEl.value.getBoundingClientRect();
   const x = clientX - r.left, y = clientY - r.top;
   dragPos.value = { x, y };
-  const col = Math.floor((x - originX.value) / cellPx.value);
+  let col = Math.floor((x - originX.value) / cellPx.value);
   const row = Math.floor((y - originY.value) / cellPx.value);
+  // Over the duplicated fringe near the seam, the raw column falls outside [0, W) — wrap
+  // it back to the true column the same way the cells it's hovering were looked up.
+  if (wrap.value) col = ((col % W.value) + W.value) % W.value;
   dragHoverSq.value = (col >= 0 && col < W.value && row >= 0 && row < H.value) ? [col, row] : null;
 }
 function _onDragMove(e) { _updateDragPos(e.clientX, e.clientY); }
@@ -407,7 +438,7 @@ function handleUnitClick(e, u) {
 
     <!-- The board: an exact-pixel CSS grid, one cell per square -->
     <div class="hl-board" :style="boardStyle">
-      <div v-for="c in cells" :key="c.k" class="hl-cell"
+      <div v-for="c in cells" :key="c.rk" class="hl-cell"
            :style="{ background: c.color }"
            @click.stop="handleCellClick(c)">
         <!-- Coastline tile (civ1 oceans) under the terrain art, then any stacked overlays -->
@@ -456,12 +487,18 @@ function handleUnitClick(e, u) {
            :style="{ position:'absolute', left: px(gx)+'px', top: py(0)+'px',
                      width:'1px', height: boardH+'px', background: rdr.grid }"/>
       <div v-for="gy in gridLines.ys" :key="'gy'+gy" class="hl-noevents"
-           :style="{ position:'absolute', left: px(0)+'px', top: py(gy)+'px',
-                     width: boardW+'px', height:'1px', background: rdr.grid }"/>
+           :style="{ position:'absolute', left: px(-wrapPad)+'px', top: py(gy)+'px',
+                     width: plen(W + wrapPad*2)+'px', height:'1px', background: rdr.grid }"/>
     </template>
 
-    <!-- Boundary -->
-    <div class="hl-noevents" :style="{ ...rect(0, 0, W, H), border: '1.5px solid ' + rdr.bound }"/>
+    <!-- Boundary: a wrapping map has no real east/west edge, so once the duplicated
+         fringe (wrapPad) is showing, only the top/bottom edges are drawn — a left/right
+         border would just be a stray line through the middle of seamless terrain. -->
+    <div v-if="!wrapPad" class="hl-noevents" :style="{ ...rect(0, 0, W, H), border: '1.5px solid ' + rdr.bound }"/>
+    <template v-else>
+      <div class="hl-noevents" :style="{ position:'absolute', left: px(-wrapPad)+'px', top: py(0)+'px', width: plen(W + wrapPad*2)+'px', height:'1.5px', background: rdr.bound }"/>
+      <div class="hl-noevents" :style="{ position:'absolute', left: px(-wrapPad)+'px', top: (py(H)-1.5)+'px', width: plen(W + wrapPad*2)+'px', height:'1.5px', background: rdr.bound }"/>
+    </template>
 
     <!-- Zones -->
     <div v-for="(z, i) in field.zones" :key="'z'+i" class="hl-noevents hl-zone"

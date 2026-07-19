@@ -341,9 +341,14 @@ function centerOn(x, y) {
 // axis whose whole extent already fits just stays centred, exactly as an unzoomed board
 // does. This is applied here (not in centerOn) because the limit moves with the scale —
 // zooming out has to re-clamp a centre that was legal at the previous zoom.
-function clampAxis(c, worldLen, stageLen, s) {
+// A wrapping axis (civ1's east/west cylinder, world.wrap) has no real edge to clamp
+// against, so instead of pulling the centre back it's just normalised into [0, worldLen) —
+// every click centres exactly where it landed, however close to the seam. HtmlLayer draws
+// the duplicate columns that makes that seamless rather than showing blank stage.
+function clampAxis(c, worldLen, stageLen, s, wrap) {
   const half = stageLen / 2 / s;          // half the visible stage, in world units
   if (worldLen <= half * 2) return worldLen / 2;
+  if (wrap) return ((c % worldLen) + worldLen) % worldLen;
   return Math.min(worldLen - half, Math.max(half, c));
 }
 
@@ -352,8 +357,8 @@ const viewCenter = computed(() => {
   if (!zoomEnabled.value || !center.value) return null;
   const w = props.field.world;
   return {
-    x: clampAxis(center.value.x, w.w, stageW.value, tilePx.value),
-    y: clampAxis(center.value.y, w.h, stageH.value, tilePx.value),
+    x: clampAxis(center.value.x, w.w, stageW.value, tilePx.value, !!w.wrap),
+    y: clampAxis(center.value.y, w.h, stageH.value, tilePx.value, false),
   };
 });
 
