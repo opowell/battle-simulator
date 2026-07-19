@@ -134,6 +134,21 @@ Data lives in `tech.js`, `improvements.js`, `governments.js`; the per-turn maths
 - **Space race** — after the Apollo Program is built, cities produce spaceship parts (Structural / Component / Module) that accumulate on the civ's ship. With the minimum parts it can be launched; it reaches Alpha Centauri after a travel time (shorter with more parts) and its owner wins on arrival — unless the capital is lost first, which destroys the ship.
 - **Fog of war** — vision radius 2; `getVisibleState` hides unseen tiles and enemy units.
 
+## Difficulty (game modes)
+
+The **Difficulty** option is a preset — Chieftain, Warlord, Prince (default), King,
+Emperor, Deity — applied **equally to every civilization**. It sets how many citizens
+in a city stay content before the rest turn unhappy (`contentBaseline`): 6 on Chieftain
+down to 1 on Deity, so higher levels tip cities into civil disorder far sooner. The
+baseline can be overridden directly with the "Content citizens" option (blank = use the
+preset). See `difficulty.js`.
+
+Difficulty **never buffs the AI** — it changes the world rules symmetrically for both
+sides. The AI's strength comes only from how much it is allowed to think (the separate
+AI-difficulty option); it is given no privileged information. In fogged games
+`getVisibleState` even redacts each rival's private ledger (advances, treasury,
+research, spaceship) so an agent choosing a move cannot read it.
+
 ## Win conditions
 
 | Outcome | Reason |

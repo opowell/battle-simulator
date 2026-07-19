@@ -13,6 +13,7 @@ import { IMPROVEMENTS, WONDERS, SPACESHIP, SPACESHIP_MIN, wonderEffectsFor, wond
 import { GOVERNMENTS, availableGovernments } from './governments.js';
 import { foodBox } from './city.js';
 import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy } from './economy.js';
+import { DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, resolveRules } from './difficulty.js';
 import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '../moveQueue.js';
 
 const BASE = '/images/civ1';
@@ -620,6 +621,7 @@ function createFixedMapState(map, players, config) {
       nextId: idCtr,
       fogOfWar: config.fogOfWar ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
+      rules: resolveRules(config),
       startRoster: {
         units: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
         cities: [],
@@ -686,6 +688,7 @@ function createInitialState(players, config = {}) {
       nextId: idCtr,
       fogOfWar: config.fogOfWar ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
+      rules: resolveRules(config),
       // Common-knowledge starting deployment: cities are founded later so this
       // only seeds units; the belief tracker (belief.js) learns enemy cities
       // the first time it sees them.
@@ -715,11 +718,23 @@ function getVisibleState(state, playerId) {
   // map is known); Marco Polo's Embassy gives an embassy with every rival, so all
   // their cities are visible even in the dark.
   const effects = wonderEffectsFor(state.cities, playerId);
-  if (effects.has('reveal-map')) return state;
   const embassy = effects.has('embassy-all');
 
+  // Anti-cheat: never expose a rival's private ledger (advances, treasury, research,
+  // spaceship) to the agent choosing this player's move. Their civ record is replaced
+  // with an empty one; only this player sees their own. This holds even for the
+  // reveal-map case below, so map vision and intelligence stay separate.
+  const civ = {};
+  for (const [pid, c] of Object.entries(state.gameSpecific.civ ?? {})) {
+    civ[pid] = pid === playerId ? c : { ...newCivState(), government: c.government };
+  }
+  const redacted = { ...state, gameSpecific: { ...state.gameSpecific, civ } };
+
+  // The Apollo Program reveals the whole map (terrain + positions) but not the ledger.
+  if (effects.has('reveal-map')) return redacted;
+
   return {
-    ...state,
+    ...redacted,
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
     cities: state.cities.filter(c => c.ownerId  === playerId || embassy || canSee(c.position)),
   };
@@ -834,6 +849,12 @@ export const Civ1Game = {
   gameOptions: [
     HTML_RENDERER_OPTION,
     MAP_ZOOM_OPTION,
+    // Difficulty is a preset applied equally to BOTH civilizations (it never buffs the
+    // AI — the AI only gets stronger or weaker from how much it is allowed to think).
+    // Higher levels leave fewer citizens content, so cities fall into disorder sooner.
+    { id: 'difficulty', label: 'Difficulty', description: 'Preset world rules for every civ — harder levels make citizens harder to keep content', type: 'select', default: DEFAULT_DIFFICULTY,
+      options: DIFFICULTY_IDS.map(id => ({ value: id, label: `${DIFFICULTIES[id].name} (content ${DIFFICULTIES[id].contentBaseline})` })) },
+    { id: 'contentBaseline', label: 'Content citizens (override)', description: 'Citizens content before the rest turn unhappy — blank uses the difficulty preset', type: 'integer', placeholder: 'from difficulty' },
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: true },
     { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
     { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },
@@ -934,7 +955,12 @@ export const Civ1Game = {
           x, y,
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
           unitId: u?.id ?? null,
-          imagePath: u ? (UNIT_IMAGES[u.type] ?? null) : null,
+          // City tiles ride the same glyph→pseudo-unit pipeline as real units (see
+          // App.vue's buildField): a real sprite (map/city.png) plus the size as a
+          // corner badge, rather than the bare star glyph this used to fall back to.
+          unitName: city ? city.name : undefined,
+          imagePath: u ? (UNIT_IMAGES[u.type] ?? null) : (city ? `${BASE}/map/city` : null),
+          badge: city ? city.size : null,
           // Ocean draws no terrain sprite — coastSprite (below) supplies the real
           // ocean tile. Land draws its authentic tile, blended with like neighbours.
           bgImage: tile.terrain === 'ocean' ? null : (tile.terrain ? terrainSprite(x, y, tile.terrain) : null),
@@ -964,9 +990,20 @@ export const Civ1Game = {
         });
       }
     }
+    // Per-owner economy snapshot the client can't otherwise see (taxRate/luxRate are
+    // never in a legal action's own fields except as the *target* of a set-tax/
+    // set-luxury button — there's nowhere else to read the *current* rate from). Keyed
+    // by player id so the UI can look up "my" civ via the pending player.
+    const civ = Object.fromEntries(
+      Object.entries(state.gameSpecific.civ ?? {}).map(([pid, c]) => [pid, {
+        government: c.government, gold: c.gold, techCount: c.techs.length, research: c.research,
+        taxRate: c.taxRate, luxRate: c.luxRate, taxMax: GOVERNMENTS[c.government].taxMax,
+        anarchyTurns: c.anarchyTurns,
+      }]));
+
     // wrap: true tells the client the map is a horizontal cylinder (see wrapX above) —
     // Battlefield's click-to-pan centres on any column instead of clamping near the
     // east/west seam, and HtmlLayer draws duplicate columns there so panning stays seamless.
-    return { width, height, cells, wrap: true };
+    return { width, height, cells, wrap: true, civ };
   },
 };

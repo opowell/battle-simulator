@@ -67,6 +67,8 @@ export function buildOwnerCtx(state, ownerId) {
     wonderIds, wonderEffects,
     capitalPos: capital?.position ?? null,
     taxRate: civ.taxRate, luxRate: civ.luxRate,
+    // Difficulty rule shared by every civ (symmetric — see difficulty.js).
+    contentBaseline: state.gameSpecific.rules?.contentBaseline,
     civSciBonus: wonderEffects.has('science-all') ? 0.5 : 0,
     civShieldBonus: wonderEffects.has('power-all') ? 0.5 : 0,
     supportedUnits, settlersHomed, garrisonByCity,

@@ -114,6 +114,7 @@ function bonusFrom(city, field) {
 // colosseums, cathedrals, martial law and wonders pacify unhappy citizens (and turn
 // content ones happy). If unhappy outnumber happy the city falls into civil disorder.
 
+// Fallback when no difficulty rules are present on the state (e.g. bare unit tests).
 const CONTENT_BASELINE = 4;
 
 // How many unhappy citizens this city's content-makers pacify: temples (doubled by
@@ -139,7 +140,8 @@ function contentMakers(city, ctx) {
 
 export function computeHappiness(city, luxuryPoints, ctx) {
   const size = city.size;
-  let unhappy = Math.max(0, size - CONTENT_BASELINE);
+  const baseline = ctx.contentBaseline ?? CONTENT_BASELINE;
+  let unhappy = Math.max(0, size - baseline);
   let content = size - unhappy;
   let happy = 0;
 
