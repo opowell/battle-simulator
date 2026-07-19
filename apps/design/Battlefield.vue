@@ -42,11 +42,16 @@ const props = defineProps({
   forkState:     { type: Object, default: null },
   forkError:     { type: String, default: '' },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay']);
 
 // ── playback ──────────────────────────────────────────────────
 const tFloat  = ref(0);
 const playing = ref(false);
+
+// History playback ("view play from here"): declared up here (not with its
+// functions below) so the immediate game-switch watcher can safely stopHistoryPlay().
+const historyPlaying = ref(false);
+let historyTimer = null;
 
 // ── view toggles ──────────────────────────────────────────────
 const showRuler  = ref(false);
@@ -152,6 +157,7 @@ const histLength   = computed(() => revealAll.value ? props.revealFields.length 
 const atLatest     = computed(() => histPos.value >= histLength.value - 1);
 
 watch(() => props.liveState?.id, () => {
+  stopHistoryPlay();
   fieldHistory.value = props.field ? [props.field] : [];
   histPos.value = 0;
   dismissedResult.value = false;
@@ -278,6 +284,7 @@ const viewerTeam = computed(() => {
 });
 
 function toggleReveal() {
+  stopHistoryPlay();
   revealAll.value = !revealAll.value;
   selectedId.value = null;
   selectedSquare.value = null;
@@ -287,8 +294,39 @@ function toggleReveal() {
   histPos.value = Math.max(0, histLength.value - 1);
 }
 
-function goBack()    { if (histPos.value > 0)  histPos.value--; }
-function goForward() { if (!atLatest.value)     histPos.value++; }
+function goBack()    { stopHistoryPlay(); if (histPos.value > 0)  histPos.value--; }
+function goForward() { stopHistoryPlay(); if (!atLatest.value)     histPos.value++; }
+function seekTo(pos) { stopHistoryPlay(); histPos.value = pos; }
+
+// ── history playback ("view play from here") ──────────────────
+// Auto-advances histPos through the recorded history from the current scrub
+// position to the live edge, so a jumped-to point can be watched forward. Purely
+// client-side over the already-loaded fieldHistory — independent of the live game,
+// which keeps running (once playback reaches the latest ply it stops and the board
+// follows live again). Any manual navigation cancels it.
+const HISTORY_STEP_MS = 700;
+
+function stopHistoryPlay() {
+  if (historyTimer) { clearInterval(historyTimer); historyTimer = null; }
+  historyPlaying.value = false;
+}
+
+function toggleHistoryPlay() {
+  if (historyPlaying.value) { stopHistoryPlay(); return; }
+  if (histLength.value <= 1) return;
+  // Nothing ahead to watch at the live edge — rewind to the start first.
+  if (atLatest.value) histPos.value = 0;
+  historyPlaying.value = true;
+  historyTimer = setInterval(() => {
+    if (histPos.value >= histLength.value - 1) { stopHistoryPlay(); return; }
+    histPos.value++;
+  }, HISTORY_STEP_MS);
+}
+
+// Live game controls (server-backed) — bubble the intent to App, which owns the
+// api.control call; the resulting state change comes back down via liveState.
+function toggleLivePause() { emit('set-paused', !(props.liveState?.paused ?? false)); }
+function setAiDelay(ms)    { emit('set-ai-delay', ms); }
 
 const winnerTeam = computed(() => {
   const winnerId = props.liveState?.result?.winnerId;
@@ -874,6 +912,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   cancelAnimationFrame(rafId);
+  stopHistoryPlay();
   window.removeEventListener('resize', updateStageSize);
   window.removeEventListener('keydown', onKeyDown);
 });
@@ -1001,7 +1040,7 @@ onUnmounted(() => {
         <GameLog v-if="isLive"
           :log="logForDisplay" :historyLength="histLength" :histPos="histPos"
           :units="displayUnits"
-          @seek="pos => histPos = pos"/>
+          @seek="seekTo"/>
 
         <AiAnalysisPanel v-if="isLive && liveState?.aiAnalysis"
           :analysis="liveState.aiAnalysis"/>
@@ -1016,10 +1055,14 @@ onUnmounted(() => {
       :canReveal="canReveal" :revealAll="revealAll"
       :canReplayTurn="canReplayTurn" :replaying="replaying"
       :showZoom="zoomEnabled" :canZoomIn="canZoomIn" :canZoomOut="canZoomOut"
+      :paused="liveState?.paused ?? false" :aiDelay="liveState?.aiDelay ?? 0"
+      :historyPlaying="historyPlaying"
       @step-back="stepBack" @step-fwd="stepFwd" @toggle-play="togglePlay"
       @scrub="scrub" @go-back="goBack" @go-forward="goForward"
       @toggle-reveal="toggleReveal"
       @replay-turn="$emit('replay-turn')"
+      @toggle-pause="toggleLivePause" @set-ai-delay="setAiDelay"
+      @toggle-history-play="toggleHistoryPlay"
       @zoom-in="zoomBy(ZOOM_STEP)" @zoom-out="zoomBy(1 / ZOOM_STEP)"/>
   </div>
 

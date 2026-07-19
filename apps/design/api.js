@@ -39,6 +39,9 @@ window.api = {
   create:   (body)                  => _req('/sessions', { method: 'POST', body: JSON.stringify(body) }),
   action:   (id, playerId, action)  => _req('/sessions/' + id + '/action', { method: 'POST', body: JSON.stringify({ playerId, action }) }),
   setMarker: (id, playerId, col, row, type) => _req('/sessions/' + id + '/marker', { method: 'POST', body: JSON.stringify({ playerId, col, row, type }) }),
+  // Live playback controls: { paused?, aiDelay? }. Pauses/resumes the run loop and
+  // sets the delay (ms) the engine waits between AI moves. Returns the applied values.
+  control:  (id, body)              => _req('/sessions/' + id + '/control', { method: 'POST', body: JSON.stringify(body) }),
   // Read-only "what's good here" analysis for a live or replayed (ply) position.
   analyze:  (id, { playerId, agentId, ply }) =>
     _req('/sessions/' + id + '/analyze', { method: 'POST', body: JSON.stringify({ playerId, agentId, ply }) }),

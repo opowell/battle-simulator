@@ -746,6 +746,21 @@ async function submitAction({ playerId, action }) {
   } catch (e) { serverErr.value = e.message; }
 }
 
+// Live playback controls (pause/resume + AI move delay). The change is applied
+// server-side and broadcast to every subscriber; we also patch liveState with the
+// returned values so the controls reflect it even when we're not subscribed (e.g.
+// during our own turn, where maybeStartPoll leaves no socket open).
+async function setControl(patch) {
+  if (!liveState.value) return;
+  const id = liveState.value.id;
+  try {
+    const applied = await api.control(id, patch);
+    if (liveState.value?.id === id) {
+      liveState.value = { ...liveState.value, paused: applied.paused, aiDelay: applied.aiDelay };
+    }
+  } catch (e) { serverErr.value = e.message; }
+}
+
 // Persist a manual fog-square guess server-side so it survives a reload and (via the
 // server's WebSocket broadcast) shows up immediately without waiting on a turn to pass.
 async function setMarker({ playerId, col, row, type }) {
@@ -889,6 +904,8 @@ async function restartGame() {
                    @open-settings="openSettings"
                    @submit-action="submitAction"
                    @set-marker="setMarker"
+                   @set-paused="p => setControl({ paused: p })"
+                   @set-ai-delay="ms => setControl({ aiDelay: ms })"
                    @replay-turn="replayTurn"
                    @fork-move="doForkMove"
                    @exit-fork="exitFork"/>

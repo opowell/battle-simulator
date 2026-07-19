@@ -1,4 +1,6 @@
 <script setup>
+import LiveControls from './LiveControls.vue';
+
 defineProps({
   isLive:          Boolean,
   field:           Object,
@@ -18,9 +20,14 @@ defineProps({
   showZoom:        Boolean,
   canZoomIn:       { type: Boolean, default: true },
   canZoomOut:      { type: Boolean, default: true },
+  // Live playback controls (pause / AI delay / history playback).
+  paused:          Boolean,
+  aiDelay:         { type: Number, default: 0 },
+  historyPlaying:  Boolean,
 });
 defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-forward',
-             'toggle-reveal', 'replay-turn', 'zoom-in', 'zoom-out']);
+             'toggle-reveal', 'replay-turn', 'zoom-in', 'zoom-out',
+             'toggle-pause', 'set-ai-delay', 'toggle-history-play']);
 </script>
 
 <template>
@@ -81,6 +88,12 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
         {{revealAll ? 'Revealed' : 'Reveal all'}}
       </button>
       <div class="bb-spacer"/>
+      <LiveControls
+        :paused="paused" :aiDelay="aiDelay" :isDone="isDone"
+        :historyPlaying="historyPlaying" :canPlayHistory="histLength > 1"
+        @toggle-pause="$emit('toggle-pause')"
+        @set-ai-delay="$emit('set-ai-delay', $event)"
+        @toggle-history-play="$emit('toggle-history-play')"/>
     </template>
     <template v-else>
       <span class="mono bb-label">{{field.label}}</span>
