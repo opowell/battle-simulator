@@ -81,18 +81,18 @@ function exposureCost(units, out, inc) {
  * already-applied `childStates`), return the value TO THE MOVER of each child.
  *
  * Unlike chess's, this evaluator is pure CPU with no engine round-trip, so there
- * is nothing to batch across children — the batching exists only to satisfy the
- * hook's shape and to build the vision config (walls + smoke) once per node
- * rather than once per child.
+ * is nothing to batch across children — the batched shape exists only because the
+ * hook requires it. Each child is scored by csScore, which computes the position
+ * value and the duel table together in one pass of line-of-sight work; the
+ * exposure terms below then read that table rather than recomputing it.
  */
 export function csLeafEval(state, mover, actions, childStates) {
   // The search identifies the mover by PLAYER id ('p1'/'p2') — it takes it
   // straight off state.activePlayers — while everything in eval.js reasons in
-  // TEAM ids ('T'/'CT'), because that is what unit.ownerId holds. CsGame's own
-  // hooks get this translation for free from withTeam; a leaf evaluator handed to
-  // the agent bypasses those wrappers, so it must translate itself. Without this,
-  // `u.ownerId === teamId` is never true, every unit counts as an enemy, and the
-  // evaluation comes back as the exact negation of the truth.
+  // TEAM ids ('T'/'CT'), because that is what unit.ownerId holds. Confusing the
+  // two returns the exact NEGATION of the truth rather than erroring, so it is
+  // normalised in both places: csScore does it too, and this is the belt to its
+  // braces.
   const team = state.gameSpecific.teamMap?.[mover] ?? mover;
   return childStates.map((cs) => {
     if (!cs) return -ROUND_WIN; // an inapplicable action; never worth choosing
