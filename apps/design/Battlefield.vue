@@ -587,6 +587,31 @@ watch(() => (isPending.value ? pendingPlayerId.value : null), (pending, prev) =>
   if (pending && pending !== prev) window.playTurnSound?.();
 });
 
+// CS weapon/action sound effects (games/cs/sounds/*.wav, see cs-sound.js). Keyed on
+// `log.length` growing — same trigger as the fieldHistory watcher above — so replay
+// scrubbing (which doesn't change log.length) never re-fires a shot that already
+// played live. Weapon category comes from `field.units[].type`, the same
+// pistol/smg/shotgun/heavy/rifle/sniper/melee tag CsGame.js's toGrid already stamps
+// for the marker-shape hash — no CS-specific weapon table duplicated here.
+watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
+  if (oldLen === undefined || props.liveState?.game !== 'cs') return;
+  const entry = props.liveState.log[props.liveState.log.length - 1];
+  if (!entry) return;
+  const unitsById = new Map((props.field?.units ?? []).map(u => [u.id, u]));
+  for (const { action } of entry.playerActions ?? []) {
+    if (action.type === 'shoot')        window.playCsSound?.(unitsById.get(action.unitId)?.type ?? 'rifle');
+    else if (action.type === 'move')    window.playCsSound?.('footstep');
+    else if (action.type === 'plant')   window.playCsSound?.('bombbeep');
+    else if (action.type === 'throw') {
+      if (action.grenade === 'he')      window.playCsSound?.('explosion');
+      else if (action.grenade === 'flash') window.playCsSound?.('flashbang');
+    }
+  }
+  for (const ev of entry.events ?? []) {
+    if (ev.type === 'died' || (ev.type === 'damage' && ev.died)) window.playCsSound?.('death');
+  }
+});
+
 // ── move highlights ───────────────────────────────────────────
 const displayUnits = units;
 

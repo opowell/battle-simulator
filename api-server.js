@@ -81,6 +81,9 @@ const MIME_TYPES = {
   '.ico':  'image/x-icon',
   '.wasm': 'application/wasm',
   '.onnx': 'application/octet-stream',
+  '.wav':  'audio/wav',
+  '.mp3':  'audio/mpeg',
+  '.ogg':  'audio/ogg',
 };
 
 async function serveApp(appName, req, res) {
@@ -215,6 +218,27 @@ async function serveGameImage(gameName, job, res, type) {
 
 function f_stem(f) { const dot = f.lastIndexOf('.'); return dot < 0 ? f : f.slice(0, dot); }
 
+// ---------------------------------------------------------------------------
+// Game sound serving — /sounds/:game/:name → games/:game/sounds/:name.*
+// ---------------------------------------------------------------------------
+
+async function serveGameSound(gameName, name, res) {
+  const safe = name.replace(/[^a-zA-Z0-9_-]/g, '');
+  const dir  = resolve(GAMES_DIR, gameName, 'sounds');
+  let files;
+  try { files = await readdir(dir); } catch { files = []; }
+  for (const f of files) {
+    if (f_stem(f) === safe) {
+      try {
+        const data = await readFile(resolve(dir, f));
+        const ct = MIME_TYPES[f.slice(f.lastIndexOf('.'))] ?? 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' });
+        return res.end(data);
+      } catch {}
+    }
+  }
+  res.writeHead(404); res.end('Not found');
+}
 
 // ---------------------------------------------------------------------------
 // Game registry
@@ -1199,6 +1223,10 @@ async function handleRequest(req, res) {
     // GET /images/:game/:job[/:type] — serve game images (e.g. /images/ffta/soldier/sprite)
     if (method === 'GET' && parts[0] === 'images' && (parts.length === 3 || parts.length === 4))
       return await serveGameImage(parts[1], parts[2], res, parts[3]);
+
+    // GET /sounds/:game/:name — serve game sound effects (e.g. /sounds/cs/rifle)
+    if (method === 'GET' && parts[0] === 'sounds' && parts.length === 3)
+      return await serveGameSound(parts[1], parts[2], res);
 
     // GET /games
     if (method === 'GET' && parts[0] === 'games' && parts.length === 1)
