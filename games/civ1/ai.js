@@ -134,7 +134,7 @@ const MIN_CITY_SPACING = 4;
 // first. The agent builds the first of these the city can build and does not already
 // have. Wonders are interleaved after the cheap staples: they are dear, so only a city
 // with spare production and the right advance ever reaches them.
-const IMPROVEMENT_PRIORITY = [
+export const IMPROVEMENT_PRIORITY = [
   'temple', 'granary', 'marketplace', 'library',
   'pyramids', 'hanging-gardens', 'great-library',
   'aqueduct', 'bank', 'university', 'copernicus', 'michelangelo',
