@@ -215,3 +215,62 @@ test('unit-unit contact stops both movers at the exact touch instant', async () 
   const u1 = last.units.find(u => u.id === 'u1'), u2 = last.units.find(u => u.id === 'u2');
   assert.ok(Math.abs(u1.x - 1.65) < 1e-6 && Math.abs(u2.x - 2.35) < 1e-6);
 });
+
+// ---------------------------------------------------------------------------
+// Non-plain-number coordinates.
+//
+// The continuous-location games (CS, doom, combatmission) hold authoritative
+// positions as BigNumber, not plain numbers — see games/coord.js. The resolver
+// used to gate on `typeof p.x === 'number'`, which rejected every one of their
+// units: no motion body was ever built, so the round resolved correctly but
+// every playback frame came out {x: null, y: null} and the replay animated
+// nothing. It coerces now, so any numeric-valued coordinate object works.
+// ---------------------------------------------------------------------------
+
+// A stand-in with BigNumber's relevant shape: an object whose valueOf yields the
+// numeric string. Avoids importing games/coord.js — the engine is game-agnostic
+// and the fix must not depend on which numeric class a game happens to use.
+const bn = (v) => ({ valueOf: () => String(v), toString: () => String(v) });
+const bnPos = (x, y) => ({ x: bn(x), y: bn(y) });
+
+test('units with BigNumber-style coordinates still get animated playback', async () => {
+  const engine = duel(
+    { units: [
+      { id: 'm', ownerId: 'a', type: 'runner', position: bnPos(0, 0) },
+      { id: 'q', ownerId: 'b', type: 'runner', position: bnPos(9, 9) },
+    ] },
+    [{ type: 'move', unitId: 'm', from: bnPos(0, 0), to: bnPos(4, 0), duration: 4 }],
+    [],
+  );
+  engine._init();
+  await engine.step();
+
+  const frames = engine.playback.frames;
+  // Every sample carries real coordinates — this is what regressed.
+  const samples = frames.flatMap(f => f.units);
+  assert.ok(samples.length > 0, 'playback produced no unit samples');
+  assert.equal(samples.filter(u => u.x == null || u.y == null).length, 0,
+    'every playback sample must carry numeric coordinates');
+
+  // And the mover actually travels across the round, ending at its destination.
+  const firstM = frames[0].units.find(u => u.id === 'm');
+  const lastM  = frames[frames.length - 1].units.find(u => u.id === 'm');
+  assert.ok(Math.abs(firstM.x - 0) < 1e-6, `starts at 0, got ${firstM.x}`);
+  assert.ok(Math.abs(lastM.x - 4) < 1e-6, `ends at 4, got ${lastM.x}`);
+  assert.ok(frames.some(f => { const u = f.units.find(x => x.id === 'm'); return u.x > 0.5 && u.x < 3.5; }),
+    'playback should show the unit part-way through its move, not just teleport');
+});
+
+test('non-numeric coordinates are still treated as having no kinetics', async () => {
+  // Chess-style square names must NOT coerce into bogus geometry — they have no
+  // kinetics, so the order falls back to a plain duration completion.
+  const engine = duel(
+    { units: [{ id: 'p', ownerId: 'a', type: 'runner', position: { x: 'e', y: '4' } }] },
+    [{ type: 'move', unitId: 'p', from: { x: 'e', y: '4' }, to: { x: 'e', y: '5' }, duration: 1 }],
+    [],
+  );
+  engine._init();
+  await engine.step();
+  const samples = (engine.playback?.frames ?? []).flatMap(f => f.units);
+  assert.ok(samples.every(u => u.x == null), 'non-numeric positions must not fabricate coordinates');
+});

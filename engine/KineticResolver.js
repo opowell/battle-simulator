@@ -47,7 +47,26 @@ import { evalMotion, contactTime, interceptTime } from './kinetics.js';
 const DEFAULT_RADIUS = 0.35;   // grid units; sub-half-cell so adjacent units don't overlap
 const SAMPLES = 60;
 
-const numXY = p => p && typeof p === 'object' && typeof p.x === 'number' && typeof p.y === 'number';
+// Positional geometry, as plain float64 — or null when the value carries none
+// (chess's "e4", a card play, a missing position), which is how callers below
+// decide whether an order has kinetics at all.
+//
+// Coordinates are NOT always plain numbers: the continuous-location games store
+// authoritative positions as BigNumber (see games/coord.js — CS, doom and
+// combatmission all do). A `typeof p.x === 'number'` test silently rejects every
+// one of their units, so no motion body is ever built for them and the whole
+// round samples into playback frames of {x: null, y: null} — the round resolves
+// correctly, but the replay animates nothing. Coerce instead of type-testing;
+// Number() reads BigNumber through its valueOf, and yields NaN (→ null here) for
+// genuinely non-numeric geometry, which is exactly the distinction we want.
+//
+// Deliberately duck-typed rather than importing games/coord.js: the engine stays
+// game-agnostic, and this needs no knowledge of which numeric class a game picked.
+function pt(p) {
+  if (!p || typeof p !== 'object') return null;
+  const x = Number(p.x), y = Number(p.y);
+  return (Number.isFinite(x) && Number.isFinite(y)) ? { x, y } : null;
+}
 
 class Heap {
   constructor() { this._h = []; this._seq = 0; }
@@ -75,9 +94,10 @@ export function resolveTimeline({ game, turnStart, plans, rng, orderKey, diffEve
   const bodies = new Map();   // unitId → { r, ver, motion, segs, movingSeat }
   const deathAt = new Map();  // unitId → time it died (for frame alive flags)
   for (const u of turnStart.units ?? []) {
-    if (!numXY(u.position)) continue;
+    const p0 = pt(u.position);
+    if (!p0) continue;
     const r = game.getBodyRadius?.(turnStart, u) ?? DEFAULT_RADIUS;
-    const motion = { x0: u.position.x, y0: u.position.y, vx: 0, vy: 0, tRef: 0 };
+    const motion = { x0: p0.x, y0: p0.y, vx: 0, vy: 0, tRef: 0 };
     bodies.set(u.id, { id: u.id, r, ver: 0, motion, movingLane: null, segs: [{ t0: 0, ...motion }] });
     if (u.alive === false) deathAt.set(u.id, 0);
   }
@@ -156,10 +176,11 @@ export function resolveTimeline({ game, turnStart, plans, rng, orderKey, diffEve
         if (b.motion.vx !== 0 || b.motion.vy !== 0) { setMotion(b, t, 0, 0); onVelocityChange(b, t); }
         continue;
       }
-      if (b.movingLane == null && numXY(u.position)) {
+      const up = b.movingLane == null ? pt(u.position) : null;
+      if (up) {
         const p = evalMotion(b.motion, t);
-        if (Math.abs(p.x - u.position.x) > 1e-9 || Math.abs(p.y - u.position.y) > 1e-9) {
-          setMotion(b, t, 0, 0, u.position.x, u.position.y);
+        if (Math.abs(p.x - up.x) > 1e-9 || Math.abs(p.y - up.y) > 1e-9) {
+          setMotion(b, t, 0, 0, up.x, up.y);
           onVelocityChange(b, t);
         }
       }
@@ -215,12 +236,13 @@ export function resolveTimeline({ game, turnStart, plans, rng, orderKey, diffEve
 
     // Kinetic move: velocity toward the destination, exact arrival event.
     const b = action.unitId ? bodies.get(action.unitId) : null;
-    if (b && numXY(action.from) && numXY(action.to) && dur > 0 && !deathAt.has(action.unitId)) {
+    const from = pt(action.from), to = pt(action.to);
+    if (b && from && to && dur > 0 && !deathAt.has(action.unitId)) {
       const p = evalMotion(b.motion, t);
-      const speed = Math.hypot(action.to.x - action.from.x, action.to.y - action.from.y) / dur;
-      const dist = Math.hypot(action.to.x - p.x, action.to.y - p.y);
+      const speed = Math.hypot(to.x - from.x, to.y - from.y) / dur;
+      const dist = Math.hypot(to.x - p.x, to.y - p.y);
       if (speed > 0 && dist > 1e-9) {
-        setMotion(b, t, (action.to.x - p.x) / dist * speed, (action.to.y - p.y) / dist * speed);
+        setMotion(b, t, (to.x - p.x) / dist * speed, (to.y - p.y) / dist * speed);
         b.movingLane = lane.id;
         onVelocityChange(b, t);
         heap.push({ ...ev, time: t + dist / speed, move: true });
@@ -295,8 +317,9 @@ export function resolveTimeline({ game, turnStart, plans, rng, orderKey, diffEve
         // never moved in game terms, so its body snaps back to the authoritative
         // position (unless it died mid-flight — then it rests where it stopped).
         const u = (state.units ?? []).find(x => x.id === action.unitId);
-        if (ok) setMotion(b, t, 0, 0, action.to.x, action.to.y);
-        else if (u && u.alive !== false && numXY(u.position)) setMotion(b, t, 0, 0, u.position.x, u.position.y);
+        const dest = pt(action.to), rest = (u && u.alive !== false) ? pt(u.position) : null;
+        if (ok && dest) setMotion(b, t, 0, 0, dest.x, dest.y);
+        else if (rest) setMotion(b, t, 0, 0, rest.x, rest.y);
         else setMotion(b, t, 0, 0);
         onVelocityChange(b, t);
       } else {
