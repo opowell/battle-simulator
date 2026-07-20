@@ -110,11 +110,46 @@ export const SMOKE_TURNS         = 5;
  * the engine hides.
  */
 export function smokeOval(cx, cy) {
-  return { shape: 'oval', x: cx - SMOKE_RADIUS, y: cy - SMOKE_RADIUS, w: 2 * SMOKE_RADIUS, h: 2 * SMOKE_RADIUS };
+  return zoneOval(cx, cy, SMOKE_RADIUS);
 }
-export const FIRE_RADIUS         = 1;
+
+// A fire pool (molotov / incendiary) is likewise a DISC of this radius centred on
+// the thrown point — see fireOval.
+//
+// 1.5, not 1, because fire used to be tile-based: buildFireSet snapped the throw
+// to its tile and burned the (2·1+1)² = 9-tile square around it, while the render
+// drew an oval of radius 1.5. Going continuous has to pick one number for both,
+// and 1.5 is the one that keeps the pool the size players already see (the drawn
+// oval is unchanged) and keeps its area close to the old footprint (π·1.5² ≈ 7.1
+// against the old 9). Taking the literal old constant of 1 instead would have
+// quietly shrunk the burn to π ≈ 3.1 — a two-thirds nerf to molotovs dressed up
+// as a refactor.
+export const FIRE_RADIUS         = 1.5;
 export const FIRE_DAMAGE         = 10;
 export const FIRE_TURNS          = 3;
+
+/**
+ * The bounding box of one fire pool, same contract as smokeOval: THE definition
+ * both the damage test (CsGame's end-of-turn burn) and the drawn shape derive
+ * from, so the flames you see are the flames that hurt you.
+ */
+export function fireOval(cx, cy) {
+  return zoneOval(cx, cy, FIRE_RADIUS);
+}
+
+// Shared by both: an {x, y, w, h} oval of `r` centred exactly on (cx, cy). Grenade
+// zones store the continuous point the grenade was thrown to (see CsGame's throw
+// branch), never a tile, so a disc about that point is the honest shape — the same
+// convention HE and flash already use via their euclidean radius checks.
+function zoneOval(cx, cy, r) {
+  return { shape: 'oval', x: cx - r, y: cy - r, w: 2 * r, h: 2 * r };
+}
+
+// Is a point inside a zone of radius `r` centred on (cx, cy)? The membership test
+// that pairs with zoneOval, so "drawn" and "in effect" cannot disagree.
+export function inZone(px, py, cx, cy, r) {
+  return Math.hypot(px - cx, py - cy) <= r;
+}
 
 export function lossReward(consecutiveLosses) {
   return Math.min(BASE_LOSS_REWARD + consecutiveLosses * 500, 3400);

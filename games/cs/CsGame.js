@@ -9,7 +9,7 @@ import {
   GRENADE_THROW_RANGE, HE_RADIUS, HE_DAMAGE,
   FLASH_RADIUS, FLASH_BLIND_TURNS,
   SMOKE_RADIUS, SMOKE_TURNS, smokeOval,
-  FIRE_RADIUS, FIRE_DAMAGE, FIRE_TURNS,
+  FIRE_RADIUS, FIRE_DAMAGE, FIRE_TURNS, fireOval, inZone,
   BOMB_TIMER, DEFUSE_NEEDED, ROUND_TURN_MAX,
 } from './weapons.js';
 import {
@@ -20,7 +20,7 @@ import {
 import { getCsBelief, CS_VISION, csVisionCfg, csLosLayers, csHasLOS } from './belief.js';
 import { isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { filterVisibleUnits, orientToEnemies } from '../vision.js';
-import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
+import { makePos, parsePos, num, posToWire } from '../coord.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 
@@ -105,17 +105,20 @@ function grenadePreview(gid) {
   return { previewKind: 'none' };
 }
 
-// Zone centres can be continuous (a grenade thrown to an exact point); the tile-key
-// membership sets they feed are integer-keyed, so snap each centre to its tile.
-function buildFireSet(fireZones) {
-  const s = new Set();
-  for (const fz of fireZones) {
-    const cx = tileNum(fz.x), cy = tileNum(fz.y);
-    for (let dy = -FIRE_RADIUS; dy <= FIRE_RADIUS; dy++)
-      for (let dx = -FIRE_RADIUS; dx <= FIRE_RADIUS; dx++)
-        s.add(`${cx + dx},${cy + dy}`);
-  }
-  return s;
+// Is this unit standing in fire? A fire pool is a disc about the exact point the
+// molotov was thrown to (weapons.js's fireOval), tested in continuous space — the
+// same way HE and flash already test their radii, and the same disc the client
+// draws.
+//
+// This used to snap the throw to its tile and burn the (2r+1)² tile square around
+// it, which disagreed with the round pool being drawn on top of it in two ways:
+// the square's corners burned without being drawn, and the whole footprint jumped
+// to tile granularity, so a molotov landing at x.9 burned a square centred most of
+// a unit away from where it visibly landed.
+function inFire(fireZones, u) {
+  const ux = num(u.position.x), uy = num(u.position.y);
+  for (const fz of fireZones) if (inZone(ux, uy, num(fz.x), num(fz.y), FIRE_RADIUS)) return true;
+  return false;
 }
 
 // ── Unit factory ──────────────────────────────────────────────────────────────
@@ -845,9 +848,8 @@ function applyActions(state, playerActions, rng = Math.random) {
       // Apply fire damage then tick fire zones
       let newFireZones = fireZones;
       if (fireZones.length > 0) {
-        const fireSet = buildFireSet(fireZones);
         units = units.map(u => {
-          if (!u.alive || !fireSet.has(`${tileNum(u.position.x)},${tileNum(u.position.y)}`)) return u;
+          if (!u.alive || !inFire(fireZones, u)) return u;
           const newHp = Math.max(0, u.hp - calcDamage(FIRE_DAMAGE, u));
           return { ...u, hp: newHp, alive: newHp > 0, armor: newHp > 0 ? u.armor : 0 };
         });
@@ -984,9 +986,9 @@ function effectShapes(gs) {
   // one was radius r+0.5 centred half a unit down-right of the real one.
   for (const sz of gs.smokeZones ?? [])
     out.push({ ...smokeOval(num(sz.x), num(sz.y)), fill: '#9098a0', opacity: 0.6 });
+  // Same geometry the burn test uses (weapons.js's fireOval) — see the smoke note above.
   for (const fz of gs.fireZones ?? [])
-    out.push({ shape: 'oval', x: fz.x - FIRE_RADIUS, y: fz.y - FIRE_RADIUS,
-               w: FIRE_RADIUS * 2 + 1, h: FIRE_RADIUS * 2 + 1, fill: '#c85a2a', opacity: 0.6 });
+    out.push({ ...fireOval(num(fz.x), num(fz.y)), fill: '#c85a2a', opacity: 0.6 });
   if (gs.bomb?.planted)
     out.push({ shape: 'oval', x: num(gs.bomb.plantedAt.x) - 0.1, y: num(gs.bomb.plantedAt.y) - 0.1,
                w: 1.2, h: 1.2, fill: '#e04040' });

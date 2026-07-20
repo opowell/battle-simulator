@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { CsGame } from './index.js';
 import { csEvaluate, unitValue, ROUND_WIN, CS_SEARCH_WIN } from './eval.js';
 import { csLeafEval, CsObscuroAgent } from './ObscuroAgent.js';
-import { ROUND_TURN_MAX, BOMB_TIMER, SMOKE_RADIUS, smokeOval } from './weapons.js';
+import { ROUND_TURN_MAX, BOMB_TIMER, SMOKE_RADIUS, smokeOval, FIRE_RADIUS, fireOval, inZone } from './weapons.js';
 import { csVisionCfg, csLosLayers } from './belief.js';
 import { isWalkable } from './map.js';
 import { RandomAgent } from '../../agents/index.js';
@@ -249,4 +249,85 @@ test('cs smoke: a unit inside the drawn cloud is actually hidden by it', () => {
 
   const smoked = csVisionCfg(s.gameSpecific.map, [mid]);
   assert.equal(smoked.hasLOS(a.x, a.y, b.x, b.y), false, 'smoke on the line must block it');
+});
+
+// ---------------------------------------------------------------------------
+// Fire pools are continuous.
+//
+// Molotov/incendiary used to snap to a tile and burn the (2r+1)² square around
+// it, while the client drew a round pool on top — so the square's corners burned
+// invisibly, and a molotov landing at x.9 burned a square centred most of a unit
+// from where it visibly landed. Both sides are one disc about the exact throw
+// point now (weapons.js's fireOval / inZone).
+// ---------------------------------------------------------------------------
+
+// End one turn, which is when fire damage is applied (see applyActions' end-turn).
+function endTurn(state) {
+  const me = state.activePlayers[0];
+  return CsGame.applyActions(state, [{ playerId: me, action: { type: 'end-turn', unitId: '__player__' } }]);
+}
+
+// Put one unit of each team at chosen points, so a round can't end mid-test.
+function withUnitsAt(state, tAt, ctAt) {
+  const [t0] = state.units.filter(u => u.ownerId === 'T');
+  const [c0] = state.units.filter(u => u.ownerId === 'CT');
+  return { ...state, units: [
+    { ...t0, position: { x: tAt.x, y: tAt.y }, alive: true, hp: 100 },
+    { ...c0, position: { x: ctAt.x, y: ctAt.y }, alive: true, hp: 100 },
+  ] };
+}
+
+test('cs fire: a unit inside the pool burns, one just outside does not', () => {
+  const s = toActionPhase(fresh());
+  const { a, b } = openSightline(s, 20);
+  const fire = { x: a.x, y: a.y, turnsLeft: 3 };
+
+  // T stands dead centre; CT stands a hair beyond the radius.
+  const inside  = { x: a.x, y: a.y };
+  const outside = { x: a.x + FIRE_RADIUS + 0.2, y: a.y };
+  const staged = setGs(withUnitsAt(s, inside, b), { fireZones: [fire] });
+
+  const after = endTurn(staged);
+  const t = after.units.find(u => u.ownerId === 'T');
+  assert.ok(t.hp < 100, `unit in the pool should burn, hp=${t.hp}`);
+
+  const staged2 = setGs(withUnitsAt(s, outside, b), { fireZones: [fire] });
+  const after2 = endTurn(staged2);
+  const t2 = after2.units.find(u => u.ownerId === 'T');
+  assert.equal(t2.hp, 100, 'a unit beyond the radius must not burn');
+});
+
+test('cs fire: the burn follows the exact throw point, not its tile', () => {
+  const s = toActionPhase(fresh());
+  const { a, b } = openSightline(s, 20);
+  // Thrown to the far edge of a tile. Under the old tile-snapping burn, the pool
+  // was centred on the tile and this unit — 1.2 away from the real point but
+  // inside the old square — burned regardless of where the molotov actually fell.
+  const fire = { x: a.x + 0.95, y: a.y + 0.95, turnsLeft: 3 };
+  const far  = { x: a.x + 0.95 - (FIRE_RADIUS + 0.3), y: a.y + 0.95 };
+
+  const staged = setGs(withUnitsAt(s, far, b), { fireZones: [fire] });
+  const t = endTurn(staged).units.find(u => u.ownerId === 'T');
+  assert.equal(t.hp, 100, 'burn must be measured from the throw point, not its tile');
+
+  // …and a unit the same distance on the other side, inside the disc, does burn.
+  const near = { x: a.x + 0.95 + FIRE_RADIUS * 0.5, y: a.y + 0.95 };
+  const t2 = endTurn(setGs(withUnitsAt(s, near, b), { fireZones: [fire] })).units.find(u => u.ownerId === 'T');
+  assert.ok(t2.hp < 100, `unit inside the disc should burn, hp=${t2.hp}`);
+});
+
+test('cs fire: the drawn pool is exactly the pool that burns', () => {
+  const s = toActionPhase(fresh());
+  const fire = { x: 20.4, y: 18.6, turnsLeft: 3 };
+  const drawn = (CsGame.toGrid(setGs(s, { fireZones: [fire] })).shapes ?? [])
+    .filter(sh => sh.fill === '#c85a2a');
+  assert.equal(drawn.length, 1, 'expected exactly one drawn fire pool');
+
+  const want = fireOval(fire.x, fire.y);
+  for (const k of ['x', 'y', 'w', 'h']) assert.equal(drawn[0][k], want[k], `drawn fire ${k}`);
+
+  // Every corner of the drawn box that lies outside the disc must not burn, and
+  // the centre must — i.e. the drawing is the disc, not a square.
+  assert.equal(inZone(fire.x, fire.y, fire.x, fire.y, FIRE_RADIUS), true);
+  assert.equal(inZone(want.x, want.y, fire.x, fire.y, FIRE_RADIUS), false, 'box corner is outside the disc');
 });
