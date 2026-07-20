@@ -4,7 +4,7 @@ import { csEvaluate } from './eval.js';
 import { ObscuroAgent as CsObscuroAgent, analyzeCsObscuro } from './ObscuroAgent.js';
 import {
   WEAPONS, GRENADES, EQUIPMENT,
-  ARMOR_COST, ARMOR_HP, ARMOR_REDUCTION, HELMET_EXTRA_REDUCTION,
+  ARMOR_COST, ARMOR_HP, ARMOR_REDUCTION, HELMET_EXTRA_REDUCTION, CROUCH_DAMAGE_REDUCTION,
   STARTING_MONEY, WIN_REWARD, KILL_REWARD, MAX_MONEY, lossReward,
   GRENADE_THROW_RANGE, HE_RADIUS, HE_DAMAGE,
   FLASH_RADIUS, FLASH_BLIND_TURNS,
@@ -50,7 +50,6 @@ const MAX_BUYS_PER_ROUND = 6;
 // per-turn action gate (hasActed) — a unit can still shoot/reload/throw/plant/defuse the same
 // turn it toggles stance — only movement and vision are affected.
 const CROUCH_MOVE_MULT        = 0.5;  // crouched move allowance, applied on the unit's next turn
-const CROUCH_DAMAGE_REDUCTION = 0.15; // extra damage reduction while crouched, stacks with armor
 const CROUCH_VISION_MULT      = 0.7;  // crouched sight radius, relative to CS_VISION.range
 
 // A unit carries up to three weapons at once — a sidearm, a knife, and a primary — but only

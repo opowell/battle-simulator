@@ -61,6 +61,11 @@ export const ARMOR_COST             = 650;
 export const ARMOR_HP               = 100;
 export const ARMOR_REDUCTION        = 0.40;
 export const HELMET_EXTRA_REDUCTION = 0.10; // stacks with ARMOR_REDUCTION → 50% total
+// Extra damage reduction while crouched, stacks with armor. Lives here with the
+// other two reduction terms (rather than privately in CsGame.js) because the
+// Obscuro leaf evaluator has to reproduce calcDamage exactly to price a duel —
+// a copied literal would silently drift from the engine.
+export const CROUCH_DAMAGE_REDUCTION = 0.15;
 
 export const STARTING_MONEY   = 800;
 export const WIN_REWARD       = 3250;

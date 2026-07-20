@@ -31,7 +31,7 @@
 // ---------------------------------------------------------------------------
 
 import {
-  WEAPONS, ARMOR_REDUCTION, HELMET_EXTRA_REDUCTION,
+  WEAPONS, ARMOR_REDUCTION, HELMET_EXTRA_REDUCTION, CROUCH_DAMAGE_REDUCTION,
   BOMB_TIMER, ROUND_TURN_MAX, DEFUSE_NEEDED,
 } from './weapons.js';
 import { isBombsite } from './map.js';
@@ -99,7 +99,7 @@ function expectedDamage(shooter, target, dist) {
   if (accuracy <= 0) return 0;
   let reduction = 0;
   if (target.armor) reduction += ARMOR_REDUCTION + (target.helmet ? HELMET_EXTRA_REDUCTION : 0);
-  if (target.crouched) reduction += 0.15;
+  if (target.crouched) reduction += CROUCH_DAMAGE_REDUCTION;
   return wpn.damage * (1 - reduction) * accuracy;
 }
 
