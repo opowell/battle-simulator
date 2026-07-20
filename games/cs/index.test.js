@@ -326,6 +326,41 @@ test('cs: a zero-distance move is rejected (would otherwise loop forever)', () =
     'move onto own position must be illegal');
 });
 
+// Same class of bug as the zero-distance move above: an action that costs nothing
+// and returns to the same state is an infinite loop for any AI, because ending the
+// turn hands the opponent a move (scored as the negation of our own value) while
+// the free toggle does not. Both of these froze CS matches — the AI would flip
+// stance / swap knife↔pistol for thousands of steps and never end its turn.
+test('cs: a stance change costs move budget, so it cannot be toggled forever', () => {
+  let state = CsGame.createInitialState(players(), { mapId: 'dust2' });
+  state = { ...state, currentPhase: 'action', gameSpecific: { ...state.gameSpecific, buyPhase: 'done' } };
+  const before = state.units.find(u => u.id === 'T-0').perTurn.moveAllowance;
+
+  const after = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'crouch', unitId: 'T-0' } }]);
+  const u = after.units.find(x => x.id === 'T-0');
+  assert.equal(u.crouched, true);
+  assert.ok(u.perTurn.moveAllowance < before, 'crouching must spend move budget');
+
+  // And once the budget is gone the toggle is no longer offered at all.
+  const broke = { ...after, units: after.units.map(x =>
+    x.id === 'T-0' ? { ...x, perTurn: { ...x.perTurn, moveAllowance: 0 } } : x) };
+  const offered = CsGame.getLegalActions(broke, 'p2')
+    .filter(a => a.unitId === 'T-0' && (a.type === 'crouch' || a.type === 'stand'));
+  assert.equal(offered.length, 0, 'a unit with no budget must not be offered a free stance toggle');
+});
+
+test('cs: a weapon switch is not offered once the move budget is spent', () => {
+  let state = CsGame.createInitialState(players(), { mapId: 'dust2' });
+  state = { ...state, currentPhase: 'action', gameSpecific: { ...state.gameSpecific, buyPhase: 'done' } };
+  // The switch tax floors at 0, so without an affordability gate a broke unit could
+  // swap knife↔pistol forever at no cost.
+  state = { ...state, units: state.units.map(u =>
+    u.id === 'T-0' ? { ...u, perTurn: { ...u.perTurn, moveAllowance: 0 } } : u) };
+  const offered = CsGame.getLegalActions(state, 'p2')
+    .filter(a => a.unitId === 'T-0' && a.type === 'switch-weapon');
+  assert.equal(offered.length, 0);
+});
+
 test('cs: a target-less throw is consumed, not crashed on', () => {
   let state = CsGame.createInitialState(players(), { mapId: 'dust2' });
   state = { ...state, currentPhase: 'action', gameSpecific: { ...state.gameSpecific, buyPhase: 'done' } };

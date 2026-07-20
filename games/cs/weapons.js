@@ -68,6 +68,16 @@ export const BASE_LOSS_REWARD = 1400;
 export const KILL_REWARD      = 300;
 export const MAX_MONEY        = 16000;
 
+// ── Round rules ───────────────────────────────────────────────────────────────
+// Round-scoped constants (as opposed to the match-scoped scoring above). They live
+// here, with the other rules constants, rather than privately inside CsGame.js
+// because the Obscuro leaf evaluator (eval.js) has to price the round clock and the
+// bomb timer, and importing them back out of CsGame.js would be a circular import
+// (CsGame.js → eval.js → CsGame.js).
+export const BOMB_TIMER     = 8;  // turns from plant to detonation
+export const DEFUSE_NEEDED  = 2;  // consecutive defuse turns needed (1 with a kit)
+export const ROUND_TURN_MAX = 24; // turns before an unplanted round times out (CT win)
+
 export const GRENADE_THROW_RANGE = 16; // doubled alongside the 3x map/vision resize (2026-07-17) to keep grenades usable at the new scale
 export const HE_RADIUS           = 2;
 export const HE_DAMAGE           = 50;

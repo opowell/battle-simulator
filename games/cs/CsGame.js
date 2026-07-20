@@ -1,4 +1,7 @@
-import { unitStrengthEval } from '../evalHelpers.js';
+import { csEvaluate } from './eval.js';
+// The CS-specialised Obscuro agent, declared in `agents` below. It lazily imports
+// CsGame back (inside a method, like chess's) so this import stays acyclic.
+import { ObscuroAgent as CsObscuroAgent, analyzeCsObscuro } from './ObscuroAgent.js';
 import {
   WEAPONS, GRENADES, EQUIPMENT,
   ARMOR_COST, ARMOR_HP, ARMOR_REDUCTION, HELMET_EXTRA_REDUCTION,
@@ -7,6 +10,7 @@ import {
   FLASH_RADIUS, FLASH_BLIND_TURNS,
   SMOKE_RADIUS, SMOKE_TURNS,
   FIRE_RADIUS, FIRE_DAMAGE, FIRE_TURNS,
+  BOMB_TIMER, DEFUSE_NEEDED, ROUND_TURN_MAX,
 } from './weapons.js';
 import {
   MAPS,
@@ -30,9 +34,8 @@ const MOVE_RANGE     = 8; // per-turn move allowance (budget, not a single-move 
 // move to cover at least MOVE_EPS makes each accepted move strictly spend budget, so a turn always
 // runs out of moves and ends. It's far below any tactically meaningful step (units sit ~0.4 apart).
 const MOVE_EPS       = 0.05;
-const BOMB_TIMER     = 8;
-const DEFUSE_NEEDED  = 2;
-const ROUND_TURN_MAX = 24;
+// BOMB_TIMER / DEFUSE_NEEDED / ROUND_TURN_MAX now live in weapons.js (imported above)
+// so eval.js can price the bomb timer and round clock without a circular import.
 // Hard cap on how many items one unit may buy in a single buy phase. Each buy is its own
 // engine step (and, for an AI player, a full move search), so an unbounded buy phase is what
 // froze the game: an AI that assigns no value to unspent money will buy everything it can
@@ -57,6 +60,17 @@ const CROUCH_VISION_MULT      = 0.7;  // crouched sight radius, relative to CS_V
 // fastest, pistol baseline (matches the old flat MOVE_RANGE), a primary slowest.
 const SWITCH_WEAPON_COST = 1;  // flat moveAllowance tax for a 'switch-weapon' action
 const ROTATE_COST = 1;  // flat moveAllowance tax for a 'rotate' action (turn in place, no move)
+// Flat moveAllowance tax for a 'crouch'/'stand' stance change, for exactly the same
+// reason rotate and switch-weapon carry one: an action that is neither gated by
+// hasActed nor priced in budget can be repeated forever. Stance was the one such
+// action left untaxed, and it is a TOGGLE, so crouch→stand→crouch→… was a
+// zero-cost cycle that returned to the identical state. Any search that values a
+// position at all will happily sit in that loop rather than end its turn (ending
+// hands the opponent a move, which scores as the negation of our own value), so
+// the AI's turn never terminated: thousands of engine steps per turn, rounds
+// frozen, matches unable to finish. Taxing it bounds stance changes per turn the
+// same way every other repeatable action is bounded.
+const STANCE_COST = 1;
 const SLOT_MOVE_MULT = { melee: 1.25, pistol: 1.0, primary: 0.7 };
 // Which loadout slot a WEAPONS category belongs in — every non-melee, non-pistol category
 // (smg/shotgun/rifle/heavy/sniper) shares the single 'primary' slot.
@@ -295,14 +309,24 @@ function actionPhaseActions(state, teamId) {
 
     // Crouch/stand: a stance toggle, not gated by hasActed (see CROUCH_MOVE_MULT etc.) — a
     // unit can still shoot/reload/throw/plant/defuse the same turn it changes stance.
-    actions.push({ type: u.crouched ? 'stand' : 'crouch', unitId: u.id });
+    // Costs STANCE_COST of the move budget (like rotate/switch-weapon), so only
+    // offer it when the unit can still pay — otherwise the toggle is free and can
+    // be repeated forever (see STANCE_COST).
+    if (u.perTurn.moveAllowance >= STANCE_COST)
+      actions.push({ type: u.crouched ? 'stand' : 'crouch', unitId: u.id });
 
     // Switch active weapon: not gated by hasActed (a unit can swap and still shoot/move the
     // same turn), only by a small moveAllowance tax (SWITCH_WEAPON_COST) — see applyActions.
     // Offered for every owned, non-active slot (a unit always owns pistol+melee; primary only
     // once bought).
+    // Gated on affordability as well as taxed: the tax floors at 0
+    // (Math.max(0, …)), so an ungated switch is FREE once the budget is spent —
+    // and swapping knife↔pistol is a toggle, i.e. another zero-cost cycle back to
+    // the identical state. That is the same turn-never-ends trap STANCE_COST
+    // describes, and it was the one still open after stance was taxed.
     for (const slot of ['pistol', 'melee', 'primary']) {
       if (slot === u.active || !u.weapons[slot]) continue;
+      if (u.perTurn.moveAllowance < SWITCH_WEAPON_COST) continue;
       const w = WEAPONS[u.weapons[slot]];
       actions.push({ type: 'switch-weapon', unitId: u.id, slot, name: `Switch to ${w.name}`, icon: WEAPON_ICON(u.weapons[slot]) });
     }
@@ -740,7 +764,9 @@ function applyActions(state, playerActions, rng = Math.random) {
     if (action.type === 'crouch' || action.type === 'stand') {
       const crouched = action.type === 'crouch';
       units = units.map(u => u.id === action.unitId
-        ? { ...u, crouched, visionRange: crouched ? CS_VISION.range * CROUCH_VISION_MULT : undefined }
+        ? { ...u, crouched,
+            visionRange: crouched ? CS_VISION.range * CROUCH_VISION_MULT : undefined,
+            perTurn: { ...u.perTurn, moveAllowance: Math.max(0, u.perTurn.moveAllowance - STANCE_COST) } }
         : u);
       return { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
     }
@@ -1187,13 +1213,22 @@ function csSampleWorlds(observation, myTeam, n, rng = Math.random) {
 }
 
 export const CsGame = {
-  // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
-  // minus the enemy's. See games/evalHelpers.js.
-  // Team game: withTeam translates the player id to its team ownerId (T/CT,
-  // marine/demon) before the material eval. See games/evalHelpers.js.
-  evaluateState: withTeam((state, teamId) => unitStrengthEval(state, teamId)),
-  // Fog of war: each team sees only enemies near its players; the generic
-  // ObscuroAgent samples the unseen enemies via sampleWorlds below.
+  // Heuristic leaf value: the full CS position score — round outcome, bomb
+  // objective, material and angles (see games/cs/eval.js). This replaces the
+  // generic unitStrengthEval (hp + a survival bonus), which was blind to
+  // everything that actually decides a CS round: the bomb, the clock, and who
+  // holds a shot on whom.
+  // Team game: withTeam translates the player id to its team ownerId (T/CT)
+  // before the eval — so `teamId` here is 'T' or 'CT', which is what eval.js wants.
+  evaluateState: withTeam(csEvaluate),
+  // The CS-specialised Obscuro agent (bounded terminals + the CS node heuristic,
+  // including the asymmetric cost of walking into a duel you lose). Overrides the
+  // builtin generic 'obscuro' entry by id — see api-server.js's dedupeAgents.
+  agents: [
+    { id: 'obscuro', name: 'AI (Obscuro/CFR)', agent: CsObscuroAgent, analyze: analyzeCsObscuro },
+  ],
+  // Fog of war: each team sees only enemies near its players; the Obscuro agent
+  // samples the unseen enemies via sampleWorlds below.
   gameOptions: [
     MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies near its own players', type: 'boolean', default: true },
