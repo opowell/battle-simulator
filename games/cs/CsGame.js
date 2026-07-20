@@ -1231,6 +1231,13 @@ export const CsGame = {
   gameOptions: [
     MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies near its own players', type: 'boolean', default: true },
+    // The interactive position-analysis panel (apps/design/battlefield/AnalysisPanel.vue).
+    // Battlefield.vue gates it on this config flag alone, defaulting to false when a game
+    // does not declare the option — so leaving it out made the panel unreachable. CS has
+    // had everything behind it since the Obscuro agent landed (the `analyze` entry above,
+    // served by POST /sessions/:id/analyze); only the switch was missing. Declared exactly
+    // as chess declares it.
+    { id: 'showAnalysisPanel', label: 'Analysis Panel', description: 'Show an AI move-analysis panel with board suggestions, live or during replay', type: 'boolean', default: true },
   ],
   sampleWorlds: withTeam(csSampleWorlds),
   name: 'CS',
