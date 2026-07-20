@@ -114,7 +114,21 @@ function expectedDamage(shooter, target, dist) {
 // stand in the open next to an enemy that merely happens to be looking away.
 const OFF_ANGLE_DISCOUNT = 0.35;
 
-export function threat(shooter, target, cfg) {
+// Beyond this distance a unit's active weapon does literally nothing: accuracy is
+// max(0, 0.90 − 0.40·d/range), which hits 0 at d = 2.25·range. Used to skip the
+// (expensive) line-of-sight test for pairs that cannot affect each other anyway.
+const ACCURACY_ZERO_AT = 0.90 / 0.40; // = 2.25 × the weapon's range
+function maxHarmRange(u) {
+  const w = WEAPONS[u.weapons?.[u.active]];
+  return w ? w.range * ACCURACY_ZERO_AT : 0;
+}
+
+// Threat with the line-of-sight result already known. Split out because LOS is by
+// far the most expensive part (an exact test against the map's whole layer stack,
+// see belief.js's csHasLOS) and it is SYMMETRIC — so a pair of units needs one LOS
+// test between them, not one per direction. duelTerms below exploits that.
+function threatGivenLOS(shooter, target, cfg, hasLos) {
+  if (!hasLos) return 0;
   if (!shooter.alive || !target.alive) return 0;
   if (shooter.blinded > 0) return 0;
   const slot = shooter.active;
@@ -122,8 +136,6 @@ export function threat(shooter, target, cfg) {
 
   const sx = num(shooter.position.x), sy = num(shooter.position.y);
   const tx = num(target.position.x),  ty = num(target.position.y);
-  if (cfg.hasLOS && !cfg.hasLOS(sx, sy, tx, ty)) return 0;
-
   const dist = Math.hypot(tx - sx, ty - sy);
   const dmg = expectedDamage(shooter, target, dist);
   if (dmg <= 0) return 0;
@@ -131,6 +143,56 @@ export function threat(shooter, target, cfg) {
   const viewer = { x: sx, y: sy, facing: shooter.facing, fov: shooter.fov, visionRange: shooter.visionRange };
   const onAngle = seesPoint(viewer, tx, ty, cfg);
   return dmg * (onAngle ? 1 : OFF_ANGLE_DISCOUNT);
+}
+
+export function threat(shooter, target, cfg) {
+  const sx = num(shooter.position.x), sy = num(shooter.position.y);
+  const tx = num(target.position.x),  ty = num(target.position.y);
+  const los = cfg.hasLOS ? cfg.hasLOS(sx, sy, tx, ty) : true;
+  return threatGivenLOS(shooter, target, cfg, los);
+}
+
+/**
+ * Every duel in the position, in ONE pass: for each living unit on both sides, the
+ * best shot it has (`out`) and the best shot held on it (`inc`). One LOS test per
+ * unit PAIR — the single hot cost in this file, so the angle term and the agent's
+ * exposure term (games/cs/ObscuroAgent.js) both read this instead of each
+ * recomputing threats in both directions.
+ *
+ * Bests are maxima, not sums: a unit fires once per turn, so holding an angle on
+ * three enemies at once is worth about as much as holding one — and summing would
+ * make walking into a crossfire look like a bonanza.
+ */
+export function duelTerms(state, teamId, cfg) {
+  const mine   = state.units.filter(u => u.alive && u.ownerId === teamId);
+  const theirs = state.units.filter(u => u.alive && u.ownerId != null && u.ownerId !== teamId);
+  const myOut = new Map(), myInc = new Map(), theirOut = new Map(), theirInc = new Map();
+  for (const u of mine)   { myOut.set(u.id, 0);    myInc.set(u.id, 0); }
+  for (const e of theirs) { theirOut.set(e.id, 0); theirInc.set(e.id, 0); }
+
+  for (const a of mine) {
+    const ax = num(a.position.x), ay = num(a.position.y);
+    for (const e of theirs) {
+      const ex = num(e.position.x), ey = num(e.position.y);
+      // Range gate BEFORE the line-of-sight test. Accuracy falls to 0 at
+      // 2.25× the weapon's range (0.90 − 0.40·d/range ≤ 0), so beyond that
+      // neither unit can hurt the other whatever the walls do — and the LOS test
+      // against the map's full layer stack is by far the most expensive thing
+      // here. Most pairs on a 66×42 map are out of pistol reach, so this skips
+      // the majority of the work without changing any result.
+      const dist = Math.hypot(ex - ax, ey - ay);
+      if (dist > maxHarmRange(a) && dist > maxHarmRange(e)) continue;
+      const los = cfg.hasLOS ? cfg.hasLOS(ax, ay, ex, ey) : true; // symmetric: one test per pair
+      if (!los) continue;
+      const ae = threatGivenLOS(a, e, cfg, true);
+      const ea = threatGivenLOS(e, a, cfg, true);
+      if (ae > myOut.get(a.id))    myOut.set(a.id, ae);
+      if (ae > theirInc.get(e.id)) theirInc.set(e.id, ae);
+      if (ea > myInc.get(a.id))    myInc.set(a.id, ea);
+      if (ea > theirOut.get(e.id)) theirOut.set(e.id, ea);
+    }
+  }
+  return { mine, theirs, myOut, myInc, theirOut, theirInc };
 }
 
 // Expected damage converts to cs-points at roughly "100 damage = one body", which
@@ -268,12 +330,23 @@ function roundWinner(state) {
  * here so no caller can get it wrong.
  */
 export function csEvaluate(state, side) {
+  return csScore(state, side).value;
+}
+
+/**
+ * The evaluation, plus the duel table it was computed from — so a caller that also
+ * needs the per-unit threats (the agent's exposure term) gets them without paying
+ * for a second pass of LOS tests.
+ *
+ * Returns `{ value, decided, duels }`. `decided` flags an already-won round, where
+ * `duels` is null because nothing below the outcome was computed.
+ */
+export function csScore(state, side) {
   const teamId = state.gameSpecific.teamMap?.[side] ?? side;
-  const enemyTeam = teamId === 'T' ? 'CT' : 'T';
 
   // 1. Round already decided — nothing else about the position matters.
   const winner = roundWinner(state);
-  if (winner) return winner === teamId ? ROUND_WIN : -ROUND_WIN;
+  if (winner) return { value: winner === teamId ? ROUND_WIN : -ROUND_WIN, decided: true, duels: null };
 
   // 2. Objective (scored for T, flipped for CT).
   let score = objectiveScore(state) * (teamId === 'T' ? 1 : -1);
@@ -284,23 +357,11 @@ export function csEvaluate(state, side) {
     score += u.ownerId === teamId ? unitValue(u) : -unitValue(u);
   }
 
-  // 4. Angles. Each unit contributes the single best shot it has available (not
-  // the sum over all enemies): a unit fires once per turn, so holding an angle on
-  // three enemies at once is worth about as much as holding one — and summing
-  // would make walking into a crossfire look like a bonanza.
+  // 4. Angles — who holds a shot on whom (see duelTerms).
   const cfg = visionFor(state.gameSpecific);
-  const mine   = state.units.filter(u => u.alive && u.ownerId === teamId);
-  const theirs = state.units.filter(u => u.alive && u.ownerId === enemyTeam);
-  for (const a of mine) {
-    let best = 0;
-    for (const e of theirs) best = Math.max(best, threat(a, e, cfg));
-    score += best * DAMAGE_TO_POINTS;
-  }
-  for (const e of theirs) {
-    let best = 0;
-    for (const a of mine) best = Math.max(best, threat(e, a, cfg));
-    score -= best * DAMAGE_TO_POINTS;
-  }
+  const duels = duelTerms(state, teamId, cfg);
+  for (const u of duels.mine)   score += duels.myOut.get(u.id)    * DAMAGE_TO_POINTS;
+  for (const e of duels.theirs) score -= duels.theirOut.get(e.id) * DAMAGE_TO_POINTS;
 
-  return score;
+  return { value: score, decided: false, duels };
 }

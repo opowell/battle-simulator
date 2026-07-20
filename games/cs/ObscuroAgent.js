@@ -25,7 +25,7 @@
 
 import { ObscuroAgent as GenericObscuroAgent } from '../../agents/ObscuroAgent.js';
 import { makeHooks, runObscuroSearch } from '../../agents/obscuro/search.js';
-import { csEvaluate, threat, unitValue, visionFor, CS_SEARCH_WIN, ROUND_WIN } from './eval.js';
+import { csScore, unitValue, CS_SEARCH_WIN, ROUND_WIN } from './eval.js';
 
 // EXPOSURE — the CS analogue of chess's KING_HANG.
 //
@@ -55,25 +55,18 @@ const LEAF_CLAMP = ROUND_WIN;
 const clip = v => (v > LEAF_CLAMP ? LEAF_CLAMP : v < -LEAF_CLAMP ? -LEAF_CLAMP : v);
 
 /**
- * Total exposure cost for `team` in `state`: for each living unit, how much of
- * its value the enemy can take off it before it answers. `incoming` and
- * `outgoing` are each a unit's single best shot (see csEvaluate's angle term for
- * why it is a max, not a sum).
+ * Exposure cost for one side, read off the duel table csScore already built: for
+ * each living unit, how much of its value the enemy can take off it before it
+ * answers. `units`/`out`/`inc` come straight from duelTerms, so this adds no
+ * line-of-sight work of its own.
  */
-function exposureCost(state, team, cfg) {
-  const mine   = state.units.filter(u => u.alive && u.ownerId === team);
-  const theirs = state.units.filter(u => u.alive && u.ownerId !== team);
+function exposureCost(units, out, inc) {
   let cost = 0;
-  for (const u of mine) {
-    let incoming = 0, outgoing = 0;
-    for (const e of theirs) {
-      incoming = Math.max(incoming, threat(e, u, cfg));
-      outgoing = Math.max(outgoing, threat(u, e, cfg));
-    }
+  for (const u of units) {
     // Only the part of the incoming fire the unit cannot answer counts as a
     // losing trade — an even duel is a normal part of CS and is already priced
     // by the symmetric angle term.
-    const unanswered = incoming - outgoing;
+    const unanswered = (inc.get(u.id) ?? 0) - (out.get(u.id) ?? 0);
     if (unanswered <= 0) continue;
     const lethality = Math.min(1, unanswered / Math.max(1, u.hp ?? 100));
     cost += LOSS_SHARE * unitValue(u) * lethality;
@@ -101,14 +94,14 @@ export function csLeafEval(state, mover, actions, childStates) {
   // `u.ownerId === teamId` is never true, every unit counts as an enemy, and the
   // evaluation comes back as the exact negation of the truth.
   const team = state.gameSpecific.teamMap?.[mover] ?? mover;
-  const them = team === 'T' ? 'CT' : 'T';
   return childStates.map((cs) => {
     if (!cs) return -ROUND_WIN; // an inapplicable action; never worth choosing
-    const cfg = visionFor(cs.gameSpecific);
-    const base = csEvaluate(cs, team);
+    const { value, decided, duels } = csScore(cs, team);
     // A decided round is already terminal — don't discount it for exposure.
-    if (Math.abs(base) >= ROUND_WIN) return clip(base);
-    return clip(base - exposureCost(cs, team, cfg) + exposureCost(cs, them, cfg));
+    if (decided) return clip(value);
+    return clip(value
+      - exposureCost(duels.mine,   duels.myOut,    duels.myInc)
+      + exposureCost(duels.theirs, duels.theirOut, duels.theirInc));
   });
 }
 
