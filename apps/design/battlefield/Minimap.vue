@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watchEffect } from 'vue';
+import { ref, computed, watchEffect, onUnmounted } from 'vue';
 // Overview map for zoom/pan games (the `mapZoom` option — see Battlefield.vue's zoom
 // state), drawn in the stage's bottom-right corner. A zoomed-in map shows a few dozen
 // tiles of a board that may be 100 wide, so this is the only view of where those tiles
@@ -160,26 +160,74 @@ watchEffect(draw);
 
 // Where on the world this event landed. Measured off the element's real box so it stays
 // right whatever the canvas is scaled to.
+//
+// A drag holds pointer capture, so it keeps delivering events once the cursor leaves the
+// minimap: y is clamped because there's nothing above or below the poles to look at, but
+// on a wrapping world x deliberately isn't — running off the right edge yields x > W,
+// which the parent's clampAxis normalises back into range, so the view wraps around the
+// cylinder instead of sticking at the seam.
 function worldAt(e) {
   const rect = canvasEl.value.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width  * W.value;
+  const y = (e.clientY - rect.top)  / rect.height * H.value;
   return {
-    x: (e.clientX - rect.left) / rect.width  * W.value,
-    y: (e.clientY - rect.top)  / rect.height * H.value,
+    x: wrap.value ? x : Math.min(W.value, Math.max(0, x)),
+    y: Math.min(H.value, Math.max(0, y)),
   };
 }
 
-// A double-click also fires its two clicks first, so this pans and then pans+zooms to the
-// same point — the destination is identical either way, no suppression needed.
-function onClick(e)    { emit('goto', { ...worldAt(e), zoom: 0 }); }
+// ── gestures ──────────────────────────────────────────────────────────────────
+// Drag pans live. A plain click is just a degenerate drag, so pointerdown is the only
+// pan path — no separate click handler, which is also what keeps a click from emitting
+// the same pan twice. Double-click still lands on top of that: its two pointerdowns pan
+// to the spot, then dblclick pans+zooms to the same spot, so the destination is
+// identical either way and neither needs suppressing.
+const dragging = ref(false);
+// Moves arrive faster than the board can usefully redraw (a centre change re-renders the
+// whole board layer), so they're coalesced to one emit per frame.
+let pendingPt = null, rafId = 0;
+
+function flushDrag() {
+  rafId = 0;
+  if (pendingPt) { emit('goto', { ...pendingPt, zoom: 0 }); pendingPt = null; }
+}
+
+function onPointerDown(e) {
+  if (e.button != null && e.button !== 0) return; // left button / touch only
+  dragging.value = true;
+  canvasEl.value?.setPointerCapture?.(e.pointerId);
+  emit('goto', { ...worldAt(e), zoom: 0 });
+}
+
+function onPointerMove(e) {
+  if (!dragging.value) return;
+  e.preventDefault?.(); // a drag over a canvas would otherwise start a native image drag
+  pendingPt = worldAt(e);
+  if (!rafId) rafId = requestAnimationFrame(flushDrag);
+}
+
+function endDrag(e) {
+  if (!dragging.value) return;
+  dragging.value = false;
+  canvasEl.value?.releasePointerCapture?.(e.pointerId);
+  // Emit whatever the last move produced rather than dropping it on the floor — without
+  // this, a drag ending between frames lands the view a few tiles short of the cursor.
+  if (rafId) { cancelAnimationFrame(rafId); flushDrag(); }
+}
+
 function onDblClick(e) { emit('goto', { ...worldAt(e), zoom: e.shiftKey ? -1 : 1 }); }
+
+onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId); });
 </script>
 
 <template>
   <div class="mm" :style="{ width: cssW + 'px', height: cssH + 'px' }">
-    <canvas ref="canvasEl" class="mm-canvas"
+    <canvas ref="canvasEl" class="mm-canvas" :class="{ 'mm-dragging': dragging }"
             :style="{ width: cssW + 'px', height: cssH + 'px' }"
-            title="Click to pan · double-click to zoom in · shift+double-click to zoom out"
-            @click="onClick" @dblclick="onDblClick"/>
+            title="Click or drag to pan · double-click to zoom in · shift+double-click to zoom out"
+            @pointerdown="onPointerDown" @pointermove="onPointerMove"
+            @pointerup="endDrag" @pointercancel="endDrag"
+            @dblclick="onDblClick"/>
   </div>
 </template>
 
@@ -190,5 +238,7 @@ function onDblClick(e) { emit('goto', { ...worldAt(e), zoom: e.shiftKey ? -1 : 1
   background: var(--bg1); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5);
   overflow: hidden;
 }
-.mm-canvas { display: block; cursor: crosshair; }
+/* touch-action: a touch drag must pan the map, not scroll/zoom the page under it. */
+.mm-canvas { display: block; cursor: grab; touch-action: none; }
+.mm-canvas.mm-dragging { cursor: grabbing; }
 </style>
