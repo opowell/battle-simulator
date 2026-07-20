@@ -14,6 +14,7 @@ import GameLog           from './battlefield/GameLog.vue';
 import AiAnalysisPanel   from './battlefield/AiAnalysisPanel.vue';
 import AnalysisPanel     from './battlefield/AnalysisPanel.vue';
 import BottomBar         from './battlefield/BottomBar.vue';
+import Minimap           from './battlefield/Minimap.vue';
 import MenuOverlay       from './battlefield/MenuOverlay.vue';
 import GameOverOverlay   from './battlefield/GameOverOverlay.vue';
 import UnitInfoOverlay   from './battlefield/UnitInfoOverlay.vue';
@@ -516,6 +517,15 @@ function centerOn(x, y) {
 function handleGoto({ x, y, unitId }) {
   centerOn(x + 0.5, y + 0.5);
   if (unitId) selectUnit(unitId);
+}
+
+// The minimap sends one event for all three of its gestures (click = pan, double-click =
+// pan + zoom in, shift+double-click = pan + zoom out). Centre first: zoomBy pins the
+// current centre, so panning ahead of it is what anchors the zoom on the clicked spot.
+function handleMinimapGoto({ x, y, zoom }) {
+  centerOn(x, y);
+  if (zoom > 0) zoomBy(ZOOM_STEP);
+  else if (zoom < 0) zoomBy(1 / ZOOM_STEP);
 }
 
 // Panning stops at the map's edges rather than letting the board drift off into empty
@@ -1100,6 +1110,14 @@ onUnmounted(() => {
           @select="selectUnit"
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>
+
+        <!-- Overview map + jump-to control, for the same games that get zoom/pan. -->
+        <Minimap v-if="zoomEnabled"
+          :field="displayField" :units="displayUnits" :rdr="rdr"
+          :center="viewCenter" :tilePx="tilePx" :stageW="stageW" :stageH="stageH"
+          :fog="fog" :revealAll="layerRevealAll" :viewerOverride="perspectiveViewer"
+          :exploredTiles="exploredTileSet"
+          @goto="handleMinimapGoto"/>
       </div>
 
       <!-- Right sidebar -->
