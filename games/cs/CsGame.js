@@ -8,7 +8,7 @@ import {
   STARTING_MONEY, WIN_REWARD, KILL_REWARD, MAX_MONEY, lossReward,
   GRENADE_THROW_RANGE, HE_RADIUS, HE_DAMAGE,
   FLASH_RADIUS, FLASH_BLIND_TURNS,
-  SMOKE_RADIUS, SMOKE_TURNS,
+  SMOKE_RADIUS, SMOKE_TURNS, smokeOval,
   FIRE_RADIUS, FIRE_DAMAGE, FIRE_TURNS,
   BOMB_TIMER, DEFUSE_NEEDED, ROUND_TURN_MAX,
 } from './weapons.js';
@@ -978,9 +978,12 @@ const SHAPE_FLOOR = '#c8c0a8';
 // rather than recolouring the flat tile backdrop.
 function effectShapes(gs) {
   const out = [];
+  // Drawn from the SAME geometry that blocks sight (weapons.js's smokeOval, which
+  // belief.js's csLosLayers also uses) so the cloud you see is exactly the cloud
+  // that hides you. These were written out separately and had drifted: the drawn
+  // one was radius r+0.5 centred half a unit down-right of the real one.
   for (const sz of gs.smokeZones ?? [])
-    out.push({ shape: 'oval', x: sz.x - SMOKE_RADIUS, y: sz.y - SMOKE_RADIUS,
-               w: SMOKE_RADIUS * 2 + 1, h: SMOKE_RADIUS * 2 + 1, fill: '#9098a0', opacity: 0.6 });
+    out.push({ ...smokeOval(num(sz.x), num(sz.y)), fill: '#9098a0', opacity: 0.6 });
   for (const fz of gs.fireZones ?? [])
     out.push({ shape: 'oval', x: fz.x - FIRE_RADIUS, y: fz.y - FIRE_RADIUS,
                w: FIRE_RADIUS * 2 + 1, h: FIRE_RADIUS * 2 + 1, fill: '#c85a2a', opacity: 0.6 });

@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import { CsGame } from './index.js';
 import { csEvaluate, unitValue, ROUND_WIN, CS_SEARCH_WIN } from './eval.js';
 import { csLeafEval, CsObscuroAgent } from './ObscuroAgent.js';
-import { ROUND_TURN_MAX, BOMB_TIMER } from './weapons.js';
-import { csVisionCfg } from './belief.js';
+import { ROUND_TURN_MAX, BOMB_TIMER, SMOKE_RADIUS, smokeOval } from './weapons.js';
+import { csVisionCfg, csLosLayers } from './belief.js';
 import { isWalkable } from './map.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -201,4 +201,52 @@ test('cs: the agent buys on the pistol round instead of declining', async () => 
   const agent = new CsObscuroAgent({ particles: 2, timeBudgetMs: 300, maxRounds: 4 });
   const action = await agent.chooseAction(s, CsGame.getLegalActions(s, me));
   assert.equal(action.type, 'buy');
+});
+
+// ---------------------------------------------------------------------------
+// Smoke: what you see must be what hides you.
+//
+// The sight-blocking cloud (belief.js's csLosLayers) and the drawn cloud
+// (CsGame's renderState) were written out separately and had drifted apart — the
+// drawn one was radius r+0.5 centred half a unit down-right of the one that
+// actually blocked line of sight, so a player standing in visibly thick smoke was
+// plainly visible. Both derive from weapons.js's smokeOval now; this pins them.
+// ---------------------------------------------------------------------------
+
+test('cs smoke: the drawn cloud is exactly the cloud that blocks sight', () => {
+  const s = toActionPhase(fresh());
+  const { a } = openSightline(s, 6);
+  const smoke = { x: a.x + 3, y: a.y, turnsLeft: 5 };
+  const withSmoke = setGs(s, { smokeZones: [smoke] });
+
+  // The blocking geometry, as belief.js builds it: the one solid oval that is not
+  // part of the map (walls/border are rects or polys authored by the map).
+  const mapLayers = csLosLayers(s.gameSpecific.map, []);
+  const blocker = csLosLayers(s.gameSpecific.map, [smoke]).slice(mapLayers.length)[0];
+  assert.ok(blocker && blocker.shape === 'oval' && blocker.solid, 'expected a solid smoke oval among the LOS layers');
+
+  // The drawn geometry, exactly as the client receives it (toGrid().shapes) — no
+  // fallback, or this would pass whatever renderState emitted.
+  const drawn = (CsGame.toGrid(withSmoke).shapes ?? []).filter(sh => sh.fill === '#9098a0');
+  assert.equal(drawn.length, 1, 'expected exactly one drawn smoke cloud');
+
+  for (const k of ['x', 'y', 'w', 'h']) {
+    assert.equal(drawn[0][k], blocker[k], `drawn smoke ${k} must match the sight-blocking smoke`);
+  }
+  // And both must be the shared definition, not a coincidental match.
+  const want = smokeOval(smoke.x, smoke.y);
+  for (const k of ['x', 'y', 'w', 'h']) assert.equal(drawn[0][k], want[k]);
+});
+
+test('cs smoke: a unit inside the drawn cloud is actually hidden by it', () => {
+  const s = toActionPhase(fresh());
+  const { a, b } = openSightline(s, 6);
+  // Smoke centred on the midpoint of a known-clear sightline.
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, turnsLeft: 5 };
+
+  const clear = csVisionCfg(s.gameSpecific.map, []);
+  assert.equal(clear.hasLOS(a.x, a.y, b.x, b.y), true, 'fixture sightline should start clear');
+
+  const smoked = csVisionCfg(s.gameSpecific.map, [mid]);
+  assert.equal(smoked.hasLOS(a.x, a.y, b.x, b.y), false, 'smoke on the line must block it');
 });

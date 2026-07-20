@@ -88,8 +88,30 @@ export const HE_RADIUS           = 2;
 export const HE_DAMAGE           = 50;
 export const FLASH_RADIUS        = 3;
 export const FLASH_BLIND_TURNS   = 1;
-export const SMOKE_RADIUS        = 1;  // smoke covers (2r+1)² tiles centred on target
+// A smoke cloud is a DISC of this radius centred exactly on the thrown point.
+// (It used to be described as "(2r+1)² tiles centred on target" — that wording
+// predates continuous positions: a smoke is thrown to an exact point now, not a
+// tile, so there is no tile square involved. See smokeOval below.)
+export const SMOKE_RADIUS        = 1;
 export const SMOKE_TURNS         = 5;
+
+/**
+ * The bounding box of one smoke cloud, as the shape helpers want it
+ * ({x, y, w, h} of an oval). THE one definition — both the sight-blocking shape
+ * (belief.js's csLosLayers) and the drawn shape (CsGame.js's renderState) derive
+ * from it, so what you see is exactly what hides you.
+ *
+ * They used to be written out separately and had drifted apart: the blocker was
+ * `w: 2*SMOKE_RADIUS` (a disc of radius r centred on the throw point — correct)
+ * while the render was `w: 2*SMOKE_RADIUS + 1` (radius r+0.5, centred half a unit
+ * down-right). The visible cloud was 50% wider than the one that actually blocked
+ * line of sight, so a player standing in what looked like thick smoke was plainly
+ * visible — and belief.js's whole premise is that the fog veil hides exactly what
+ * the engine hides.
+ */
+export function smokeOval(cx, cy) {
+  return { shape: 'oval', x: cx - SMOKE_RADIUS, y: cy - SMOKE_RADIUS, w: 2 * SMOKE_RADIUS, h: 2 * SMOKE_RADIUS };
+}
 export const FIRE_RADIUS         = 1;
 export const FIRE_DAMAGE         = 10;
 export const FIRE_TURNS          = 3;

@@ -29,7 +29,7 @@ import { isWalkable, getReachable, perimeterBlockShapes } from './map.js';
 import { num, tilePos } from '../coord.js';
 import { euclidean, seesPoint } from '../vision.js';
 import { segmentHitsSolid } from '../terrainShapes.js';
-import { SMOKE_RADIUS } from './weapons.js';
+import { SMOKE_RADIUS, smokeOval } from './weapons.js';
 
 // Field-of-vision config, shared with CsGame.getVisibleState so the belief's visible set
 // matches the observation exactly (see games/vision.js): Euclidean range (a circle,
@@ -61,7 +61,7 @@ export function csLosLayers(map, smokeZones = []) {
   for (const s of perimeterBlockShapes(map.width, map.height)) layers.push({ ...s, solid: true });
   for (const sz of smokeZones) {
     const cx = num(sz.x), cy = num(sz.y);
-    layers.push({ shape: 'oval', x: cx - SMOKE_RADIUS, y: cy - SMOKE_RADIUS, w: 2 * SMOKE_RADIUS, h: 2 * SMOKE_RADIUS, solid: true });
+    layers.push({ ...smokeOval(cx, cy), solid: true }); // same shape the client draws — see smokeOval
   }
   return layers;
 }
