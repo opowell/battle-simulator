@@ -20,6 +20,10 @@ const theme       = ref(localStorage.getItem('bs_theme') ?? 'military');
 const view        = ref('lobby');
 const prevView    = ref('lobby');
 const liveState   = ref(null);   // raw API session JSON
+// Observer perspective: null = full-information ("everyone"), else a playerId to
+// watch through that player's own fog-limited view. Only meaningful for observer
+// sessions (see isObserverSession / setObserverView).
+const observerView = ref(null);
 const sessions    = ref([]);     // lobby list from GET /sessions
 const apiGames    = ref([]);     // from GET /games
 const serverErr   = ref('');
@@ -521,6 +525,11 @@ function buildField(g, s) {
     // keyed by player id; a game's toGrid may set this, absent for games with no
     // per-player economy (see ActionsPanel's rates overlay).
     civ: g.civ ?? null,
+    // Every visible city (civ1) — used by the Cities overlay; absent for other games.
+    cities: g.cities ?? null,
+    // Per-owner military roster (civ1), keyed by player id — used by the Military
+    // overlay; absent for other games.
+    military: g.military ?? null,
   };
 }
 
@@ -621,7 +630,7 @@ function maybeStartPoll(s) {
     _sub = api.subscribeSession(s.id, null, (fresh) => {
       liveState.value = fresh;
       if (fresh.status !== 'active') stopPoll();
-    }, true);
+    }, true, observerView.value);
     return;
   }
   const pendingHuman = s.pendingPlayer && s.humanPlayers?.includes(s.pendingPlayer);
@@ -632,6 +641,22 @@ function maybeStartPoll(s) {
     if (fresh.status !== 'active') { stopPoll(); return; }
     if (fresh.pendingPlayer && fresh.humanPlayers?.includes(fresh.pendingPlayer)) stopPoll();
   });
+}
+
+// Switch an observer's perspective: null = full-information view, or a playerId to
+// watch through that player's fog-limited view. For a live game we just re-open the
+// subscription with the new perspective; for a finished one (no socket, and there's
+// no REST endpoint for the full observer view) we one-shot refetch the player view.
+function setObserverView(playerId) {
+  observerView.value = playerId || null;
+  const s = liveState.value;
+  if (!s) return;
+  if (s.status === 'active') { maybeStartPoll(s); return; }
+  if (observerView.value) {
+    api.session(s.id, observerView.value)
+      .then(fresh => { if (liveState.value?.id === s.id) liveState.value = fresh; })
+      .catch(() => {});
+  }
 }
 
 // ── data loading ─────────────────────────────────────────────
@@ -698,6 +723,7 @@ watch(() => (liveState.value?.fog && liveState.value?.status !== 'active') ? liv
 
 async function enterSession(id, { push = true } = {}) {
   historyFields.value = [];
+  observerView.value = null; // start every session in the full-information view
   try {
     let state = await api.session(id);
     const humanId = viewAsId(state);
@@ -885,6 +911,7 @@ async function restartGame() {
              @refresh="refresh"/>
       <Battlefield v-else-if="activeField"
                    :live-state="liveState"
+                   :observer-view="observerView"
                    :field="activeField"
                    :unit-fx="unitFx"
                    :territory-fx="territoryFx"
@@ -906,6 +933,7 @@ async function restartGame() {
                    @set-marker="setMarker"
                    @set-paused="p => setControl({ paused: p })"
                    @set-ai-delay="ms => setControl({ aiDelay: ms })"
+                   @set-observer-view="setObserverView"
                    @replay-turn="replayTurn"
                    @fork-move="doForkMove"
                    @exit-fork="exitFork"/>

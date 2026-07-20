@@ -587,7 +587,11 @@ export const ChessAgent = {
     // literally their turn yet (see api-server.js's handleAnalyze).
     const color = opts.color ?? state.activePlayers[0];
     const { board, gameSpecific } = state;
-    const cfg = chessConfigForDifficulty(gameSpecific.difficulty);
+    // Analysis is not gameplay: it must never be hobbled by whatever power level
+    // this particular session happens to be playing at (a weak-difficulty game
+    // still deserves real suggestions) — always search at the strongest tier the
+    // depth/particle dial goes to, ignoring gameSpecific.difficulty entirely.
+    const cfg = chessConfigForDifficulty(100);
 
     if (!gameSpecific.fogOfWar) {
       if (await stockfishAvailable()) {

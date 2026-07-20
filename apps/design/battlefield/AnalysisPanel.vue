@@ -52,9 +52,23 @@ const hoveredIdx = ref(-1);
 // landed (or before anything's started).
 const progress = ref(null);
 
+const fmtNum = (n) => (n ?? 0).toLocaleString();
+
 function progressLabel(data) {
   if (data.kind === 'depth') return `Depth ${data.depth}/${data.maxDepth}`;
   if (data.kind === 'round') return `Round ${data.round}/${data.maxRounds}`;
+  // Belief-population walk (Obscuro fog analysis): each batch folds another
+  // slice of the belief worlds into the running estimate (see
+  // analyzeObscuroProgressive). When the exact position set is finite we show
+  // real coverage and, once every world has been evaluated, a settled done
+  // state ("exhaustive" — the eval column is now the exact belief expectation).
+  // On the generative fallback (no finite set) `total` is null and it just
+  // keeps refining, so we show how many worlds have been folded in so far.
+  if (data.exhaustive) return `All ${fmtNum(data.total)} worlds evaluated`;
+  if (data.kind === 'batch') {
+    if (data.total) return `${fmtNum(data.evaluated)} / ${fmtNum(data.total)} worlds`;
+    return `${fmtNum(data.evaluated ?? data.batch)} worlds`;
+  }
   return null;
 }
 
@@ -69,15 +83,67 @@ function scheduleAnalysis() {
 // never keeps ticking progress for a position we've already left.
 let activeStream = null;
 
-function runAnalysis() {
+// Client-side analysis Web Worker (see apps/design/analysis-worker.js): runs the
+// Obscuro fog CFR entirely off the server/main thread. Used for the live fog
+// position with the Obscuro engine; every other case (non-fog, historical ply,
+// other engines) keeps the server SSE path. Created lazily and reused.
+let analysisWorker = null;
+const useWorker = computed(() =>
+  props.fog && selectedAgentId.value === 'obscuro' && props.ply == null,
+);
+function ensureWorker() {
+  if (!analysisWorker) {
+    const bp = window.api?.basePath || '';
+    analysisWorker = new Worker(`${bp}/ui/design/analysis-worker.js`, { type: 'module' });
+    analysisWorker.onmessage = (e) => {
+      const d = e.data || {};
+      if (d.type === 'error') {
+        candidates.value = []; errorMsg.value = d.message || 'Analysis error';
+        progress.value = null; loading.value = false; return;
+      }
+      candidates.value = d.candidates ?? candidates.value;
+      if (d.type === 'done') {
+        loading.value = false;
+        progress.value = d.exhaustive ? progressLabel(d) : null;
+      } else {
+        progress.value = progressLabel(d);
+      }
+    };
+    analysisWorker.onerror = () => { errorMsg.value = 'Analysis worker failed'; loading.value = false; };
+  }
+  return analysisWorker;
+}
+// Stop whichever analysis is in flight (SSE stream or worker run) without
+// tearing down the reusable worker.
+function stopAnalysis() {
   activeStream?.close();
   activeStream = null;
+  analysisWorker?.postMessage({ type: 'cancel' });
+}
+
+function runAnalysis() {
+  stopAnalysis();
+  // Stale suggestions (from whatever position/engine the previous stream was
+  // for) must never linger on screen once a new position/engine is up for
+  // analysis — a suggestion arrow pointing at a move for a position that just
+  // changed underneath it (e.g. right after playing a move) is actively
+  // misleading, not just out of date.
+  candidates.value = [];
+  progress.value = null;
   if (!props.enabled || !panelOn.value || paused.value) return;
-  if (!props.sessionId || !props.playerId || !selectedAgentId.value) { candidates.value = []; progress.value = null; return; }
+  if (!props.sessionId || !props.playerId || !selectedAgentId.value) return;
 
   loading.value = true;
   errorMsg.value = '';
-  progress.value = null;
+
+  if (useWorker.value) {
+    ensureWorker().postMessage({
+      type: 'analyze', base: window.api?.basePath || '',
+      sessionId: props.sessionId, playerId: props.playerId,
+    });
+    return;
+  }
+
   activeStream = api.analyzeStream(
     props.sessionId,
     { playerId: props.playerId, agentId: selectedAgentId.value, ply: props.ply },
@@ -90,17 +156,33 @@ function runAnalysis() {
         return;
       }
       candidates.value = data.candidates ?? [];
-      progress.value = data.done ? null : progressLabel(data);
-      if (data.done) loading.value = false;
+      // A settled, exhaustive result keeps its "All N worlds evaluated" label so
+      // the viewer can see the answer is exact (not merely "done, stopped"); any
+      // other done frame just clears the progress line.
+      if (data.done) {
+        loading.value = false;
+        progress.value = data.exhaustive ? progressLabel(data) : null;
+      } else {
+        progress.value = progressLabel(data);
+      }
     },
   );
 }
 
-onUnmounted(() => activeStream?.close());
+onUnmounted(() => { stopAnalysis(); analysisWorker?.terminate(); analysisWorker = null; });
 
 watch(
   () => [props.enabled, props.sessionId, props.playerId, props.ply, props.logRevision, selectedAgentId.value, panelOn.value, paused.value],
-  () => { if (props.enabled && panelOn.value && !paused.value) scheduleAnalysis(); else { activeStream?.close(); activeStream = null; candidates.value = []; progress.value = null; } },
+  () => {
+    // Clear stale suggestions immediately (not just once the debounced fetch
+    // below actually lands) — the position/engine already changed, so
+    // whatever's on screen no longer describes it. Cancels both the SSE stream
+    // and any in-flight worker run so a stale one can't keep posting frames.
+    stopAnalysis();
+    candidates.value = [];
+    progress.value = null;
+    if (props.enabled && panelOn.value && !paused.value) scheduleAnalysis();
+  },
   { immediate: true },
 );
 

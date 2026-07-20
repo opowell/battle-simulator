@@ -173,7 +173,8 @@ export class ObscuroAgent {
     if (legalActions.length === 1) return legalActions[0];
 
     // Yield so the event loop stays live before the (mostly synchronous) solve.
-    await new Promise(r => setImmediate(r));
+    // setTimeout fallback keeps this working in the browser analysis worker too.
+    await new Promise(r => (typeof setImmediate === 'function' ? setImmediate(r) : setTimeout(r, 0)));
 
     const game = this.game;
     const rng = this._rng;

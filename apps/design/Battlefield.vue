@@ -19,9 +19,15 @@ import GameOverOverlay   from './battlefield/GameOverOverlay.vue';
 import UnitInfoOverlay   from './battlefield/UnitInfoOverlay.vue';
 import HelpOverlay       from './battlefield/HelpOverlay.vue';
 import AbilityInfoOverlay from './battlefield/AbilityInfoOverlay.vue';
+import CityInspectorOverlay from './battlefield/CityInspectorOverlay.vue';
+import ObserverPerspective from './battlefield/ObserverPerspective.vue';
 
 const props = defineProps({
   liveState:     Object,
+  // Observer perspective: null = full-information view, else the playerId being
+  // watched through their own fog view. App.vue owns re-subscription; we render
+  // the switcher (ObserverPerspective) and bubble picks via 'set-observer-view'.
+  observerView:  { type: String, default: null },
   field:         Object,
   unitFx:        { type: Object, default: () => ({}) },
   territoryFx:   { type: Object, default: () => ({}) },
@@ -42,7 +48,26 @@ const props = defineProps({
   forkState:     { type: Object, default: null },
   forkError:     { type: String, default: '' },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view']);
+
+// An observer session: no human seats and observing is allowed (or the server
+// already flagged this snapshot as an observer view). Only these get the
+// perspective switcher — a seated player is locked to their own view.
+const isObserver = computed(() => {
+  const s = props.liveState;
+  return !!s?.observer || (!!s?.allowObservers && (s?.humanPlayers?.length ?? 0) === 0);
+});
+// Full, stable player list for the switcher (params.players survives fog trimming,
+// unlike field.teams once we're viewing through a single player).
+const observerPlayers = computed(() => props.liveState?.params?.players ?? []);
+// The team an observer is watching through (viewAs), or null when watching as a
+// seated player or in "everyone" mode. Drives client-side vision/visibility so a
+// picked player's fog renders from their eyes (server already filtered the board).
+const perspectiveViewer = computed(() => (isObserver.value ? props.observerView : null) || null);
+// "Everyone" mode reveals the full board like the post-game reveal does: no fog
+// shading and every unit shown (the server sends all of them). Kept separate from
+// the internal `revealAll` toggle so history/log behaviour is untouched.
+const observerRevealAll = computed(() => isObserver.value && !props.observerView);
 
 // ── playback ──────────────────────────────────────────────────
 const tFloat  = ref(0);
@@ -275,6 +300,34 @@ const displayField = computed(() => {
   return fieldHistory.value.length > 0 ? fieldHistory.value[histPos.value] : props.field;
 });
 
+// Persistent vision (field.ui.persistentFog, e.g. civ1): the original game never
+// re-fogs terrain once a viewer's units have seen it — only units/cities out of CURRENT
+// sight hide again (already stripped server-side, see getVisibleState). Folds every
+// snapshot up to the displayed ply into one running union, so scrubbing replay shows
+// exactly what had been explored by that point — no more, no less.
+const exploredTileSet = computed(() => {
+  if (!props.fog || !props.field?.ui?.persistentFog || revealAll.value) return null;
+  const acc = new Set();
+  // `f.units` (raw, from buildField) only carries a `path` — not the resolved x/y/dead
+  // computeUnits derives from it — so past snapshots need computeUnits same as the
+  // live display does (see `units` above); reuse displayUnits for the current one.
+  const fold = (f, units) => {
+    if (!f?.world) return;
+    const sources = VISION.visionSources(units, f.teams?.[0]?.id ?? null, null);
+    for (const k of VISION.visibleTileSet(f, sources)) acc.add(k);
+  };
+  const upto = atLatest.value ? fieldHistory.value.length - 1 : histPos.value;
+  for (let i = 0; i <= upto; i++) {
+    const f = fieldHistory.value[i];
+    // t = f.turns (not turns-1): with turns always 1 for a static snapshot this makes
+    // T=0 divide out to +Infinity rather than NaN, which samplePath clamps to the path's
+    // final point — the position that actually landed, not an artifact of 0/0.
+    if (f) fold(f, computeUnits(f, f.turns));
+  }
+  fold(displayField.value, displayUnits.value);
+  return acc;
+});
+
 // Fog perspective in reveal mode: white is to move at even plies (ply 0 = initial
 // position), black at odd plies — so the viewer flips as you step through the game.
 const viewerTeam = computed(() => {
@@ -282,6 +335,11 @@ const viewerTeam = computed(() => {
   const teams = props.field.teams;
   return teams[histPos.value % 2]?.id ?? teams[0]?.id ?? null;
 });
+
+// What the render layers treat as "revealed": the post-game reveal toggle OR an
+// observer watching "everyone" (view-all == no fog). A viewAs perspective is NOT
+// revealed — it keeps fog, just cast from that player's eyes (viewerOverride).
+const layerRevealAll = computed(() => revealAll.value || observerRevealAll.value);
 
 function toggleReveal() {
   stopHistoryPlay();
@@ -453,6 +511,13 @@ function centerOn(x, y) {
   center.value = { x, y };
 }
 
+// A row in an empire-overview overlay (e.g. ActionsPanel's Cities list) was clicked —
+// jump the view there and select it, the same as clicking that square on the board.
+function handleGoto({ x, y, unitId }) {
+  centerOn(x + 0.5, y + 0.5);
+  if (unitId) selectUnit(unitId);
+}
+
 // Panning stops at the map's edges rather than letting the board drift off into empty
 // stage: the requested centre is pulled back until the board still covers the stage. An
 // axis whose whole extent already fits just stays centred, exactly as an unzoomed board
@@ -486,7 +551,7 @@ const fit = computed(() => zoomEnabled.value
   : baseFit.value);
 
 // ── live units at current time ────────────────────────────────
-const units = computed(() => computeUnits(displayField.value, tFloat.value));
+const units = computed(() => computeUnits(displayField.value, tFloat.value, perspectiveViewer.value));
 
 // ── live session helpers ──────────────────────────────────────
 const isLive          = computed(() => !!props.liveState);
@@ -759,6 +824,22 @@ function handleSqClick(col, row, x, y) {
 
 const selectedUnit = computed(() => displayUnits.value.find(u => u.id === selectedId.value) || null);
 
+// Cities render through the same glyph→pseudo-unit pipeline as real units (see
+// App.vue's buildField) — `badge` is only ever set on those city tokens (the size
+// number), so it doubles as "this selection is a city, not a unit" here. When it is,
+// the City Inspector overlay takes over instead of the generic SelectedUnitDetail
+// sidebar (see games/civ1/Civ1Game.js's `cities` field for the full per-city detail).
+const selectedCity = computed(() => {
+  const u = selectedUnit.value;
+  if (!u || u.badge == null) return null;
+  const x = Math.floor(u.x), y = Math.floor(u.y);
+  return (props.field.cities ?? []).find(c => c.x === x && c.y === y) ?? null;
+});
+const cityProductionActions = computed(() => {
+  if (!selectedCity.value) return [];
+  return displayedActions.value.filter(a => a.type === 'set-production' && a.cityId === selectedCity.value.id);
+});
+
 const selectedTerrain = computed(() => {
   if (selectedShape.value) {
     const s = selectedShape.value;
@@ -935,12 +1016,12 @@ onUnmounted(() => {
           @set-renderer="v => htmlRenderOverride = v"
           @show-help="showHelp = true"/>
 
-        <SelectedUnitDetail v-if="selectedUnit"
+        <SelectedUnitDetail v-if="selectedUnit && !selectedCity"
           :unit="selectedUnit" :field="field" :rdr="rdr" :showHpBars="showHpBars"
           @open-info="openInfo"
           @open-ability-info="openAbilityInfo"/>
         <SelectedSquareDetail v-else-if="selectedTerrain" :terrain="selectedTerrain"/>
-        <div v-else class="bf-empty">
+        <div v-else-if="!selectedCity" class="bf-empty">
           Select a unit{{ (field.shapes?.length || field.hasTerrain) ? ', or "Inspect terrain…" then a tile,' : '' }} to view details.
         </div>
         <button v-if="field.shapes?.length || field.hasTerrain"
@@ -954,8 +1035,8 @@ onUnmounted(() => {
           :selectedId="selectedId" :activeUnitId="activeUnitId" :ui="ui"
           :unitMoves="unitMoves" :queuingMoves="queuingMoves" :displayedActions="displayedActions"
           :pendingPlayerId="pendingPlayerId" :liveState="liveState" :units="displayUnits"
-          :aiming="aiming" :civ="field.civ"
-          @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim"/>
+          :aiming="aiming" :civ="field.civ" :cities="field.cities" :military="field.military"
+          @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"/>
       </div>
 
       <!-- Stage -->
@@ -971,7 +1052,7 @@ onUnmounted(() => {
           :rdr="rdr"
           :legalSquares="unitMoves"
           :lastMoveSquares="lastMoveSquares"
-          :revealAll="revealAll" :viewerTeam="viewerTeam"
+          :revealAll="layerRevealAll" :viewerTeam="viewerTeam"
           @select="selectUnit"
           @sq-click="handleSqClick"/>
         <IsoLayer v-else-if="ui.isometric"
@@ -980,7 +1061,7 @@ onUnmounted(() => {
           :rdr="rdr"
           :legalSquares="unitMoves"
           :lastMoveSquares="lastMoveSquares"
-          :revealAll="revealAll" :viewerTeam="viewerTeam"
+          :revealAll="layerRevealAll" :viewerTeam="viewerTeam"
           @select="selectUnit"
           @sq-click="handleSqClick"/>
         <!-- Derives its own integer-snapped geometry from the stage (no `fit` prop) so every
@@ -992,8 +1073,9 @@ onUnmounted(() => {
           :legalSquares="unitMoves"
           :lastMoveSquares="lastMoveSquares"
           :dragToMove="ui.dragToMove ?? false"
-          :revealAll="revealAll" :viewerTeam="viewerTeam"
+          :revealAll="layerRevealAll" :viewerTeam="viewerTeam" :viewerOverride="perspectiveViewer"
           :selectedEmptySquare="selectedSquare"
+          :exploredTiles="exploredTileSet"
           :aiming="aiming"
           :zoomPx="zoomEnabled ? zoomPx : null"
           :center="viewCenter"
@@ -1010,9 +1092,10 @@ onUnmounted(() => {
           :legalSquares="unitMoves"
           :lastMoveSquares="lastMoveSquares"
           :dragToMove="ui.dragToMove ?? false"
-          :revealAll="revealAll" :viewerTeam="viewerTeam"
+          :revealAll="layerRevealAll" :viewerTeam="viewerTeam" :viewerOverride="perspectiveViewer"
           :selectedEmptySquare="selectedSquare"
           :selectedShape="selectedShape"
+          :exploredTiles="exploredTileSet"
           :aiming="aiming"
           @select="selectUnit"
           @sq-click="handleSqClick"
@@ -1021,6 +1104,10 @@ onUnmounted(() => {
 
       <!-- Right sidebar -->
       <div class="bf-col bf-col--right">
+        <ObserverPerspective v-if="isObserver"
+          :players="observerPlayers" :teams="field.teams" :value="observerView"
+          @change="v => $emit('set-observer-view', v)"/>
+
         <AnalysisPanel v-if="isLive"
           :enabled="analysisEnabled && !forking" :sessionId="liveState.id" :gameName="liveState.game"
           :playerId="analysisPlayerId" :ply="analysisPly" :logRevision="liveState?.turn ?? 0"
@@ -1074,6 +1161,9 @@ onUnmounted(() => {
     @open-settings="$emit('open-settings')"
     @toggle-ruler="showRuler = !showRuler"
     @toggle-hp-bars="showHpBars = !showHpBars"/>
+
+  <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
+    @close="selectedId = null" @submit="submitAction"/>
 
   <GameOverOverlay
     :isDone="isDone" :dismissed="dismissedResult" :liveState="liveState"

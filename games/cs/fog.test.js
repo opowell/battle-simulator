@@ -121,3 +121,52 @@ test('cs fog: exposes a fogOfWar game option', () => {
   const opt = (CsGame.gameOptions ?? []).find(o => o.id === 'fogOfWar');
   assert.ok(opt && opt.type === 'boolean', 'CS declares a fogOfWar boolean option');
 });
+
+// ── veil/engine equivalence ────────────────────────────────────────────────────
+// The drawn fog veil (apps/design/vision.js) must hide EXACTLY what the engine hides.
+// They are two separate implementations reading the same `los.layerShapes` stack, so this
+// sweeps random sightlines across every map and asserts they never disagree. It is the
+// regression guard for two real desyncs: poly occluders (columns/angled walls/windows) that
+// the veil silently ignored because its ray test had no poly branch, and `floor`-carved
+// terrain (cs_siege's courtyard) that a flat blocker union wrongly reported as opaque.
+test('cs fog: drawn veil and engine LOS agree exactly on every map', async () => {
+  await import('../../apps/design/vision.js');
+  const { shapeExit } = globalThis.VISION._internal;
+  const { MAPS } = await import('./map.js');
+  const { csLosLayers } = await import('./belief.js');
+  let rng = 987654321;
+  const rnd = () => (rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+
+  for (const [id, map] of Object.entries(MAPS)) {
+    const cfg = csVisionCfg(map, []);
+    const layers = csLosLayers(map, []);
+    for (let i = 0; i < 1500; i++) {
+      const ax = 1 + rnd() * (map.width - 2),  ay = 1 + rnd() * (map.height - 2);
+      const bx = 1 + rnd() * (map.width - 2),  by = 1 + rnd() * (map.height - 2);
+      const d = Math.hypot(bx - ax, by - ay);
+      if (d < 0.5) continue;
+      const engine = cfg.hasLOS(ax, ay, bx, by);
+      const veil = shapeExit(ax, ay, Math.atan2(by - ay, bx - ax), layers, d + 1e-6, 'layered').dist >= d - 1e-6;
+      assert.equal(veil, engine,
+        `${id}: veil/engine disagree on (${ax.toFixed(2)},${ay.toFixed(2)})→(${bx.toFixed(2)},${by.toFixed(2)})`);
+    }
+  }
+});
+
+// Movement and sight must also agree about what terrain is solid-but-transparent: a wall
+// carved open by a later `floor` shape is walkable AND see-through (cs_siege's courtyard),
+// while a window is see-through but NOT walkable.
+test('cs fog: carved terrain is both walkable and see-through; glass is neither-nor', async () => {
+  const { MAPS, isWalkableContinuous, isPathClearContinuous } = await import('./map.js');
+  const siege = MAPS.cs_siege;
+  const cfg = csVisionCfg(siege, []);
+  assert.ok(isWalkableContinuous(siege, 17, 21) && isWalkableContinuous(siege, 19, 21), 'courtyard is walkable');
+  assert.ok(isPathClearContinuous(siege, 17, 21, 19, 21), 'movement crosses the carved courtyard');
+  assert.ok(cfg.hasLOS(17, 21, 19, 21), 'sight also crosses it — a flat blocker union got this wrong');
+
+  const d2 = MAPS.de_dust2;
+  const cfg2 = csVisionCfg(d2, []);
+  assert.ok(cfg2.hasLOS(20, 12.5, 30, 12.5), 'you can see through a window');
+  assert.ok(!isPathClearContinuous(d2, 20, 12.5, 30, 12.5), 'but you cannot walk through it');
+  assert.ok(!cfg2.hasLOS(20, 16, 30, 16), 'the solid wall beside the window still blocks sight');
+});

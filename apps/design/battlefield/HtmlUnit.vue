@@ -45,7 +45,10 @@ function hpColor(frac, raw) {
        @click="$emit('click', $event)"
        @mousedown="$emit('mousedown', $event)">
     <!-- Body: team sprite, else a shape marker carrying the unit's initial. The rings are
-         outlines on this box (active wins over selected wins over roster-hover). -->
+         outlines on this box (active wins over selected wins over roster-hover). A badged
+         token (civ1 cities — see Civ1Game.js's `badge` field) always gets an owner-colour
+         backdrop: its sprite (map/city.png) is a small transparent-background icon that
+         otherwise vanishes into the terrain under it. -->
     <div class="hl-body"
          :class="[
            unit.imagePath ? 'hl-body--sprite' : 'hl-marker hl-marker--' + shape,
@@ -53,7 +56,10 @@ function hpColor(frac, raw) {
          ]"
          :style="{
            width: r*2+'px', height: r*2+'px',
-           ...(unit.imagePath ? {} : {
+           ...(unit.badge != null ? {
+             background: unit.teamObj.raw + (active ? '' : 'cc'),
+             borderColor: active ? 'white' : unit.teamObj.raw, borderWidth: '1.5px', borderStyle: 'solid', borderRadius: '3px',
+           } : unit.imagePath ? {} : {
              background: shape === 'triangle' ? 'transparent' : (active ? unit.teamObj.raw : rdr.unitFill),
              borderColor: active ? 'white' : unit.teamObj.raw,
              color: active ? 'white' : unit.teamObj.raw,
@@ -67,8 +73,14 @@ function hpColor(frac, raw) {
             :style="{ background: unit.teamObj.raw, fontFamily: rdr.font }">{{ unit.badge }}</span>
     </div>
 
+    <!-- Name label, stacked under the body — cities (badged tokens) only; regular units
+         are identified well enough by their sprite + the roster/side panels. -->
+    <div v-if="unit.badge != null" class="hl-name" :style="{ color: unit.teamObj.raw, fontFamily: rdr.font }">
+      {{unit.name}}
+    </div>
+
     <!-- HP bar, stacked under the body by the flex column -->
-    <div v-if="showHp" class="hl-hp" :style="{ width: r*2+'px', background: rdr.hpTrack }">
+    <div v-if="showHp && unit.badge == null" class="hl-hp" :style="{ width: r*2+'px', background: rdr.hpTrack }">
       <div class="hl-hp-fill"
            :style="{ width: (100*((unit.currentHp ?? unit.hpNow)/unit.hpMax))+'%',
                      background: hpColor((unit.currentHp ?? unit.hpNow)/unit.hpMax, unit.teamObj.raw) }"/>
@@ -83,6 +95,7 @@ function hpColor(frac, raw) {
 .hl-unit--dim { opacity: 0.25; }
 .hl-body { position: relative; display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex: none; }
 .hl-badge { position: absolute; right: -3px; bottom: -3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 7px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; line-height: 1; color: #fff; border: 1px solid rgba(0,0,0,.5); pointer-events: none; }
+.hl-name { font-size: 10px; font-weight: 700; line-height: 1; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 4px rgba(0,0,0,.7); }
 .hl-dead { font-weight: 700; opacity: 0.4; }
 .hl-sprite { width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; }
 .hl-letter { font-weight: 800; line-height: 1; }

@@ -39,7 +39,14 @@ const props = defineProps({
   dragToMove:      { type: Boolean, default: false },
   revealAll:       { type: Boolean, default: false },
   viewerTeam:      { type: String, default: null },
+  // An observer watching through one player's eyes: fog is cast from this team
+  // instead of the local player (teams[0]). null = default/local perspective.
+  viewerOverride:  { type: String, default: null },
   selectedEmptySquare: { type: Object, default: null },
+  // Persistent-vision games (field.ui.persistentFog, e.g. civ1): every "x,y" tile any of
+  // the viewer's units has EVER seen this game (see Battlefield.vue's exploredTileSet).
+  // Null when the game doesn't remember terrain, so tiles re-fog every turn as before.
+  exploredTiles:   { type: Set, default: null },
   aiming:          { type: Object, default: null },
   // Zoom/pan overrides (the `mapZoom` game option, driven from Battlefield): tile size in
   // screen px, and the world point to hold at the middle of the stage. Null = fit + centre.
@@ -134,7 +141,7 @@ const blinkTargetId   = computed(() => props.field.ui?.freeSelection ? props.sel
 // move at the displayed ply, so fog flips as you step through. Mirrors SchematicLayer.
 const viewerId = computed(() => props.revealAll
   ? props.viewerTeam
-  : (props.field.teams?.[0]?.id ?? null));
+  : (props.viewerOverride ?? props.field.teams?.[0]?.id ?? null));
 const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.id);
 
 // ── fog of war ────────────────────────────────────────────────────────────────
@@ -203,7 +210,11 @@ const selectedVisionSet = computed(() => {
 
 function isFogSquare(col, row) {
   if (gridFogVisibleSet.value)   return !gridFogVisibleSet.value.has(`${col},${row}`);
-  if (squareFogVisibleSet.value) return !squareFogVisibleSet.value.has(`${col},${row}`);
+  if (squareFogVisibleSet.value) {
+    const key = `${col},${row}`;
+    if (squareFogVisibleSet.value.has(key)) return false;
+    return !(props.exploredTiles?.has(key));
+  }
   return false;
 }
 
@@ -239,8 +250,13 @@ function unitShape(u) {
 }
 
 // Under vision fog a hidden tile is painted with the fog colour and its art withheld.
+// Persistent-vision games (see exploredTiles prop, e.g. civ1) remember any tile ever
+// seen — only units/cities re-fog when out of current sight (handled server-side).
 function tileFogged(tile) {
-  return !!squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`);
+  if (!squareFogVisibleSet.value) return false;
+  const key = `${tile.x},${tile.y}`;
+  if (squareFogVisibleSet.value.has(key)) return false;
+  return !(props.exploredTiles?.has(key));
 }
 
 // Sprites drawn on top of the terrain, each transparent except for the feature itself.

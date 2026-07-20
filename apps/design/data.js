@@ -162,9 +162,12 @@ function markerGlyph(shape, r) {
 }
 
 /* ==================== UNIT SIMULATION ==================== */
-function computeUnits(field, t) {
+// `viewerTeamId` (optional) is the team seen as "friendly" — normally the local
+// player (teams[0]), but an observer watching through another player's eyes passes
+// that player's id so vision/visibility resolve from their perspective instead.
+function computeUnits(field, t, viewerTeamId) {
   const T = field.turns - 1;
-  const friendly = field.teams[0].id;
+  const friendly = viewerTeamId ?? field.teams[0].id;
   const ft = Math.floor(Math.min(t, T));
   const arr = field.units.map(u => {
     const here = samplePath(u.path, t / T);

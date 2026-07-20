@@ -93,8 +93,12 @@ const _WS_BASE = _BASE.replace(/^http/, 'ws'); // http→ws, https→wss
 
 // `observer` (4th arg) subscribes read-only — the server pushes the full,
 // fog-bypassing game state (held back by the session's observer delay, if any).
-window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, observer = false) {
-  const query = observer ? '?observer=1' : (playerId ? '?player=' + playerId : '');
+// `viewAs` (5th arg, observer only) narrows the observer to one player's own
+// fog-limited perspective instead of the full-information view.
+window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, observer = false, viewAs = null) {
+  const query = observer
+    ? ('?observer=1' + (viewAs ? '&viewAs=' + encodeURIComponent(viewAs) : ''))
+    : (playerId ? '?player=' + playerId : '');
   const wsUrl = _WS_BASE + '/sessions/' + id + '/ws' + query;
   let ws = null, closed = false, pollTimer = null, retryTimer = null, backoff = 1000;
 

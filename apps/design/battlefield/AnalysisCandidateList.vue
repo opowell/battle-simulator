@@ -1,8 +1,11 @@
 <script setup>
-// Shared ranked-move row list: rank, move, cp/eval, probability bar. Used by
-// both AiAnalysisPanel.vue (the AI's own post-hoc decision log) and
-// AnalysisPanel.vue (the live/replay "suggest a move" panel) so the two keep
-// one visual language instead of duplicating this markup.
+// Shared ranked-move row list: rank, move, cp/eval. Used by both
+// AiAnalysisPanel.vue (the AI's own post-hoc decision log) and AnalysisPanel.vue
+// (the live/replay "suggest a move" panel) so the two keep one visual language
+// instead of duplicating this markup. Rows arrive already ranked (the engine's
+// recommendation order); the eval is the shown signal — the CFR mixing
+// probability is intentionally not displayed (it collapses to 0%/100% in most
+// positions, so the number carried no information).
 const props = defineProps({
   candidates: { type: Array, default: () => [] },
   // Optional: index of the row to visually mark as "chosen" (AiAnalysisPanel)
@@ -26,7 +29,6 @@ function fmtCp(cp) {
   const p = cp / 100;
   return (p >= 0 ? '+' : '') + p.toFixed(2);
 }
-function pct(p) { return Math.round((p || 0) * 100); }
 </script>
 
 <template>
@@ -38,16 +40,13 @@ function pct(p) { return Math.round((p || 0) * 100); }
       <span class="ai-move">{{ fmtMove(c.move) }}</span>
       <span class="mono ai-cp" :class="c.cp > 20 ? 'ai-pos' : c.cp < -20 ? 'ai-neg' : ''">
         {{ c.cp != null ? fmtCp(c.cp) : '' }}</span>
-      <span class="ai-bar"><span v-if="c.prob != null" class="ai-bar-fill"
-        :style="{ width: pct(c.prob) + '%' }"></span></span>
-      <span class="mono ai-metric">{{ c.prob != null ? pct(c.prob) + '%' : '' }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
 .ai-rows { display: flex; flex-direction: column; gap: 1px; }
-.ai-row { display: grid; grid-template-columns: 16px 62px 46px 1fr 38px; align-items: center; gap: 6px; font-size: 11px; padding: 1px 4px; border-radius: 3px; cursor: pointer; }
+.ai-row { display: grid; grid-template-columns: 16px 1fr 46px; align-items: center; gap: 6px; font-size: 11px; padding: 1px 4px; border-radius: 3px; cursor: pointer; }
 .ai-row:hover, .ai-row--hovered { background: rgba(255,255,255,.06); }
 /* The move actually played: bold text and a stronger background highlight. */
 .ai-row--chosen { background: rgba(66,198,230,.18); }
@@ -57,7 +56,4 @@ function pct(p) { return Math.round((p || 0) * 100); }
 .ai-cp { font-size: 10px; color: var(--dim); text-align: right; }
 .ai-cp.ai-pos { color: var(--ok); }
 .ai-cp.ai-neg { color: var(--danger); }
-.ai-bar { height: 5px; background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden; }
-.ai-bar-fill { display: block; height: 100%; background: var(--accent); }
-.ai-metric { font-size: 10px; color: var(--dim); min-width: 34px; text-align: right; }
 </style>

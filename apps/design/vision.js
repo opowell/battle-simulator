@@ -292,7 +292,9 @@ function occludedRegion(blocked, ox, oy, range, full, heading, fovRad) {
 // ── exact SHAPE-based occlusion (rects + axis-aligned ovals) ─────────────────────
 // The tile version above rasterizes walls to a grid; this one occludes against the map's
 // TRUE authored geometry (field.los.openShapes = the floor is the union of these shapes,
-// walls are the complement — doom; or field.los.blockShapes = these shapes block sight —
+// walls are the complement — doom; field.los.layerShapes = an ordered bottom→top stack whose
+// TOPMOST covering shape decides the material, each flagged `solid` — cs, so terrain carved
+// back out by a later see-through shape stays transparent; or field.los.blockShapes = these block sight —
 // cs). So a room whose real entrance is a narrow oval cusp occludes correctly instead of
 // the rasterized opening looking wide. Same exact angular sweep as the wall version, but
 // each ray's boundary is found by analytic ray∩shape intersection, and oval-bounded edges
@@ -320,8 +322,70 @@ function rayOvalIv(ox, oy, dx, dy, s) {
   if (t1 > t2) [t1, t2] = [t2, t1];
   return { tin: t1, tout: t2 };
 }
+// Ray ∩ CONVEX polygon (Cyrus–Beck half-plane clip) — the mirror of terrainShapes.js's
+// rayPolyIv. The engine occludes sight against authored polys (cs's octagonal columns,
+// angled wall runs, window slits), so the veil MUST resolve them with the same exact
+// geometry; without this branch a poly fell through to the rect test and silently vanished
+// from the drawn fog while still blocking server-side. Convexity is what makes the clip
+// exact, so a concave/degenerate poly throws rather than being approximated.
+function rayPolyIv(ox, oy, dx, dy, s) {
+  const P = s.points;
+  if (!Array.isArray(P) || P.length < 3)
+    throw new Error(`vision: poly occluder needs >= 3 points, got ${P?.length ?? 0} — cannot occlude exactly.`);
+  let cx = 0, cy = 0;
+  for (const p of P) { cx += p.x; cy += p.y; }
+  cx /= P.length; cy /= P.length;
+  let tin = -Infinity, tout = Infinity, sign = 0;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+    const ax = P[j].x, ay = P[j].y, ex = P[i].x - ax, ey = P[i].y - ay;
+    const c = ex * (P[(i + 1) % P.length].y - P[i].y) - ey * (P[(i + 1) % P.length].x - P[i].x);
+    if (Math.abs(c) > 1e-9) {
+      const sg = Math.sign(c);
+      if (sign === 0) sign = sg;
+      else if (sg !== sign) throw new Error('vision: CONCAVE poly occluder — exact occlusion requires convex polygons.');
+    }
+    let nx = ey, ny = -ex;
+    const mx = ax + ex / 2, my = ay + ey / 2;
+    if (nx * (cx - mx) + ny * (cy - my) > 0) { nx = -nx; ny = -ny; }
+    const denom = nx * dx + ny * dy;
+    const num = nx * (ox - ax) + ny * (oy - ay);
+    if (Math.abs(denom) < 1e-12) { if (num > 1e-12) return null; continue; }
+    const t = -num / denom;
+    if (denom < 0) tin = Math.max(tin, t); else tout = Math.min(tout, t);
+    if (tin > tout) return null;
+  }
+  return tin > tout ? null : { tin, tout };
+}
+// Point-in-shape for the layered mode's "which shape is on top here?" test. Mirrors
+// terrainShapes.js's pointInShape (same exact predicates) and throws on kinds it can't
+// resolve exactly, so the veil can never disagree with the engine by guessing.
+function pointInShapeV(s, px, py) {
+  const kind = s.shape ?? 'rect';
+  if (kind === 'oval') {
+    const rx = s.w / 2, ry = s.h / 2;
+    if (rx <= 0 || ry <= 0) return false;
+    const nx = (px - (s.x + rx)) / rx, ny = (py - (s.y + ry)) / ry;
+    return nx * nx + ny * ny <= 1;
+  }
+  if (kind === 'poly') {
+    let inside = false;
+    const P = s.points;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      const xi = P[i].x, yi = P[i].y, xj = P[j].x, yj = P[j].y;
+      if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  if (kind === 'rect') return px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h;
+  throw new Error(`vision: unsupported occluder shape '${kind}' — the veil must resolve the same exact geometry the engine does.`);
+}
+
 function rayShapeIv(ox, oy, dx, dy, s) {
-  return s.shape === 'oval' ? rayOvalIv(ox, oy, dx, dy, s) : rayRectIv(ox, oy, dx, dy, s);
+  const kind = s.shape ?? 'rect';
+  if (kind === 'oval') return rayOvalIv(ox, oy, dx, dy, s);
+  if (kind === 'poly') return rayPolyIv(ox, oy, dx, dy, s);
+  if (kind === 'rect') return rayRectIv(ox, oy, dx, dy, s);
+  throw new Error(`vision: unsupported occluder shape '${kind}' — the veil must resolve the same exact geometry the engine does.`);
 }
 
 // Distance the ray stays "clear" and the boundary element it stops on. open mode: clear
@@ -339,6 +403,32 @@ function shapeExit(ox, oy, ang, shapes, R, mode) {
     let best = R, gov = { kind: 'range' };
     for (const iv of ivs) if (iv.tin > 1e-9 && iv.tin < best) { best = iv.tin; gov = { kind: 'shape', shape: iv.shape, entry: true }; }
     return { dist: best, gov };
+  }
+  // layered: `shapes` are an ordered stack (bottom → top) each flagged `solid`; the material
+  // at a point is the TOPMOST shape covering it, so a later see-through shape carves a real
+  // hole in an earlier wall (cs_siege's courtyard). Mirrors terrainShapes.js's
+  // segmentHitsSolid, but returns WHERE sight first stops rather than just whether it does.
+  // Exact: the topmost shape can only change at a shape boundary, so splitting the ray at
+  // every entry/exit t gives runs of constant material — one interior sample decides each.
+  if (mode === 'layered') {
+    const topmostAt = (t) => {
+      const px = ox + dx * t, py = oy + dy * t;
+      for (let i = shapes.length - 1; i >= 0; i--) if (pointInShapeV(shapes[i], px, py)) return shapes[i];
+      return null;
+    };
+    const cuts = [0, R];
+    for (const iv of ivs) {
+      if (iv.tin > 0 && iv.tin < R) cuts.push(iv.tin);
+      if (iv.tout > 0 && iv.tout < R) cuts.push(iv.tout);
+    }
+    cuts.sort((a, b) => a - b);
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const a = cuts[i], b = cuts[i + 1];
+      if (b - a < 1e-9) continue;
+      const top = topmostAt((a + b) / 2);
+      if (top && top.solid) return { dist: a, gov: { kind: 'shape', shape: top, entry: true } };
+    }
+    return { dist: R, gov: { kind: 'range' } };
   }
   // open (union): the ray must start inside the floor.
   let covered0 = false;
@@ -441,9 +531,27 @@ function rectEdges(s) {
   ];
 }
 
+// The exact boundary segments of any occluder: a poly's are its own edges (NOT its bounding
+// box — using the bbox would seed silhouette events in the wrong places and blur the veil
+// around columns), a rect's/oval's are the bounding box.
+function shapeEdges(s) {
+  if (s.shape !== 'poly') return rectEdges(s);
+  const P = s.points;
+  return P.map((p, i) => { const q = P[(i + 1) % P.length]; return [p.x, p.y, q.x, q.y]; });
+}
+
+// Angles of an occluder's exact silhouette breakpoints, as seen from (ox, oy) — a poly's
+// vertices are the analogue of a rect's corners.
+function shapeCornerAngles(s, ox, oy) {
+  const pts = s.shape === 'poly'
+    ? s.points.map(p => [p.x, p.y])
+    : [[s.x, s.y], [s.x + s.w, s.y], [s.x, s.y + s.h], [s.x + s.w, s.y + s.h]];
+  return pts.map(([cx, cy]) => Math.atan2(cy - oy, cx - ox));
+}
+
 function shapeOccludedRegion(los, ox, oy, range, full, heading, fovRad) {
-  const mode = los.openShapes ? 'open' : 'block';
-  const shapes = los.openShapes || los.blockShapes;
+  const mode = los.openShapes ? 'open' : los.layerShapes ? 'layered' : 'block';
+  const shapes = los.openShapes || los.layerShapes || los.blockShapes;
   if (!shapes || !shapes.length) return null;
   if (mode === 'open' && !shapeExit(ox, oy, 0, shapes, range, mode)) return null; // viewer not on floor
 
@@ -462,16 +570,15 @@ function shapeOccludedRegion(los, ox, oy, range, full, heading, fovRad) {
       for (const a of ovalTangentAngles(ox, oy, s)) add(a);
       for (const a of rangeOvalAngles(ox, oy, s, range)) add(a);
     } else {
-      for (const [cx, cy] of [[s.x, s.y], [s.x + s.w, s.y], [s.x, s.y + s.h], [s.x + s.w, s.y + s.h]]) add(Math.atan2(cy - oy, cx - ox));
+      for (const a of shapeCornerAngles(s, ox, oy)) add(a); // rect corners / poly vertices
     }
-    for (const e of rectEdges(s.shape === 'oval' ? { x: s.x, y: s.y, w: s.w, h: s.h } : s)) {
-      for (const a of segCircleAngles(e, ox, oy, range)) add(a); // range ∩ this shape's bbox edges
+    for (const e of shapeEdges(s)) {
+      for (const a of segCircleAngles(e, ox, oy, range)) add(a); // range ∩ this shape's edges
     }
     // crossings between this shape and every oval (corridor↔room entrances)
     for (const o of shapes) {
       if (o === s || o.shape !== 'oval') continue;
-      const edges = s.shape === 'oval' ? rectEdges(s) : rectEdges(s);
-      for (const e of edges) for (const a of segOvalAngles(ox, oy, e[0], e[1], e[2], e[3], o)) add(a);
+      for (const e of shapeEdges(s)) for (const a of segOvalAngles(ox, oy, e[0], e[1], e[2], e[3], o)) add(a);
     }
   }
   const STEP = Math.PI / 12;
@@ -533,7 +640,7 @@ function unitVisionRegion(field, unit) {
   const full = fov >= 360 || heading == null;
   const fovRad = fov * Math.PI / 180;
   const los = field?.los;
-  if (los && (los.openShapes || los.blockShapes)) {
+  if (los && (los.openShapes || los.layerShapes || los.blockShapes)) {
     const region = shapeOccludedRegion(los, unit.x, unit.y, range, full, heading, fovRad);
     if (region) return region;
   }
@@ -557,7 +664,7 @@ function visionRegions(field, sources) {
 // else a plain circle. Keeps the reachable overlay from over-promising through walls.
 function reachRegion(field, x, y, radius) {
   const los = field?.los;
-  if (los && (los.openShapes || los.blockShapes)) {
+  if (los && (los.openShapes || los.layerShapes || los.blockShapes)) {
     const region = shapeOccludedRegion(los, x, y, radius, true, null, TAU);
     if (region) return region;
   }

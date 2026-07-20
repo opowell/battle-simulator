@@ -2,7 +2,7 @@
 // y increases upward (y=0 = bottom row, y=H-1 = top row)
 // All utility functions accept `tiles` as first argument.
 
-import { forEachCell, pointInShape } from '../terrainShapes.js';
+import { forEachCell, pointInShape, shapeBBox, assertConvexPoly, segmentHitsSolid } from '../terrainShapes.js';
 import { num, tileNum } from '../coord.js';
 
 function k(x, y) { return `${x},${y}`; }
@@ -52,6 +52,24 @@ const CS_SHAPE_STYLES = {
   // Small blocking prop — a crate/barrel variant sized for scattering many at once without
   // eating a whole tile of corridor width.
   debris:    { tile: 'wall',      render: { fill: '#6f5533', stroke: '#8a6a3f', opacity: 0.9 },               name: 'Debris',     description: 'Small impassable cover — a crate, barrel or pallet.' },
+  // ── Purely-decorative kinds (tile: null → never rasterized, never a LOS blocker, skipped
+  // by isWalkableContinuous, and — having no `name` — not click-selectable). They exist only
+  // to give the SVG depth and texture (bevelled column tops, floor plates, drop shadows,
+  // painted trim) so the map reads as architecture instead of flat blocks, WITHOUT changing
+  // a single event or vision result — the mechanics see only the solid `wall`/`lowWall`/floor
+  // shapes underneath. Ordering matters: author each decoration AFTER the solid shape it
+  // dresses so it draws on top.
+  cap:       { tile: null, render: { fill: '#454b55' } },                                                    // lit top face of a column/wall
+  capLow:    { tile: null, render: { fill: '#9a8a60' } },                                                    // lit top face of a low ledge
+  plate:     { tile: null, render: { fill: '#bfb597', opacity: 0.7 } },                                       // large floor slab, a hair off the base floor
+  plateDark: { tile: null, render: { fill: '#b0a888', opacity: 0.7 } },                                       // recessed / worn floor slab
+  trim:      { tile: null, render: { fill: '#565c66' } },                                                     // bright edge highlight along a wall run
+  crateTop:  { tile: null, render: { fill: '#8a6a3f' } },                                                     // lit lid of a crate stack
+  // A WINDOW in a building wall. tile 'lowWall' ⇒ movement is blocked (isWalkableContinuous)
+  // but — like every lowWall — it's excluded from csLosBlockers (only 'wall' opacifies), so
+  // sight and shots pass straight through the glass. The solid `building` wall on either side
+  // still blocks LOS, so a window is a real, exactly-calculable firing slit.
+  window:    { tile: 'lowWall',   render: { fill: '#6f95a3', opacity: 0.55, stroke: '#9fc0cd', strokeWidth: 1.2 }, name: 'Window', description: 'Glass — blocks movement, but you can see and shoot through it.' },
 };
 
 // Floor colour used for the (uniform) tile layer under a shape map — the terrain is
@@ -93,10 +111,22 @@ function buildFromShapes(def) {
 
   for (const s of terrain) {
     const style = CS_SHAPE_STYLES[s.kind] ?? CS_SHAPE_STYLES.wall;
+    // Fail at module load, not mid-round: a poly that can't be resolved exactly (concave,
+    // degenerate, <3 points) would otherwise only throw the first time a sightline happened
+    // to be tested against it. Validated here so authoring errors surface immediately.
+    if (s.shape === 'poly') assertConvexPoly(s.points, `${s.kind ?? 'poly'} shape at (${s.points?.[0]?.x}, ${s.points?.[0]?.y})`);
     if (style.tile) forEachCell(s, W, H, (x, y) => { t[k(x, y)] = style.tile; });
-    terrainShapes.push({ shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h, tile: style.tile });
+    // Geometry carried to the mechanics-facing terrainShapes (continuous walk/LOS) and to
+    // the render shapes. Polys travel by their vertex list (+ a derived bbox so bbox-reading
+    // code keeps working); rect/oval by their x/y/w/h. `rx` (rounded-rect corner radius) and
+    // `strokeWidth` are render-only hints passed straight through when present.
+    const bb = shapeBBox(s);
+    const geom = s.shape === 'poly'
+      ? { shape: 'poly', points: s.points, x: bb.x, y: bb.y, w: bb.w, h: bb.h }
+      : { shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h };
+    terrainShapes.push({ ...geom, tile: style.tile });
     shapes.push({
-      shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h,
+      ...geom, ...(s.rx != null ? { rx: s.rx } : {}),
       ...style.render,
       // On-map text is reserved for gameplay-relevant zones (spawn/bombsite labels come
       // from the kind's own style, e.g. CS_SHAPE_STYLES.bombsiteA.label = 'A'). A per-shape
@@ -113,14 +143,125 @@ function buildFromShapes(def) {
 
 // Continuous (non-rasterized) walkability — walls/crates/pits/water are tested
 // directly against their authored shape geometry (later shapes win ties, matching
-// the rasterization order above) rather than the tile grid.
+// the rasterization order above) rather than the tile grid. Shapes with no mechanics
+// tile (tile == null: spawn zones and purely-decorative overlays like floor inlays,
+// wall bevels or pillar caps) are skipped entirely, so drawing decoration on top of a
+// wall can never flip it walkable — the wall underneath still decides. This is what
+// keeps event/vision geometry exactly calculable regardless of any cosmetic layering.
 export function isWalkableContinuous(map, x, y) {
   if (x <= 0 || y <= 0 || x >= map.width - 1 || y >= map.height - 1) return false;
   for (let i = map.terrainShapes.length - 1; i >= 0; i--) {
     const s = map.terrainShapes[i];
+    if (s.tile == null) continue;
     if (pointInShape(s, x, y)) return s.tile !== 'wall' && s.tile !== 'lowWall';
   }
   return true;
+}
+
+// The material-bearing terrain of a map, bottom→top (inert `tile: null` overlays dropped),
+// cached per map — the layer stack isWalkableContinuous and isPathClearContinuous share.
+const solidLayers = new WeakMap();
+function materialShapes(map) {
+  let out = solidLayers.get(map);
+  if (!out) { out = map.terrainShapes.filter(s => s.tile != null); solidLayers.set(map, out); }
+  return out;
+}
+
+// EXACT straight-line walkability between two points: true iff no part of the segment lies
+// in solid terrain. Replaces a sampled sweep (which could step over a wall thinner than its
+// stride); uses the same topmost-shape-wins layering as isWalkableContinuous, so terrain
+// carved out by a later `floor` shape stays passable. Endpoints are the caller's to validate.
+export function isPathClearContinuous(map, x0, y0, x1, y1) {
+  return !segmentHitsSolid(x0, y0, x1, y1, materialShapes(map),
+                           s => s.tile === 'wall' || s.tile === 'lowWall');
+}
+
+// ── Shape-authoring helpers ─────────────────────────────────────────────────────
+// Small constructors that build the convex polys the higher-fidelity maps are made of.
+// Every poly they emit is CONVEX, which is what keeps ray-vs-poly LOS (terrainShapes
+// rayPolyIv) and continuous walkability EXACT rather than approximate — see the note on
+// rayPolyIv. They return plain terrain entries ({ shape, kind, points } / rect), so they
+// drop straight into a map's `terrain` array (spread when a helper returns several).
+
+// Regular octagon centred at (cx, cy) with circumradius r, flat-topped (a 22.5° twist).
+// Used for columns/pillars and rounded corner posts — a shape a bare rect grid can't make.
+function oct(cx, cy, r, kind = 'wall') {
+  const pts = [];
+  for (let i = 0; i < 8; i++) {
+    const a = Math.PI / 8 + (i * Math.PI) / 4;
+    pts.push({ x: +(cx + r * Math.cos(a)).toFixed(3), y: +(cy + r * Math.sin(a)).toFixed(3) });
+  }
+  return { shape: 'poly', kind, points: pts };
+}
+
+// A full pillar: the solid octagon column plus a smaller lit octagon `cap` drawn on top,
+// so a column reads as a 3-D shaft catching overhead light instead of a flat blob. The cap
+// is decorative (tile: null) — only the column body is a wall. Spread into `terrain`.
+function pillar(cx, cy, r = 1.15, kind = 'wall') {
+  return [oct(cx, cy, r, kind), oct(cx, cy, r * 0.58, kind === 'lowWall' ? 'capLow' : 'cap')];
+}
+
+// A row/colonnade of pillars at every (x in xs, y in ys) — the "hallway with pillars".
+function colonnade(xs, ys, r = 1.15, kind = 'wall') {
+  const out = [];
+  for (const y of ys) for (const x of xs) out.push(...pillar(x, y, r, kind));
+  return out;
+}
+
+// A wall as a thick segment from (x1,y1) to (x2,y2): a convex parallelogram, so walls can
+// run at ANY angle (diagonals, chamfers) instead of only axis-aligned rectangles. `kind`
+// picks the material (building/wall/window/…). A thin lit `trim` quad along the near edge
+// gives the wall a bevelled top unless trim:false.
+function wallSeg(x1, y1, x2, y2, thick = 1.8, kind = 'building', trim = true) {
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+  const nx = (-dy / len) * (thick / 2), ny = (dx / len) * (thick / 2); // half-thickness normal
+  const body = { shape: 'poly', kind, points: [
+    { x: x1 + nx, y: y1 + ny }, { x: x2 + nx, y: y2 + ny },
+    { x: x2 - nx, y: y2 - ny }, { x: x1 - nx, y: y1 - ny }] };
+  const t = 0.5; // bevel depth as a fraction of the half-thickness
+  const bevel = { shape: 'poly', kind: 'trim', points: [
+    { x: x1 + nx, y: y1 + ny }, { x: x2 + nx, y: y2 + ny },
+    { x: x2 + nx * (1 - t), y: y2 + ny * (1 - t) }, { x: x1 + nx * (1 - t), y: y1 + ny * (1 - t) }] };
+  return trim ? [body, bevel] : [body];
+}
+
+// A straight wall RUN pierced by openings — the building block for rooms & hallways. Each
+// opening is { from, to, kind } measured as distance along the run from (x1,y1): kind
+// 'door' leaves a walkable, see-through gap (plain floor); kind 'window' fills the gap with
+// a `window` (lowWall — shoot/see through, no walk). Everything else is solid `building`.
+function wallRun(x1, y1, x2, y2, thick = 1.6, openings = []) {
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const pt = (d) => [x1 + ux * d, y1 + uy * d];
+  const out = [];
+  let cur = 0;
+  for (const o of [...openings].sort((a, b) => a.from - b.from)) {
+    if (o.from > cur) { const [ax, ay] = pt(cur), [bx, by] = pt(o.from); out.push(...wallSeg(ax, ay, bx, by, thick, 'building', false)); }
+    if (o.kind === 'window') { const [ax, ay] = pt(o.from), [bx, by] = pt(o.to); out.push(...wallSeg(ax, ay, bx, by, thick, 'window', false)); }
+    cur = Math.max(cur, o.to);
+  }
+  if (cur < len) { const [ax, ay] = pt(cur), [bx, by] = pt(len); out.push(...wallSeg(ax, ay, bx, by, thick, 'building', false)); }
+  return out;
+}
+
+// A right-triangle corner chamfer with legs `leg` along +/-x and +/-y from (cx, cy): the
+// trick that turns a hard 90° room corner into a clean 45° cut. `sx`/`sy` are ±1 for which
+// quadrant the triangle fills (the solid corner side).
+function chamfer(cx, cy, leg, sx, sy, kind = 'wall') {
+  return { shape: 'poly', kind, points: [
+    { x: cx, y: cy }, { x: cx + sx * leg, y: cy }, { x: cx, y: cy + sy * leg }] };
+}
+
+// A crate / crate-stack: a rounded rectangle (rx) with a lit inset lid so it reads as a
+// box, not a painted square. `kind` is the solid part (crate/lowWall/debris).
+function crate(x, y, w, h, kind = 'crate') {
+  const r = Math.min(w, h) * 0.22;
+  const inset = Math.min(w, h) * 0.2;
+  return [
+    { shape: 'rect', kind, x, y, w, h, rx: r },                             // box body
+    { shape: 'rect', kind: kind === 'lowWall' ? 'capLow' : 'crateTop',      // lit lid
+      x: x + inset, y: y + inset, w: w - inset * 2, h: h - inset * 2, rx: r * 0.6 },
+  ];
 }
 
 // de_forge — a foundry split by a central oval furnace pit; two sites on opposite corners.
@@ -310,63 +451,78 @@ const CS_ITALY = {
   tSpawns:  [{ x: 57, y: 6 }, { x: 60, y: 6 }, { x: 54, y: 6 }, { x: 57, y: 9 }, { x: 57, y: 3 }],
 };
 
-// de_dust2 — the flagship map, rebuilt at higher fidelity with named callouts. CTs hold
-// the centre-left spawn with routes down to A (via Catwalk/Short) and B (via Mid/Window);
-// Ts hold the top-right spawn with routes down Long into A and down through B Tunnel.
+// de_dust2 — the flagship map, rebuilt as a real building complex. Four corner buildings —
+// B site + CT spawn (west), A site + T spawn (east) — each an enclosed structure with an
+// inner room (the site / the spawn), a HALLWAY, and WINDOWS overlooking the centre. Between
+// them runs Mid: a pillared central hall. Every building's inner wall (facing Mid) is a
+// `wallRun` pierced with doors (walkable, see-through) and windows (glass — see & shoot
+// through, no walk), so the buildings are connected but each opening is a distinct fight.
 //
-// Real Dust II leans heavily on ELEVATION — Long's ramp up into A, Catwalk overlooking B
-// Tunnel from above, waist-high boxes (Xbox, Car, the corner box at A) you crouch/shoot
-// over. This engine has no z-axis (unit.position is a flat continuous x/y — see
-// project_continuous_coords in memory), so true stacked geometry isn't possible. Two
-// workarounds stand in for it:
-//   1. Elevated PATHS (Catwalk) are authored as their own walled-off corridor running
-//      parallel to the room they overlook rather than literally on top of it —
-//      topological separation instead of a z-coordinate.
-//   2. Waist-high COVER (Xbox, Car, the A corner box, the B window sill) uses `lowWall`
-//      (see the kind above): it blocks movement like a wall, but is deliberately
-//      excluded from csLosBlockers' opacity test (belief.js only opacifies
-//      tile === 'wall'), so — like real elevated cover — you can still see and shoot
-//      across or over it.
+// Routes: B-room → Gallery door (top) or Mid door → Mid → A the same way; CT-room →
+// lower door → Mid → T; plus each site room's window gives a firing slit onto Mid without a
+// walk-through. Fidelity is all convex geometry so events & vision stay exactly calculable:
+// octagonal COLUMNS (`pillar`/`colonnade`), CHAMFERED corners (`chamfer`), rounded CRATES
+// (`crate`), building walls with openings (`wallRun`), and inert `tile:null` decoration
+// (floor plates, bevel trim, column caps). No z-axis, so waist-high shoot-over cover and
+// window glass both use `lowWall` (blocks movement, excluded from LOS blocking in belief.js).
 const DE_DUST2 = {
   width: 66, height: 42,
   terrain: [
-    // ── spawns & sites ──
-    { shape: 'rect', x:  3, y: 27, w: 12, h:  9, kind: 'ctSpawn'   },
-    { shape: 'rect', x: 51, y: 27, w:  9, h:  9, kind: 'tSpawn'    },
-    { shape: 'rect', x:  3, y:  3, w: 15, h: 12, kind: 'bombsiteB' },
-    { shape: 'rect', x: 45, y:  3, w: 15, h: 12, kind: 'bombsiteA' },
+    // ══ FLOOR PLATES (bottom layer — subtle slabs so rooms read as tiled floors) ══
+    { shape: 'rect', kind: 'plateDark', x: 25, y:  2, w: 16, h: 38 }, // Mid hall
+    { shape: 'rect', kind: 'plate',     x:  2, y:  2, w: 14, h: 10 }, // B site room
+    { shape: 'rect', kind: 'plate',     x: 50, y:  2, w: 14, h: 10 }, // A site room
+    { shape: 'rect', kind: 'plate',     x:  2, y: 25, w: 23, h: 15 }, // CT room
+    { shape: 'rect', kind: 'plate',     x: 41, y: 25, w: 23, h: 15 }, // T room
 
-    // ── structural walls: Mid corridor (west leg) and Long/Catwalk divider ──
-    { shape: 'rect', x: 15, y:  9, w: 3, h: 18, kind: 'building'  }, // mid west wall (leaves y3-9 open: B Window)
-    { shape: 'rect', x: 27, y:  3, w: 3, h: 21, kind: 'building'  }, // mid east wall
-    { shape: 'rect', x: 39, y: 15, w: 3, h: 12, kind: 'building'  }, // catwalk/long divider (leaves y3-15 open: Short)
+    // ══ ZONES (site + spawn tints) ══
+    { shape: 'rect', x:  3, y:  3, w: 12, h:  8, kind: 'bombsiteB' },
+    { shape: 'rect', x: 51, y:  3, w: 12, h:  8, kind: 'bombsiteA' },
+    { shape: 'rect', x:  4, y: 29, w: 13, h:  9, kind: 'ctSpawn'   },
+    { shape: 'rect', x: 49, y: 29, w: 13, h:  9, kind: 'tSpawn'    },
 
-    // ── Long A: right-side corridor from T spawn down into A, with barrel cover ──
-    // (labels feed the terrain-details panel on select only — see the note in
-    // buildFromShapes; they're not drawn on the map itself.)
-    { shape: 'oval', x: 45, y: 12, w: 9, h: 9, kind: 'crate',   label: 'Blue'   }, // mid-long barrels
-    { shape: 'rect', x: 57, y:  3, w: 3, h: 6, kind: 'lowWall', label: 'Goose'  }, // corner box, shoot-over
-    { shape: 'rect', x: 48, y:  3, w: 3, h: 3, kind: 'lowWall', label: 'Pit'    }, // second A corner box
-    { shape: 'rect', x: 54, y: 15, w: 3, h:  9, kind: 'building', label: 'Long corner wall' }, // new: splits Long into two lanes
-    { shape: 'rect', x: 60, y: 18, w: 3, h:  3, kind: 'lowWall',   label: 'Corner box' },
+    // ══ WEST BUILDING (B site + CT spawn) ═══════════════════════════════════════════
+    // Inner wall facing Mid (x25): Gallery door · B window · Mid door · CT window · lower door
+    ...wallRun(25, 2, 25, 40, 1.7, [
+      { from:  2, to:  7, kind: 'door'   }, // Gallery entrance (B → Mid-top)
+      { from:  9, to: 12, kind: 'window' }, // B site window onto Mid
+      { from: 16, to: 22, kind: 'door'   }, // Mid door
+      { from: 25, to: 28, kind: 'window' }, // CT window onto Mid
+      { from: 31, to: 36, kind: 'door'   }, // lower Connector door (CT → Mid)
+    ]),
+    ...wallRun(2, 24, 25, 24, 1.5, [{ from: 7, to: 11, kind: 'door' }]), // B room ↔ CT room hallway door
+    ...wallRun(16, 2, 16, 12, 1.3, [{ from: 6, to: 9, kind: 'window' }]), // B-site alcove wall + interior window
+    ...pillar(25, 2, 1.2), ...pillar(25, 24, 1.2), ...pillar(25, 40, 1.2), // rounded wall-end columns
+    ...pillar(21, 16, 0.9), ...pillar(21, 31, 0.9),                      // hallway pilasters
+    chamfer(1, 1, 4, 1, 1, 'building'), chamfer(1, 41, 4, 1, -1, 'building'), // rounded building corners
+    ...crate(4, 4, 3.5, 3.5), ...crate(10, 7, 3, 3),                     // B site cover
+    ...crate(4, 8.5, 2.6, 2.2, 'lowWall'),                              // B ledge (shoot-over)
+    ...crate(19, 26, 3, 3), ...crate(16, 34, 3, 3),                      // CT-room / hallway cover
 
-    // ── Catwalk / Short A: elevated lane (own path, not stacked) into A's flank ──
-    { shape: 'rect', x: 39, y:  6, w: 3, h: 3, kind: 'lowWall', label: 'Short'  }, // catwalk railing into A, shoot-over
-    { shape: 'rect', x: 33, y: 18, w: 3, h: 12, kind: 'building', label: 'Shortcut wall' }, // new: splits Catwalk into two lanes
-    { shape: 'rect', x: 30, y: 21, w: 3, h:  3, kind: 'crate',     label: 'Boxes' },
+    // ══ EAST BUILDING (A site + T spawn) — mirror of the west ════════════════════════
+    ...wallRun(41, 2, 41, 40, 1.7, [
+      { from:  2, to:  7, kind: 'door'   }, // Gallery entrance (A → Mid-top)
+      { from:  9, to: 12, kind: 'window' }, // A site window onto Mid
+      { from: 16, to: 22, kind: 'door'   }, // Mid door
+      { from: 25, to: 28, kind: 'window' }, // T window onto Mid
+      { from: 31, to: 36, kind: 'door'   }, // lower Connector door (T → Mid)
+    ]),
+    ...wallRun(41, 24, 64, 24, 1.5, [{ from: 12, to: 16, kind: 'door' }]), // A room ↔ T room hallway door
+    ...wallRun(50, 2, 50, 12, 1.3, [{ from: 6, to: 9, kind: 'window' }]),  // A-site alcove wall + interior window
+    ...pillar(41, 2, 1.2), ...pillar(41, 24, 1.2), ...pillar(41, 40, 1.2),
+    ...pillar(45, 16, 0.9), ...pillar(45, 31, 0.9),                        // hallway pilasters
+    chamfer(65, 1, 4, -1, 1, 'building'), chamfer(65, 41, 4, -1, -1, 'building'),
+    ...crate(58.5, 4, 3.5, 3.5), ...crate(53, 7, 3, 3),                    // A site cover
+    ...crate(59.4, 8.5, 2.6, 2.2, 'lowWall'),                            // A ledge (shoot-over)
+    ...crate(44, 26, 3, 3), ...crate(47, 34, 3, 3),                        // T-room / hallway cover
 
-    // ── Mid: centre corridor with Xbox cover, opens into B Window ──
-    { shape: 'rect', x: 18, y:  9, w: 6, h: 6, kind: 'crate',   label: 'Xbox'   },
-    { shape: 'rect', x: 18, y:  6, w: 3, h: 3, kind: 'lowWall', label: 'Window' }, // window sill, shoot-through
-
-    // ── B Tunnel: left-side route from T spawn's plaza down into B ──
-    { shape: 'rect', x:  3, y:  3, w: 6, h: 3, kind: 'crate',   label: 'Car'    },
-    { shape: 'rect', x:  9, y:  9, w: 3, h: 3, kind: 'lowWall', label: 'Elevator' }, // B site platform edge
-    { shape: 'rect', x:  8, y: 15, w: 3, h:  9, kind: 'building', label: 'Tunnel wall' }, // new: splits B Tunnel into two lanes
-    { shape: 'rect', x:  4, y: 18, w: 3, h:  3, kind: 'crate',     label: 'Barrels' },
+    // ══ MID: a grand pillared hall between the two buildings ═════════════════════════
+    ...colonnade([29, 37], [7, 14, 21, 28, 35], 1.1),  // double colonnade lining the hall
+    ...crate(31, 17, 4, 4),                             // Mid boxes
+    ...crate(31.5, 23, 3, 3, 'lowWall'),               // shoot-over box south of Mid boxes
   ],
-  ctSpawns: [{ x: 3, y: 30 }, { x: 6, y: 30 }, { x: 9, y: 30 }, { x: 6, y: 27 }, { x: 6, y: 33 }],
-  tSpawns:  [{ x: 57, y: 30 }, { x: 54, y: 30 }, { x: 51, y: 30 }, { x: 54, y: 27 }, { x: 54, y: 33 }],
+  ctSpawns: [{ x: 5, y: 31 }, { x: 9, y: 31 }, { x: 13, y: 31 }, { x: 7, y: 35 }, { x: 11, y: 35 }],
+  tSpawns:  [{ x: 61, y: 31 }, { x: 57, y: 31 }, { x: 53, y: 31 }, { x: 59, y: 35 }, { x: 55, y: 35 }],
 };
 
 // ── Map registry ──────────────────────────────────────────────────────────────

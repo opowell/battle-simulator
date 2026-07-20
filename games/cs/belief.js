@@ -28,7 +28,7 @@
 import { isWalkable, getReachable, perimeterBlockShapes } from './map.js';
 import { num, tilePos } from '../coord.js';
 import { euclidean, seesPoint } from '../vision.js';
-import { segmentClearOf } from '../terrainShapes.js';
+import { segmentHitsSolid } from '../terrainShapes.js';
 import { SMOKE_RADIUS } from './weapons.js';
 
 // Field-of-vision config, shared with CsGame.getVisibleState so the belief's visible set
@@ -37,28 +37,45 @@ import { SMOKE_RADIUS } from './weapons.js';
 // authored wall shapes) and smoke clouds.
 export const CS_VISION = { range: 42, fovDegrees: 90, metric: euclidean }; // tripled alongside the 3x map resize (2026-07-17)
 
-// The opaque shapes that block CS sight: the map border, its authored walls, and every
-// active smoke cloud (an oval of SMOKE_RADIUS). Used both server-side and by the design
-// UI's fog veil, so what the veil hides is exactly what the engine hides. The border strips
-// matter because the map's perimeter wall is render-only (see map.js's perimeterWallShapes)
-// — without them here, sight would carry on past the map edge into the void instead of
-// stopping at it like movement already does (isWalkableContinuous).
-export function csLosBlockers(map, smokeZones = []) {
-  const out = [...perimeterBlockShapes(map.width, map.height)];
-  for (const s of map.terrainShapes ?? [])
-    if (s.tile === 'wall') out.push({ shape: s.shape, x: s.x, y: s.y, w: s.w, h: s.h });
+// What blocks CS sight, as an ORDERED LAYER STACK (bottom → top) rather than a flat union:
+// the material at a point is whatever the TOPMOST shape covering it says, so a `floor` shape
+// authored over a wall carves a genuinely transparent hole in it (cs_siege's compound is a
+// solid block with its courtyard and gates carved back out). A flat union can't express that
+// and reported the courtyard as sight-blocked even though units walk through it freely —
+// LOS and movement disagreeing. Both now run the same layering (see isPathClearContinuous).
+//
+// Layers, in order: the authored terrain (inert `tile: null` overlays dropped — they're
+// decoration), then the map border, then smoke. Border and smoke sit ON TOP because nothing
+// may carve them: the perimeter wall is render-only (map.js's perimeterWallShapes), so
+// without it sight would run off the map edge, and a smoke cloud must occlude whatever it
+// covers. `solid` is precomputed so the client veil can apply the same rule without needing
+// to know CS's tile vocabulary.
+export function csLosLayers(map, smokeZones = []) {
+  const layers = [];
+  for (const s of map.terrainShapes ?? []) {
+    if (s.tile == null) continue;                                  // decoration: never occludes
+    const geom = s.shape === 'poly' ? { shape: 'poly', points: s.points }
+                                    : { shape: s.shape, x: s.x, y: s.y, w: s.w, h: s.h };
+    layers.push({ ...geom, solid: s.tile === 'wall' });            // lowWall/window/floor: see-through
+  }
+  for (const s of perimeterBlockShapes(map.width, map.height)) layers.push({ ...s, solid: true });
   for (const sz of smokeZones) {
     const cx = num(sz.x), cy = num(sz.y);
-    out.push({ shape: 'oval', x: cx - SMOKE_RADIUS, y: cy - SMOKE_RADIUS, w: 2 * SMOKE_RADIUS, h: 2 * SMOKE_RADIUS });
+    layers.push({ shape: 'oval', x: cx - SMOKE_RADIUS, y: cy - SMOKE_RADIUS, w: 2 * SMOKE_RADIUS, h: 2 * SMOKE_RADIUS, solid: true });
   }
-  return out;
+  return layers;
+}
+
+// Exact sight test over that stack — no sampling, no union approximation.
+export function csHasLOS(layers, ax, ay, bx, by) {
+  return !segmentHitsSolid(ax, ay, bx, by, layers, s => s.solid);
 }
 
 // CS_VISION plus a state-specific line-of-sight test (walls + smoke). Both getVisibleState
 // and the belief sampler build this from the same map/smoke so they never drift.
 export function csVisionCfg(map, smokeZones = []) {
-  const blockers = csLosBlockers(map, smokeZones);
-  return { ...CS_VISION, hasLOS: (ax, ay, bx, by) => segmentClearOf(ax, ay, bx, by, blockers) };
+  const layers = csLosLayers(map, smokeZones);
+  return { ...CS_VISION, hasLOS: (ax, ay, bx, by) => csHasLOS(layers, ax, ay, bx, by) };
 }
 
 const FOG_VISION  = CS_VISION.range;   // matches getVisibleState

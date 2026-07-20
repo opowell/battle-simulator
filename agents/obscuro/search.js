@@ -20,6 +20,14 @@ import { purify } from './purify.js';
 
 const DEFAULT_WIN = 1e6;
 
+// A real macrotask boundary that yields to the host event loop, in both Node
+// (setImmediate) and the browser analysis Web Worker (setTimeout — setImmediate
+// doesn't exist there). Load-bearing: without it a multi-second solve starves
+// everything else on the thread until it finishes (see the round loop below).
+const yieldToLoop = typeof setImmediate === 'function'
+  ? () => new Promise(resolve => setImmediate(resolve))
+  : () => new Promise(resolve => setTimeout(resolve, 0));
+
 function defaultActionKey(a) {
   return JSON.stringify([a.type ?? null, a.unitId ?? null, a.from ?? null, a.to ?? null, a.targetId ?? null, a.side ?? null, a.payload ?? null]);
 }
@@ -172,6 +180,12 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   // actions were "stable since T½" (App. C.8).
   const snapshots = [];
   for (let round = 0; round < maxRounds; round++) {
+    // Bail out promptly when the caller has abandoned this solve — e.g. the
+    // analysis position changed out from under a progressive belief walk, so
+    // finishing the remaining rounds would be wasted CPU (and, run repeatedly,
+    // a pile-up of stale solves). Checked once per round, right after the
+    // per-round yield below lands us back here.
+    if (cfg.isCancelled?.()) break;
     if (tree.infosets.size < maxInfosets) {
       for (let e = 0; e < expandPerRound; e++) {
         // Alternate the exploring player every step (App. C.4).
@@ -192,6 +206,17 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
     // (fixed) root action set, purely informational and never affects the search.
     cfg.onRound?.(round + 1, maxRounds, { rows: root.actions, dist: [...root.rm.lastStrategy()] });
     if (budgetMs && Date.now() - t0 >= budgetMs) break;
+    // Yield to the host event loop once per round. Expansion/CFR here is pure
+    // synchronous CPU work for games with a cheap heuristic leaf eval (no
+    // Stockfish/engine I/O in the loop), and `await doExpansionStep(...)`
+    // above does NOT actually yield in that case — Node drains the microtask
+    // queue to empty before it will check timers or pending I/O, and a
+    // same-tick-resolving promise's continuation is just another microtask.
+    // Without a real macrotask boundary, a multi-second solve starves the
+    // entire process: nothing else on this Node instance — including an
+    // unrelated "make a move" HTTP request — runs until the whole solve
+    // finishes. yieldToLoop is that boundary.
+    await yieldToLoop();
   }
   // A final, longer solve so the equilibrium settles on the frozen tree (Fig. 8:
   // expander threads stop first, solver runs on a little longer). Bounded by a
@@ -200,8 +225,10 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   const finalDeadline = budgetMs ? t0 + budgetMs * 1.35 : Infinity;
   const chunk = Math.max(1, Math.min(finalCfr, 10));
   for (let done = 0; done < finalCfr; done += chunk) {
+    if (cfg.isCancelled?.()) break; // caller abandoned this solve — see the round loop
     runGadgetCFR(tree, hooks, gadget, chunk);
     if (Date.now() > finalDeadline) break;
+    await yieldToLoop(); // see the round loop's comment above
   }
   snapshots.push([...root.rm.lastStrategy()]);
 

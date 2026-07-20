@@ -28,6 +28,7 @@ import { ApiAgent } from './agents/ApiAgent.js';
 import { ObscuroAgent } from './agents/ObscuroAgent.js';
 
 import { ChessGame }         from './games/chess/index.js';
+import { cpSumsOverWorlds }  from './games/chess/ObscuroAgent.js';
 import { TacticalGame }      from './games/tactical/index.js';
 import { CardBattleGame }    from './games/cardbattle/index.js';
 import { Civ1Game }          from './games/civ1/index.js';
@@ -115,6 +116,28 @@ async function serveApp(appName, req, res) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not found');
   }
+}
+
+// Serve repo ES modules (games/*, agents/*, …) to the browser analysis Web
+// Worker (apps/design/analysis-worker.js), which imports the real chess + CFR
+// code directly instead of a bundle. Restricted to JS/WASM so it can't read
+// arbitrary source, with path-escape protection. The worker imports absolute
+// URLs like /lib/games/chess/ChessGame.js; those modules' own relative imports
+// (./board.js, ../../agents/obscuro/search.js) then resolve under /lib/ too.
+async function serveLibModule(res, relPath) {
+  const abs = resolve(ROOT_DIR, relPath);
+  if (abs !== ROOT_DIR && !abs.startsWith(ROOT_DIR + sep)) { res.writeHead(403); return res.end('Forbidden'); }
+  const ext = extname(abs);
+  if (!['.js', '.mjs', '.cjs', '.wasm'].includes(ext)) { res.writeHead(404); return res.end('Not found'); }
+  try {
+    const data = await readFile(abs);
+    res.writeHead(200, {
+      'Content-Type': ext === '.wasm' ? 'application/wasm' : 'text/javascript; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache',
+    });
+    res.end(data);
+  } catch { res.writeHead(404); res.end('Not found'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -257,10 +280,11 @@ class Session {
     // off each AI agent after every step for the AI-analysis panel. Persists the
     // most recent decision per player so the panel keeps showing it between turns.
     this.aiAnalysis = {};
-    // WebSocket subscribers: Set<{ ws, playerId, observer }>. Each player client
-    // gets a per-player (fog-filtered) snapshot pushed whenever this session's
-    // state changes; observer clients get the full unfiltered snapshot, optionally
-    // held back by `observerDelay` ms.
+    // WebSocket subscribers: Set<{ ws, playerId, observer, viewAs }>. Each player
+    // client gets a per-player (fog-filtered) snapshot pushed whenever this session's
+    // state changes; observer clients get the full unfiltered snapshot (or, if they
+    // set `viewAs`, that player's fog-filtered view), optionally held back by
+    // `observerDelay` ms.
     this.wsClients = new Set();
     // Recording file is named with the creation datetime so runs sort chronologically.
     this._recordPath = resolve(SESSIONS_DIR, `${fileTimestamp(this.createdAt)}-${id.slice(0, 8)}.json`);
@@ -315,8 +339,13 @@ class Session {
    */
   _sendTo(client) {
     if (client.ws.readyState !== 1 /* WebSocket.OPEN */) return;
+    // Observers default to the full, fog-bypassing view; if they pick a player
+    // perspective (`viewAs`), they instead get that player's own fog-filtered
+    // snapshot — still held back by observerDelay like any observer payload.
     const payload = client.observer
-      ? JSON.stringify(this.toJSON(null, { observer: true }))
+      ? (client.viewAs
+          ? JSON.stringify(this.toJSON(client.viewAs))
+          : JSON.stringify(this.toJSON(null, { observer: true })))
       : JSON.stringify(this.toJSON(client.playerId));
     const delay = client.observer ? this.observerDelay : 0;
     if (delay > 0) {
@@ -985,12 +1014,42 @@ async function handleAnalyzeStream(req, res, id, url) {
     const result = await ctx.rosterEntry.analyze(ctx.viewState, ctx.legalActions, {
       game: ctx.game, color: ctx.color,
       onProgress: (info) => emit({ ...info, ply, done: false }),
+      // Lets an agent that has more to gain from a longer look (e.g. Obscuro's
+      // fog analysis, which can always sample another belief-world batch) keep
+      // refining until the viewer actually stops watching this position,
+      // instead of settling for one fixed-size batch — see analyzeObscuro's
+      // isCancelled-driven progressive mode in games/chess/ObscuroAgent.js.
+      isCancelled: () => closed,
     });
     emit({ ...result, ply, done: true });
   } catch (e) {
     emit({ error: `Analysis failed: ${e.message}`, done: true });
   }
   if (!closed) res.end();
+}
+
+// Centipawn eval for a batch of belief worlds, for the browser analysis Web
+// Worker. The worker runs the (expensive, pure-JS) CFR locally but has no
+// Stockfish in the browser, so it POSTs each batch's belief worlds here and the
+// server returns the same batched leaf-eval sums the server-side analysis uses
+// (games/chess/ObscuroAgent.js cpSumsOverWorlds). Cheap (~tens of ms/batch);
+// the heavy compute stays off the server. Chess-only.
+async function handleCpEval(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+  if (session.gameName !== 'chess') return err(res, 400, 'cp-eval is chess-only');
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+  const { color, legalActions, worlds } = body;
+  if (!color || !Array.isArray(legalActions) || !Array.isArray(worlds) || !worlds.length)
+    return err(res, 400, 'Missing color/legalActions/worlds');
+  const { game } = GAMES[session.gameName];
+  try {
+    const cols = Math.min(legalActions.length, 16);
+    const { sums, n } = await cpSumsOverWorlds(game, worlds, color, legalActions, cols);
+    send(res, 200, { sums, n });
+  } catch (e) { err(res, 500, `cp-eval failed: ${e.message}`); }
 }
 
 // Play any legal move from a live or historical position into a throwaway
@@ -1092,6 +1151,10 @@ async function handleRequest(req, res) {
       res.writeHead(302, { Location: `${base}/ui/design` });
       return res.end();
     }
+
+    // Repo ES modules for the browser analysis Web Worker — GET /lib/*
+    if (method === 'GET' && parts[0] === 'lib')
+      return await serveLibModule(res, parts.slice(1).join('/'));
 
     // Static UI apps — GET /ui/<name>/* or GET /design/* (legacy)
     const UI_APPS = ['design', 'game-editor'];
@@ -1203,6 +1266,10 @@ async function handleRequest(req, res) {
     if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze-stream')
       return await handleAnalyzeStream(req, res, parts[1], url);
 
+    // POST /sessions/:id/cp-eval — belief-batch centipawn eval for the browser analysis worker
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'cp-eval')
+      return await handleCpEval(req, res, parts[1]);
+
     // POST /sessions/:id/fork-move
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'fork-move')
       return await handleForkMove(req, res, parts[1]);
@@ -1264,8 +1331,12 @@ function handleUpgrade(req, socket, head, prefix = '') {
   }
 
   const playerId = observer ? null : (url.searchParams.get('player') ?? null);
+  // Observers may narrow their view to a single player's fog-limited perspective
+  // via ?viewAs=:playerId (only honoured for observers, who are already allowed
+  // to see everything — a per-player view is strictly less information).
+  const viewAs = observer ? (url.searchParams.get('viewAs') || null) : null;
   wss.handleUpgrade(req, socket, head, (ws) => {
-    const client = { ws, playerId, observer };
+    const client = { ws, playerId, observer, viewAs };
     session.wsClients.add(client);
     // Immediate snapshot so a freshly-connected client is in sync without a REST
     // round-trip (observers get the delayed, full-information view via _sendTo).

@@ -15,18 +15,29 @@
 // Emscripten loader needs now lives in the worker.)
 // ---------------------------------------------------------------------------
 
-import { Worker } from 'worker_threads';
-import { fileURLToPath } from 'url';
-import path from 'path';
-import fs from 'fs';
 import { toFEN, uciToAction } from './fen.js';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
+// This module is imported both server-side (Node) and inside the browser
+// analysis Web Worker (apps/design/analysis-worker.js), which pulls in the whole
+// chess graph. Node's worker_threads/url/path/fs don't exist in a browser, so
+// they're loaded lazily behind an isNode guard: in the browser Stockfish is
+// simply unavailable (`available()` → false) and callers fall back to the JS
+// search or, for the analysis panel, fetch centipawn evals from the server.
+const isNode = typeof process !== 'undefined' && !!process.versions?.node;
+let Worker, fileURLToPath, path, fs;
+if (isNode) {
+  ({ Worker } = await import('worker_threads'));
+  ({ fileURLToPath } = await import('url'));
+  path = (await import('path')).default;
+  fs = (await import('fs')).default;
+}
+
+const HERE = isNode ? path.dirname(fileURLToPath(import.meta.url)) : '';
 // The engine runs inside this worker (see sf-worker.cjs) so it can be terminated
 // and respawned to reclaim WASM memory. Both are .cjs to opt out of the repo's
 // ESM default and match the vendored CommonJS loader.
-const WORKER_PATH = path.join(HERE, 'vendor', 'sf-worker.cjs');
-const WASM_PATH = path.join(HERE, 'vendor', 'stockfish.wasm');
+const WORKER_PATH = isNode ? path.join(HERE, 'vendor', 'sf-worker.cjs') : '';
+const WASM_PATH = isNode ? path.join(HERE, 'vendor', 'stockfish.wasm') : '';
 
 let worker = null;
 let readyPromise = null;
@@ -60,10 +71,10 @@ function failAllPending() { for (const abort of [...pending]) abort(); }
 // corrupt existing lines. Duplicates are compacted on startup when >50% stale.
 // ---------------------------------------------------------------------------
 let DatabaseSync = null;
-try { ({ DatabaseSync } = await import('node:sqlite')); } catch {}
+if (isNode) { try { ({ DatabaseSync } = await import('node:sqlite')); } catch {} }
 
-const CACHE_PATH_SQLITE = path.join(HERE, 'vendor', 'sf-cache.sqlite');
-const CACHE_PATH_NDJSON = path.join(HERE, 'vendor', 'sf-cache.ndjson');
+const CACHE_PATH_SQLITE = isNode ? path.join(HERE, 'vendor', 'sf-cache.sqlite') : '';
+const CACHE_PATH_NDJSON = isNode ? path.join(HERE, 'vendor', 'sf-cache.ndjson') : '';
 const CACHE_MAX = 20_000;
 
 // SQLite state (used when DatabaseSync is available)
@@ -74,6 +85,7 @@ let sqliteSize = 0, lruSeq = 0;
 let sfCache = null;
 
 function loadCache() {
+  if (!isNode) return; // no disk cache in the browser
   if (DatabaseSync && !sfCache) {
     if (db) return;
     // Concurrent processes (e.g. parallel test files) share this DB; a busy
@@ -159,6 +171,7 @@ function send(cmd) { if (worker) worker.postMessage(cmd); }
 function init() {
   if (readyPromise) return readyPromise;
   readyPromise = new Promise((resolve) => {
+    if (!isNode) return resolve(false); // browser: Stockfish runs server-side only
     if (!fs.existsSync(WORKER_PATH) || !fs.existsSync(WASM_PATH)) return resolve(false);
 
     let w;

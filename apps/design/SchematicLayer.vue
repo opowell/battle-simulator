@@ -30,11 +30,18 @@ const props = defineProps({
   // render as translucent markers and fog is drawn from `viewerTeam`'s perspective.
   revealAll:       { type: Boolean, default: false },
   viewerTeam:      { type: String, default: null },
+  // An observer watching through one player's eyes: fog is cast from this team
+  // instead of the local player (teams[0]). null = default/local perspective.
+  viewerOverride:  { type: String, default: null },
   // Empty square selected for its terrain info (see Battlefield.vue's selectedSquare).
   // Distinct from `selectedSquare` below, which tints a *unit's* square.
   selectedEmptySquare: { type: Object, default: null },
   // Selected terrain shape (non-grid maps) — outlined to show what the info panel describes.
   selectedShape: { type: Object, default: null },
+  // Persistent-vision games (field.ui.persistentFog, e.g. civ1): every "x,y" tile any of
+  // the viewer's units has EVER seen this game (see Battlefield.vue's exploredTileSet).
+  // Null when the game doesn't remember terrain, so tiles re-fog every turn as before.
+  exploredTiles: { type: Set, default: null },
   // Set while the player is aiming a "button → pick a spot on the map" action (see
   // Battlefield.vue) — replaces the normal legal-move highlight with a same-shape
   // reach arc at `aiming.range`, plus a throw's blast-radius preview or a shoot's
@@ -48,7 +55,7 @@ const imgSrc = window.api.imgSrc;
 // follows whoever is to move at the displayed ply, so fog flips as you step through.
 const viewerId = computed(() => props.revealAll
   ? props.viewerTeam
-  : (props.field.teams?.[0]?.id ?? null));
+  : (props.viewerOverride ?? props.field.teams?.[0]?.id ?? null));
 const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.id);
 
 // Which unit should blink when `ui.blinkActiveUnit` is set. In free-selection games
@@ -397,6 +404,16 @@ const squareFogVisibleSet = computed(() => {
   return VISION.visibleTileSet(props.field, VISION.visionSources(props.units, viewerId.value, null));
 });
 
+// Should this tile's TERRAIN be hidden? Out of current sight normally means hidden, but
+// persistent-vision games (see exploredTiles prop) remember any tile ever seen — only
+// units/cities re-fog when out of current sight (already handled server-side).
+function terrainFogged(tile) {
+  if (!squareFogVisibleSet.value) return false;
+  const key = `${tile.x},${tile.y}`;
+  if (squareFogVisibleSet.value.has(key)) return false;
+  return !(props.exploredTiles?.has(key));
+}
+
 // Tiles seen by the selected unit specifically — rendered as a highlight outline on top
 // of the base fog shading so a player can tell what THAT unit sees within team vision.
 const selectedVisionTileSet = computed(() => {
@@ -430,8 +447,7 @@ function heldOwner(territoryId) {
 }
 
 function tileColor(tile) {
-  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`))
-    return props.rdr.fogA;
+  if (terrainFogged(tile)) return props.rdr.fogA;
   // 'team' is a sentinel (see kdice's toGrid): the server can't know the client's
   // team palette, so it defers to whichever colour the client already assigned
   // this tile's owner (same trick as layerColor for sprite-layer units).
@@ -511,14 +527,14 @@ function segBorderColor(seg) {
 // neighbours. Hidden under fog like the tile's own colour.
 function tileCoastSprite(tile) {
   if (!tile.coastSprite) return null;
-  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
+  if (terrainFogged(tile)) return null;
   return tile.coastSprite;
 }
 
 
 function tileBgImage(tile) {
   if (!tile.bgImage) return null;
-  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return null;
+  if (terrainFogged(tile)) return null;
   return imgSrc(tile.bgImage);
 }
 
@@ -527,7 +543,7 @@ function tileBgImage(tile) {
 // stacks a river plus one segment per road direction. Fogged like the base tile.
 function tileOverlayImages(tile) {
   if (!tile.overlayImage) return [];
-  if (squareFogVisibleSet.value && !squareFogVisibleSet.value.has(`${tile.x},${tile.y}`)) return [];
+  if (terrainFogged(tile)) return [];
   const list = Array.isArray(tile.overlayImage) ? tile.overlayImage : [tile.overlayImage];
   return list.map(imgSrc);
 }
@@ -568,7 +584,11 @@ function markerImg(type) { return `${window.api.basePath}/images/chess/${enemyPr
 
 function isFogSquare(col, row) {
   if (gridFogVisibleSet.value) return !gridFogVisibleSet.value.has(`${col},${row}`);
-  if (squareFogVisibleSet.value) return !squareFogVisibleSet.value.has(`${col},${row}`);
+  if (squareFogVisibleSet.value) {
+    const key = `${col},${row}`;
+    if (squareFogVisibleSet.value.has(key)) return false;
+    return !(props.exploredTiles?.has(key));
+  }
   return false;
 }
 
@@ -900,9 +920,13 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               :x1="fit.x(s.x1)" :y1="fit.y(s.y1)" :x2="fit.x(s.x2)" :y2="fit.y(s.y2)"
               :stroke="s.stroke ?? s.fill" :stroke-width="s.strokeWidth ?? 1"
               stroke-linecap="round" class="sl-noevents"/>
+        <!-- `s.rx` (world-unit corner radius) rounds the rectangle so structures/crates read
+             as real objects instead of hard-cornered blocks — LOS still treats them as the
+             full bounding box (see terrainShapes rayRectIv), the rounding is render-only. -->
         <rect v-else
               :x="fit.x(s.x)" :y="fit.y(s.y)"
               :width="fit.len(s.w)" :height="fit.len(s.h)"
+              :rx="s.rx != null ? fit.len(s.rx) : null" :ry="s.rx != null ? fit.len(s.rx) : null"
               :fill="s.fill" :fill-opacity="s.opacity ?? 1"
               :stroke="s.stroke ?? 'none'" :stroke-width="s.stroke ? (s.strokeWidth ?? 1.5) : 0"
               class="sl-noevents"/>

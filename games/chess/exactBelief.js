@@ -563,6 +563,24 @@ export class ExactBelief {
     }
     return picks.map(p => ({ board: toBoardObject(p), cr: crObjectOf(p), ep: epOf(p) }));
   }
+
+  /**
+   * Positions at the given absolute indices into P, in the engine's object
+   * shape { board, cr, ep } — the enumeration counterpart of samplePositions
+   * (which draws uniformly at random). Lets a caller walk the WHOLE set once,
+   * in batches, without replacement. Out-of-range indices are skipped; null
+   * when exact tracking isn't active.
+   */
+  positionsAt(indices) {
+    if (!this.exact || !this.positions?.length) return null;
+    const P = this.positions;
+    const out = [];
+    for (const i of indices) {
+      const p = P[i];
+      if (p) out.push({ board: toBoardObject(p), cr: crObjectOf(p), ep: epOf(p) });
+    }
+    return out;
+  }
 }
 
 // Per-game store, same pattern as belief.js: keyed by the players array

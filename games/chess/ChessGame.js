@@ -533,6 +533,52 @@ export const ChessGame = {
     }));
   },
 
+  // --- Whole-population enumeration (drives the analysis panel's batched,
+  // eventually-exhaustive belief walk — see ObscuroAgent.analyzeObscuroProgressive).
+  //
+  // sampleWorlds draws n worlds at random *with replacement*; these two let a
+  // caller instead walk the ENTIRE materialized belief set P once, in batches,
+  // without replacement, and know when it has been covered exhaustively. Only
+  // the exact tracker has a finite materialized population — belief.js is a
+  // generative sampler with no enumerable set — so this reports exact:false in
+  // the fallback case and the caller keeps sampling there. Prepares the belief
+  // trackers for this turn exactly like sampleWorlds (idempotent via turnKey),
+  // so the two are interchangeable within one decision.
+  beliefPopulation(observation, playerId) {
+    if (!observation.gameSpecific.fogOfWar) return { exact: false, total: 0 };
+    const turnKey = observation.turnNumber ?? null;
+    const exact = getExactBelief(observation, playerId);
+    exact.beginTurn(observation, turnKey);
+    const belief = getBelief(observation, playerId);
+    belief.beginTurn(observation.board, turnKey);
+    if (!exact.exact) exact.tryReacquire(observation, belief, turnKey);
+    return (exact.exact && exact.positions?.length)
+      ? { exact: true, total: exact.positions.length }
+      : { exact: false, total: null };
+  },
+
+  // Map absolute indices into the exact set P → observation-shaped belief worlds,
+  // the SAME shape sampleWorlds produces (position-specific rights/en-passant per
+  // world, so in-tree move generation stays exact), so the search treats an
+  // enumerated world identically to a sampled one. Requires a beliefPopulation
+  // call earlier this turn to have established P; out-of-range indices are
+  // skipped, and the result is empty when exact tracking isn't active.
+  enumerateWorlds(observation, playerId, indices) {
+    const exact = getExactBelief(observation, playerId);
+    const picks = exact.positionsAt(indices);
+    if (!picks || !picks.length) return [];
+    return picks.map(pos => ({
+      ...observation,
+      board: pos.board,
+      units: boardToUnits(pos.board),
+      gameSpecific: {
+        ...observation.gameSpecific,
+        castlingRights: pos.cr,
+        enPassantTarget: pos.ep,
+      },
+    }));
+  },
+
   // Let both belief trackers record the move we just chose, so next turn they
   // can advance P / detect our own captured pieces.
   onActionCommitted(observation, playerId, action) {

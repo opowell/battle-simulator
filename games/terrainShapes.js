@@ -12,16 +12,91 @@
 // the rest of the mechanics keep working unchanged, and pass render-ready copies to
 // the client, which draws them as layered SVGs (see SchematicLayer.vue).
 
+// ── Exactness contract ───────────────────────────────────────────────────────────
+// Every routine below computes EXACT geometry (float64) — never a sampled, hull-bounded
+// or otherwise approximate answer. When an input makes that impossible the code THROWS
+// rather than silently degrading: a wrong-but-plausible LOS/movement result is far worse
+// than a loud failure, because it silently desyncs what the engine resolves from what the
+// player is shown. Callers must therefore only ever hand these functions shapes they can
+// be resolved exactly against: 'rect' (or no `shape`, meaning rect), 'oval', or a CONVEX
+// 'poly'.
+
+const SHAPE_KINDS = new Set(['rect', 'oval', 'poly']);
+
+function shapeKind(s, where) {
+  const kind = s.shape ?? 'rect';
+  if (!SHAPE_KINDS.has(kind))
+    throw new Error(`terrainShapes.${where}: unsupported shape '${kind}'. Exact geometry is defined only for ${[...SHAPE_KINDS].join('/')} — a shape that cannot be resolved exactly must not reach an LOS/movement test.`);
+  return kind;
+}
+
+// Throws unless `points` is a strictly convex, non-degenerate simple polygon. Convexity is
+// the precondition for rayPolyIv's Cyrus–Beck half-plane clip being EXACT: on a concave
+// polygon that clip yields the convex hull's outer bounds, which would over-block sight.
+// Rather than accept that approximation we refuse it — split concave terrain into convex
+// pieces at authoring time.
+export function assertConvexPoly(points, label = 'poly') {
+  if (!Array.isArray(points) || points.length < 3)
+    throw new Error(`${label}: a polygon needs at least 3 points, got ${points?.length ?? 0} — cannot be resolved exactly.`);
+  const n = points.length;
+  let sign = 0, area2 = 0;
+  for (let i = 0; i < n; i++) {
+    const a = points[i], b = points[(i + 1) % n], c = points[(i + 2) % n];
+    if (!Number.isFinite(a.x) || !Number.isFinite(a.y))
+      throw new Error(`${label}: non-finite vertex at index ${i} — cannot be resolved exactly.`);
+    const ex = b.x - a.x, ey = b.y - a.y;
+    if (Math.abs(ex) < 1e-12 && Math.abs(ey) < 1e-12)
+      throw new Error(`${label}: zero-length edge at vertex ${i} — cannot be resolved exactly.`);
+    const cross = ex * (c.y - b.y) - ey * (c.x - b.x);
+    if (Math.abs(cross) > 1e-9) {
+      const s = Math.sign(cross);
+      if (sign === 0) sign = s;
+      else if (s !== sign)
+        throw new Error(`${label}: polygon is CONCAVE at vertex ${(i + 1) % n}. Exact ray/poly LOS (Cyrus–Beck) requires a convex polygon — split this shape into convex pieces.`);
+    }
+    area2 += a.x * b.y - b.x * a.y;
+  }
+  if (Math.abs(area2) < 1e-9)
+    throw new Error(`${label}: degenerate zero-area polygon — cannot be resolved exactly.`);
+  return points;
+}
+
+// Convexity is validated once per distinct points array, then remembered — the check is
+// O(n) and the ray routines run in hot LOS loops. Keyed on the array (shared by reference
+// from the authored shape through csLosBlockers etc.), not the wrapper object.
+const convexChecked = new WeakSet();
+function ensureConvex(points) {
+  if (convexChecked.has(points)) return;
+  assertConvexPoly(points);
+  convexChecked.add(points);
+}
+
+// Axis-aligned bounding box { x, y, w, h } of any primitive. Rect/oval already carry it;
+// a poly's is derived from its points so shared code (rasterization, extent queries) can
+// treat every shape uniformly without special-casing the vertex list.
+export function shapeBBox(s) {
+  if (shapeKind(s, 'shapeBBox') === 'poly') {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of s.points) {
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+  return { x: s.x, y: s.y, w: s.w, h: s.h };
+}
+
 // True when the point (px, py) lies inside the shape.
 export function pointInShape(s, px, py) {
-  if (s.shape === 'oval') {
+  const kind = shapeKind(s, 'pointInShape');
+  if (kind === 'oval') {
     const rx = s.w / 2, ry = s.h / 2;
     if (rx <= 0 || ry <= 0) return false;
     const nx = (px - (s.x + rx)) / rx;
     const ny = (py - (s.y + ry)) / ry;
     return nx * nx + ny * ny <= 1;
   }
-  if (s.shape === 'poly') {
+  if (kind === 'poly') {
     // Standard ray-casting point-in-polygon test over s.points ({x,y}[]).
     let inside = false;
     for (let i = 0, j = s.points.length - 1; i < s.points.length; j = i++) {
@@ -59,8 +134,40 @@ function rayOvalIv(ox, oy, dx, dy, s) {
   if (t1 > t2) [t1, t2] = [t2, t1];
   return { tin: t1, tout: t2 };
 }
+// Cyrus–Beck ray/CONVEX-polygon clip: the run of ray parameter t for which the point
+// O + t·D lies inside the polygon. Each edge defines a half-plane (interior on the inner
+// side of its OUTWARD normal); a point is inside iff dot(N, X − A) ≤ 0 for every edge.
+// Intersecting all those half-constraints with the ray gives one [tin, tout] interval.
+// The outward normal is picked per edge by flipping whichever of the two candidates
+// points away from the centroid — correct for any convex winding (and our y-down coords).
+// EXACT for convex polygons only, so convexity is asserted (throws) rather than assumed:
+// on a concave polygon this clip would silently return the convex hull's bounds.
+function rayPolyIv(ox, oy, dx, dy, s) {
+  const P = s.points;
+  ensureConvex(P);
+  let cx = 0, cy = 0;
+  for (const p of P) { cx += p.x; cy += p.y; }
+  cx /= P.length; cy /= P.length;
+  let tin = -Infinity, tout = Infinity;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+    const ax = P[j].x, ay = P[j].y, ex = P[i].x - ax, ey = P[i].y - ay;
+    let nx = ey, ny = -ex;                                  // a normal to the edge
+    const mx = ax + ex / 2, my = ay + ey / 2;               // edge midpoint
+    if (nx * (cx - mx) + ny * (cy - my) > 0) { nx = -nx; ny = -ny; } // make it point outward
+    const denom = nx * dx + ny * dy;
+    const num   = nx * (ox - ax) + ny * (oy - ay);          // dot(N, O − A)
+    if (Math.abs(denom) < 1e-12) { if (num > 1e-12) return null; continue; }
+    const t = -num / denom;
+    if (denom < 0) tin = Math.max(tin, t); else tout = Math.min(tout, t);
+    if (tin > tout) return null;
+  }
+  return tin > tout ? null : { tin, tout };
+}
 function rayShapeIv(ox, oy, dx, dy, s) {
-  return s.shape === 'oval' ? rayOvalIv(ox, oy, dx, dy, s) : rayRectIv(ox, oy, dx, dy, s);
+  const kind = shapeKind(s, 'rayShapeIv');
+  if (kind === 'oval') return rayOvalIv(ox, oy, dx, dy, s);
+  if (kind === 'poly') return rayPolyIv(ox, oy, dx, dy, s);
+  return rayRectIv(ox, oy, dx, dy, s);
 }
 
 // LOS where the floor is the UNION of `shapes` (walls are the complement, e.g. doom):
@@ -82,6 +189,43 @@ export function segmentInUnion(x0, y0, x1, y1, shapes) {
   return cur >= len - 1e-9;
 }
 
+// EXACT layered segment test, for terrain where shapes STACK and the later one wins — the
+// material at a point is whatever the TOPMOST shape containing it says, so a 'floor' shape
+// authored after a wall carves a real hole in it (cs_siege's courtyard and gates). A plain
+// union test (segmentClearOf) can't express that, and sampling the line can miss a thin
+// obstacle; this is exact instead.
+//
+// It works because the topmost shape along the ray can only change where the ray crosses
+// some shape's boundary. Splitting at every exact entry/exit t therefore yields sub-intervals
+// of CONSTANT material, so testing one interior point of each decides that whole run exactly.
+// `shapes` are ordered bottom→top and must all carry material (filter out inert overlays
+// first); `isSolid(shape)` says whether that material blocks.
+export function segmentHitsSolid(x0, y0, x1, y1, shapes, isSolid) {
+  const topmostSolidAt = (px, py) => {
+    for (let i = shapes.length - 1; i >= 0; i--)
+      if (pointInShape(shapes[i], px, py)) return isSolid(shapes[i]);
+    return false; // bare ground
+  };
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
+  if (len < 1e-12) return topmostSolidAt(x0, y0);
+  const ux = dx / len, uy = dy / len;
+  const cuts = [0, len];
+  for (const s of shapes) {
+    const iv = rayShapeIv(x0, y0, ux, uy, s);
+    if (!iv || iv.tout <= 0 || iv.tin >= len) continue;
+    if (iv.tin > 0) cuts.push(iv.tin);
+    if (iv.tout < len) cuts.push(iv.tout);
+  }
+  cuts.sort((a, b) => a - b);
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const a = cuts[i], b = cuts[i + 1];
+    if (b - a < 1e-9) continue;                       // zero-width sliver: nothing between
+    const t = (a + b) / 2;                            // representative of a constant run
+    if (topmostSolidAt(x0 + ux * t, y0 + uy * t)) return true;
+  }
+  return false;
+}
+
 // LOS where `shapes` are opaque blockers on open ground (e.g. cs walls/pits): clear iff
 // the segment enters none of them between the endpoints.
 export function segmentClearOf(x0, y0, x1, y1, shapes) {
@@ -100,12 +244,29 @@ export function segmentClearOf(x0, y0, x1, y1, shapes) {
 // this unit reach/attack a multi-tile crate from here?). Oval case projects onto the
 // ellipse along the normalized direction from centre; rect case clamps to the box.
 export function nearestPointOnShape(s, px, py) {
-  if (s.shape === 'oval') {
+  const kind = shapeKind(s, 'nearestPointOnShape');
+  if (kind === 'oval') {
     const rx = s.w / 2, ry = s.h / 2, cx = s.x + rx, cy = s.y + ry;
     const nx = (px - cx) / rx, ny = (py - cy) / ry;
     const d = Math.hypot(nx, ny);
     if (d <= 1) return { x: px, y: py };
     return { x: cx + (nx / d) * rx, y: cy + (ny / d) * ry };
+  }
+  if (kind === 'poly') {
+    // Exact: inside ⇒ the point itself, else the closest projection onto any edge segment.
+    // (Falling through to the bbox here would silently answer for the wrong shape.)
+    if (pointInShape(s, px, py)) return { x: px, y: py };
+    const P = s.points;
+    let best = null, bestD = Infinity;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      const ax = P[j].x, ay = P[j].y, ex = P[i].x - ax, ey = P[i].y - ay;
+      const len2 = ex * ex + ey * ey;
+      const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * ex + (py - ay) * ey) / len2));
+      const qx = ax + t * ex, qy = ay + t * ey;
+      const d = (px - qx) ** 2 + (py - qy) ** 2;
+      if (d < bestD) { bestD = d; best = { x: qx, y: qy }; }
+    }
+    return best;
   }
   return { x: Math.max(s.x, Math.min(px, s.x + s.w)), y: Math.max(s.y, Math.min(py, s.y + s.h)) };
 }
@@ -113,10 +274,11 @@ export function nearestPointOnShape(s, px, py) {
 // Invoke cb(x, y) for every integer cell in [0,W)×[0,H) whose centre lies inside
 // the shape — the rasterization used to stamp a shape onto a tile grid.
 export function forEachCell(s, W, H, cb) {
-  const x0 = Math.max(0, Math.floor(s.x));
-  const y0 = Math.max(0, Math.floor(s.y));
-  const x1 = Math.min(W - 1, Math.ceil(s.x + s.w));
-  const y1 = Math.min(H - 1, Math.ceil(s.y + s.h));
+  const bb = shapeBBox(s);
+  const x0 = Math.max(0, Math.floor(bb.x));
+  const y0 = Math.max(0, Math.floor(bb.y));
+  const x1 = Math.min(W - 1, Math.ceil(bb.x + bb.w));
+  const y1 = Math.min(H - 1, Math.ceil(bb.y + bb.h));
   for (let y = y0; y <= y1; y++)
     for (let x = x0; x <= x1; x++)
       if (pointInShape(s, x + 0.5, y + 0.5)) cb(x, y);

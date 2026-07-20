@@ -1,6 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue';
-import RatesOverlay from './RatesOverlay.vue';
+import RatesOverlay    from './RatesOverlay.vue';
+import CitiesOverlay   from './CitiesOverlay.vue';
+import MilitaryOverlay from './MilitaryOverlay.vue';
+import ScienceOverlay  from './ScienceOverlay.vue';
 const props = defineProps({
   isDone:           Boolean,
   atLatest:         Boolean,
@@ -22,8 +25,12 @@ const props = defineProps({
   // Per-owner economy snapshot (civ1 only — see Civ1Game.toGrid's `civ` field),
   // keyed by player id. Drives the tax/luxury/science rates overlay below.
   civ:              { type: Object, default: null },
+  // Every visible city / per-owner military roster (civ1 only — see Civ1Game.toGrid's
+  // `cities`/`military` fields). Drive the Cities/Military overlays.
+  cities:           { type: Array, default: () => [] },
+  military:         { type: Object, default: null },
 });
-defineEmits(['submit', 'aim', 'cancel-aim']);
+defineEmits(['submit', 'aim', 'cancel-aim', 'goto']);
 
 // Action types listed in field.ui.aimedActionTypes resolve their target by clicking
 // the map (see SchematicLayer.vue's aiming overlay) instead of one button per legal
@@ -66,27 +73,27 @@ const activeMoney = computed(() => {
   return u?.money ?? null;
 });
 
-// Civ1's set-tax/set-luxury actions come one per legal 10%-step target rate (see
-// Civ1Game.js's getLegalActions) — a dozen-plus buttons that drown out everything
-// else in the empire-actions list. Collapse them into a single button that opens a
-// slider overlay (RatesOverlay.vue) instead.
-const showRates   = ref(false);
-const taxActions  = computed(() => props.displayedActions.filter(a => a.type === 'set-tax'));
-const luxActions  = computed(() => props.displayedActions.filter(a => a.type === 'set-luxury'));
-const myCiv       = computed(() => props.civ?.[props.pendingPlayerId] ?? null);
-const ratesActions = computed(() => {
-  if (!taxActions.value.length && !luxActions.value.length) return aimedActions.value;
-  const out = [];
-  let inserted = false;
-  for (const action of aimedActions.value) {
-    if (action.type === 'set-tax' || action.type === 'set-luxury') {
-      if (!inserted) { out.push({ type: '__rates__' }); inserted = true; }
-      continue;
-    }
-    out.push(action);
-  }
-  return out;
-});
+// Civ1's set-tax/set-luxury/set-research actions come one per legal target value
+// (see Civ1Game.js's getLegalActions) — a dozen-plus buttons that would drown out
+// everything else in the empire-actions list. Their overlays (Rates/Science) are
+// always-visible toolbar buttons instead (see ap-empire below), not tucked inside
+// the turn-gated action list, so these action types are filtered out of it entirely
+// rather than collapsed into a placeholder there.
+const showRates    = ref(false);
+const showCities   = ref(false);
+const showMilitary = ref(false);
+const showScience  = ref(false);
+const taxActions      = computed(() => props.displayedActions.filter(a => a.type === 'set-tax'));
+const luxActions      = computed(() => props.displayedActions.filter(a => a.type === 'set-luxury'));
+const researchActions = computed(() => props.displayedActions.filter(a => a.type === 'set-research'));
+const myCiv        = computed(() => props.civ?.[props.pendingPlayerId] ?? null);
+
+// set-production also moves out: with more than one city its flat label ("Build
+// militia") doesn't even say which city, and the City Inspector overlay (opened by
+// clicking a city — see Battlefield.vue's selectedCity) already disambiguates that
+// for free.
+const OVERLAY_HANDLED = new Set(['set-tax', 'set-luxury', 'set-research', 'set-production']);
+const listActions = computed(() => aimedActions.value.filter(a => !OVERLAY_HANDLED.has(a.type)));
 
 function fmtAction(action) {
   const t = action.type ?? '';
@@ -114,12 +121,9 @@ function fmtAction(action) {
   if (t === 'queue-pop') return 'Undo last queued move';
   if (t === 'crouch')    return 'Crouch';
   if (t === 'stand')     return 'Stand Up';
-  // Civ1 empire/settler actions.
-  if (t === 'set-production') return `Build ${action.item}`;
-  if (t === 'set-research')   return `Research ${action.tech}`;
-  if (t === '__rates__')      return 'Tax · Luxury · Science…';
-  if (t === 'set-tax')        return `Tax rate ${action.taxRate}%`;
-  if (t === 'set-luxury')     return `Luxuries ${action.luxRate}%`;
+  // Civ1 empire/settler actions. (set-tax/set-luxury/set-research/set-production are
+  // filtered out of this list entirely — see OVERLAY_HANDLED — so no label is needed
+  // for them here; their overlays format their own buttons.)
   if (t === 'change-government') return `Revolution → ${action.government}`;
   if (t === 'launch-spaceship') return '🚀 Launch Spaceship';
   if (t === 'found-city')     return 'Found City';
@@ -151,6 +155,12 @@ function fmtAction(action) {
         · {{liveState.phase}}
       </span>
     </div>
+    <div v-if="civ" class="ap-empire">
+      <button class="action-btn ap-btn ap-btn--sm" @click="showCities = true">Cities</button>
+      <button class="action-btn ap-btn ap-btn--sm" @click="showMilitary = true">Military</button>
+      <button class="action-btn ap-btn ap-btn--sm" @click="showRates = true">Rates</button>
+      <button class="action-btn ap-btn ap-btn--sm" @click="showScience = true">Science</button>
+    </div>
     <div v-if="isDone" class="ap-done">
       {{liveState.result?.winner
         ? 'Winner: ' + liveState.result.winner
@@ -181,13 +191,13 @@ function fmtAction(action) {
           {{queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
         </div>
         <div class="ap-list">
-          <button v-for="(action, i) in ratesActions" :key="i"
+          <button v-for="(action, i) in listActions" :key="i"
                   class="action-btn ap-btn ap-btn--icon"
-                  @click="action.type === '__rates__' ? (showRates = true) : (action.__aim ? $emit('aim', action) : $emit('submit', action))">
+                  @click="action.__aim ? $emit('aim', action) : $emit('submit', action)">
             <img v-if="action.icon" :src="imgSrc(action.icon)" alt="" class="ap-icon"/>
             {{fmtAction(action)}}
           </button>
-          <div v-if="!ratesActions.length" class="ap-empty">No actions.</div>
+          <div v-if="!listActions.length" class="ap-empty">No actions.</div>
         </div>
       </template>
     </template>
@@ -199,12 +209,20 @@ function fmtAction(action) {
     <div v-else class="ap-waiting">Waiting for AI…</div>
     <RatesOverlay :show="showRates" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
                   @close="showRates = false" @submit="a => $emit('submit', a)"/>
+    <ScienceOverlay :show="showScience" :civ="myCiv" :researchActions="researchActions"
+                  @close="showScience = false" @submit="a => $emit('submit', a)"/>
+    <CitiesOverlay :show="showCities" :cities="cities" :playerId="pendingPlayerId"
+                  @close="showCities = false" @goto="g => $emit('goto', g)"/>
+    <MilitaryOverlay :show="showMilitary" :military="military" :playerId="pendingPlayerId"
+                  @close="showMilitary = false"/>
   </div>
 </template>
 
 <style scoped>
 .ap { padding: 12px 14px; border-top: 1px solid var(--line); }
 .ap-title { margin-bottom: 8px; }
+.ap-empire { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
+.ap-btn--sm { justify-content: center; padding: 5px 0; }
 .ap-phase { font-weight: 400; color: var(--faint); }
 .ap-done { font-size: 12px; color: var(--ok); }
 .ap-past { font-size: 11px; color: var(--accent); background: rgba(66,198,230,.08); border: 1px solid rgba(66,198,230,.2); border-radius: var(--r); padding: 7px 10px; }

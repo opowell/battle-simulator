@@ -11,12 +11,11 @@ import {
 import {
   MAPS,
   isBombsite, euclidean, getReachable, renderMap,
-  isWalkableContinuous,
+  isWalkableContinuous, isPathClearContinuous,
 } from './map.js';
-import { getCsBelief, CS_VISION, csVisionCfg, csLosBlockers } from './belief.js';
-import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
+import { getCsBelief, CS_VISION, csVisionCfg, csLosLayers, csHasLOS } from './belief.js';
+import { isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { filterVisibleUnits, orientToEnemies } from '../vision.js';
-import { segmentClearOf } from '../terrainShapes.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
@@ -286,7 +285,7 @@ function actionPhaseActions(state, teamId) {
   const myUnits  = state.units.filter(u => u.alive && u.ownerId === teamId);
   const actions  = [];
   const bomb     = state.gameSpecific.bomb;
-  const losBlockers = csLosBlockers(state.gameSpecific.map, state.gameSpecific.smokeZones ?? []);
+  const losLayers = csLosLayers(state.gameSpecific.map, state.gameSpecific.smokeZones ?? []);
 
   for (const u of myUnits) {
     if (u.perTurn.moveAllowance > MOVE_EPS) {
@@ -332,7 +331,7 @@ function actionPhaseActions(state, teamId) {
         const enemies = state.units.filter(e => e.alive && e.ownerId !== teamId);
         for (const e of enemies) {
           const d = euclidean(u.position, e.position);
-          if (segmentClearOf(num(u.position.x), num(u.position.y), num(e.position.x), num(e.position.y), losBlockers))
+          if (csHasLOS(losLayers, num(u.position.x), num(u.position.y), num(e.position.x), num(e.position.y)))
             // damage/accuracy mirror applyActions' shoot formula (see calcDamage there) —
             // an estimate for the design UI's aiming overlay preview, not itself authoritative.
             actions.push({
@@ -400,7 +399,7 @@ function isMoveLegal(state, teamId, action) {
   if (dist < MOVE_EPS) return false;
   if (!isWalkableContinuous(map, x, y)) return false;
   if (dist > unit.perTurn.moveAllowance) return false;
-  if (!hasClearLine(px, py, x, y, (qx, qy) => !isWalkableContinuous(map, qx, qy))) return false;
+  if (!isPathClearContinuous(map, px, py, x, y)) return false;
   if (!isClearOfUnits(x, y, state.units, unit.id)) return false;
   return true;
 }
@@ -692,7 +691,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       }
       // target: decimal strings (human continuous click) or integer tile (AI candidate).
       const target = parsePos(action.target);
-      const losBlockers = csLosBlockers(gs.map, smokeZones);
+      const losLayers = csLosLayers(gs.map, smokeZones);
 
       // Consume grenade and mark hasActed
       units = units.map(u => u.id === action.unitId
@@ -719,7 +718,7 @@ function applyActions(state, playerActions, rng = Math.random) {
         units = units.map(u => {
           if (!u.alive || u.ownerId === playerId) return u;
           if (euclidean(u.position, target) <= FLASH_RADIUS &&
-              segmentClearOf(num(u.position.x), num(u.position.y), num(target.x), num(target.y), losBlockers))
+              csHasLOS(losLayers, num(u.position.x), num(u.position.y), num(target.x), num(target.y)))
             return { ...u, blinded: FLASH_BLIND_TURNS };
           return u;
         });
@@ -943,7 +942,7 @@ const TERRAIN_INFO = {
   ctSpawn:   { name: 'CT Spawn',   description: 'Counter-Terrorist starting area.' },
   tSpawn:    { name: 'T Spawn',    description: 'Terrorist starting area.' },
   // Elevation workaround (no z-axis in this engine): blocks movement like a wall, but is
-  // excluded from LOS blocking (see csLosBlockers in belief.js) so it can be seen/shot
+  // excluded from LOS blocking (see csLosLayers in belief.js) so it can be seen/shot
   // across or over, standing in for real waist-high/elevated cover.
   lowWall:   { name: 'Low wall / ledge', description: 'Blocks movement, but not sight — an elevation stand-in.' },
 };
@@ -1050,13 +1049,14 @@ function toGrid(state) {
     };
   });
 
-  // Occluder geometry for the client's fog/reach renderer — the SAME shapes the engine's
-  // getVisibleState blocks sight on (csLosBlockers: authored walls incl. ovals like the
-  // furnace pit, plus active smoke clouds), so the drawn veil hides exactly what the
-  // engine hides. Hand-laid grid maps (none currently) fall back to rasterized wall tiles.
+  // Occluder geometry for the client's fog/reach renderer — the SAME ordered layer stack
+  // the engine's getVisibleState blocks sight on (csLosLayers: authored terrain bottom→top
+  // with a precomputed `solid` flag, then the border, then smoke), so the drawn veil hides
+  // exactly what the engine hides — including terrain carved transparent by a later `floor`
+  // shape. Hand-laid grid maps (none currently) fall back to rasterized wall tiles.
   let los;
   if (gs.map.terrainShapes) {
-    los = { blockShapes: csLosBlockers(gs.map, gs.smokeZones ?? []) };
+    los = { layerShapes: csLosLayers(gs.map, gs.smokeZones ?? []) };
   } else {
     const blocked = [];
     for (let y = 0; y < height; y++)

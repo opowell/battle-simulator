@@ -8,10 +8,10 @@ import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
 import { specialAt, tileYield } from './specials.js';
 import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
-import { TECHS, researchableTechs } from './tech.js';
+import { TECHS, researchableTechs, techCost } from './tech.js';
 import { IMPROVEMENTS, WONDERS, SPACESHIP, SPACESHIP_MIN, wonderEffectsFor, wonderBuiltInWorld } from './improvements.js';
 import { GOVERNMENTS, availableGovernments } from './governments.js';
-import { foodBox } from './city.js';
+import { foodBox, computeCity, FAT_CROSS, workedTileYield } from './city.js';
 import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy } from './economy.js';
 import { DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, resolveRules } from './difficulty.js';
 import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '../moveQueue.js';
@@ -664,15 +664,13 @@ function createInitialState(players, config = {}) {
 
   let idCtr = 0;
   const units = [
-    makeUnit(`u${idCtr++}`, p1.id, 'settlers', pos1.x,     pos1.y,     UNITS.settlers.moves),
-    makeUnit(`u${idCtr++}`, p1.id, 'militia',  pos1.x + 1, pos1.y,     UNITS.militia.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'settlers', pos2.x,     pos2.y,     UNITS.settlers.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'militia',  pos2.x - 1, pos2.y,     UNITS.militia.moves),
-  ].filter(u => {
-    const k = `${u.position.x},${u.position.y}`;
-    const t = tiles[k];
-    return t && t.terrain !== 'ocean' && u.position.x >= 0 && u.position.x < width && u.position.y >= 0 && u.position.y < height;
-  });
+    makeUnit(`u${idCtr++}`, p1.id, 'settlers', pos1.x, pos1.y, UNITS.settlers.moves),
+    makeUnit(`u${idCtr++}`, p2.id, 'settlers', pos2.x, pos2.y, UNITS.settlers.moves),
+  ];
+  for (const [pid, settlerPos] of [[p1.id, pos1], [p2.id, pos2]]) {
+    const militiaPos = findAdjacentFree(settlerPos, board, units) ?? settlerPos;
+    units.push(makeUnit(`u${idCtr++}`, pid, 'militia', militiaPos.x, militiaPos.y, UNITS.militia.moves));
+  }
 
   return {
     gameName: 'Civ1',
@@ -838,6 +836,11 @@ export const Civ1Game = {
     // Coordinates aren't part of the original game's UI; hidden by default, toggle
     // from the menu ("Show ruler").
     showRuler: false,
+    // The original Civ1 never re-fogs terrain once a unit has seen it — only units and
+    // city details out of CURRENT sight hide again (already handled server-side by
+    // getVisibleState). See Battlefield.vue's exploredTileSet / SchematicLayer &
+    // HtmlLayer's terrainFogged for the client-side terrain memory this enables.
+    persistentFog: true,
   },
   scenarios: [
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
@@ -963,7 +966,10 @@ export const Civ1Game = {
           // City tiles ride the same glyph→pseudo-unit pipeline as real units (see
           // App.vue's buildField): a real sprite (map/city.png) plus the size as a
           // corner badge, rather than the bare star glyph this used to fall back to.
-          unitName: city ? city.name : undefined,
+          // For real units, `glyph` alone is ambiguous (militia/musketeers/mech-inf/
+          // marines all start with 'm') — unitName carries the real type so the side
+          // panel and roster show e.g. "militia" instead of a bare "M".
+          unitName: u ? u.type : city ? city.name : undefined,
           imagePath: u ? (UNIT_IMAGES[u.type] ?? null) : (city ? `${BASE}/map/city` : null),
           badge: city ? city.size : null,
           // Ocean draws no terrain sprite — coastSprite (below) supplies the real
@@ -1002,13 +1008,103 @@ export const Civ1Game = {
     const civ = Object.fromEntries(
       Object.entries(state.gameSpecific.civ ?? {}).map(([pid, c]) => [pid, {
         government: c.government, gold: c.gold, techCount: c.techs.length, research: c.research,
+        // Tech names, not ids — the client (apps/design) has no access to tech.js, so
+        // the Science overlay needs these pre-resolved rather than looking them up itself.
+        researchName: c.research ? (TECHS[c.research]?.name ?? c.research) : null,
+        researchedNames: c.techs.map(id => TECHS[id]?.name ?? id),
+        bulbs: c.bulbs, researchCost: c.research ? techCost(c.techs.length) : null,
         taxRate: c.taxRate, luxRate: c.luxRate, taxMax: GOVERNMENTS[c.government].taxMax,
         anarchyTurns: c.anarchyTurns,
       }]));
 
+    // Every city this player can currently see (own + any fogged-in enemy ones,
+    // matching what state.cities already carries) — the Cities overlay lists just
+    // its own, filtering client-side by ownerId the same way `civ` is looked up by pid.
+    // Full per-city breakdown (production ETA, trade split, happiness) — the same
+    // computeCity() the end-of-turn economy runs, called here read-only for the City
+    // Inspector overlay. ctx is stateful across one owner's cities in board order
+    // (assignWorkers must not let two cities claim the same tile) — mirrors
+    // processOwnerEconomy's loop in economy.js exactly, minus the state mutation.
+    const cityDetail = {};
+    for (const ownerId of Object.keys(state.gameSpecific.civ ?? {})) {
+      const ctx = buildOwnerCtx(state, ownerId);
+      for (const c of state.cities) {
+        if (c.ownerId !== ownerId) continue;
+        const out = computeCity(c, ctx);
+        const workedKeys = new Set(out.worked.map(w => w.key));
+
+        // The full 21-square "fat cross" (see city.js's FAT_CROSS), not just the
+        // worked subset — the City Inspector's radius map needs every square's
+        // terrain/yield/status to render, worked or not. claimedByOther reflects only
+        // cities already processed earlier in this loop (this owner's cities in board
+        // order); a same-owner city later in `state.cities` that also wants one of
+        // these squares won't show as a conflict here — an inherent snapshot
+        // limitation of the sequential takenTiles bookkeeping, not worth a second pass
+        // just for display.
+        const radius = FAT_CROSS.map(([dx, dy]) => {
+          const ry = c.position.y + dy;
+          if (ry < 0 || ry >= height) return { dx, dy, offBoard: true };
+          const rx = wrapX(c.position.x + dx, width);
+          const key = `${rx},${ry}`;
+          const tile = tiles[key];
+          if (!tile) return { dx, dy, offBoard: true };
+          const center = dx === 0 && dy === 0;
+          const y3 = workedTileYield(tile, rx, ry, ctx);
+          return {
+            x: rx, y: ry, dx, dy, center,
+            terrain: tile.terrain,
+            sprite: tile.terrain === 'ocean' ? null : terrainSprite(rx, ry, tile.terrain),
+            worked: workedKeys.has(key),
+            claimedByOther: !center && !workedKeys.has(key) && ctx.takenTiles.has(key),
+            yield: y3,
+          };
+        });
+        for (const w of out.worked) ctx.takenTiles.add(`${w.x},${w.y}`);
+
+        cityDetail[c.id] = {
+          foodSurplus: out.foodSurplus,
+          growthTurns: out.foodSurplus > 0 ? Math.ceil((foodBox(c.size) - c.food) / out.foodSurplus) : null,
+          shieldsPerTurn: out.shields,
+          buildTurnsLeft: out.shields > 0 ? Math.ceil((buildCost(c.production) - c.shields) / out.shields) : null,
+          trade: out.trade, luxury: out.luxury, gold: out.gold, science: out.science,
+          happy: out.happiness.happy, content: out.happiness.content, unhappy: out.happiness.unhappy,
+          disorder: out.happiness.disorder,
+          radius,
+        };
+      }
+    }
+
+    const citiesOut = state.cities.map(c => {
+      const prod = UNITS[c.production] ? c.production
+        : (IMPROVEMENTS[c.production]?.name ?? WONDERS[c.production]?.name ?? c.production);
+      return {
+        id: c.id, name: c.name, owner: c.ownerId, x: c.position.x, y: c.position.y,
+        size: c.size, food: c.food, foodBox: foodBox(c.size),
+        production: c.production, productionName: prod,
+        shields: c.shields, buildCost: buildCost(c.production),
+        buildings: (c.buildings ?? []).map(id => IMPROVEMENTS[id]?.name ?? WONDERS[id]?.name ?? id),
+        ...cityDetail[c.id],
+      };
+    });
+
+    // Per-owner military roster, grouped by unit type — the client only ever sees a
+    // single ambiguous glyph letter per unit (see the `glyph` field above, which
+    // collides: militia/musketeers/mech-inf/marines all start with 'm'), so counts and
+    // attack/defense totals have to be computed here where UNITS is available.
+    const military = {};
+    for (const u of state.units) {
+      if (!u.alive) continue;
+      const stats = UNITS[u.type];
+      const m = military[u.ownerId] ?? (military[u.ownerId] = { total: 0, totalAttack: 0, totalDefense: 0, byType: {} });
+      m.total += 1;
+      m.totalAttack += stats.attack;
+      m.totalDefense += stats.defense;
+      m.byType[u.type] = (m.byType[u.type] ?? 0) + 1;
+    }
+
     // wrap: true tells the client the map is a horizontal cylinder (see wrapX above) —
     // Battlefield's click-to-pan centres on any column instead of clamping near the
     // east/west seam, and HtmlLayer draws duplicate columns there so panning stays seamless.
-    return { width, height, cells, wrap: true, civ };
+    return { width, height, cells, wrap: true, civ, cities: citiesOut, military };
   },
 };

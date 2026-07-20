@@ -319,7 +319,10 @@ export async function obscuroStrategy(state, legalActions, opts = {}) {
   const game = (await import('./ChessGame.js')).ChessGame;
   const fog = !!state.gameSpecific.fogOfWar;
 
-  let worlds = fog ? game.sampleWorlds(state, me, opts.particles ?? 8, rng) : null;
+  // opts.worlds lets a caller supply the belief cloud explicitly (the batched
+  // enumeration cursor passes the next slice of the population — see
+  // analyzeObscuroProgressive) instead of sampling a fresh one here.
+  let worlds = opts.worlds ?? (fog ? game.sampleWorlds(state, me, opts.particles ?? 8, rng) : null);
   if (!worlds || worlds.length === 0) worlds = [state];
 
   const hooks = makeHooks(game, me, { rng });
@@ -337,6 +340,9 @@ export async function obscuroStrategy(state, legalActions, opts = {}) {
     cfrPerRound: opts.cfrPerRound ?? 4,
     purifyMax: opts.purifyMax ?? 3,
     onRound,
+    // So a solve stops mid-flight when the analysis position changes (rather
+    // than running out its rounds after the viewer has already moved on).
+    isCancelled: opts.isCancelled,
   });
 
   const k = game.actionKey;
@@ -345,11 +351,16 @@ export async function obscuroStrategy(state, legalActions, opts = {}) {
 }
 
 // Shared with the onRound progress callback above so a mid-search snapshot and
-// the final result are ranked identically.
+// the final result are ranked identically. Sorted by probability (how much of
+// the equilibrium's mass this move gets) descending, ties — most of them,
+// since only a handful of moves ever get nonzero mass — broken by cp
+// (highest first) once one's available (see analyzeObscuro's fog cp pass
+// below; mid-search progress ticks have no cp yet, so ties there just keep
+// whatever order `rows` came in).
 function rankCandidates(rows, dist) {
   return (rows ?? [])
     .map((action, i) => ({ move: action, prob: dist?.[i] ?? 0 }))
-    .sort((a, b) => b.prob - a.prob);
+    .sort((a, b) => (b.prob - a.prob) || ((b.cp ?? -Infinity) - (a.cp ?? -Infinity)));
 }
 
 // ---------------------------------------------------------------------------
@@ -360,7 +371,261 @@ function rankCandidates(rows, dist) {
 // ---------------------------------------------------------------------------
 export async function analyzeObscuro(state, legalActions, opts = {}) {
   if (!legalActions?.length) return { engine: 'obscuro', mode: 'none', candidates: [] };
-  const r = await obscuroStrategy(state, legalActions, opts);
-  const candidates = rankCandidates(r.rows, r.dist);
+
+  // Perfect information: real Obscuro play already takes the shortcut noted at
+  // the top of this file — with nothing hidden there is no belief to reason
+  // over, so the strongest move is simply Stockfish's. obscuroStrategy below
+  // doesn't take that shortcut (it always runs the generic CFR/minimax tree,
+  // which for one world just collapses to a pure best-move strategy), so
+  // analysis would otherwise show a flat 100%/0% support instead of a real,
+  // calibrated centipawn evaluation — take the same shortcut here, complete
+  // with live "depth N/14" progress, exactly like ChessAgent.analyze's
+  // stockfish branch.
+  if (!state.gameSpecific.fogOfWar && await stockfishAvailable()) {
+    try {
+      const color = opts.color ?? state.activePlayers[0];
+      const fen = toFEN(state.board, state.gameSpecific, color === 'white' ? 'w' : 'b', state.turnNumber ?? 1);
+      const maxDepth = 14;
+      const toCandidates = (raw) => raw
+        .map(({ move, cp }) => { const a = uciToAction(move, legalActions); return a ? { move: a, cp } : null; })
+        .filter(Boolean);
+      const onInfo = opts.onProgress
+        ? ({ depth, candidates }) => opts.onProgress({ kind: 'depth', depth, maxDepth, candidates: toCandidates(candidates) })
+        : undefined;
+      const pv = await multiPV(fen, { multipv: Math.min(legalActions.length, 8), depth: maxDepth, onInfo });
+      if (pv && pv.length) {
+        const candidates = toCandidates(pv);
+        if (candidates.length) return { engine: 'obscuro', mode: 'stockfish', candidates };
+      }
+    } catch { /* fall through to the CFR search below */ }
+  }
+
+  // Fog: a genuine belief cloud to sample from, so unlike the perfect-info
+  // shortcut above there's always more refining to do. When the caller can
+  // watch for more than one shot (opts.isCancelled — wired up only by the
+  // streaming API endpoint, see api-server.js's handleAnalyzeStream) keep
+  // commissioning fresh solves indefinitely instead of settling for one batch.
+  if (state.gameSpecific.fogOfWar && opts.isCancelled) {
+    return await analyzeObscuroProgressive(state, legalActions, opts);
+  }
+  return await analyzeObscuroOnce(state, legalActions, opts);
+}
+
+async function analyzeObscuroOnce(state, legalActions, opts) {
+  // Read-only analysis has no per-move time pressure the way a real turn does
+  // (it's an on-demand SSE request, not something blocking the game clock), and
+  // this search is pure JS heuristic eval with no Stockfish in the loop (see
+  // makeHooks below — ChessGame has no evaluateLeaves, so it falls back to the
+  // cheap evaluateState), so there's no latency reason to inherit
+  // obscuroStrategy's small test-helper defaults (8 particles/30 rounds, tuned
+  // for fast deterministic unit tests). Sample a much wider belief cloud and
+  // solve it further by default; explicit opts (as the tests pass) still win.
+  const r = await obscuroStrategy(state, legalActions, {
+    particles: 24, maxRounds: 100, expandPerRound: 16, cfrPerRound: 8,
+    ...opts,
+  });
+  let candidates = rankCandidates(r.rows, r.dist);
+
+  // Fog: nothing here is common knowledge, so there is no true cp — but the
+  // CFR search's own leaf evaluator (makeChessLeafEval, above) already scores
+  // exactly this — every legal move, batched, against sampled belief worlds —
+  // for real Obscuro play. Run the same evaluation once more at the root and
+  // average it across a few fresh samples, so the panel shows the same kind
+  // of real, calibrated Stockfish estimate ChessObscuroAgent's own moves are
+  // scored by, alongside (not instead of) the equilibrium's mixing
+  // probabilities — "how good does this look" and "how much would I actually
+  // mix this move in" are different, both useful, questions under
+  // uncertainty. Best-effort: candidates keep their prob-only shape if this
+  // fails or Stockfish isn't available.
+  if (state.gameSpecific.fogOfWar && await stockfishAvailable()) {
+    try {
+      const color = opts.color ?? state.activePlayers[0];
+      const game = (await import('./ChessGame.js')).ChessGame;
+      const rng = opts.rng ?? Math.random;
+      // Each world costs one batched multiPV call (not one per candidate move,
+      // see makeChessLeafEval), so widening this is cheap — same "no reason to
+      // stay at the old test-helper default" logic as the particles bump above.
+      const worlds = game.sampleWorlds(state, color, opts.cpParticles ?? 20, rng);
+      const particles = worlds?.length ? worlds : [state];
+      const { sums, n } = await cpSumsOverWorlds(game, particles, color, legalActions, Math.min(legalActions.length, 16));
+      if (n > 0) {
+        const k = game.actionKey;
+        const cpByKey = new Map(legalActions.map((a, i) => [k(a), Math.round(sums[i] / n)]));
+        candidates = candidates
+          .map(c => ({ ...c, cp: cpByKey.get(k(c.move)) ?? null }))
+          // Re-sort now that cp exists: still probability-first, but the
+          // (very common, since only a handful of moves get nonzero mass)
+          // ties among 0%-probability moves now break by eval instead of
+          // sitting in whatever arbitrary order the tree happened to list them.
+          .sort((a, b) => (b.prob - a.prob) || ((b.cp ?? -Infinity) - (a.cp ?? -Infinity)));
+      }
+    } catch { /* best-effort — candidates keep their prob-only shape */ }
+  }
+
   return { engine: 'obscuro', mode: r.mode, value: r.value, candidates };
+}
+
+// Batched Stockfish leaf eval over an EXPLICIT set of belief worlds: returns the
+// per-legal-move SUM of cp across the worlds it managed to score, and the count
+// `n` of those worlds. Kept raw (sum + count, not a mean) so a caller folding
+// many batches together forms the exact population mean — Σsum / Σn — instead of
+// averaging per-batch means (which would misweight unequal final batches). Bails
+// promptly when the caller has moved on. Shared by the single-shot cp pass
+// (analyzeObscuroOnce) and the progressive enumeration cursor.
+export async function cpSumsOverWorlds(game, worlds, color, legalActions, cols, isCancelled) {
+  const leafEval = makeChessLeafEval(7, cols);
+  const sums = new Array(legalActions.length).fill(0);
+  let n = 0;
+  for (const world of worlds) {
+    if (isCancelled?.()) break;
+    const childStates = legalActions.map(a => game.applyActions(world, [{ playerId: color, action: a }]));
+    const scores = await leafEval(world, color, legalActions, childStates);
+    if (!scores) continue;
+    n++;
+    for (let i = 0; i < scores.length; i++) sums[i] += scores[i];
+  }
+  return { sums, n };
+}
+
+// Fisher-Yates permutation of [0, n) so the batched enumeration walks the belief
+// population in a random order — every world covered exactly once, but early
+// batches aren't spatially biased toward one region of the position set. Built
+// once per analysis session (not per batch); an n-int array for n up to the
+// exact tracker's cap (~200k) is a few MB, released when the walk ends.
+function shuffledIndices(n, rng) {
+  const idx = new Array(n);
+  for (let i = 0; i < n; i++) idx[i] = i;
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const t = idx[i]; idx[i] = idx[j]; idx[j] = t;
+  }
+  return idx;
+}
+
+// ---------------------------------------------------------------------------
+// Progressive/streaming variant: walk the WHOLE belief population in batches,
+// refining the ranked moves + evals after each, until either the viewer looks
+// away (opts.isCancelled — wired from SSE disconnect in api-server.js's
+// handleAnalyzeStream) or, when the population is finite and materialized,
+// every world has been evaluated ("exhaustive"), at which point the loop stops
+// on its own and the final result is the exact belief expectation.
+//
+// Two population regimes (see ChessGame.beliefPopulation):
+//   • EXACT belief active (common after the opening): P is a real array, so we
+//     enumerate it WITHOUT replacement via a one-time shuffled cursor — work is
+//     never re-spent on a world already scored, `total` is known, and coverage
+//     marches toward 100% until exhaustion ends the walk.
+//   • Heuristic fallback (exact tracking lost): belief.js is generative with no
+//     enumerable set, so we sample a fresh batch each round (with replacement),
+//     `total` is null, and only cancellation ends the walk.
+//
+// Aggregation (see OBSCURO-UNLIMITED-BELIEF-PLAN.md's "crux"): the cp EVAL per
+// move is additive over worlds, so a world-count-weighted running mean converges
+// to the exact population expectation. The move PROBABILITY is an ensemble
+// average of each batch's own CFR equilibrium (weighted by batch size) — a
+// well-defined blend, but NOT the single joint-equilibrium mixing (that would
+// need the KLUSS gadget to grow its world set mid-solve — Design A, not
+// attempted). Cancellation is checked between AND within batches so a stale walk
+// stops within a round of the position changing, not a whole batch later.
+// maxTotalMs is a safety net for a missed disconnect, not a quality cap.
+// ---------------------------------------------------------------------------
+export async function analyzeObscuroProgressive(state, legalActions, opts) {
+  const maxTotalMs = opts.maxTotalMs ?? 5 * 60 * 1000;
+  const t0 = Date.now();
+  const game = (await import('./ChessGame.js')).ChessGame;
+  const k = game.actionKey;
+  const rng = opts.rng ?? Math.random;
+  const isCancelled = opts.isCancelled;
+
+  // Analyze the requesting side's move — patch activePlayers up front (mirrors
+  // obscuroStrategy) so every enumerated world is built with the right side to
+  // move; the players-array identity is preserved, so the maintained belief is
+  // still found by ChessGame.beliefPopulation's WeakMap lookup.
+  const me = opts.color ?? state.activePlayers[0];
+  if (me !== state.activePlayers[0]) state = { ...state, activePlayers: [me] };
+
+  const cols = Math.min(legalActions.length, 16);
+  const batchSize = opts.batchSize ?? 16;
+
+  // cp source. Server-side: run Stockfish locally over each batch. Browser
+  // analysis worker: there's no Stockfish in the browser, so it passes
+  // opts.cpEval(worlds, legalActions) → {sums, n} to fetch the same batched
+  // leaf-eval from the server (see api-server.js handleCpEval). When neither is
+  // available, candidates stay prob-only (cp: null).
+  const cpEval = opts.cpEval
+    ? (worlds) => opts.cpEval(worlds, legalActions)
+    : ((await stockfishAvailable())
+        ? (worlds) => cpSumsOverWorlds(game, worlds, me, legalActions, cols, isCancelled)
+        : null);
+
+  const pop = game.beliefPopulation(state, me);
+  const order = pop.exact ? shuffledIndices(pop.total, rng) : null;
+  let cursor = 0;
+
+  // Weighted running aggregates keyed by move: prob by batch world-count, cp by
+  // the raw (sum, count) of worlds actually scored (see cpSumsOverWorlds).
+  const probSum = new Map(); let probW = 0;
+  const cpSum = new Map(), cpN = new Map();
+  let batches = 0, evaluated = 0, last = null;
+
+  const buildCandidates = () => legalActions
+    .map(a => {
+      const key = k(a);
+      const cnt = cpN.get(key);
+      return {
+        move: a,
+        prob: probW ? (probSum.get(key) ?? 0) / probW : 0,
+        cp: cnt ? Math.round(cpSum.get(key) / cnt) : null,
+      };
+    })
+    .sort((a, b) => (b.prob - a.prob) || ((b.cp ?? -Infinity) - (a.cp ?? -Infinity)));
+
+  while (!isCancelled?.() && Date.now() - t0 < maxTotalMs) {
+    // Next batch of belief worlds.
+    let worlds;
+    if (pop.exact) {
+      if (cursor >= order.length) break; // (unreachable: the exhaustive break below fires first)
+      const idx = order.slice(cursor, cursor + batchSize);
+      cursor += idx.length;
+      worlds = game.enumerateWorlds(state, me, idx);
+    } else {
+      const w = game.sampleWorlds(state, me, batchSize, rng);
+      worlds = (w && w.length) ? w : [state];
+    }
+    if (!worlds.length) break;
+
+    // Mixing: one CFR equilibrium over this batch, folded in weighted by size.
+    const r = await obscuroStrategy(state, legalActions, {
+      worlds, color: me, rng, isCancelled,
+      maxRounds: opts.maxRounds ?? 100, expandPerRound: opts.expandPerRound ?? 16, cfrPerRound: opts.cfrPerRound ?? 8,
+    });
+    if (isCancelled?.()) break; // moved on mid-solve — discard this partial batch
+    const w = worlds.length;
+    probW += w;
+    for (let i = 0; i < r.rows.length; i++) {
+      const key = k(r.rows[i]);
+      probSum.set(key, (probSum.get(key) ?? 0) + w * (r.dist?.[i] ?? 0));
+    }
+
+    // Eval: raw cp sums over the SAME batch, so the running mean stays exact.
+    if (cpEval) {
+      const { sums, n } = (await cpEval(worlds)) ?? { sums: null, n: 0 };
+      if (n > 0 && sums) for (let i = 0; i < legalActions.length; i++) {
+        const key = k(legalActions[i]);
+        cpSum.set(key, (cpSum.get(key) ?? 0) + sums[i]);
+        cpN.set(key, (cpN.get(key) ?? 0) + n);
+      }
+    }
+    if (isCancelled?.()) break;
+    if (isCancelled?.()) break;
+
+    batches++; evaluated += w;
+    const total = pop.exact ? pop.total : null;
+    const exhaustive = pop.exact && cursor >= order.length;
+    const candidates = buildCandidates();
+    last = { engine: 'obscuro', mode: r.mode, candidates, batches, evaluated, total, exhaustive };
+    opts.onProgress?.({ kind: 'batch', batch: batches, evaluated, total, exhaustive, candidates });
+    if (exhaustive) break; // whole population covered — exact answer, stop refining
+  }
+  return last;
 }
