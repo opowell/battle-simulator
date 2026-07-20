@@ -25,9 +25,21 @@ defineProps({
   // in place while its ghost follows the cursor.
   grab:       Boolean,
   dim:        Boolean,
+  // History playback slide: a sub-cell {dx, dy} offset in px, or null when the unit
+  // is at rest. See HtmlLayer's unitTween — the token stays a child of the cell it
+  // is leaving and is translated out of it, since a cell is the only place a unit
+  // can live in this renderer's grid.
+  tween:      { type: Object, default: null },
 });
 defineEmits(['click', 'mousedown']);
 const teamSpriteHref = window.teamSpriteHref;
+
+// A transform (not margins/insets) so the slide never reflows the cell, and no CSS
+// transition — the offset is already recomputed every animation frame by the
+// playback clock, and easing it again would just lag the board.
+function tweenStyle(t) {
+  return t ? { transform: `translate(${t.dx}px, ${t.dy}px)`, willChange: 'transform' } : null;
+}
 
 function hpColor(frac, raw) {
   return frac > 0.5 ? raw : frac > 0.25 ? '#f2b441' : '#ff5f56';
@@ -36,12 +48,13 @@ function hpColor(frac, raw) {
 
 <template>
   <!-- Dead: faded X -->
-  <div v-if="unit.dead" class="hl-unit" @click="$emit('click', $event)">
+  <div v-if="unit.dead" class="hl-unit" :style="tweenStyle(tween)" @click="$emit('click', $event)">
     <div class="hl-body hl-dead" :style="{ width: r*2+'px', height: r*2+'px', color: unit.teamObj.raw }">✕</div>
   </div>
 
   <div v-else class="hl-unit"
        :class="{ 'hl-blink': blink, 'hl-unit--grab': grab, 'hl-unit--dim': dim }"
+       :style="tweenStyle(tween)"
        @click="$emit('click', $event)"
        @mousedown="$emit('mousedown', $event)">
     <!-- Body: team sprite, else a shape marker carrying the unit's initial. The rings are

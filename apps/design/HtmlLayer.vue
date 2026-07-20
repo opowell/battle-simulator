@@ -248,6 +248,13 @@ function unitR(u) {
 function unitShape(u) {
   return props.field.ui?.unitShapes?.[u.type] ?? 'square';
 }
+// A playback tween's sub-cell shift, converted from tiles to pixels at the current
+// zoom. Null for every unit that isn't mid-slide, which is all of them outside
+// history playback — HtmlUnit then adds no transform at all.
+function unitTween(u) {
+  if (!u.tweenDx && !u.tweenDy) return null;
+  return { dx: (u.tweenDx ?? 0) * cellPx.value, dy: (u.tweenDy ?? 0) * cellPx.value };
+}
 
 // Under vision fog a hidden tile is painted with the fog colour and its art withheld.
 // Persistent-vision games (see exploredTiles prop, e.g. civ1) remember any tile ever
@@ -278,7 +285,10 @@ const cells = computed(() => {
   const unitsAt = new Map();
   for (const u of props.units) {
     if (!isVisible(u)) continue;
-    const k = `${Math.floor(u.x)},${Math.floor(u.y)}`;
+    // baseX/baseY when a playback tween is sliding this unit: it stays filed under
+    // the square it left until it arrives, so the cell it renders in doesn't flip
+    // mid-slide (see Battlefield's renderUnits).
+    const k = `${Math.floor(u.baseX ?? u.x)},${Math.floor(u.baseY ?? u.y)}`;
     if (!unitsAt.has(k)) unitsAt.set(k, []);
     unitsAt.get(k).push(u);
   }
@@ -537,6 +547,7 @@ function handleUnitClick(e, u) {
 
         <HtmlUnit v-for="u in c.units" :key="u.id"
           :unit="u" :r="unitR(u)" :rdr="rdr" :shape="unitShape(u)"
+          :tween="unitTween(u)"
           :showLetter="!field.ui?.showFacing" :showHp="showHpBars"
           :recolor="field.ui?.recolorTeamSprites"
           :active="u.id === highlightUnitId && !field.ui?.blinkActiveUnit"
