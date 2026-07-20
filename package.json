@@ -20,6 +20,7 @@
     "demo:civ1": "node demo/civ1-demo.js",
     "demo:civ1:auto": "node demo/civ1-demo.js --auto",
     "demo:civ1:greedy": "node demo/civ1-demo.js --auto --greedy",
+    "demo:civ1:obscuro": "node demo/civ1-demo.js --auto --obscuro",
     "demo:civ2": "node demo/civ2-demo.js",
     "demo:civ2:auto": "node demo/civ2-demo.js --auto",
     "demo:civ2:greedy": "node demo/civ2-demo.js --auto --greedy",

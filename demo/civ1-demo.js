@@ -1,5 +1,5 @@
 import { GameEngine } from '../engine/index.js';
-import { Civ1Game } from '../games/civ1/index.js';
+import { Civ1Game, Civ1ObscuroAgent } from '../games/civ1/index.js';
 import { makeCiv1Agent, makeGreedyAgent } from '../games/civ1/ai.js';
 import { HumanAgent } from '../agents/index.js';
 
@@ -21,11 +21,17 @@ const isAuto   = process.argv.includes('--auto');
 const isGreedy = process.argv.includes('--greedy');
 // --heuristic: the EV-attacking agent (games/civ1/ai.js) vs the greedy baseline.
 const isHeuristic = process.argv.includes('--heuristic');
+// --obscuro: the equilibrium search agent (games/civ1/Civ1ObscuroAgent.js) vs the
+// greedy baseline. Note that civ1 has a sizeable seat-1 advantage, so a single
+// game either way says less than it looks — swap the seats before believing it.
+const isObscuro = process.argv.includes('--obscuro');
 
-const makeBot = () => isHeuristic ? makeCiv1Agent() : (isGreedy ? GreedyAgent : makeRandom());
+const makeBot = () => isObscuro ? new Civ1ObscuroAgent(Civ1Game)
+  : isHeuristic ? makeCiv1Agent()
+  : (isGreedy ? GreedyAgent : makeRandom());
 
 const agent1 = isAuto ? makeBot() : new HumanAgent('You');
-const agent2 = isHeuristic ? GreedyAgent : makeBot();
+const agent2 = (isHeuristic || isObscuro) ? GreedyAgent : makeBot();
 
 const players = [
   { id: 'player-1', name: 'Player 1', agent: agent1 },
