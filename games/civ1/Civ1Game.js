@@ -316,9 +316,19 @@ function applyActions(state, playerActions, rng = Math.random) {
     nextId = eco.nextId;
     const civ = { ...state.gameSpecific.civ, [playerId]: eco.civ };
 
-    const nextIdx = (currentIdx + 1) % playerIds.length;
+    // Hand over to the next civ that still exists. An eliminated one is skipped
+    // rather than being asked for orders it has no pieces to give; the turn counter
+    // still advances whenever the rotation passes seat 0, so wrapping past a dead
+    // leading seat does not stall the clock.
+    const isAlive = pid =>
+      cities.some(c => c.ownerId === pid) || units.some(u => u.alive && u.ownerId === pid);
+    let nextIdx = (currentIdx + 1) % playerIds.length;
+    let newTurn = nextIdx === 0 ? state.turnNumber + 1 : state.turnNumber;
+    for (let hops = 0; hops < playerIds.length - 1 && !isAlive(playerIds[nextIdx]); hops++) {
+      nextIdx = (nextIdx + 1) % playerIds.length;
+      if (nextIdx === 0) newTurn = state.turnNumber + 1;
+    }
     const nextPlayerId = playerIds[nextIdx];
-    const newTurn = nextIdx === 0 ? state.turnNumber + 1 : state.turnNumber;
 
     // Refresh the next player's units. Magellan's Expedition grants +2 movement to
     // their ships.
@@ -552,14 +562,17 @@ function getResult(state) {
     }
   }
 
-  for (const pid of playerIds) {
-    const hasCities = state.cities.some(c => c.ownerId === pid);
-    const hasUnits  = state.units.some(u => u.alive && u.ownerId === pid);
-    if (!hasCities && !hasUnits) {
-      const winner = playerIds.find(id => id !== pid);
-      return { outcome: 'win', winnerId: winner, reason: 'civilization-destroyed' };
-    }
-  }
+  // Conquest. A civ with neither a city nor a living unit is eliminated, but that
+  // only ENDS the game once a single civ is left standing — with three or more
+  // players the first elimination used to hand the win to whichever rival happened
+  // to come first in the player list, while the others were still fighting over it.
+  const alive = playerIds.filter(pid =>
+    state.cities.some(c => c.ownerId === pid) ||
+    state.units.some(u => u.alive && u.ownerId === pid));
+
+  if (alive.length === 1) return { outcome: 'win', winnerId: alive[0], reason: 'civilization-destroyed' };
+  // Everyone wiped out on the same turn (mutual destruction) — nobody wins.
+  if (alive.length === 0) return { outcome: 'draw', winnerId: null, reason: 'civilization-destroyed' };
   return null;
 }
 
@@ -567,7 +580,6 @@ function getResult(state) {
 
 function renderState(state) {
   const { turnNumber, activePlayers, units, cities, players } = state;
-  const p1 = players[0], p2 = players[1];
 
   const summarize = pid => {
     const alive = units.filter(u => u.alive && u.ownerId === pid);
@@ -589,8 +601,7 @@ function renderState(state) {
     `Legend: 1/2=city  Uppercase=P1  lowercase=P2  ~=ocean ^=arctic t=tundra d=desert`,
     `        .=plains  ,=grass  f=forest  n=hills  A=mtns  s=swamp  j=jungle`,
     '',
-    summarize(p1.id),
-    summarize(p2.id),
+    ...players.map(p => summarize(p.id)),
   ].join('\n');
 }
 
@@ -657,25 +668,30 @@ function createInitialState(players, config = {}) {
   const tiles = generateMap(width, height, rng, mapOpts);
   const board = { width, height, tiles };
 
-  const pos1 = findStartPos(tiles, width, height, [1, Math.floor(width * 0.45)], rng);
-  const pos2 = findStartPos(tiles, width, height, [Math.floor(width * 0.55), width - 1], rng);
-
-  const [p1, p2] = players;
+  // One start band per civ, spread evenly across the map with a gap between them.
+  // Previously this seeded exactly two players, so a 3- or 4-player game (which
+  // api-server.js advertises) began with seats 3 and 4 owning nothing at all and
+  // getResult ended it on turn 0.
+  const n = players.length;
+  const bandWidth = width / n;
+  const positions = players.map((_, i) => {
+    const lo = Math.max(1, Math.floor(i * bandWidth + bandWidth * 0.1));
+    const hi = Math.min(width - 1, Math.ceil((i + 1) * bandWidth - bandWidth * 0.1));
+    return findStartPos(tiles, width, height, [lo, Math.max(lo, hi)], rng);
+  });
 
   let idCtr = 0;
-  const units = [
-    makeUnit(`u${idCtr++}`, p1.id, 'settlers', pos1.x, pos1.y, UNITS.settlers.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'settlers', pos2.x, pos2.y, UNITS.settlers.moves),
-  ];
-  for (const [pid, settlerPos] of [[p1.id, pos1], [p2.id, pos2]]) {
-    const militiaPos = findAdjacentFree(settlerPos, board, units) ?? settlerPos;
-    units.push(makeUnit(`u${idCtr++}`, pid, 'militia', militiaPos.x, militiaPos.y, UNITS.militia.moves));
-  }
+  const units = players.map((p, i) =>
+    makeUnit(`u${idCtr++}`, p.id, 'settlers', positions[i].x, positions[i].y, UNITS.settlers.moves));
+  players.forEach((p, i) => {
+    const militiaPos = findAdjacentFree(positions[i], board, units) ?? positions[i];
+    units.push(makeUnit(`u${idCtr++}`, p.id, 'militia', militiaPos.x, militiaPos.y, UNITS.militia.moves));
+  });
 
   return {
     gameName: 'Civ1',
     turnNumber: 1,
-    activePlayers: [p1.id],
+    activePlayers: [players[0].id],
     currentPhase: 'action',
     players,
     board,

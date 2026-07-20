@@ -70,7 +70,18 @@ function candidateTiles(city, ctx) {
     if (!tile) continue; // ocean tiles are workable (fishing) — only missing tiles skip
     const center = dx === 0 && dy === 0;
     if (!center && ctx.takenTiles.has(key)) continue;
-    const y3 = workedTileYield(tile, x, y, ctx);
+    // The city square comes with a road and, where the terrain allows it, irrigation —
+    // free, with no tech and no adjacent water needed. That is the original's rule, and
+    // it is load-bearing rather than cosmetic: food upkeep is `size * 2`, so without the
+    // centre's extra food a size-1 city on ordinary ground (centre 1 + best neighbour 1)
+    // nets exactly zero surplus. It then never grows, and because it never grows it
+    // never works more squares and never raises its shield output either — founded on
+    // turn 2, still size 1 with nothing built on turn 150, with no way back. Roughly half
+    // of all starts landed in that state.
+    const worked = center
+      ? { ...tile, hasRoad: true, irrigated: tile.irrigated || IRRIGABLE.has(tile.terrain) }
+      : tile;
+    const y3 = workedTileYield(worked, x, y, ctx);
     out.push({ x, y, key, center, yield: y3 });
   }
   return out;
