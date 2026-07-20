@@ -77,7 +77,11 @@ const playing = ref(false);
 // History playback ("view play from here"): declared up here (not with its
 // functions below) so the immediate game-switch watcher can safely stopHistoryPlay().
 const historyPlaying = ref(false);
-let historyTimer = null;
+// The playback clock's state lives up here for the same reason: stopHistoryPlay()
+// touches all three, and the game-switch watcher calls it during setup, before the
+// playback section further down has been evaluated.
+const histFrac = ref(0);
+let playRaf = 0, playLastTs = 0;
 
 // ── view toggles ──────────────────────────────────────────────
 const showRuler  = ref(false);
@@ -353,6 +357,33 @@ function toggleReveal() {
   histPos.value = Math.max(0, histLength.value - 1);
 }
 
+// ── turn timeline ─────────────────────────────────────────────
+// Which turn each recorded ply belongs to. fieldHistory carries a snapshot of the
+// position before any move as well as one per log entry, so ply p is the state
+// AFTER log[p - offset]; deriving the offset from the two lengths rather than
+// hard-coding 1 keeps this right for the revealAll source too, which is built
+// from revealFields and need not carry that leading snapshot.
+const plyTurns = computed(() => {
+  const log = props.liveState?.log ?? [];
+  const offset = histLength.value - log.length;
+  return Array.from({ length: histLength.value },
+    (_, p) => log[p - offset]?.turnNumber ?? log[0]?.turnNumber ?? 0);
+});
+
+// The contiguous run of plies sharing the displayed ply's turn — what the timeline
+// spans. Null before any move is recorded, when there's no turn to show progress
+// through and BottomBar leaves the track out.
+const currentTurnRange = computed(() => {
+  const turns = plyTurns.value;
+  const p = Math.min(histPos.value, turns.length - 1);
+  if (p < 0 || !turns.length) return null;
+  const turn = turns[p];
+  let start = p, end = p;
+  while (start > 0 && turns[start - 1] === turn) start--;
+  while (end < turns.length - 1 && turns[end + 1] === turn) end++;
+  return { turn, start, end };
+});
+
 function goBack()    { stopHistoryPlay(); if (histPos.value > 0)  histPos.value--; }
 function goForward() { stopHistoryPlay(); if (!atLatest.value)     histPos.value++; }
 function seekTo(pos) { stopHistoryPlay(); histPos.value = pos; }
@@ -363,11 +394,18 @@ function seekTo(pos) { stopHistoryPlay(); histPos.value = pos; }
 // client-side over the already-loaded fieldHistory — independent of the live game,
 // which keeps running (once playback reaches the latest ply it stops and the board
 // follows live again). Any manual navigation cancels it.
+//
+// The playhead is fractional and driven by requestAnimationFrame rather than a
+// setInterval of whole plies: an interval drifts under load and, more importantly,
+// only ever produces whole-ply jumps, so every step teleported the units. histFrac
+// is how far the clock has travelled into the ply currently on screen, which
+// renderUnits below uses to slide units toward where the NEXT snapshot puts them.
 const HISTORY_STEP_MS = 700;
 
 function stopHistoryPlay() {
-  if (historyTimer) { clearInterval(historyTimer); historyTimer = null; }
+  if (playRaf) { cancelAnimationFrame(playRaf); playRaf = 0; }
   historyPlaying.value = false;
+  histFrac.value = 0;
 }
 
 function toggleHistoryPlay() {
@@ -376,10 +414,30 @@ function toggleHistoryPlay() {
   // Nothing ahead to watch at the live edge — rewind to the start first.
   if (atLatest.value) histPos.value = 0;
   historyPlaying.value = true;
-  historyTimer = setInterval(() => {
+  histFrac.value = 0;
+  playLastTs = 0;
+  playRaf = requestAnimationFrame(stepPlayback);
+}
+
+// One animation frame of playback. Advances by real elapsed time (not one ply per
+// frame), so the speed is the same on a 60Hz and a 120Hz display, and a frame the
+// browser dropped is made up rather than lost. The `while` handles a long stall
+// spanning more than a whole ply.
+function stepPlayback(ts) {
+  playRaf = 0;
+  if (!historyPlaying.value) return;
+  if (!playLastTs) playLastTs = ts;
+  let f = histFrac.value + (ts - playLastTs) / HISTORY_STEP_MS;
+  playLastTs = ts;
+  while (f >= 1) {
     if (histPos.value >= histLength.value - 1) { stopHistoryPlay(); return; }
     histPos.value++;
-  }, HISTORY_STEP_MS);
+    f -= 1;
+  }
+  // At the live edge there is no next snapshot to tween into, so the playhead
+  // parks on the ply itself rather than drifting toward a frame that isn't there.
+  histFrac.value = atLatest.value ? 0 : f;
+  playRaf = requestAnimationFrame(stepPlayback);
 }
 
 // Live game controls (server-backed) — bubble the intent to App, which owns the
@@ -614,6 +672,60 @@ watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
 
 // ── move highlights ───────────────────────────────────────────
 const displayUnits = units;
+
+// ── playback tweening ─────────────────────────────────────────
+// Units as the board DRAWS them: displayUnits, but during history playback slid
+// part-way toward where the next snapshot puts them (see histFrac). Deliberately a
+// separate computed rather than folding this into displayUnits — that one feeds
+// selection, the roster and several watchers, and handing those a freshly built
+// array every animation frame would re-run all of them 60x a second for what is
+// only a visual offset.
+
+// The snapshot histPos indexes into, matching displayField's own choice of source
+// so a tween never interpolates between two different recordings.
+function snapshotAt(pos) {
+  if (revealAll.value && props.revealFields.length)
+    return props.revealFields[Math.min(pos, props.revealFields.length - 1)];
+  return fieldHistory.value[pos] ?? null;
+}
+
+// Ease in/out: a unit accelerates off its square and settles onto the next one,
+// rather than running at a constant speed and stopping dead on arrival.
+function smoothstep(f) { return f * f * (3 - 2 * f); }
+
+const renderUnits = computed(() => {
+  const f = histFrac.value;
+  if (!historyPlaying.value || f <= 0) return displayUnits.value;
+  const next = snapshotAt(histPos.value + 1);
+  if (!next) return displayUnits.value;
+  const ahead = new Map(
+    computeUnits(next, tFloat.value, perspectiveViewer.value).map(u => [u.id, u]));
+  const t = smoothstep(f);
+  // On a wrapping world a unit that crosses the seam has its x jump a whole world
+  // width; tweening that would send it sprinting the long way across the map, so
+  // any move over half the world just snaps.
+  const halfW = props.field?.world?.wrap ? (props.field.world.w ?? 0) / 2 : Infinity;
+  return displayUnits.value.map(u => {
+    const n = ahead.get(u.id);
+    if (!n || u.dead || n.dead) return u;
+    const dx = n.x - u.x, dy = n.y - u.y;
+    if ((dx === 0 && dy === 0) || Math.abs(dx) > halfW) return u;
+    // Two forms of the same offset, because the renderers disagree about what a
+    // unit's position IS. The absolute-coordinate ones (SchematicLayer, IsoLayer,
+    // Minimap) draw at x/y, so those carry the fraction. HtmlLayer instead files
+    // each unit into a CSS grid cell keyed on Math.floor(x) — a fraction there is
+    // rounded away until it crosses a cell boundary and the unit jumps a whole
+    // square, which is the teleport this is meant to remove. So it also gets
+    // tweenDx/tweenDy: a sub-cell shift, in tiles, to translate the sprite by,
+    // and baseX/baseY, the unshifted square to keep filing the unit under.
+    return {
+      ...u,
+      x: u.x + dx * t, y: u.y + dy * t,
+      baseX: u.x, baseY: u.y,
+      tweenDx: dx * t, tweenDy: dy * t,
+    };
+  });
+});
 
 const lastMoveSquares = computed(() => {
   if (revealAll.value) return []; // the live log's last move is meaningless while stepping history
@@ -1072,6 +1184,16 @@ onUnmounted(() => {
           :pendingPlayerId="pendingPlayerId" :liveState="liveState" :units="displayUnits"
           :aiming="aiming" :civ="field.civ" :cities="field.cities" :military="field.military"
           @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"/>
+
+        <!-- Overview map + jump-to control, for the same games that get zoom/pan.
+             Pinned to the foot of this column (see .mm), so it stays put as the
+             panels above it change height or scroll. -->
+        <Minimap v-if="zoomEnabled"
+          :field="displayField" :units="renderUnits" :rdr="rdr"
+          :center="viewCenter" :tilePx="tilePx" :stageW="stageW" :stageH="stageH"
+          :fog="fog" :revealAll="layerRevealAll" :viewerOverride="perspectiveViewer"
+          :exploredTiles="exploredTileSet"
+          @goto="handleMinimapGoto"/>
       </div>
 
       <!-- Stage -->
@@ -1082,7 +1204,7 @@ onUnmounted(() => {
           <button class="action-btn bf-fork-back" @click="exitFork">← Back to game</button>
         </div>
         <HtmlIsoLayer v-if="ui.isometric && useHtmlRenderer"
-          :field="displayField" :units="displayUnits"
+          :field="displayField" :units="renderUnits"
           :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
           :rdr="rdr"
           :legalSquares="unitMoves"
@@ -1091,7 +1213,7 @@ onUnmounted(() => {
           @select="selectUnit"
           @sq-click="handleSqClick"/>
         <IsoLayer v-else-if="ui.isometric"
-          :field="displayField" :fit="fit" :units="displayUnits"
+          :field="displayField" :fit="fit" :units="renderUnits"
           :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
           :rdr="rdr"
           :legalSquares="unitMoves"
@@ -1102,7 +1224,7 @@ onUnmounted(() => {
         <!-- Derives its own integer-snapped geometry from the stage (no `fit` prop) so every
              board cell is a whole number of pixels — see HtmlLayer.vue's header. -->
         <HtmlLayer v-else-if="useHtmlRenderer"
-          :field="displayField" :units="displayUnits"
+          :field="displayField" :units="renderUnits"
           :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
           :showRuler="showRuler" :showHpBars="showHpBars" :rdr="rdr"
           :legalSquares="unitMoves"
@@ -1119,7 +1241,7 @@ onUnmounted(() => {
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>
         <SchematicLayer v-else
-          :field="displayField" :fit="fit" :units="displayUnits"
+          :field="displayField" :fit="fit" :units="renderUnits"
           :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
           :showRuler="showRuler" :showHpBars="showHpBars" :rdr="rdr"
           :unitFx="(atLatest && !revealAll) ? unitFx : {}"
@@ -1135,14 +1257,6 @@ onUnmounted(() => {
           @select="selectUnit"
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>
-
-        <!-- Overview map + jump-to control, for the same games that get zoom/pan. -->
-        <Minimap v-if="zoomEnabled"
-          :field="displayField" :units="displayUnits" :rdr="rdr"
-          :center="viewCenter" :tilePx="tilePx" :stageW="stageW" :stageH="stageH"
-          :fog="fog" :revealAll="layerRevealAll" :viewerOverride="perspectiveViewer"
-          :exploredTiles="exploredTileSet"
-          @goto="handleMinimapGoto"/>
       </div>
 
       <!-- Right sidebar -->
@@ -1187,8 +1301,10 @@ onUnmounted(() => {
       :showZoom="zoomEnabled" :canZoomIn="canZoomIn" :canZoomOut="canZoomOut"
       :paused="liveState?.paused ?? false" :aiDelay="liveState?.aiDelay ?? 0"
       :historyPlaying="historyPlaying"
+      :turnRange="currentTurnRange" :histFrac="histFrac"
       @step-back="stepBack" @step-fwd="stepFwd" @toggle-play="togglePlay"
       @scrub="scrub" @go-back="goBack" @go-forward="goForward"
+      @seek-ply="seekTo"
       @toggle-reveal="toggleReveal"
       @replay-turn="$emit('replay-turn')"
       @toggle-pause="toggleLivePause" @set-ai-delay="setAiDelay"

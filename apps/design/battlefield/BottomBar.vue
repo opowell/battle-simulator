@@ -1,5 +1,6 @@
 <script setup>
 import LiveControls from './LiveControls.vue';
+import TurnTimeline from './TurnTimeline.vue';
 
 defineProps({
   isLive:          Boolean,
@@ -24,10 +25,14 @@ defineProps({
   paused:          Boolean,
   aiDelay:         { type: Number, default: 0 },
   historyPlaying:  Boolean,
+  // Progress through the turn on screen: the ply range it spans (null = nothing
+  // recorded yet) and how far playback has travelled into the current ply.
+  turnRange:       { type: Object, default: null },
+  histFrac:        { type: Number, default: 0 },
 });
 defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-forward',
              'toggle-reveal', 'replay-turn', 'zoom-in', 'zoom-out',
-             'toggle-pause', 'set-ai-delay', 'toggle-history-play']);
+             'toggle-pause', 'set-ai-delay', 'toggle-history-play', 'seek-ply']);
 </script>
 
 <template>
@@ -87,7 +92,13 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
         <BsIcon name="eye" :size="13" :color="revealAll ? 'var(--accent)' : 'var(--dim)'"/>
         {{revealAll ? 'Revealed' : 'Reveal all'}}
       </button>
-      <div class="bb-spacer"/>
+      <!-- Takes the bar's flexible space (where the spacer used to be), so the
+           track is as wide as the rest of the row leaves it. -->
+      <TurnTimeline v-if="turnRange"
+        :start="turnRange.start" :end="turnRange.end" :turn="turnRange.turn"
+        :pos="histPos" :frac="histFrac"
+        @seek="$emit('seek-ply', $event)"/>
+      <div v-else class="bb-spacer"/>
       <LiveControls
         :paused="paused" :aiDelay="aiDelay" :isDone="isDone"
         :historyPlaying="historyPlaying" :canPlayHistory="histLength > 1"

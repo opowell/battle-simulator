@@ -232,10 +232,14 @@ onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId); });
 </template>
 
 <style scoped>
+/* Docked at the foot of the left sidebar. `margin-top: auto` takes up the slack
+   when the panels above are short; `position: sticky` keeps it on screen once
+   they're tall enough to scroll the column — together, "always at the bottom"
+   in both states. flex-shrink guards against a short viewport squashing it. */
 .mm {
-  position: absolute; right: 10px; bottom: 10px; z-index: 4;
+  margin: auto auto 0; position: sticky; bottom: 0; z-index: 4; flex-shrink: 0;
   border: 1px solid var(--line); border-radius: var(--r);
-  background: var(--bg1); box-shadow: 0 2px 10px -2px rgba(0,0,0,.5);
+  background: var(--bg1); box-shadow: 0 -2px 10px -4px rgba(0,0,0,.5);
   overflow: hidden;
 }
 /* touch-action: a touch drag must pan the map, not scroll/zoom the page under it. */
