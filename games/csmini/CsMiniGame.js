@@ -612,8 +612,10 @@ export const CsMiniGame = {
       options: [{ value: 'discrete', label: 'Discrete (grid cells)' }, { value: 'continuous', label: 'Continuous (free points)' }] },
     { id: 'time', label: 'Time', description: 'Discrete (per-turn move budget) or continuous (move cooldown = distance/speed)', type: 'select', default: 'discrete',
       options: [{ value: 'discrete', label: 'Discrete (per-turn budget)' }, { value: 'continuous', label: 'Continuous (cooldown)' }] },
-    { id: 'play', label: 'Play', description: 'Sequential (one team acts) or simultaneous (both plan, then resolve)', type: 'select', default: 'sequential',
-      options: [{ value: 'sequential', label: 'Sequential' }, { value: 'simultaneous', label: 'Simultaneous (we-go)' }] },
+    // Sequential vs simultaneous (we-go) play is the engine's global "Simultaneous
+    // Turns" toggle (ENGINE_OPTIONS in api-server.js), not a per-game option — no
+    // `play` dropdown here, to avoid two controls for the one switch. resolveSpaceTime
+    // still reads `config.play`/`simultaneousTurns` either way (used by the demo flag).
   ],
   ui: { showFacing: true },
   createInitialState,

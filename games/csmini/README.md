@@ -43,7 +43,8 @@ node demo/csmini-demo.js --auto --space=continuous --time=discrete
 node demo/csmini-demo.js --auto --time=continuous --play=simultaneous
 ```
 
-or from the web UI's **Space / Time / Play** dropdowns. See
+or from the web UI's **Space / Time** dropdowns (plus the global **Simultaneous
+Turns** toggle for we-go play). See
 [`games/spacetime.js`](../spacetime.js) for the framework and
 `games/spacetime.test.js` + `games/csmini/spacetime.test.js` for the full matrix.
 
