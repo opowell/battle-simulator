@@ -651,22 +651,53 @@ watch(() => (isPending.value ? pendingPlayerId.value : null), (pending, prev) =>
 // played live. Weapon category comes from `field.units[].type`, the same
 // pistol/smg/shotgun/heavy/rifle/sniper/melee tag CsGame.js's toGrid already stamps
 // for the marker-shape hash — no CS-specific weapon table duplicated here.
+//
+// Under simultaneous ("we-go") turns one broadcast resolves a WHOLE turn — many log
+// entries at once — and the board replays that turn tick-by-tick over ~duration of
+// wall-clock (App.vue's replayTurn, REPLAY_MS_PER_FRAME per sampled frame). So rather
+// than fire a single sound for the last entry, schedule EACH order's sound to the
+// instant the replay reaches it: its sim-time (t0 for the action, t1 for a kill) maps
+// to wall-clock by the same frame pacing the replay uses. Turns with no playback
+// (the instant buy turn) fire immediately.
+const REPLAY_MS_PER_FRAME = 100; // must match App.vue's replayTurn pacing
+let csSoundTimers = [];
+const clearCsSoundTimers = () => { for (const t of csSoundTimers) clearTimeout(t); csSoundTimers = []; };
+
 watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
   if (oldLen === undefined || props.liveState?.game !== 'cs') return;
-  const entry = props.liveState.log[props.liveState.log.length - 1];
-  if (!entry) return;
+  // A new turn's sounds supersede any still-pending from the turn before it.
+  clearCsSoundTimers();
+
+  const log = props.liveState.log;
+  const latestTurn = log[log.length - 1]?.turnNumber;
+  // Only this turn's entries (the ones the current playback actually animates); if
+  // several turns bundled into one update, older turns aren't replayed, so skip them.
+  const entries = log.slice(oldLen).filter(e => e.turnNumber === latestTurn);
+  if (!entries.length) return;
+
   const unitsById = new Map((props.field?.units ?? []).map(u => [u.id, u]));
-  for (const { action } of entry.playerActions ?? []) {
-    if (action.type === 'shoot')        window.playCsSound?.(unitsById.get(action.unitId)?.type ?? 'rifle');
-    else if (action.type === 'move')    window.playCsSound?.('footstep');
-    else if (action.type === 'plant')   window.playCsSound?.('bombbeep');
-    else if (action.type === 'throw') {
-      if (action.grenade === 'he')      window.playCsSound?.('explosion');
-      else if (action.grenade === 'flash') window.playCsSound?.('flashbang');
+  const pb = props.liveState.playback;
+  const duration = pb?.duration ?? 0;
+  const totalMs = (pb?.frames?.length ?? 0) > 1 ? (pb.frames.length - 1) * REPLAY_MS_PER_FRAME : 0;
+  const at = (t, fn) => {
+    const delay = (duration > 0 && totalMs > 0) ? Math.min(1, Math.max(0, t) / duration) * totalMs : 0;
+    if (delay > 0) csSoundTimers.push(setTimeout(fn, delay)); else fn();
+  };
+
+  for (const entry of entries) {
+    const t0 = entry.t0 ?? 0, t1 = entry.t1 ?? t0;
+    for (const { action } of entry.playerActions ?? []) {
+      if (action.type === 'shoot')        at(t0, () => window.playCsSound?.(unitsById.get(action.unitId)?.type ?? 'rifle'));
+      else if (action.type === 'move')    at(t0, () => window.playCsSound?.('footstep'));
+      else if (action.type === 'plant')   at(t0, () => window.playCsSound?.('bombbeep'));
+      else if (action.type === 'throw') {
+        if (action.grenade === 'he')      at(t1, () => window.playCsSound?.('explosion'));
+        else if (action.grenade === 'flash') at(t1, () => window.playCsSound?.('flashbang'));
+      }
     }
-  }
-  for (const ev of entry.events ?? []) {
-    if (ev.type === 'died' || (ev.type === 'damage' && ev.died)) window.playCsSound?.('death');
+    for (const ev of entry.events ?? []) {
+      if (ev.type === 'died' || (ev.type === 'damage' && ev.died)) at(t1, () => window.playCsSound?.('death'));
+    }
   }
 });
 
@@ -1141,6 +1172,7 @@ onMounted(() => {
 onUnmounted(() => {
   cancelAnimationFrame(rafId);
   stopHistoryPlay();
+  clearCsSoundTimers();
   window.removeEventListener('resize', updateStageSize);
   window.removeEventListener('keydown', onKeyDown);
 });
