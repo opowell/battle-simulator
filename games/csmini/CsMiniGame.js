@@ -32,6 +32,7 @@
 // ---------------------------------------------------------------------------
 
 import { seesPoint, filterVisibleUnits, euclidean } from '../vision.js';
+import * as ST from '../spacetime.js';
 
 // ── Constants ───────────────────────────────────────────────────────────────
 const WIDTH = 8, HEIGHT = 6;
@@ -41,6 +42,14 @@ const TIME_BUDGET = 5;     // "seconds" of action allowed per turn
 const VISION_RANGE = 5;    // 1 square/second × 5-second turn
 const FOV_DEGREES = 90;    // cone width, centred on facing
 const SHOT_DAMAGE = 1;
+const MOVE_EPS = 1e-9;     // below this a "move" spends no budget — treat as none left
+
+// The single movement spec (games/spacetime.js): SPEED is the one number every
+// quadrant derives from. In DISCRETE space it's grid cells; in CONTINUOUS space
+// it's map distance — the same 3, because "move range 3" is one fact about the
+// unit, not four. Discrete time reads it as a per-turn budget; continuous time
+// reads it as a cooldown rate (a step costs stepDist/SPEED of the turn window).
+const SPEED = MOVE_RANGE;
 
 // The central 2×2 impassable block (columns 3–4, rows 2–3 of the 8×6 grid).
 const WALLS = [[3, 2], [4, 2], [3, 3], [4, 3]];
@@ -77,9 +86,12 @@ function lineCells(ax, ay, bx, by) {
   }
 }
 
-// Sight is clear if no wall sits strictly between the two cells.
+// Sight is clear if no wall sits strictly between the two cells. Endpoints are
+// floored so the integer Bresenham walk terminates even for continuous-space
+// (non-integer) positions — the grid-cell LOS model is unchanged for discrete
+// space (already integers).
 function losClear(ax, ay, bx, by) {
-  const cells = lineCells(ax, ay, bx, by);
+  const cells = lineCells(Math.floor(ax), Math.floor(ay), Math.floor(bx), Math.floor(by));
   for (let i = 1; i < cells.length - 1; i++) {
     if (isWall(cells[i][0], cells[i][1])) return false;
   }
@@ -88,12 +100,15 @@ function losClear(ax, ay, bx, by) {
 
 // Walk the ray from shooter→target; return the first live unit hit (or null if
 // a wall or nothing intervenes first). This is the "stops at first contact" rule.
+// Positions floor to their containing cell so a continuous shooter/target still
+// rasterizes onto the tile grid the wall/units live on.
 function firstUnitAlongRay(from, to, units) {
-  const cells = lineCells(from.x, from.y, to.x, to.y);
+  const fx = Math.floor(from.x), fy = Math.floor(from.y);
+  const cells = lineCells(fx, fy, Math.floor(to.x), Math.floor(to.y));
   for (let i = 1; i < cells.length; i++) {
     const [cx, cy] = cells[i];
     if (isWall(cx, cy)) return null;
-    const u = units.find(u => u.alive && u.position.x === cx && u.position.y === cy);
+    const u = units.find(u => u.alive && Math.floor(u.position.x) === cx && Math.floor(u.position.y) === cy);
     if (u) return u;
   }
   return null;
@@ -114,6 +129,83 @@ const numXY = (pos) => [pos.x, pos.y];
 // Does `unit` see the point (tx,ty) — inside its cone, in range, LOS clear?
 const unitSees = (unit, tx, ty) => seesPoint(viewerOf(unit), tx, ty, VISION_CFG);
 
+// ── The single movement spec, shared across all four quadrants ────────────────
+// Handed to games/spacetime.js, which turns SPEED + the game's own world
+// primitives (neighbours / walkability / occupancy) into per-quadrant movement.
+const occupiedAt = (units, x, y, selfId) =>
+  units.some(u => u.alive && u.id !== selfId && u.position.x === x && u.position.y === y);
+
+const kinematics = {
+  turnDuration: TIME_BUDGET,
+  // The one spec number, optionally scaled per unit (all csmini units are 1×, but
+  // a faster unit reads as double range in discrete time and half cooldown in
+  // continuous time — the same fact, two quadrants — with no extra rules).
+  speed: (u) => SPEED * (u?.speedMul ?? 1),
+  // Discrete space: eight-connected steps into open, unoccupied cells (cost 1 each).
+  neighbors(pos, unit, state) {
+    const out = [];
+    for (const { dx, dy } of DIRS8) {
+      const nx = pos.x + dx, ny = pos.y + dy;
+      if (!isPassable(nx, ny)) continue;
+      if (occupiedAt(state.units, nx, ny, unit.id)) continue;
+      out.push({ to: { x: nx, y: ny }, cost: 1 });
+    }
+    return out;
+  },
+  // Continuous space: a point is walkable if its cell is open; the straight slide
+  // must not cross the wall; and it must be clear of other units (min separation).
+  walkable: (x, y) => isPassable(Math.floor(x), Math.floor(y)),
+  pathClear: (x0, y0, x1, y1) => losClear(x0, y0, x1, y1),
+  occupied: (x, y, unit, state) =>
+    state.units.some(u => u.alive && u.id !== unit.id
+      && Math.hypot(u.position.x - x, u.position.y - y) < 0.5),
+};
+
+// The active quadrant, resolved once at createInitialState and stashed in state.
+const spaceTimeOf = (state) => state.gameSpecific.spacetime;
+
+// A unit's per-turn budget, reset for the active quadrant. Discrete time gives a
+// fixed action count (TIME_BUDGET seconds) and a separate move-cell budget
+// (SPEED); continuous time gives one turn window (turnDuration) that both moves
+// (priced by cooldown) and other actions draw down, with no separate move cap.
+function freshPerTurn(st, unit, state) {
+  return st.time === 'continuous'
+    ? { time: st.turnDuration, moveLeft: Infinity }
+    : { time: TIME_BUDGET, moveLeft: ST.moveBudget(kinematics, unit, state) };
+}
+
+// Time (seconds of the turn window) a move covering `dist` costs. Discrete time:
+// one action, flat 1s. Continuous time: the cooldown, dist/SPEED of the window.
+function moveTimeCost(st, unit, state, dist) {
+  return st.time === 'continuous' ? ST.travelTime(kinematics, unit, state, st, dist) : 1;
+}
+
+// Move-cell budget a move covering `dist` spends (discrete time only). Discrete
+// space charges 1 per step (matches the classic per-square budget); continuous
+// space charges the real distance travelled.
+function moveLeftCost(st, dist) {
+  if (st.time === 'continuous') return 0;
+  return st.space === 'continuous' ? dist : 1;
+}
+
+// How far the unit may still travel this turn — the radius offered to the
+// continuous-space destination lattice and the UI move circle. Continuous time
+// converts remaining seconds back into distance via SPEED; discrete time it's
+// simply the move budget left.
+function reachLeft(st, unit) {
+  if (st.time === 'continuous') return unit.perTurn.time * SPEED / st.turnDuration;
+  return unit.perTurn.moveLeft;
+}
+
+// Can this unit still move at all this turn, in the active quadrant?
+function canMove(st, unit, state) {
+  if (unit.perTurn.time <= MOVE_EPS) return false;
+  if (st.space === 'continuous') return reachLeft(st, unit) > MOVE_EPS;
+  // Discrete space: a single step must be affordable in both time and cells.
+  if (st.time === 'discrete' && unit.perTurn.moveLeft <= 0) return false;
+  return true;
+}
+
 // ── Setup ───────────────────────────────────────────────────────────────────
 
 function makeUnit(id, ownerId, num, x, y, facing) {
@@ -130,13 +222,14 @@ function makeUnit(id, ownerId, num, x, y, facing) {
 
 export function createInitialState(players, config = {}) {
   const [ct, t] = players;
+  const st = ST.resolveSpaceTime(CsMiniGame, config);
   // Slot 0 renders blue, slot 1 red in the design UI — so CT is player 0, T is 1.
   const units = [
     makeUnit('CT-1', ct.id, 1, 0, 1, EAST),
     makeUnit('CT-2', ct.id, 2, 0, 4, EAST),
     makeUnit('T-1', t.id, 1, 7, 1, WEST),
     makeUnit('T-2', t.id, 2, 7, 4, WEST),
-  ];
+  ].map(u => ({ ...u, perTurn: freshPerTurn(st, u, null) }));
   return {
     gameName: 'CS-mini',
     turnNumber: 1,
@@ -147,6 +240,9 @@ export function createInitialState(players, config = {}) {
     units,
     lastAction: null,
     gameSpecific: {
+      // The resolved quadrant + play mode — read by getLegalActions/applyActions
+      // so every movement decision derives from the one SPEED spec (spacetime.js).
+      spacetime: st,
       fogOfWar: config.fogOfWar ?? true,
       walls: WALLS,
       // Where each team pushes when it has no enemy in sight (the far spawn),
@@ -167,21 +263,33 @@ export function createInitialState(players, config = {}) {
 
 export function getLegalActions(state, playerId) {
   const actions = [];
+  const st = spaceTimeOf(state);
   const myUnits = state.units.filter(u => u.alive && u.ownerId === playerId);
   const enemies = state.units.filter(u => u.alive && u.ownerId !== playerId);
 
   for (const unit of myUnits) {
-    if (unit.perTurn.time <= 0) continue;
+    if (unit.perTurn.time <= MOVE_EPS) continue;
     const { x, y } = unit.position;
 
-    // Move: one step into an open, unoccupied neighbour (costs a second and a
-    // square of the move budget).
-    if (unit.perTurn.moveLeft > 0) {
-      for (const { dx, dy } of DIRS8) {
-        const nx = x + dx, ny = y + dy;
-        if (!isPassable(nx, ny)) continue;
-        if (state.units.some(u => u.alive && u.position.x === nx && u.position.y === ny)) continue;
-        actions.push({ type: 'move', unitId: unit.id, from: { x, y }, to: { x: nx, y: ny } });
+    // Move — enumerated by the active quadrant (games/spacetime.js):
+    //   • discrete space: one step into an open neighbour (a route is built up
+    //     step by step); each step is affordable only if time/cells remain.
+    //   • continuous space: any reachable point within this turn's reach, in one
+    //     instantaneous move — the classic "click anywhere you can afford".
+    if (canMove(st, unit, state)) {
+      if (st.space === 'continuous') {
+        for (const d of ST.enumerateDestinations(kinematics, unit, state, st, reachLeft(st, unit)))
+          actions.push({ type: 'move', unitId: unit.id, from: { x, y }, to: d.to, path: d.path });
+      } else {
+        for (const { dx, dy } of DIRS8) {
+          const nx = x + dx, ny = y + dy;
+          if (!isPassable(nx, ny)) continue;
+          if (state.units.some(u => u.alive && u.position.x === nx && u.position.y === ny)) continue;
+          // In continuous time a diagonal step costs more cooldown than an
+          // orthogonal one; skip any step that no longer fits the turn window.
+          if (moveTimeCost(st, unit, state, Math.hypot(dx, dy)) > unit.perTurn.time + MOVE_EPS) continue;
+          actions.push({ type: 'move', unitId: unit.id, from: { x, y }, to: { x: nx, y: ny } });
+        }
       }
     }
 
@@ -213,6 +321,7 @@ export function getLegalActions(state, playerId) {
 
 export function applyActions(state, playerActions) {
   const { playerId, action } = playerActions[0];
+  const st = spaceTimeOf(state);
 
   if (action.type === 'end-turn') {
     const idx = state.players.findIndex(p => p.id === playerId);
@@ -221,7 +330,7 @@ export function applyActions(state, playerActions) {
     // Refresh the team that's about to play (loaded/unloaded carries over).
     const units = state.units.map(u =>
       u.ownerId === nextId
-        ? { ...u, perTurn: { time: TIME_BUDGET, moveLeft: MOVE_RANGE } }
+        ? { ...u, perTurn: freshPerTurn(st, u, state) }
         : u,
     );
     return {
@@ -238,11 +347,17 @@ export function applyActions(state, playerActions) {
     const units = state.units.map(u => {
       if (u.id !== action.unitId) return u;
       const dx = action.to.x - u.position.x, dy = action.to.y - u.position.y;
+      const dist = Math.hypot(dx, dy);
+      // A zero-length move keeps the prior facing; otherwise face the heading.
+      const facing = (dx || dy) ? facingOf(dx, dy) : u.facing;
       return {
         ...u,
         position: { x: action.to.x, y: action.to.y },
-        facing: facingOf(dx, dy),
-        perTurn: { time: u.perTurn.time - 1, moveLeft: u.perTurn.moveLeft - 1 },
+        facing,
+        perTurn: {
+          time: u.perTurn.time - moveTimeCost(st, u, state, dist),
+          moveLeft: st.time === 'continuous' ? u.perTurn.moveLeft : u.perTurn.moveLeft - moveLeftCost(st, dist),
+        },
       };
     });
     return { ...state, units, lastAction: { playerId, ...action } };
@@ -357,7 +472,9 @@ const compassOf = (facing) => {
 export function renderState(state) {
   const [ct, t] = state.players;
   const at = {};
-  for (const u of state.units) if (u.alive) at[`${u.position.x},${u.position.y}`] = u;
+  // Floor onto the cell grid so continuous-space (sub-tile) positions still land
+  // in the ASCII board; discrete positions are already integers.
+  for (const u of state.units) if (u.alive) at[`${Math.floor(u.position.x)},${Math.floor(u.position.y)}`] = u;
 
   const rows = [];
   for (let y = 0; y < HEIGHT; y++) {
@@ -372,7 +489,8 @@ export function renderState(state) {
   }
   const header = '  ' + Array.from({ length: WIDTH }, (_, x) => ` ${x}`).join('');
 
-  const line = (u) => `${u.id} (${u.position.x},${u.position.y}) face ${compassOf(u.facing)} ` +
+  const r1 = (n) => Number.isInteger(n) ? n : n.toFixed(1); // continuous positions read cleanly
+  const line = (u) => `${u.id} (${r1(u.position.x)},${r1(u.position.y)}) face ${compassOf(u.facing)} ` +
     `${u.hp}hp ${u.loaded ? 'loaded' : 'EMPTY'}` + (u.alive ? '' : ' DEAD');
   const team = (p, label) => `${label} [${p.name}]: ` +
     state.units.filter(u => u.ownerId === p.id).map(line).join('  |  ');
@@ -426,6 +544,7 @@ export function toGrid(state) {
     }
   }
 
+  const st = spaceTimeOf(state);
   const units = state.units.filter(u => u.alive).map(u => ({
     id: u.id,
     x: u.position.x, y: u.position.y,
@@ -435,13 +554,17 @@ export function toGrid(state) {
     glyph: String(u.num),
     unitName: `${u.ownerId === state.players[0].id ? 'CT' : 'T'}-${u.num}`,
     type: 'player',
-    moveRange: u.perTurn?.moveLeft ?? 0,
+    // The move circle's radius: this turn's remaining reach in map distance
+    // (finite even in continuous time, where moveLeft itself is unbounded).
+    moveRange: Number.isFinite(reachLeft(st, u)) ? reachLeft(st, u) : (u.perTurn?.moveLeft ?? 0),
     spriteLayers: spriteLayers(u),
     statusEffects: u.loaded ? [] : ['reloading'],
   }));
 
   return {
     width: WIDTH, height: HEIGHT,
+    // Exact-position rendering (facing cones, sub-tile slides) regardless of the
+    // movement rule — a rendering signal, not the space model.
     locationType: 'continuous',
     cells,
     units,
@@ -460,15 +583,37 @@ export function actionKey(a) {
   return JSON.stringify([a.type, a.unitId ?? null, a.to ?? null, a.targetId ?? null, a.facing ?? null]);
 }
 
+// Sim-time an action occupies (continuous-time engine modes + we-go playback).
+// A move takes its cooldown/slide time (dist/SPEED of the window); everything
+// else is a flat one-second tick, matching the discrete action budget.
 export function getActionDuration(state, action) {
-  return action.type === 'end-turn' ? 0 : 1;
+  if (action.type === 'end-turn') return 0;
+  if (action.type === 'move') {
+    const st = spaceTimeOf(state);
+    const u = state.units.find(x => x.id === action.unitId);
+    if (!u) return 1;
+    const dist = Math.hypot(action.to.x - u.position.x, action.to.y - u.position.y);
+    return moveTimeCost(st, u, state, dist);
+  }
+  return 1;
 }
 
 export const CsMiniGame = {
   name: 'CS-mini',
   evaluateState,
+  // The single movement spec + its default quadrant (games/spacetime.js). Every
+  // move rule in every mode is derived from `kinematics.speed`; `spacetime` just
+  // picks which of the four worlds is in force unless config overrides it.
+  spacetime: { space: 'discrete', time: 'discrete', play: 'sequential' },
+  kinematics,
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies inside a unit’s 90° vision cone', type: 'boolean', default: true },
+    { id: 'space', label: 'Space', description: 'Discrete (grid cells) or continuous (free points) movement', type: 'select', default: 'discrete',
+      options: [{ value: 'discrete', label: 'Discrete (grid cells)' }, { value: 'continuous', label: 'Continuous (free points)' }] },
+    { id: 'time', label: 'Time', description: 'Discrete (per-turn move budget) or continuous (move cooldown = distance/speed)', type: 'select', default: 'discrete',
+      options: [{ value: 'discrete', label: 'Discrete (per-turn budget)' }, { value: 'continuous', label: 'Continuous (cooldown)' }] },
+    { id: 'play', label: 'Play', description: 'Sequential (one team acts) or simultaneous (both plan, then resolve)', type: 'select', default: 'sequential',
+      options: [{ value: 'sequential', label: 'Sequential' }, { value: 'simultaneous', label: 'Simultaneous (we-go)' }] },
   ],
   ui: { showFacing: true },
   createInitialState,

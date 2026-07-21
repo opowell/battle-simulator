@@ -15,8 +15,24 @@ import { foodBox, computeCity, FAT_CROSS, workedTileYield } from './city.js';
 import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy } from './economy.js';
 import { DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, resolveRules } from './difficulty.js';
 import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '../moveQueue.js';
+import * as ST from '../spacetime.js';
 
 const BASE = '/images/civ1';
+
+// ── The single movement spec (games/spacetime.js) ─────────────────────────────
+// civ1's one movement fact is a unit's `moves` (units.js). The framework turns it
+// into the per-turn budget (discrete time — what the turn refresh below hands out)
+// and the per-move cooldown (continuous time — getActionDuration). civ1 keeps its
+// own richer discrete enumerator (getReachableTiles: terrain cost, roads, zones of
+// control, cylindrical wrap), so it supplies `speed`/`vision`/transforms here but
+// not the generic `neighbors` hook — a game with a bespoke mover uses its own.
+const kinematics = {
+  turnDuration: 1,                       // one turn window == one unit of sim-time
+  speed: (u) => UNITS[u.type]?.moves ?? 1,
+  vision: () => ({ range: Math.SQRT2 + 0.01 }), // 8-neighbour disc (see vision-js-euclidean-gotcha)
+};
+
+const CIV1_SPACETIME = { space: 'discrete', time: 'discrete', play: 'sequential' };
 
 // Shortest horizontal distance between two columns on a map that wraps east/west.
 export function wrapDX(ax, bx, width) {
@@ -336,7 +352,11 @@ function applyActions(state, playerActions, rng = Math.random) {
     const navalBonus = nextEffects.has('naval-move') ? 2 : 0;
     units = units.map(u => {
       if (u.ownerId === nextPlayerId) {
-        const base = UNITS[u.type].moves + (UNITS[u.type].domain === 'sea' ? navalBonus : 0);
+        // Discrete-time per-turn budget = the spec's speed (spacetime.moveBudget),
+        // plus Magellan's naval bonus. Same number as before — now sourced from
+        // the one spec so discrete-time budget and continuous-time cooldown agree.
+        const base = ST.moveBudget(kinematics, u, state)
+          + (UNITS[u.type].domain === 'sea' ? navalBonus : 0);
         return { ...u, movesLeft: base };
       }
       return u;
@@ -630,6 +650,10 @@ function createFixedMapState(map, players, config) {
     lastActions: null,
     gameSpecific: {
       nextId: idCtr,
+      // Resolved (space × time × play) quadrant. civ1 is natively discrete/discrete/
+      // sequential; engine `timeType: 'continuous'` reads getActionDuration's
+      // dist/speed cooldown from this same spec. See games/spacetime.js.
+      spacetime: ST.resolveSpaceTime(Civ1Game, config),
       fogOfWar: config.fogOfWar ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
       rules: resolveRules(config),
@@ -700,6 +724,10 @@ function createInitialState(players, config = {}) {
     lastActions: null,
     gameSpecific: {
       nextId: idCtr,
+      // Resolved (space × time × play) quadrant. civ1 is natively discrete/discrete/
+      // sequential; engine `timeType: 'continuous'` reads getActionDuration's
+      // dist/speed cooldown from this same spec. See games/spacetime.js.
+      spacetime: ST.resolveSpaceTime(Civ1Game, config),
       fogOfWar: config.fogOfWar ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
       rules: resolveRules(config),
@@ -766,15 +794,19 @@ function sampleWorlds(observation, playerId, n, rng = Math.random) {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
+// Continuous-time cost of an action (engine `timeType: 'continuous'`). A move's
+// cooldown/travel-time is the framework's dist/speed (spacetime.travelTime with
+// civ1's turnDuration 1) over the cylindrical Chebyshev distance — double `moves`
+// → half the cooldown. Everything else is one tick.
 function getActionDuration(state, action) {
   if (action.type === 'move') {
     const unit = state.units.find(u => u.id === action.unitId);
     if (!unit) return 1;
     const from = action.from ?? unit.position;
     const dist = chebyshevWrapped(action.to, from, state.board.width);
-    return dist / (UNITS[unit.type]?.moves ?? 1);
+    const st = state.gameSpecific.spacetime ?? { turnDuration: 1 };
+    return ST.travelTime(kinematics, unit, state, st, dist);
   }
-  if (action.type === 'attack') return 1;
   return 1;
 }
 
@@ -827,6 +859,11 @@ export const Civ1Game = {
     return score;
   },
   name: 'Civ1',
+  // The single movement spec + its default quadrant (games/spacetime.js). civ1's
+  // discrete-time per-turn budget and continuous-time cooldown both derive from
+  // `kinematics.speed` (a unit's `moves`).
+  spacetime: CIV1_SPACETIME,
+  kinematics,
   // defaultTileSize: the map runs to 100x60 tiles, far more than fits legibly on the stage
   // at once — start at the original game's rough tile scale and let the player pan/zoom.
   // moveQueue: the goto-queue mechanic (games/moveQueue.js) — on by default for every game,

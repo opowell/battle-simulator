@@ -72,6 +72,11 @@ export class GameEngine {
   get timeType() { return this.config.timeType ?? 'discrete'; }
   get clock() { return this._clock; }
 
+  /** True when we-go (simultaneous) planning is requested via either spelling. */
+  _isSimultaneous() {
+    return this.config.play === 'simultaneous' || !!this.config.simultaneousTurns;
+  }
+
   /**
    * Replace the authoritative state with a patched version, bypassing turn/action
    * validation. For out-of-band UI metadata (e.g. fog-of-war markers a player has
@@ -134,7 +139,9 @@ export class GameEngine {
     // Simultaneous planning only makes sense for sequential games (exactly one
     // active player at the turn start); games that already activate several
     // players per step (cardbattle) are natively simultaneous — leave them be.
-    if (this.config.simultaneousTurns && this._state.activePlayers.length === 1)
+    // `play: 'simultaneous'` is the unified spelling of `simultaneousTurns: true`
+    // (see games/spacetime.js resolveSpaceTime); both select we-go planning.
+    if (this._isSimultaneous() && this._state.activePlayers.length === 1)
       return this._stepSimultaneous();
     return this._stepDiscrete();
   }

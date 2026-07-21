@@ -22,6 +22,31 @@ vision, holding an angle, reloading at the wrong moment.
 Facing follows movement and snaps onto whatever you shoot; an explicit **rotate**
 (1 second) lets a stationary unit look somewhere new. Wipe the other team to win.
 
+## One spec, four worlds (space × time)
+
+Everything above is the *default* world (discrete space, discrete time). But the
+whole movement model comes from **one number** — a unit's speed (move range 3) —
+handed to [`games/spacetime.js`](../spacetime.js), which derives how movement
+behaves in any of the four quadrants of the (space × time) plane, plus sequential
+or simultaneous play. Nothing about the game is re-specified per mode:
+
+| | **Discrete time** (per-turn budget) | **Continuous time** (a clock; moves have a cooldown) |
+|---|---|---|
+| **Discrete space** (grid cells) | *default* — up to 3 cells/turn, one step at a time. Double speed → twice as far. | A step is instant but is followed by a cooldown of `stepDist / speed` of the turn window. Double speed → half the cooldown (twice the steps). |
+| **Continuous space** (free points) | One move goes to any point within `speed` of the unit, instantly. Double speed → double the range. | The unit slides to the point; arrival is `dist / speed` later. Double speed → twice as fast. |
+
+Pick a world from config (`space`, `time`, `play`) — in the demo:
+
+```sh
+node demo/csmini-demo.js --auto --space=continuous --time=continuous --play=simultaneous
+node demo/csmini-demo.js --auto --space=continuous --time=discrete
+node demo/csmini-demo.js --auto --time=continuous --play=simultaneous
+```
+
+or from the web UI's **Space / Time / Play** dropdowns. See
+[`games/spacetime.js`](../spacetime.js) for the framework and
+`games/spacetime.test.js` + `games/csmini/spacetime.test.js` for the full matrix.
+
 ## Turn model
 
 The game rides the engine's discrete one-action-per-step loop. A team stays
