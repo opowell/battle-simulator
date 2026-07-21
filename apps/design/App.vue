@@ -194,6 +194,18 @@ watch(liveState, (newState, oldState) => {
   // A new round arrived — any in-progress replay is of a stale turn.
   if (newEntries.length) stopReplay();
 
+  // Simultaneous ("we-go") turns arrive as one package with a sampled kinetic
+  // playback of the WHOLE turn — units gliding along their exact paths, bullets in
+  // flight (see GameEngine._stepSimultaneous / KineticResolver). When a new turn
+  // carries that playback, replay it tick-by-tick instead of the net A→B hop/slide:
+  // it is the real per-tick motion, and it's what "play through the turn" means for
+  // CS. Turns with no motion (e.g. the instant buy turn) have no playback and fall
+  // through to the normal path, so the board just shows their resolved state.
+  if (newEntries.length && newState.playback?.frames?.length) {
+    replayTurn();
+    return;
+  }
+
   const ui = activeField.value?.ui ?? {};
   const hopsOn = (ui.moveAnimation ?? 'hop') !== 'none';
   const fxOn   = !!ui.combatFx;

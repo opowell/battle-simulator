@@ -536,6 +536,18 @@ function getRoundResult(state) {
   return null;
 }
 
+// In we-go mode a round must NOT respawn units mid-resolution (that would corrupt
+// the kinetic playback and the still-resolving order timeline). Instead, when an
+// order decides the round we only RECORD the winner in gameSpecific.roundResult;
+// the actual respawn + new buy phase happens once, cleanly, at the next turn
+// boundary (engine calls beginTurn → startNewRound). Idempotent: a round already
+// recorded is left untouched.
+function settleRound(s) {
+  if (s.gameSpecific.roundResult) return s;
+  const rr = getRoundResult(s);
+  return rr ? { ...s, gameSpecific: { ...s.gameSpecific, roundResult: rr } } : s;
+}
+
 // ── Start next round ──────────────────────────────────────────────────────────
 
 function startNewRound(state, roundWinner) {
@@ -572,7 +584,7 @@ function startNewRound(state, roundWinner) {
       roundNumber: gs.roundNumber + 1,
       tScore, ctScore,
       consecutiveLosses: losses,
-      buyPhase: 'T',
+      buyDone: { T: false, CT: false },
       bomb: { planted: false, plantedAt: null, timer: BOMB_TIMER,
               defuseProgress: 0, defusingUnitId: null, defuseNeeded: DEFUSE_NEEDED },
       smokeZones: [],
@@ -582,6 +594,72 @@ function startNewRound(state, roundWinner) {
       map: gs.map,
     },
   };
+}
+
+// ── beginTurn: once-per-turn upkeep at the we-go turn boundary ─────────────────
+// The engine calls this at the start of every turn (see GameEngine.step). Because
+// both teams now act simultaneously within one turn, all the bookkeeping that used
+// to run per-seat inside end-turn must happen exactly once here instead:
+//   1. a round decided last turn respawns into a fresh buy phase (startNewRound);
+//   2. otherwise, on an action turn, the bomb/smoke/fire timers tick, fire burns,
+//      every living unit gets a fresh per-turn budget + blind decay, and a
+//      between-turn round end (bomb detonation, fire kill, timeout) is applied.
+// Buy turns carry no upkeep. activePlayers is normalised to a single seat so the
+// engine keeps routing CS through the simultaneous (we-go) path.
+function beginTurn(state) {
+  const gs = state.gameSpecific;
+  const canonicalActive = [gs.teamPlayerMap.T];
+
+  // A round was decided during the previous turn — open the next round's buy phase.
+  if (gs.roundResult) return startNewRound(state, gs.roundResult);
+
+  // Buy turns: no time passes, nothing to tick. Just keep activePlayers length-1.
+  if (state.currentPhase !== 'action')
+    return { ...state, activePlayers: canonicalActive };
+
+  let units = state.units;
+  let bomb  = { ...gs.bomb };
+  if (bomb.planted) bomb = { ...bomb, timer: bomb.timer - 1 };
+
+  const smokeZones = (gs.smokeZones ?? [])
+    .map(sz => ({ ...sz, turnsLeft: sz.turnsLeft - 1 }))
+    .filter(sz => sz.turnsLeft > 0);
+
+  let fireZones = gs.fireZones ?? [];
+  if (fireZones.length > 0) {
+    units = units.map(u => {
+      if (!u.alive || !inFire(fireZones, u)) return u;
+      const newHp = Math.max(0, u.hp - calcDamage(FIRE_DAMAGE, u));
+      return { ...u, hp: newHp, alive: newHp > 0, armor: newHp > 0 ? u.armor : 0 };
+    });
+    if (bomb.defusingUnitId && !units.find(u => u.id === bomb.defusingUnitId)?.alive)
+      bomb = { ...bomb, defuseProgress: 0, defusingUnitId: null };
+    fireZones = fireZones
+      .map(fz => ({ ...fz, turnsLeft: fz.turnsLeft - 1 }))
+      .filter(fz => fz.turnsLeft > 0);
+  }
+
+  // Whole-army per-turn reset (both teams act this turn). Move budget scales with
+  // the currently-drawn weapon (SLOT_MOVE_MULT) and stance; blind decays.
+  units = units.map(u => u.alive ? {
+    ...u,
+    blinded: Math.max(0, (u.blinded ?? 0) - 1),
+    perTurn: { hasActed: false,
+               moveAllowance: MOVE_RANGE * SLOT_MOVE_MULT[u.active] * (u.crouched ? CROUCH_MOVE_MULT : 1) },
+  } : u);
+
+  const next = {
+    ...state,
+    turnNumber: state.turnNumber + 1,
+    activePlayers: canonicalActive,
+    units,
+    gameSpecific: { ...gs, bomb, smokeZones, fireZones, roundEndTurns: gs.roundEndTurns + 1 },
+  };
+
+  // A between-turn effect may have ended the round (bomb detonation, fire kill,
+  // unplanted timeout). Respawn straight into the next round's buy phase.
+  const rr = getRoundResult(next);
+  return rr ? startNewRound(next, rr) : next;
 }
 
 // ── applyActions ──────────────────────────────────────────────────────────────
@@ -628,17 +706,26 @@ function applyActions(state, playerActions, rng = Math.random) {
     }
 
     if (action.type === 'end-buy') {
-      if (gs.buyPhase === 'T') {
-        return { ...state, units, activePlayers: [gs.teamPlayerMap['CT']], currentPhase: 'buy',
-                 gameSpecific: { ...gs, buyPhase: 'CT' }, lastActions: playerActions };
-      }
-      return { ...state, units, activePlayers: [gs.teamPlayerMap['T']], currentPhase: 'action',
-               gameSpecific: { ...gs, buyPhase: 'done' }, lastActions: playerActions };
+      // Both teams buy in the SAME we-go turn, so end-buy is order-independent:
+      // record that this team is done, and only advance to the action phase once
+      // BOTH have finished. activePlayers is emptied so a seat that has ended its
+      // buy stops being asked for more during planning (see _collectOrders); the
+      // engine's beginTurn re-normalises activePlayers before the next turn.
+      const buyDone = { ...(gs.buyDone ?? {}), [playerId]: true };
+      const bothDone = buyDone.T && buyDone.CT;
+      return { ...state, units,
+               activePlayers: [],
+               currentPhase: bothDone ? 'action' : 'buy',
+               gameSpecific: { ...gs, buyDone }, lastActions: playerActions };
     }
   }
 
   // ── ACTION PHASE ──────────────────────────────────────────────────────────────
   if (state.currentPhase === 'action') {
+    // Once a round has been decided mid-turn, later orders in the same we-go turn
+    // (trailing bullets, moves still in flight) must not mutate the settled round —
+    // the new round opens at the next turn boundary (see beginTurn/startNewRound).
+    if (gs.roundResult) return state;
     const { tiles } = gs.map;
     let bomb       = { ...gs.bomb };
     let smokeZones = [...(gs.smokeZones ?? [])];
@@ -663,9 +750,7 @@ function applyActions(state, playerActions, rng = Math.random) {
                  perTurn: { ...u.perTurn, moveAllowance: Math.max(0, u.perTurn.moveAllowance - dist) } };
       });
       const s0 = { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
-      const rr = getRoundResult(s0);
-      if (rr) return startNewRound(s0, rr);
-      return s0;
+      return settleRound(s0);
     }
 
     if (action.type === 'shoot') {
@@ -699,9 +784,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       }
 
       const s1 = { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
-      const rr1 = getRoundResult(s1);
-      if (rr1) return startNewRound(s1, rr1);
-      return s1;
+      return settleRound(s1);
     }
 
     if (action.type === 'throw') {
@@ -758,9 +841,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       // decoy: no mechanical effect
 
       const s2 = { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
-      const rr2 = getRoundResult(s2);
-      if (rr2) return startNewRound(s2, rr2);
-      return s2;
+      return settleRound(s2);
     }
 
     if (action.type === 'crouch' || action.type === 'stand') {
@@ -794,9 +875,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       units = units.map(u => u.id === action.unitId ? { ...u, perTurn: { ...u.perTurn, hasActed: true } } : u);
 
       const s3 = { ...state, units, gameSpecific: { ...gs, bomb, smokeZones, fireZones }, lastActions: playerActions };
-      const rr3 = getRoundResult(s3);
-      if (rr3) return startNewRound(s3, rr3);
-      return s3;
+      return settleRound(s3);
     }
 
     if (action.type === 'reload') {
@@ -833,53 +912,11 @@ function applyActions(state, playerActions, rng = Math.random) {
     }
 
     if (action.type === 'end-turn') {
-      const otherTeam     = playerId === 'T' ? 'CT' : 'T';
-      const roundEndTurns = gs.roundEndTurns + 1;
-
-      // Tick bomb timer when T ends turn after plant
-      let newBomb = { ...bomb };
-      if (playerId === 'T' && bomb.planted) newBomb = { ...bomb, timer: bomb.timer - 1 };
-
-      // Tick smoke zones
-      const newSmokeZones = smokeZones
-        .map(sz => ({ ...sz, turnsLeft: sz.turnsLeft - 1 }))
-        .filter(sz => sz.turnsLeft > 0);
-
-      // Apply fire damage then tick fire zones
-      let newFireZones = fireZones;
-      if (fireZones.length > 0) {
-        units = units.map(u => {
-          if (!u.alive || !inFire(fireZones, u)) return u;
-          const newHp = Math.max(0, u.hp - calcDamage(FIRE_DAMAGE, u));
-          return { ...u, hp: newHp, alive: newHp > 0, armor: newHp > 0 ? u.armor : 0 };
-        });
-        if (newBomb.defusingUnitId && !units.find(u => u.id === newBomb.defusingUnitId)?.alive)
-          newBomb = { ...newBomb, defuseProgress: 0, defusingUnitId: null };
-        newFireZones = fireZones
-          .map(fz => ({ ...fz, turnsLeft: fz.turnsLeft - 1 }))
-          .filter(fz => fz.turnsLeft > 0);
-      }
-
-      // Reset perTurn for current team; reduce blind timers (blind expires at end of their own turn).
-      // Move budget scales with the currently-drawn weapon (SLOT_MOVE_MULT) and stance.
-      units = units.map(u => {
-        if (u.ownerId !== playerId) return u;
-        return { ...u, blinded: Math.max(0, u.blinded - 1),
-                 perTurn: { hasActed: false,
-                            moveAllowance: MOVE_RANGE * SLOT_MOVE_MULT[u.active] * (u.crouched ? CROUCH_MOVE_MULT : 1) } };
-      });
-
-      const tentative = {
-        ...state, units,
-        activePlayers: [gs.teamPlayerMap[otherTeam]],
-        turnNumber: playerId === 'CT' ? state.turnNumber + 1 : state.turnNumber,
-        gameSpecific: { ...gs, bomb: newBomb, smokeZones: newSmokeZones, fireZones: newFireZones, roundEndTurns },
-        lastActions: playerActions,
-      };
-
-      const rr = getRoundResult(tentative);
-      if (rr) return startNewRound(tentative, rr);
-      return tentative;
+      // Both teams end their turn within the SAME we-go turn, so end-turn no longer
+      // ticks bomb/smoke/fire, resets budgets, or rotates seats — all of that is
+      // once-per-turn upkeep that now happens exactly once at the next turn
+      // boundary (see beginTurn). Here it is just the seat-lane terminator.
+      return { ...state, lastActions: playerActions };
     }
   }
 
@@ -911,10 +948,12 @@ function getResult(state) {
 
 function renderState(state) {
   const gs         = state.gameSpecific;
-  const activeTeam = gs.teamMap?.[state.activePlayers[0]] ?? state.activePlayers[0];
+  // Both teams act simultaneously in the we-go model, so name the buyers/movers by
+  // who still has an open turn rather than a single "to move" seat.
+  const buyingTeams = ['T', 'CT'].filter(t => !(gs.buyDone?.[t])).join('+') || '—';
   const phase      = state.currentPhase === 'buy'
-    ? `BUY (${gs.buyPhase} buying)`
-    : `ACTION (${activeTeam} to move)`;
+    ? `BUY (${buyingTeams} buying)`
+    : 'ACTION (both teams)';
 
   const teamSummary = (tid) => {
     const teamUnits = state.units.filter(u => u.ownerId === tid);
@@ -1137,7 +1176,7 @@ export function createInitialState(players, config = {}) {
       roundNumber: 1,
       tScore: 0, ctScore: 0,
       winRounds, maxRounds,
-      buyPhase: 'T',
+      buyDone: { T: false, CT: false },
       consecutiveLosses: { T: 0, CT: 0 },
       bomb: { planted: false, plantedAt: null, timer: BOMB_TIMER,
               defuseProgress: 0, defusingUnitId: null, defuseNeeded: DEFUSE_NEEDED },
@@ -1180,6 +1219,13 @@ const PLAYER_SPEED = MOVE_RANGE;
 const BULLET_SPEED = 20;
 
 function getActionDuration(state, action) {
+  // Zero-time orders resolve instantly at t=0 in the we-go timeline, so buys
+  // happen the moment the turn starts and stance/aim tweaks carry no playback
+  // time. Only movement, shooting, grenades and the timed objective actions
+  // (plant/defuse/reload) consume real time and animate.
+  if (action.type === 'buy'  || action.type === 'end-buy' || action.type === 'end-turn' ||
+      action.type === 'crouch' || action.type === 'stand' ||
+      action.type === 'switch-weapon' || action.type === 'rotate') return 0;
   if (action.type === 'move') {
     const unit = state.units.find(u => u.id === action.unitId);
     if (!unit) return 1;
@@ -1256,6 +1302,11 @@ export const CsGame = {
     { id: 'de_pond',  name: 'de_pond',   description: 'Shape terrain — waterfront routed around two oval ponds', config: { mapId: 'de_pond' } },
     { id: 'de_plaza', name: 'de_plaza',  description: 'Shape terrain — open oval plaza with a central fountain', config: { mapId: 'de_plaza' } },
   ],
+  // CS is a simultaneous ("we-go") game: every turn both teams plan a whole turn of
+  // orders at once, then the orders resolve together by exact kinetics into ~60
+  // playback frames (see engine/KineticResolver.js). defaultConfig is merged into
+  // the engine config by api-server / the demo so sessions get this automatically.
+  defaultConfig: { simultaneousTurns: true },
   createInitialState,
   actionKey:        csActionKey,
   getLegalActions:  withTeam(getLegalActions),
@@ -1267,4 +1318,9 @@ export const CsGame = {
   toGrid,
   getVisibleState:  withTeam(getVisibleState),
   getActionDuration,
+  // Once-per-turn upkeep + round rollover at each we-go turn boundary.
+  beginTurn,
+  // The buy phase ends with 'end-buy' (not 'end-turn'), so the engine's per-seat
+  // planning loop needs to know it terminates a planned turn too.
+  isTurnEnder:      (action) => action.type === 'end-buy',
 };

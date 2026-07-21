@@ -119,6 +119,17 @@ export class GameEngine {
     if (!this._state) this._init();
     if (this._result) return { done: true, result: this._result };
 
+    // Optional per-turn boundary hook: a game can run its once-per-turn upkeep and
+    // roll a finished sub-round (e.g. CS respawning into a new buy phase) here,
+    // before anyone plans. It also normalises turn-start invariants (e.g. a
+    // length-1 activePlayers, which the simultaneous-mode guard below relies on).
+    // If the hook ends the match, stop before collecting any orders.
+    if (this.game.beginTurn) {
+      this._state = freeze(this.game.beginTurn(this._state));
+      this._result = this.game.getResult(this._state);
+      if (this._result) return { done: true, result: this._result };
+    }
+
     if (this.timeType === 'continuous') return this._stepContinuous();
     // Simultaneous planning only makes sense for sequential games (exactly one
     // active player at the turn start); games that already activate several
@@ -238,7 +249,9 @@ export class GameEngine {
       const action = await player.agent.chooseAction(visibleState, legalActions, this.game);
       validate(action, legalActions, this.game, plan, playerId);
       orders.push(action);
-      if (action.type === 'end-turn') break;
+      // A game may have more than one turn-terminating action (e.g. CS ends its
+      // buy phase with 'end-buy', not 'end-turn'); stop collecting on either.
+      if (action.type === 'end-turn' || this.game.isTurnEnder?.(action)) break;
       const next = this.game.applyActions(plan, [{ playerId, action }], this._rng);
       const rotated = !(next.activePlayers ?? []).includes(playerId);
       plan = freeze({ ...next, activePlayers: [playerId] });

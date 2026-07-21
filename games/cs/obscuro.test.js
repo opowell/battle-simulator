@@ -18,14 +18,17 @@ function players() {
 const fresh = (config = {}) => CsGame.createInitialState(players(), config);
 
 // Advance a buy-phase state into the action phase (both teams decline to buy).
+// In the we-go model both teams buy in the SAME turn, so the phase only advances
+// once BOTH have ended their buy; then the engine runs beginTurn to open the first
+// action turn (fresh per-turn budgets), which we mirror here.
 function toActionPhase(state) {
   let s = state;
-  while (s.currentPhase === 'buy') {
-    const me = s.activePlayers[0];
-    const end = CsGame.getLegalActions(s, me).find(a => a.type === 'end-buy');
-    s = CsGame.applyActions(s, [{ playerId: me, action: end }]);
+  for (const team of ['T', 'CT']) {
+    const pid = s.gameSpecific.teamPlayerMap[team];
+    const end = CsGame.getLegalActions(s, pid).find(a => a.type === 'end-buy');
+    s = CsGame.applyActions(s, [{ playerId: pid, action: end }]);
   }
-  return s;
+  return CsGame.beginTurn(s);
 }
 
 const setGs = (s, gs) => ({ ...s, gameSpecific: { ...s.gameSpecific, ...gs } });
@@ -261,10 +264,11 @@ test('cs smoke: a unit inside the drawn cloud is actually hidden by it', () => {
 // point now (weapons.js's fireOval / inZone).
 // ---------------------------------------------------------------------------
 
-// End one turn, which is when fire damage is applied (see applyActions' end-turn).
+// Advance one full turn boundary — where fire burns, timers tick and budgets reset
+// (see CsGame.beginTurn). Under the we-go model end-turn itself is just a no-op
+// terminator; the once-per-turn upkeep now lives in beginTurn.
 function endTurn(state) {
-  const me = state.activePlayers[0];
-  return CsGame.applyActions(state, [{ playerId: me, action: { type: 'end-turn', unitId: '__player__' } }]);
+  return CsGame.beginTurn(state);
 }
 
 // Put one unit of each team at chosen points, so a round can't end mid-test.

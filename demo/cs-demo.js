@@ -152,7 +152,7 @@ const players = [
   { id: 'player-2', name: 'Counter-Terrorists', agent: agent2 },
 ];
 
-const engine = new GameEngine(CsGame, players, { winRounds: 5, maxRounds: 9 });
+const engine = new GameEngine(CsGame, players, { ...CsGame.defaultConfig, winRounds: 5, maxRounds: 9 });
 
 if (isAuto) {
   console.log('Running CS simulation...\n');

@@ -65,11 +65,14 @@ test('cs: in buy phase, can buy weapons if affordable', () => {
 // applyActions
 // ---------------------------------------------------------------------------
 
-test('cs: T end-buy switches to CT buy', () => {
-  const state = CsGame.createInitialState(players());
+test('cs: one team end-buy records it done but stays in buy until both finish', () => {
+  // Both teams buy simultaneously in the same we-go turn, so a single end-buy only
+  // marks that team done — the phase stays 'buy' until the other team ends too.
+  const state = CsGame.createInitialState(players());   // p2 = T, p1 = CT
   const next = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'end-buy', unitId: '__player__' } }]);
-  assert.deepEqual(next.activePlayers, ['p1']);
   assert.equal(next.currentPhase, 'buy');
+  assert.equal(next.gameSpecific.buyDone.T, true);
+  assert.equal(next.gameSpecific.buyDone.CT, false);
 });
 
 test('cs: both end-buy transitions to action phase', () => {
@@ -87,12 +90,21 @@ test('cs: in action phase, includes end-turn', () => {
   assert.ok(actions.some(a => a.type === 'end-turn'));
 });
 
-test('cs: end-turn in action phase alternates active team', () => {
+test('cs: end-turn is a no-op terminator; beginTurn advances the turn and resets budgets', () => {
+  // Under the we-go model both teams act in one turn, so end-turn no longer rotates
+  // seats or resets budgets — it just terminates a seat's planned orders. All the
+  // once-per-turn upkeep (turn advance, fresh per-turn budgets) happens in beginTurn.
   const state = CsGame.createInitialState(players());
   const s1 = CsGame.applyActions(state, [{ playerId: 'p1', action: { type: 'end-buy', unitId: '__player__' } }]);
   const s2 = CsGame.applyActions(s1,    [{ playerId: 'p2', action: { type: 'end-buy', unitId: '__player__' } }]);
-  const s3 = CsGame.applyActions(s2,    [{ playerId: 'p1', action: { type: 'end-turn', unitId: '__player__' } }]);
-  assert.deepEqual(s3.activePlayers, ['p2']);
+  assert.equal(s2.currentPhase, 'action');
+  // end-turn changes no unit/turn state on its own.
+  const s3 = CsGame.applyActions(s2, [{ playerId: 'p1', action: { type: 'end-turn', unitId: '__player__' } }]);
+  assert.equal(s3.turnNumber, s2.turnNumber);
+  // beginTurn advances the turn and hands every living unit a fresh budget.
+  const s4 = CsGame.beginTurn(s3);
+  assert.equal(s4.turnNumber, s2.turnNumber + 1);
+  assert.ok(s4.units.every(u => !u.alive || (u.perTurn.hasActed === false && u.perTurn.moveAllowance > 0)));
 });
 
 // ---------------------------------------------------------------------------
@@ -244,12 +256,17 @@ test('cs: buy phase is bounded even with a huge wallet and a buy-everything play
   let state = CsGame.createInitialState(players());
   state = { ...state, units: state.units.map(u => ({ ...u, money: 16000 })) };
   let steps = 0;
-  while (state.currentPhase === 'buy') {
-    const active  = state.activePlayers[0];
-    const actions = CsGame.getLegalActions(state, active);
-    const buy = actions.find(a => a.type === 'buy') ?? actions.find(a => a.type === 'end-buy');
-    state = CsGame.applyActions(state, [{ playerId: active, action: buy }]);
-    assert.ok(++steps <= 70, `buy phase ran away (${steps} steps)`);
+  // Both teams buy simultaneously in one we-go turn; drive each side to always take
+  // a buy until only end-buy remains. The per-unit cap must keep each side bounded.
+  for (const team of ['T', 'CT']) {
+    const pid = state.gameSpecific.teamPlayerMap[team];
+    for (;;) {
+      const actions = CsGame.getLegalActions(state, pid);
+      const buy = actions.find(a => a.type === 'buy') ?? actions.find(a => a.type === 'end-buy');
+      state = CsGame.applyActions(state, [{ playerId: pid, action: buy }]);
+      assert.ok(++steps <= 140, `buy phase ran away (${steps} steps)`);
+      if (buy.type === 'end-buy') break;
+    }
   }
   assert.equal(state.currentPhase, 'action');
 });
@@ -416,20 +433,19 @@ test('cs: switch-weapon changes the active slot and taxes moveAllowance, not has
 test('cs: turn-start move budget follows the active weapon — knife fastest, pistol baseline, primary slowest', () => {
   // A switch mid-turn only taxes the budget already fixed for that turn (see the
   // switch-weapon test above) — the speed tier itself is applied when moveAllowance is
-  // (re)computed at the start of a unit's turn (the 'end-turn' handler), so exercise that
-  // directly: force a unit's active slot, then end its team's turn and read the fresh budget.
+  // (re)computed at the start of a turn (now the beginTurn boundary hook, since both
+  // teams act at once), so exercise that directly: force a unit's active slot, then
+  // run beginTurn and read the fresh whole-army budget.
   const budgetFor = (activeSlot) => {
     let state = CsGame.createInitialState(players());
     state = {
       ...state, currentPhase: 'action',
-      gameSpecific: { ...state.gameSpecific, buyPhase: 'done' },
       units: state.units.map(u => u.id === 'T-0'
         ? { ...u, weapons: { ...u.weapons, primary: 'ak47' }, active: activeSlot,
             ammo: { ...u.ammo, primary: { mag: 30, reserve: 90 } } }
         : u),
     };
-    // T-0 belongs to team T, controlled by player p2 — ending p2's turn resets T's own units.
-    const next = CsGame.applyActions(state, [{ playerId: 'p2', action: { type: 'end-turn', unitId: '__player__' } }]);
+    const next = CsGame.beginTurn(state);
     return next.units.find(u => u.id === 'T-0').perTurn.moveAllowance;
   };
   const melee = budgetFor('melee'), pistol = budgetFor('pistol'), primary = budgetFor('primary');
@@ -465,3 +481,40 @@ test('cs: shooting only spends ammo from the active slot', () => {
 function WEAPON_IS(item) {
   return !['armor', 'helmet', 'defusekit', 'he', 'flash', 'smoke', 'molotov', 'incendiary', 'decoy'].includes(item);
 }
+
+// ---------------------------------------------------------------------------
+// Simultaneous ("we-go") turn model — instant buys + per-turn kinetic playback.
+// ---------------------------------------------------------------------------
+
+test('cs: declares simultaneous-turns as an engine default', () => {
+  assert.equal(CsGame.defaultConfig?.simultaneousTurns, true);
+});
+
+test('cs: instant buy turn (no playback) then action turns carry 61-frame playback', async () => {
+  const engine = new GameEngine(CsGame, players(), { ...CsGame.defaultConfig, winRounds: 2, maxRounds: 4, maxTurns: 100 });
+  engine._init();
+  assert.equal(engine.state.currentPhase, 'buy');
+
+  // Turn 1 is the buy turn: every order is zero-duration, so the whole turn resolves
+  // at t=0 — no kinetic playback — and the game lands in the action phase.
+  await engine.step();
+  assert.equal(engine.playback, null, 'the instant buy turn has no playback');
+  assert.equal(engine.state.currentPhase, 'action');
+
+  // Action turns resolve movement/combat into a sampled 61-frame playback.
+  let sawPlaybackTurn = false;
+  for (let i = 0; i < 40 && !engine.result; i++) {
+    await engine.step();
+    if (engine.playback?.frames?.length) {
+      sawPlaybackTurn = true;
+      assert.equal(engine.playback.frames.length, 61, 'a resolved action turn samples to 61 frames');
+    }
+  }
+  assert.ok(sawPlaybackTurn, 'at least one action turn produced kinetic playback');
+});
+
+test('cs: a full simultaneous match reaches a decisive result', async () => {
+  const { result } = await new GameEngine(CsGame, players(), { ...CsGame.defaultConfig, winRounds: 2, maxRounds: 4, maxTurns: 200 }).run();
+  assert.ok(result, 'match produced a result');
+  assert.ok(['win', 'draw'].includes(result.outcome), `unexpected outcome ${result.outcome}`);
+});
