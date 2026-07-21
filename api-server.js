@@ -40,6 +40,7 @@ import { CombatMissionGame } from './games/combatmission/index.js';
 import { XComGame }          from './games/xcom/index.js';
 import { AowGame }           from './games/aow/index.js';
 import { CsGame }            from './games/cs/index.js';
+import { CsMiniGame }        from './games/csmini/index.js';
 import { FFTAGame }          from './games/ffta/index.js';
 import { Sc1Game }           from './games/sc1/index.js';
 import { Sc2Game }           from './games/sc2/index.js';
@@ -257,6 +258,7 @@ const GAMES = {
   xcom:          { game: XComGame,          minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }] },
   aow:           { game: AowGame,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   cs:            { game: CsGame,            minPlayers: 2, maxPlayers: 10, defaultPlayers: [{ id: 'ct', name: 'CT' }, { id: 't', name: 'T' }] },
+  csmini:        { game: CsMiniGame,        minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'ct', name: 'CT' }, { id: 't', name: 'T' }] },
   ffta:          { game: FFTAGame,          minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   sc1:           { game: Sc1Game,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   sc2:           { game: Sc2Game,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },

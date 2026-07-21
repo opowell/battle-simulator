@@ -17,6 +17,7 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | `xcom` | XCOM | [games/xcom/](games/xcom/README.md) |
 | `aow` | The Ancient Art of War | [games/aow/](games/aow/README.md) |
 | `cs` | Counter-Strike | [games/cs/](games/cs/README.md) |
+| `csmini` | Counter-Strike (simplified 2v2) | [games/csmini/](games/csmini/README.md) |
 | `ffta` | Final Fantasy Tactics Advance | [games/ffta/](games/ffta/README.md) |
 | `sc1` | StarCraft 1 | [games/sc1/](games/sc1/README.md) |
 | `sc2` | StarCraft 2 | [games/sc2/](games/sc2/README.md) |
@@ -36,7 +37,7 @@ node demo/chess-demo.js --auto
 node demo/xcom-demo.js --auto --greedy
 ```
 
-All demos are in `demo/`: `chess`, `tactical`, `cardbattle`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `ffta`, `sc2`, `doom`, `rogue`.
+All demos are in `demo/`: `chess`, `tactical`, `cardbattle`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `csmini`, `ffta`, `sc2`, `doom`, `rogue`.
 
 ### Start the HTTP API server
 
