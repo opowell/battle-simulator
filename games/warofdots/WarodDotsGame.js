@@ -477,8 +477,34 @@ function simStep(state, dt, rng) {
 
 // ── Game definition ───────────────────────────────────────────────────────────
 
+// Heuristic leaf evaluation for the generic Greedy/Obscuro agents. Value to
+// `playerId`, "me vs everyone else": own assets add, enemy assets subtract.
+// Weights reflect what wins the game (getResult): capturing the enemy capital
+// and controlling cities, backed by a living army and a gold reserve.
+const CITY_VALUE = 300;
+const CAPITAL_VALUE = 2500;
+function evaluateState(state, playerId) {
+  let score = 0;
+  for (const u of state.units ?? []) {
+    if (u.owner == null) continue;
+    const worth = (u.hp ?? 0) + (UNIT_DEF[u.type]?.cost ?? 0) * 0.25;
+    score += u.owner === playerId ? worth : -worth;
+  }
+  for (const c of state.board?.cities ?? []) {
+    if (c.owner == null || c.owner === 'neutral') continue;
+    const worth = c.isCapital ? CAPITAL_VALUE : CITY_VALUE;
+    score += c.owner === playerId ? worth : -worth;
+  }
+  for (const p of state.players ?? []) {
+    const gold = (p.gold ?? 0) * 0.5;
+    score += p.id === playerId ? gold : -gold;
+  }
+  return score;
+}
+
 export const WarodDotsGame = {
   name: 'War of Dots',
+  evaluateState,
 
   gameOptions: [
     HTML_RENDERER_OPTION,
