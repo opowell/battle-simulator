@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { SurvivGame } from './index.js';
 import { num } from '../coord.js';
 import { isWalkableContinuous } from './map.js';
+import { WEAPONS } from './weapons.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -161,39 +162,37 @@ test('surviv: toGrid renders spriteLayers with a held-weapon layer once armed', 
 });
 
 // ---------------------------------------------------------------------------
-// break (destructible crates/barrels)
+// destructible crates/barrels (damaged by any attack — shoot/punch/throw — via
+// SurvivGame.js's shared applyBreakableDamage; there is no dedicated 'break' action)
 // ---------------------------------------------------------------------------
 
 // breakable-1 is the small 1x1 crate at rect(10,8,1,1) — centre (10.5, 8.5) — and
 // breakable-3 is the 1x1 barrel at oval(12.5,3,1,1) — centre (13, 3.5). Both come
 // straight from games/surviv/map.js's SANDBAR_ISLAND terrain list.
 
-test('surviv: a nearby crate offers a break action, which damages it', () => {
+test('surviv: free-aim shooting a nearby crate damages it', () => {
   const base = SurvivGame.createInitialState(players());
   const unit = { ...base.units[0], id: 'red-0', ownerId: 'red', position: { x: 9, y: 8.5 }, weapon: 'colt45', ammo: { mag: 7, reserve: 21 }, perTurn: { hasActed: false, moveAllowance: 4 } };
   const state = { ...base, units: [unit] };
+  const action = { type: 'shoot', unitId: 'red-0', target: { x: 10.5, y: 8.5 } };
+  assert.ok(SurvivGame.isActionLegal(state, 'red', action), 'free-aim shoot toward the nearby crate is legal');
 
-  const actions = SurvivGame.getLegalActions(state, 'red');
-  const brk = actions.find(a => a.type === 'break' && a.breakableId === 'breakable-1');
-  assert.ok(brk, 'break action offered against the nearby crate');
-
-  const next = SurvivGame.applyActions(state, [{ playerId: 'red', action: brk }]);
+  const next = SurvivGame.applyActions(state, [{ playerId: 'red', action }], () => 0); // rng()=0 always hits
   const target = next.gameSpecific.breakables.find(b => b.id === 'breakable-1');
-  assert.equal(target.hp, target.maxHp - brk.damage);
+  assert.equal(target.hp, target.maxHp - WEAPONS.colt45.damage);
   assert.equal(target.destroyed, false);
 });
 
-test('surviv: breaking a crate to 0 hp destroys it, opens movement, and drops loot', () => {
+test('surviv: shooting a crate to 0 hp destroys it, opens movement, and drops loot', () => {
   const base = SurvivGame.createInitialState(players());
   const unit = { ...base.units[0], id: 'red-0', ownerId: 'red', position: { x: 9, y: 8.5 }, weapon: 'm4a1', ammo: { mag: 30, reserve: 90 }, perTurn: { hasActed: false, moveAllowance: 4 } };
   let state = { ...base, units: [unit] };
+  const action = { type: 'shoot', unitId: 'red-0', target: { x: 10.5, y: 8.5 } };
 
   // m4a1 does 25 dmg/hit; the crate has 60 hp — a few hits finish it.
   for (let i = 0; i < 4; i++) {
-    const actions = SurvivGame.getLegalActions(state, 'red');
-    const brk = actions.find(a => a.type === 'break' && a.breakableId === 'breakable-1');
-    if (!brk) break; // already destroyed — no more break actions offered
-    state = SurvivGame.applyActions(state, [{ playerId: 'red', action: brk }]);
+    if (!SurvivGame.isActionLegal(state, 'red', action)) break; // already destroyed
+    state = SurvivGame.applyActions(state, [{ playerId: 'red', action }], () => 0);
     state = { ...state, units: state.units.map(u => ({ ...u, perTurn: { ...u.perTurn, hasActed: false } })) };
   }
 
@@ -218,19 +217,18 @@ test('surviv: breaking a crate to 0 hp destroys it, opens movement, and drops lo
   assert.ok(!grid.shapes.some(s => s.id === 'breakable-1'), 'destroyed crate no longer renders as a shape');
 });
 
-test('surviv: breaking a barrel to 0 hp explodes, damaging both teams nearby', () => {
+test('surviv: shooting a barrel to 0 hp explodes, damaging both teams nearby', () => {
   const base = SurvivGame.createInitialState(players());
   const attacker = { ...base.units[0], id: 'red-0', ownerId: 'red', position: { x: 12, y: 3.5 }, weapon: 'm4a1', ammo: { mag: 30, reserve: 90 }, perTurn: { hasActed: false, moveAllowance: 4 } };
   const bystanderRed  = { ...base.units[1], id: 'red-1',  ownerId: 'red',  position: { x: 14, y: 3.5 }, hp: 100, alive: true };
   const bystanderBlue = { ...base.units[2], id: 'blue-0', ownerId: 'blue', position: { x: 13, y: 4.5 }, hp: 100, alive: true };
   let state = { ...base, units: [attacker, bystanderRed, bystanderBlue] };
+  const action = { type: 'shoot', unitId: 'red-0', target: { x: 13, y: 3.5 } };
 
   // barrel has 40 hp; m4a1 does 25/hit — two hits destroy it.
   for (let i = 0; i < 3; i++) {
-    const actions = SurvivGame.getLegalActions(state, 'red');
-    const brk = actions.find(a => a.type === 'break' && a.breakableId === 'breakable-3');
-    if (!brk) break;
-    state = SurvivGame.applyActions(state, [{ playerId: 'red', action: brk }]);
+    if (!SurvivGame.isActionLegal(state, 'red', action)) break;
+    state = SurvivGame.applyActions(state, [{ playerId: 'red', action }], () => 0);
     state = { ...state, units: state.units.map(u => ({ ...u, perTurn: { ...u.perTurn, hasActed: false } })) };
   }
 
