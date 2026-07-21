@@ -135,6 +135,26 @@ function replayTurn() {
 function stopReplay() {
   if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
   replayAnim.value = null;
+  maybeAckAdvance();
+}
+
+// ── observer lock-step ack ────────────────────────────────────
+// In observer-paced mode (liveState.observerPaced) the server computes ONE step,
+// shows it, then waits for us to finish animating it before computing the next —
+// signalled by liveState.awaitingAdvance with a step number `seq`. We ack (POST
+// /control { advance: seq }) only once every animation for the shown step has
+// settled, so a would-be-instant AI game unfolds at exactly watching speed. `seq`
+// guards against a duplicate ack advancing an unwatched step (see api-server.js
+// Session._advance).
+let ackedSeq = -1;
+const animating = () => !!hopAnim.value || fxBusy.value || !!replayAnim.value || animQueue.value.length > 0;
+function maybeAckAdvance() {
+  const s = liveState.value;
+  if (!s || !s.observerPaced || !s.awaitingAdvance || s.status !== 'active') return;
+  if (animating()) return;        // still playing the shown step — wait for it
+  if (s.seq === ackedSeq) return; // already acked this step
+  ackedSeq = s.seq;
+  api.control(s.id, { advance: s.seq }).catch(() => {});
 }
 
 function buildHopPath(from, to, diagonal = false) {
@@ -154,7 +174,12 @@ function buildHopPath(from, to, diagonal = false) {
 }
 
 function playNext() {
-  if (hopAnim.value || fxBusy.value || animQueue.value.length === 0) return;
+  if (hopAnim.value || fxBusy.value || animQueue.value.length === 0) {
+    // Idle (queue drained, nothing mid-flight) — the shown step has fully
+    // animated, so ack it in observer lock-step mode.
+    if (!hopAnim.value && !fxBusy.value && animQueue.value.length === 0) maybeAckAdvance();
+    return;
+  }
   const beat = animQueue.value[0];
   animQueue.value = animQueue.value.slice(1);
   if (beat.kind === 'fx') {
@@ -373,6 +398,12 @@ watch(liveState, (newState, oldState) => {
     playNext();
   }
 });
+
+// Runs AFTER the animation-building watcher above (registration order), so any
+// beats/replay for this step are already queued: if the step had nothing to
+// animate, we're idle here and ack immediately; otherwise animating() is true and
+// the ack waits for the animation-completion path (playNext / stopReplay).
+watch(liveState, () => maybeAckAdvance());
 
 // ── field for the battlefield ────────────────────────────────
 function buildField(g, s) {
@@ -740,6 +771,10 @@ async function enterSession(id, { push = true } = {}) {
     let state = await api.session(id);
     const humanId = viewAsId(state);
     if (humanId) state = await api.session(id, humanId);
+    // An observer session's plain snapshot is fog-blanked (a playerless fog view
+    // gets no board); refetch the full observer view so the board shows at once,
+    // before the observer socket has even connected.
+    else if (isObserverSession(state)) state = await api.sessionObserver(id, observerView.value);
     liveState.value = state;
     view.value = 'battle';
     if (push) router.push('/session/' + id);

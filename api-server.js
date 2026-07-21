@@ -303,8 +303,28 @@ class Session {
     //  - `paused` halts the run loop before its next step (AI won't move until resumed).
     // `_resumeWaiters` are promise resolvers the loop parks on while paused.
     this.aiDelay = Math.max(0, Number(params.config?.aiDelay) || 0);
-    this.paused = params.config?.startPaused ?? false;
+    // Observer-paced (lock-step) mode: a pure-AI session that is meant to be
+    // watched. Instead of a wall-clock `aiDelay`, the run loop computes one step,
+    // shows it, then WAITS for the observing client to finish animating that
+    // step's playback and send an `advance` signal before computing the next —
+    // so an observer never falls behind a game that would otherwise finish
+    // instantly. Such a session also starts paused, so nothing runs until the
+    // observer clicks Resume. Off by default for any session with a human seat
+    // (those are paced by human input) and for headless AI runs (no observers).
+    const noHumans = this.apiAgents.size === 0;
+    this.observerPaced = params.config?.observerPaced ?? (noHumans && this.allowObservers);
+    this.paused = params.config?.startPaused ?? this.observerPaced;
     this._resumeWaiters = [];
+    // Lock-step advance gate (observer-paced mode): the loop parks on
+    // `_advanceWaiters` after each step; the client's playback-done signal
+    // (POST /control { advance: <seq> }) releases it. `_seq` is a monotonic
+    // per-step counter the client acks against so a stale/duplicate ack can't
+    // skip a step; `_advancePending` covers an ack that races in before the loop
+    // parks; `_awaitingAdvance` tells the client a step is on screen awaiting ack.
+    this._advanceWaiters = [];
+    this._advancePending = false;
+    this._seq = 0;
+    this._awaitingAdvance = false;
     this._sawHumanPending = false;
     this.createdAt = new Date();
     this.status = 'active';
@@ -345,7 +365,7 @@ class Session {
    * (ms) sets the pacing between auto-advancing AI steps. Both take effect on the
    * next loop iteration. Returns the applied values.
    */
-  setControl({ paused, aiDelay } = {}) {
+  setControl({ paused, aiDelay, advance } = {}) {
     if (typeof paused === 'boolean') {
       this.paused = paused;
       if (!paused) {
@@ -357,8 +377,30 @@ class Session {
     if (aiDelay != null && Number.isFinite(Number(aiDelay))) {
       this.aiDelay = Math.max(0, Number(aiDelay));
     }
+    // `advance: true` acks the current step; `advance: <seq>` acks a specific one.
+    if (advance != null) this._advance(advance === true ? this._seq : Number(advance));
     this._broadcast();
-    return { paused: this.paused, aiDelay: this.aiDelay };
+    return { paused: this.paused, aiDelay: this.aiDelay, seq: this._seq, awaitingAdvance: this._awaitingAdvance };
+  }
+
+  /**
+   * Observer-paced mode: the client signals that it has finished animating the
+   * step numbered `seq`, releasing the run loop to compute the next one. A `seq`
+   * that doesn't match the step currently awaiting an ack is ignored (a stale or
+   * duplicate signal must never advance an unwatched step). An ack that arrives
+   * before the loop has parked is remembered (`_advancePending`) and consumed by
+   * the next park, so the handoff never deadlocks on that race.
+   */
+  _advance(seq) {
+    if (seq != null && Number.isFinite(seq) && seq !== this._seq) return;
+    this._awaitingAdvance = false;
+    if (this._advanceWaiters.length) {
+      const waiters = this._advanceWaiters;
+      this._advanceWaiters = [];
+      for (const resume of waiters) resume();
+    } else {
+      this._advancePending = true;
+    }
   }
 
   /** Park the run loop while paused; resolves when resumed (or the session ends). */
@@ -366,6 +408,18 @@ class Session {
     while (this.paused && this.status === 'active') {
       await new Promise(resolve => { this._resumeWaiters.push(resolve); });
     }
+  }
+
+  /**
+   * Observer-paced mode: park the run loop after a step until the observing
+   * client acks it (see _advance), or the session ends. A no-op when not
+   * observer-paced (normal games advance on their own timer).
+   */
+  async _waitForAdvance() {
+    if (!this.observerPaced) return;
+    if (this._advancePending) { this._advancePending = false; return; }
+    if (this.status !== 'active') return;
+    await new Promise(resolve => { this._advanceWaiters.push(resolve); });
   }
 
   /** Push the current per-player snapshot to every subscribed WebSocket client. */
@@ -483,18 +537,25 @@ class Session {
         if (this.status !== 'active') break;
         this._sawHumanPending = false;
         const { done } = await this.engine.step();
+        this._seq++;
         this._collectAnalysis();
         this._pushGridHistory(this._captureGrid());
         if (done) {
           this.status = 'done';
           this.result = this.engine.result;
         }
+        // Tell observer-paced clients a step is on screen awaiting their ack.
+        this._awaitingAdvance = this.observerPaced && !done;
         this._persist();
         this._broadcast();
         if (done) break;
-        // Pace pure-AI advancement so a watcher can follow it; a step that waited
-        // on a human is already self-paced, so skip the delay for it.
-        if (!this._sawHumanPending && this.aiDelay > 0) {
+        if (this.observerPaced) {
+          // Lock-step: don't compute the next step until the observer has
+          // finished animating this one and acked it (see _advance).
+          await this._waitForAdvance();
+        } else if (!this._sawHumanPending && this.aiDelay > 0) {
+          // Pace pure-AI advancement so a watcher can follow it; a step that
+          // waited on a human is already self-paced, so skip the delay for it.
           await new Promise(r => setTimeout(r, this.aiDelay));
         }
       }
@@ -509,10 +570,12 @@ class Session {
 
   close() {
     this.status = 'closed';
-    // Release the run loop if it's parked on a pause so it can observe the status change and exit.
+    // Release the run loop if it's parked on a pause or an advance gate so it can
+    // observe the status change and exit.
     this.paused = false;
-    const waiters = this._resumeWaiters;
+    const waiters = [...this._resumeWaiters, ...this._advanceWaiters];
     this._resumeWaiters = [];
+    this._advanceWaiters = [];
     for (const resume of waiters) resume();
     for (const agent of this.apiAgents.values()) agent.abort('Session closed');
     for (const client of this.wsClients) {
@@ -592,6 +655,12 @@ class Session {
       // Live playback controls (see setControl / POST /sessions/:id/control).
       paused: this.paused,
       aiDelay: this.aiDelay,
+      // Observer lock-step (see observerPaced / _advance): `seq` numbers the step
+      // currently shown; when `awaitingAdvance` is true the server is waiting for
+      // this observer to finish animating it and POST { advance: seq }.
+      observerPaced: this.observerPaced,
+      seq: this._seq,
+      awaitingAdvance: this._awaitingAdvance,
       debugAI: this.debugAI,
       status: this.status,
       result: this.result,
@@ -872,9 +941,16 @@ async function handleListSessions(res) {
 async function handleGetSession(res, id, url) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
-  const playerId = url.searchParams.get('player') ?? null;
+  // ?observer=1 returns the full-information observer view over plain REST too
+  // (the same view the observer WebSocket streams), so a fog game is watchable
+  // by polling even where a WebSocket upgrade can't be established (e.g. behind
+  // a proxy). Gated by allowObservers, like the WS observer handshake.
+  const observer = ['1', 'true'].includes(url.searchParams.get('observer'));
+  if (observer && !session.allowObservers) return err(res, 403, 'Observers not allowed for this session');
+  const viewAs = observer ? (url.searchParams.get('viewAs') || null) : null;
+  const playerId = observer ? viewAs : (url.searchParams.get('player') ?? null);
   try {
-    send(res, 200, session.toJSON(playerId));
+    send(res, 200, session.toJSON(playerId, { observer: observer && !viewAs }));
   } catch (e) {
     err(res, 400, e.message);
   }

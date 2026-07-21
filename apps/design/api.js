@@ -34,6 +34,11 @@ window.api = {
   games:    ()                      => _req('/games'),
   sessions: ()                      => _req('/sessions'),
   session:  (id, player)             => _req('/sessions/' + id + (player ? '?player=' + player : '')),
+  // Full-information observer snapshot over REST (fog bypassed) — the polling
+  // fallback for the observer WebSocket, so a fog game stays watchable even where
+  // the socket can't connect (e.g. behind a proxy that drops upgrades). `viewAs`
+  // narrows it to one player's fog-limited view instead.
+  sessionObserver: (id, viewAs) => _req('/sessions/' + id + '?observer=1' + (viewAs ? '&viewAs=' + encodeURIComponent(viewAs) : '')),
   history:  (id)                    => _req('/sessions/' + id + '/history'),
   log:      (id)                    => _req('/sessions/' + id + '/log'),
   create:   (body)                  => _req('/sessions', { method: 'POST', body: JSON.stringify(body) }),
@@ -104,11 +109,14 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
 
   function startPoll() {
     if (pollTimer || closed) return;
-    // No REST observer endpoint — observers rely on the socket and can't poll a
-    // full-information snapshot, so fall back to the player view only when not one.
-    if (observer) return;
+    // Observers poll the full-information observer snapshot (fog bypassed); other
+    // clients poll their own player view. Either keeps the game watchable while the
+    // socket is down — important for observers behind a proxy that drops upgrades.
+    const fetchSnapshot = observer
+      ? () => window.api.sessionObserver(id, viewAs)
+      : () => window.api.session(id, playerId);
     pollTimer = setInterval(async () => {
-      try { onUpdate(await window.api.session(id, playerId)); } catch {}
+      try { onUpdate(await fetchSnapshot()); } catch {}
     }, 2000);
   }
   function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
