@@ -26,6 +26,7 @@ import * as gameEditor from './gameEditor.js';
 import { RandomAgent } from './agents/index.js';
 import { ApiAgent } from './agents/ApiAgent.js';
 import { ObscuroAgent } from './agents/ObscuroAgent.js';
+import { makeGreedyAgent } from './agents/GreedyAgent.js';
 
 import { ChessGame }         from './games/chess/index.js';
 import { cpSumsOverWorlds }  from './games/chess/ObscuroAgent.js';
@@ -625,11 +626,13 @@ function route(req) {
 // Handlers
 // ---------------------------------------------------------------------------
 
-// Available for every game. 'obscuro' is the generic equilibrium/CFR agent
-// (agents/ObscuroAgent.js); a game may override it with a stronger specialised
-// version by declaring an 'obscuro' entry in its own `agents` array (chess does).
+// Available for every game. 'greedy' is the generic low-memory/high-performance
+// 1-ply heuristic agent (agents/GreedyAgent.js); 'obscuro' is the generic
+// equilibrium/CFR agent (agents/ObscuroAgent.js). A game may override either by
+// declaring an entry with the same id in its own `agents` array (chess does).
 const BUILTIN_AGENTS = [
   { id: 'random', name: 'AI (random)' },
+  { id: 'greedy', name: 'AI (greedy heuristic)' },
   { id: 'obscuro', name: 'AI (Obscuro/CFR)' },
 ];
 
@@ -771,6 +774,9 @@ async function handleCreateSession(req, res) {
       const gameAgent = entry.game.agents?.find(a => a.id === agentType);
       if (gameAgent) {
         agent = gameAgent.agent;
+      } else if (agentType === 'greedy') {
+        // Generic 1-ply heuristic agent — low-memory, fast, runs for any game.
+        agent = makeGreedyAgent(entry.game);
       } else if (agentType === 'obscuro') {
         // Generic equilibrium agent — runs for any game the engine can drive.
         agent = new ObscuroAgent(entry.game);
