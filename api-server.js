@@ -272,6 +272,14 @@ const GAMES = {
 
 const sessions = new Map();
 
+// Cap on retained gridHistory frames (see Session._pushGridHistory). A pure-AI
+// session with no human to pace it races through engine.step() unthrottled —
+// on a game with a large board (e.g. civ1's default 50x30 map, ~half a
+// megabyte per captured grid) an uncapped history array reaches multiple
+// gigabytes and crashes the whole process — every session on the shared dev
+// server, not just the one that grew it — within seconds to a couple minutes.
+const MAX_GRID_HISTORY = 600;
+
 class Session {
   constructor(id, gameName, engine, apiAgents, fog = false, debugAI = false, params = {}) {
     this.id = id;
@@ -300,6 +308,13 @@ class Session {
     this.result = null;
     this.error = null;
     this.gridHistory = [];
+    // See _pushGridHistory: once gridHistory hits MAX_GRID_HISTORY it's thinned
+    // to every other frame and _gridStride doubles, so retained frames stay
+    // spread across the whole game instead of memory growing without bound.
+    this._gridStride = 1;
+    this._gridStepCount = 0;
+    this._persisting = false;
+    this._persistQueued = false;
     // Latest AI decision record per player (candidate moves + rankings), captured
     // off each AI agent after every step for the AI-analysis panel. Persists the
     // most recent decision per player so the panel keeps showing it between turns.
@@ -399,30 +414,66 @@ class Session {
     } catch { return null; }
   }
 
-  /** Persist the full session record — all game parameters plus the move log. */
+  /**
+   * Append a captured grid to gridHistory, keeping the array bounded to
+   * MAX_GRID_HISTORY frames regardless of how long the session runs. Frames are
+   * sampled at `_gridStride` (starting at 1, i.e. every frame); once the cap is
+   * hit the buffer is thinned to every other frame and the stride doubles, so
+   * long games keep frames evenly spread across their whole length rather than
+   * losing the earliest or latest part of the timeline.
+   */
+  _pushGridHistory(g) {
+    if (!g) return;
+    this._gridStepCount++;
+    if ((this._gridStepCount - 1) % this._gridStride !== 0) return;
+    this.gridHistory.push(g);
+    if (this.gridHistory.length >= MAX_GRID_HISTORY) {
+      this.gridHistory = this.gridHistory.filter((_, i) => i % 2 === 0);
+      this._gridStride *= 2;
+    }
+  }
+
+  /**
+   * Persist the full session record — all game parameters plus the move log.
+   * Called once per engine step without being awaited by the run loop, so on
+   * an unthrottled pure-AI game (no human to pace it) steps can outrun the
+   * disk: each call re-serializes the whole (ever-growing) log, and with no
+   * backpressure those writes pile up faster than they drain, holding more
+   * and more full-log JSON strings in memory at once until the process OOMs.
+   * `_persisting`/`_persistQueued` coalesce concurrent calls into at most one
+   * in-flight write plus one pending follow-up (which picks up the latest
+   * state), instead of one write per step.
+   */
   async _persist() {
+    if (this._persisting) { this._persistQueued = true; return; }
+    this._persisting = true;
     try {
-      await mkdir(dirname(this._recordPath), { recursive: true });
-      const record = {
-        id: this.id,
-        createdAt: this.createdAt.toISOString(),
-        game: this.gameName,
-        fog: this.fog,
-        debugAI: this.debugAI,
-        params: this.params,
-        status: this.status,
-        result: this.result,
-        log: this.engine.log,
-      };
-      await writeFile(this._recordPath, JSON.stringify(record, null, 2));
-    } catch {}
+      do {
+        this._persistQueued = false;
+        await mkdir(dirname(this._recordPath), { recursive: true });
+        const record = {
+          id: this.id,
+          createdAt: this.createdAt.toISOString(),
+          game: this.gameName,
+          fog: this.fog,
+          debugAI: this.debugAI,
+          params: this.params,
+          status: this.status,
+          result: this.result,
+          log: this.engine.log,
+        };
+        await writeFile(this._recordPath, JSON.stringify(record, null, 2));
+      } while (this._persistQueued);
+    } catch {
+    } finally {
+      this._persisting = false;
+    }
   }
 
   async _run() {
     try {
       this.engine._init();
-      const g0 = this._captureGrid();
-      if (g0) this.gridHistory.push(g0);
+      this._pushGridHistory(this._captureGrid());
       this._broadcast();
       while (this.status === 'active') {
         await this._waitWhilePaused();
@@ -430,8 +481,7 @@ class Session {
         this._sawHumanPending = false;
         const { done } = await this.engine.step();
         this._collectAnalysis();
-        const g = this._captureGrid();
-        if (g) this.gridHistory.push(g);
+        this._pushGridHistory(this._captureGrid());
         if (done) {
           this.status = 'done';
           this.result = this.engine.result;
