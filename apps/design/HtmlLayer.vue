@@ -73,6 +73,11 @@ const H = computed(() => props.field.world.h);
 // once panning brings the seam into view this renders extra copies of the columns nearest
 // it on both sides (wrapPad below) instead of leaving blank stage past column 0 / W-1.
 const wrap = computed(() => !!props.field.world.wrap);
+// Continuously-positioned units (field.positioned, e.g. csmini): NOT filed into a grid
+// cell — drawn as absolutely-placed HTML tokens at their exact point (see absUnits), so
+// they sit and slide anywhere on the grid, with facing shown via CSS rotate.
+const positioned = computed(() => !!props.field.positioned);
+const showFacing = computed(() => props.field.ui?.showFacing === true && (!props.fog || props.revealAll));
 
 // ── integer-snapped board geometry ────────────────────────────────────────────
 // Padding matches Battlefield's fitter, so the HTML board sits where the SVG one would.
@@ -298,7 +303,8 @@ const cells = computed(() => {
   const tiles = new Map();
   for (const t of props.field.tiles ?? []) tiles.set(`${t.x},${t.y}`, t);
   const unitsAt = new Map();
-  for (const u of props.units) {
+  // Positioned games draw their units in the absolute overlay (absUnits), not in cells.
+  if (!positioned.value) for (const u of props.units) {
     if (!isVisible(u)) continue;
     // baseX/baseY when a playback tween is sliding this unit: it stays filed under
     // the square it left until it arrives, so the cell it renders in doesn't flip
@@ -351,6 +357,17 @@ const cells = computed(() => {
     }
   }
   return out;
+});
+
+// Absolute-overlay units for positioned games (see `positioned`): each placed at its
+// exact pixel point (px/py of its continuous x/y — which already carries any playback
+// slide), sized like a cell unit, with the facing angle for the CSS-rotated arrow.
+const absUnits = computed(() => {
+  if (!positioned.value) return [];
+  return props.units.filter(isVisible).map(u => ({
+    u, r: unitR(u), left: px(u.x), top: py(u.y),
+    facingDeg: (u.ang ?? 0) * 180 / Math.PI,
+  }));
 });
 
 // When ui.highlightSelectedSquare is set, tint the selected unit's cell instead of
@@ -576,6 +593,28 @@ function handleUnitClick(e, u) {
       </div>
     </div>
 
+    <!-- Positioned units (field.positioned, e.g. csmini): absolutely-placed HTML tokens at
+         their exact continuous point — which already carries any playback slide — each with
+         a CSS-rotated facing arrow. The token itself is the same HtmlUnit as the cell games. -->
+    <template v-if="positioned">
+      <div v-for="a in absUnits" :key="a.u.id" class="hl-abs-unit"
+           :style="{ left: a.left+'px', top: a.top+'px', color: a.u.teamObj?.raw }">
+        <div v-if="showFacing && !a.u.dead" class="hl-facing" :style="{ transform: 'rotate('+a.facingDeg+'deg)' }">
+          <span class="hl-facing-tri"
+                :style="{ left: (a.r*0.85)+'px', borderWidth: (a.r*0.34)+'px 0 '+(a.r*0.34)+'px '+(a.r*0.6)+'px' }"/>
+        </div>
+        <div class="hl-abs-token">
+          <HtmlUnit :unit="a.u" :r="a.r" :rdr="rdr" :shape="unitShape(a.u)"
+            :showHp="showHpBars" :recolor="field.ui?.recolorTeamSprites"
+            :active="a.u.id === highlightUnitId && !field.ui?.blinkActiveUnit"
+            :selected="a.u.id === selectedId"
+            :hovered="a.u.id === hoveredId"
+            :blink="a.u.id === blinkTargetId && !!field.ui?.blinkActiveUnit"
+            @click="handleUnitClick($event, a.u)"/>
+        </div>
+      </div>
+    </template>
+
     <!-- Continuous-map fog veil, drawn over the board+units (see continuousFogOn above) -->
     <svg v-if="continuousFogOn" class="hl-noevents" :width="boxW" :height="boxH"
          style="position: absolute; inset: 0;">
@@ -688,6 +727,17 @@ function handleUnitClick(e, u) {
    immune; real DOM is not). Images additionally opt out of native drag via draggable="false". */
 .hl-root { position: absolute; inset: 0; overflow: hidden; user-select: none; }
 .hl-noevents { pointer-events: none; }
+
+/* Positioned units (field.positioned): a zero-size anchor at the unit's exact pixel point,
+   with the token centred on it and a facing arrow rotated around it. */
+.hl-abs-unit { position: absolute; width: 0; height: 0; z-index: 2; }
+.hl-abs-token { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); }
+.hl-facing { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+/* A right-pointing CSS triangle (colored left border, transparent top/bottom); the parent's
+   rotate() aims it along the unit's facing. Vertically centred on the anchor point. */
+.hl-facing-tri { position: absolute; top: 0; transform: translateY(-50%);
+  width: 0; height: 0; border-style: solid;
+  border-color: transparent transparent transparent currentColor; }
 .hl-pixel { image-rendering: pixelated; }
 .hl-cover { object-fit: cover; }
 

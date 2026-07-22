@@ -545,11 +545,12 @@ const isGridBoard = computed(() =>
   && displayField.value?.grid === 'square'
   && (displayField.value?.tiles?.length ?? 0) > 0
   && !(displayField.value?.shapes?.length));
-// HtmlLayer files each unit into a CSS grid cell, so it can only render games whose units
-// live in cells. Games that supply a separate positioned unit channel (field.positioned,
-// e.g. csmini) place units at exact points and slide them along per-frame paths — those
-// need SchematicLayer's absolute placement even though their BOARD is a grid.
-const htmlCanRenderUnits = computed(() => !displayField.value?.positioned);
+// A grid board ALWAYS renders in HTML (HtmlLayer): the terrain is an HTML/CSS grid, and
+// units — even continuously-positioned ones (field.positioned, e.g. csmini) — are drawn
+// as absolutely-placed HTML tokens sliding to exact points, with facing via CSS rotate.
+// Only the vision cone, which has no HTML equivalent, is an SVG overlay inside HtmlLayer.
+// SchematicLayer's whole-board SVG is reserved for boards HTML genuinely can't draw
+// (shape terrain, hexes, textured iso).
 // Isometric boards have their own HTML renderer (HtmlIsoLayer), which covers the same
 // slice of IsoLayer that IsoLayer's 'sprite' tile mode does: flat boards of pre-drawn
 // diamond art (civ2). 'texture' mode (ffta/xcom) skews terrain onto the ground plane and
@@ -562,7 +563,7 @@ const isIsoSpriteBoard = computed(() =>
 // iso — falls to SVG (SchematicLayer / IsoLayer). No user-facing SVG/HTML toggle: where
 // HTML works it is used; where it doesn't, SVG is the only option.
 const useHtmlRenderer = computed(() =>
-  (isGridBoard.value && htmlCanRenderUnits.value) || isIsoSpriteBoard.value);
+  isGridBoard.value || isIsoSpriteBoard.value);
 
 // ── zoom & pan (the `mapZoom` game option) ────────────────────
 // `zoomPx` is the tile size in screen px (null = fitted to the stage, the old behaviour);
