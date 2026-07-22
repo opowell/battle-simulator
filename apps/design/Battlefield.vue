@@ -48,8 +48,12 @@ const props = defineProps({
   // App.vue's doForkMove). Non-null means the board is showing the sandbox.
   forkState:     { type: Object, default: null },
   forkError:     { type: String, default: '' },
+  // Observer lock-step (App.vue owns the state): pause after each turn's playback
+  // and wait for a manual "Next", and whether we're currently so parked.
+  pauseAfterPlayback: { type: Boolean, default: true },
+  awaitingStep:       { type: Boolean, default: false },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -1332,6 +1336,8 @@ onUnmounted(() => {
       :canReplayTurn="canReplayTurn" :replaying="replaying"
       :showZoom="zoomEnabled" :canZoomIn="canZoomIn" :canZoomOut="canZoomOut"
       :paused="liveState?.paused ?? false" :aiDelay="liveState?.aiDelay ?? 0"
+      :observerPaced="liveState?.observerPaced ?? false"
+      :pauseAfterPlayback="pauseAfterPlayback" :awaitingStep="awaitingStep"
       :historyPlaying="historyPlaying"
       :turnRange="currentTurnRange" :histFrac="histFrac"
       @step-back="stepBack" @step-fwd="stepFwd" @toggle-play="togglePlay"
@@ -1340,6 +1346,8 @@ onUnmounted(() => {
       @toggle-reveal="toggleReveal"
       @replay-turn="$emit('replay-turn')"
       @toggle-pause="toggleLivePause" @set-ai-delay="setAiDelay"
+      @set-pause-after-playback="$emit('set-pause-after-playback', $event)"
+      @step-forward="$emit('step-forward')"
       @toggle-history-play="toggleHistoryPlay"
       @zoom-in="zoomBy(ZOOM_STEP)" @zoom-out="zoomBy(1 / ZOOM_STEP)"/>
   </div>

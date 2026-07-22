@@ -9,11 +9,17 @@ defineProps({
   paused:         { type: Boolean, default: false },
   aiDelay:        { type: Number, default: 0 },
   isDone:         { type: Boolean, default: false },
+  // Observer lock-step: an observer-paced session plays a turn, then (when
+  // pauseAfterPlayback is on) parks until the observer clicks Next — replacing the
+  // AI-delay slider, which the server ignores in this mode. awaitingStep = parked.
+  observerPaced:      { type: Boolean, default: false },
+  pauseAfterPlayback: { type: Boolean, default: true },
+  awaitingStep:       { type: Boolean, default: false },
   // History playback (client-side scrubbing of recorded grids).
   historyPlaying: { type: Boolean, default: false },
   canPlayHistory: { type: Boolean, default: false },
 });
-const emit = defineEmits(['toggle-pause', 'set-ai-delay', 'toggle-history-play']);
+const emit = defineEmits(['toggle-pause', 'set-ai-delay', 'toggle-history-play', 'set-pause-after-playback', 'step-forward']);
 
 // A small set of watchable delays, chosen on the slider (index → ms).
 const DELAYS = [0, 250, 500, 1000, 2000, 4000];
@@ -49,8 +55,25 @@ function fmtDelay(ms) { return ms >= 1000 ? (ms / 1000) + 's' : ms + 'ms'; }
       {{ paused ? 'Resume' : 'Pause' }}
     </button>
 
-    <!-- AI move delay -->
-    <div class="lc-delay" :title="'Delay between AI moves: ' + fmtDelay(aiDelay)">
+    <!-- Observer lock-step: step-through instead of an AI-delay slider -->
+    <template v-if="observerPaced">
+      <!-- Advance one turn now (enabled once the current turn has finished playing) -->
+      <button class="btn btn-sm lc-next" :disabled="isDone || !awaitingStep"
+              @click="$emit('step-forward')"
+              title="Play the next turn">
+        Next
+        <BsIcon name="play" :size="12" :color="awaitingStep ? 'var(--accent)' : 'var(--faint)'"/>
+      </button>
+      <!-- When on, stop after each turn's playback and wait for Next; off = auto-advance -->
+      <label class="lc-pap" title="Stop after each turn's playback and wait before playing the next">
+        <input type="checkbox" :checked="pauseAfterPlayback"
+               @change="$emit('set-pause-after-playback', $event.target.checked)"/>
+        Pause after playback
+      </label>
+    </template>
+
+    <!-- AI move delay (auto-advancing games only; hidden in observer lock-step) -->
+    <div v-else class="lc-delay" :title="'Delay between AI moves: ' + fmtDelay(aiDelay)">
       <BsIcon name="clock" :size="12" color="var(--faint)"/>
       <input type="range" class="lc-slider" :min="0" :max="DELAYS.length - 1" step="1"
              :value="delayIndex(aiDelay)" @input="onDelay"/>
@@ -68,4 +91,7 @@ function fmtDelay(ms) { return ms >= 1000 ? (ms / 1000) + 's' : ms + 'ms'; }
 .lc-delay { display: flex; align-items: center; gap: 6px; }
 .lc-slider { width: 84px; }
 .lc-delay-val { font-size: 11px; color: var(--dim); min-width: 34px; text-align: right; }
+.lc-next { gap: 4px; justify-content: center; }
+.lc-pap { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); cursor: pointer; user-select: none; }
+.lc-pap input { cursor: pointer; }
 </style>

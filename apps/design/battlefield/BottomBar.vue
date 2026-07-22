@@ -24,6 +24,11 @@ defineProps({
   // Live playback controls (pause / AI delay / history playback).
   paused:          Boolean,
   aiDelay:         { type: Number, default: 0 },
+  // Observer lock-step: whether this is an observer-paced session, and the
+  // pause-after-playback preference + parked-awaiting-step state.
+  observerPaced:      Boolean,
+  pauseAfterPlayback: { type: Boolean, default: true },
+  awaitingStep:       { type: Boolean, default: false },
   historyPlaying:  Boolean,
   // Progress through the turn on screen: the ply range it spans (null = nothing
   // recorded yet) and how far playback has travelled into the current ply.
@@ -32,7 +37,8 @@ defineProps({
 });
 defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-forward',
              'toggle-reveal', 'replay-turn', 'zoom-in', 'zoom-out',
-             'toggle-pause', 'set-ai-delay', 'toggle-history-play', 'seek-ply']);
+             'toggle-pause', 'set-ai-delay', 'toggle-history-play', 'seek-ply',
+             'set-pause-after-playback', 'step-forward']);
 </script>
 
 <template>
@@ -101,9 +107,13 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
       <div v-else class="bb-spacer"/>
       <LiveControls
         :paused="paused" :aiDelay="aiDelay" :isDone="isDone"
+        :observerPaced="observerPaced"
+        :pauseAfterPlayback="pauseAfterPlayback" :awaitingStep="awaitingStep"
         :historyPlaying="historyPlaying" :canPlayHistory="histLength > 1"
         @toggle-pause="$emit('toggle-pause')"
         @set-ai-delay="$emit('set-ai-delay', $event)"
+        @set-pause-after-playback="$emit('set-pause-after-playback', $event)"
+        @step-forward="$emit('step-forward')"
         @toggle-history-play="$emit('toggle-history-play')"/>
     </template>
     <template v-else>

@@ -155,6 +155,14 @@ function stopReplay() {
 // settled, so a would-be-instant AI game unfolds at exactly watching speed. `seq`
 // guards against a duplicate ack advancing an unwatched step (see api-server.js
 // Session._advance).
+// "Pause after playback" (observer): when on (default), the game stops after each
+// turn's playback and waits for the observer to step forward manually, instead of
+// auto-advancing. `awaitingStep` is true while so parked (enables the Next button);
+// `manualStep` is the one-shot the Next button sets to release exactly one step.
+const pauseAfterPlayback = ref(true);
+const awaitingStep = ref(false);
+let manualStep = false;
+
 let ackedSeq = -1, shownSeq = -1, shownAt = 0, ackTimer = null;
 const animating = () => !!hopAnim.value || fxBusy.value || !!replayAnim.value || animQueue.value.length > 0;
 function maybeAckAdvance() {
@@ -172,9 +180,20 @@ function maybeAckAdvance() {
     ackTimer = setTimeout(maybeAckAdvance, targetMs - elapsed + 5);
     return;
   }
+  // Playback finished. In "pause after playback" mode, stop here until the observer
+  // clicks Next (which sets manualStep); otherwise advance automatically.
+  if (pauseAfterPlayback.value && !manualStep) { awaitingStep.value = true; return; }
+  manualStep = false;
+  awaitingStep.value = false;
   ackedSeq = s.seq;
   api.control(s.id, { advance: s.seq }).catch(() => {});
 }
+
+// Observer: advance one step now (only meaningful while parked awaiting a step).
+function stepForward() { if (awaitingStep.value) { manualStep = true; maybeAckAdvance(); } }
+function setPauseAfterPlayback(v) { pauseAfterPlayback.value = v; }
+// Turning "pause after playback" off while parked resumes immediately.
+watch(pauseAfterPlayback, (v) => { if (!v && awaitingStep.value) maybeAckAdvance(); });
 
 function buildHopPath(from, to, diagonal = false) {
   const path = [{ x: from.x, y: from.y }];
@@ -428,6 +447,7 @@ watch(liveState, (s) => {
   if (s?.observerPaced && s.awaitingAdvance && s.seq !== shownSeq) {
     shownSeq = s.seq;
     shownAt = performance.now();
+    awaitingStep.value = false; // fresh step: not yet parked awaiting a manual advance
   }
   maybeAckAdvance();
 });
@@ -1000,6 +1020,8 @@ async function restartGame() {
                    :replaying="!!replayAnim"
                    :fork-state="forkState"
                    :fork-error="forkError"
+                   :pause-after-playback="pauseAfterPlayback"
+                   :awaiting-step="awaitingStep"
                    @exit="exitBattle"
                    @new-game="restartGame"
                    @open-settings="openSettings"
@@ -1007,6 +1029,8 @@ async function restartGame() {
                    @set-marker="setMarker"
                    @set-paused="p => setControl({ paused: p })"
                    @set-ai-delay="ms => setControl({ aiDelay: ms })"
+                   @set-pause-after-playback="setPauseAfterPlayback"
+                   @step-forward="stepForward"
                    @set-observer-view="setObserverView"
                    @replay-turn="replayTurn"
                    @fork-move="doForkMove"
