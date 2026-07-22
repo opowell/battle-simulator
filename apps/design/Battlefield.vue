@@ -522,9 +522,13 @@ const gameHtmlRenderer = computed(() =>
   props.liveState?.params?.config?.htmlRenderer ?? ui.value.htmlRenderer ?? true);
 // HtmlLayer only handles square tile grids (not hexes, non-grid shapes or continuous
 // maps) — this gates both the switch's availability and, as a safety net, actual use.
+// Continuous-location boards (locationType 'continuous', e.g. csmini) place units at
+// exact sub-tile points and slide them along per-frame playback paths; HtmlLayer files
+// units by integer cell, so it can't animate that motion — those must use SchematicLayer.
 const isGridBoard = computed(() =>
   !ui.value.isometric
   && displayField.value?.grid === 'square'
+  && displayField.value?.locationType !== 'continuous'
   && (displayField.value?.tiles?.length ?? 0) > 0
   && !(displayField.value?.shapes?.length));
 // Isometric boards have their own HTML renderer (HtmlIsoLayer), which covers the same
