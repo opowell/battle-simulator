@@ -1052,6 +1052,7 @@ async function restartGame() {
                    @step-forward="stepForward"
                    @set-observer-view="setObserverView"
                    @replay-turn="replayTurn"
+                   @stop-replay="stopReplay"
                    @fork-move="doForkMove"
                    @exit-fork="exitFork"/>
       <div v-else class="app-loading">

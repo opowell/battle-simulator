@@ -53,7 +53,7 @@ const props = defineProps({
   pauseAfterPlayback: { type: Boolean, default: true },
   awaitingStep:       { type: Boolean, default: false },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -388,9 +388,11 @@ const currentTurnRange = computed(() => {
   return { turn, start, end };
 });
 
-function goBack()    { stopHistoryPlay(); if (histPos.value > 0)  histPos.value--; }
-function goForward() { stopHistoryPlay(); if (!atLatest.value)     histPos.value++; }
-function seekTo(pos) { stopHistoryPlay(); histPos.value = pos; }
+// Any manual history navigation interrupts an in-progress turn replay (App.vue's
+// replayAnim, which otherwise keeps re-driving the board and overrides the scrub).
+function goBack()    { emit('stop-replay'); stopHistoryPlay(); if (histPos.value > 0)  histPos.value--; }
+function goForward() { emit('stop-replay'); stopHistoryPlay(); if (!atLatest.value)     histPos.value++; }
+function seekTo(pos) { emit('stop-replay'); stopHistoryPlay(); histPos.value = pos; }
 
 // The playhead as a single fractional time along the recorded plies (histPos +
 // histFrac), and jumping to an arbitrary such time. For a discrete-time game the
@@ -402,6 +404,7 @@ const playheadTime = computed(() => histPos.value + histFrac.value);
 // history/reveal snapshots (what displayField becomes once scrubbed back) don't.
 const fieldTimeType = computed(() => props.field?.timeType ?? 'discrete');
 function seekTime(t) {
+  emit('stop-replay'); // interrupt any in-progress turn replay so the jump takes effect
   if (playRaf) { cancelAnimationFrame(playRaf); playRaf = 0; }
   historyPlaying.value = false;
   const max = Math.max(0, histLength.value - 1);
