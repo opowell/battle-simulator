@@ -843,6 +843,9 @@ async function handleGames(res) {
     scenarios: game.scenarios ?? [],
     gameOptions: [...(game.gameOptions ?? []), ...ENGINE_OPTIONS],
     ui: game.ui ?? {},
+    // Preferred Quick play / Configure defaults (per-slot agents + engine-option
+    // overrides), applied client-side over the generic defaults — see gameDefaults.js.
+    uiDefaults: game.uiDefaults ?? null,
     // `analyzable` tells the client which agents can back the position-analysis
     // panel (POST /sessions/:id/analyze) — the `analyze` function itself is
     // server-only and never serialized.

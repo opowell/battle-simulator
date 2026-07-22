@@ -496,6 +496,9 @@ function buildField(g, s) {
   const boardType = g.boardType ?? (g.shapes?.length ? 'continuous' : 'grid');
   const spaceType = g.spaceType ?? locationType;
   const positioned = g.units != null;
+  // Time axis: discrete (a whole-number turn clock) vs continuous (a real-valued
+  // clock). Drives the time-jump field's step/precision — see BottomBar's TimeField.
+  const timeType = g.timeType ?? s?.params?.config?.time ?? s?.params?.config?.timeType ?? 'discrete';
 
   // Discrete SQUARE-grid games locate a unit by an integer cell index, rendered at the
   // cell centre (hence +0.5). Hexagon-grid games (kdice) already give cell.x/y as an
@@ -598,6 +601,7 @@ function buildField(g, s) {
     boardType,
     spaceType,
     positioned,
+    timeType,
     teams,
     walls: [],
     zones: [],

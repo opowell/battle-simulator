@@ -10,10 +10,13 @@ function defaultCpuAgent(g) {
 
 function makeSlots(g, n) {
   const count = n || (g?.defaultPlayers?.length ?? 2);
+  // A game may prefer specific per-slot agents (g.uiDefaults.players) — e.g. csmini
+  // defaults to two AIs watched by an observer, rather than "you vs one CPU".
+  const pref = g?.uiDefaults?.players;
   return Array.from({ length: count }, (_, i) => ({
     id:    'slot' + i,
-    name:  i === 0 ? 'You' : `CPU ${i}`,
-    agent: i === 0 ? 'human' : defaultCpuAgent(g),
+    name:  pref?.[i]?.name ?? (i === 0 ? 'You' : `CPU ${i}`),
+    agent: pref?.[i]?.agent ?? (i === 0 ? 'human' : defaultCpuAgent(g)),
     color: TEAM_COLORS[i % TEAM_COLORS.length],
   }));
 }
@@ -31,6 +34,9 @@ function initGameOpts(g) {
       opts[opt.id] = opt.default ?? (opt.type === 'boolean' ? false : opt.type === 'range' ? (opt.min ?? 0) : opt.type === 'integer' ? '' : opt.options?.[0]?.value ?? '');
     }
   }
+  // A game may override specific engine/game option defaults (g.uiDefaults.config) —
+  // e.g. csmini turns on observers and simultaneous turns by default.
+  Object.assign(opts, g?.uiDefaults?.config ?? {});
   return opts;
 }
 

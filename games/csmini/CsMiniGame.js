@@ -617,15 +617,23 @@ export const CsMiniGame = {
   kinematics,
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies inside a unit’s 90° vision cone', type: 'boolean', default: true },
-    { id: 'space', label: 'Space', description: 'Discrete (grid cells) or continuous (free points) movement', type: 'select', default: 'discrete',
+    { id: 'space', label: 'Space', description: 'Discrete (grid cells) or continuous (free points) movement', type: 'select', default: 'continuous',
       options: [{ value: 'discrete', label: 'Discrete (grid cells)' }, { value: 'continuous', label: 'Continuous (free points)' }] },
-    { id: 'time', label: 'Time', description: 'Discrete (per-turn move budget) or continuous (move cooldown = distance/speed)', type: 'select', default: 'discrete',
+    { id: 'time', label: 'Time', description: 'Discrete (per-turn move budget) or continuous (move cooldown = distance/speed)', type: 'select', default: 'continuous',
       options: [{ value: 'discrete', label: 'Discrete (per-turn budget)' }, { value: 'continuous', label: 'Continuous (cooldown)' }] },
     // Sequential vs simultaneous (we-go) play is the engine's global "Simultaneous
     // Turns" toggle (ENGINE_OPTIONS in api-server.js), not a per-game option — no
     // `play` dropdown here, to avoid two controls for the one switch. resolveSpaceTime
     // still reads `config.play`/`simultaneousTurns` either way (used by the demo flag).
   ],
+  // Preferred defaults for the web UI's Quick play + Configure screens (see
+  // apps/design/gameDefaults.js). csmini is a demo of continuous space/time played
+  // out by two AIs and watched — so it defaults to a we-go observer match rather
+  // than the generic "you (human) vs one CPU". Overridable on the Configure screen.
+  uiDefaults: {
+    players: [{ agent: 'greedy' }, { agent: 'greedy' }],
+    config: { allowObservers: true, simultaneousTurns: true },
+  },
   ui: { showFacing: true, showHpBars: false },
   createInitialState,
   getLegalActions,

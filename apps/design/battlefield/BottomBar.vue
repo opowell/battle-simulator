@@ -1,6 +1,7 @@
 <script setup>
 import LiveControls from './LiveControls.vue';
 import TurnTimeline from './TurnTimeline.vue';
+import TimeField from './TimeField.vue';
 
 defineProps({
   isLive:          Boolean,
@@ -29,6 +30,11 @@ defineProps({
   observerPaced:      Boolean,
   pauseAfterPlayback: { type: Boolean, default: true },
   awaitingStep:       { type: Boolean, default: false },
+  // Time-jump field: the current fractional playhead, its max, and whether the
+  // game's time axis is whole-number (discrete) or real-valued (continuous).
+  playheadTime:    { type: Number, default: 0 },
+  maxTime:         { type: Number, default: 0 },
+  timeType:        { type: String, default: 'discrete' },
   historyPlaying:  Boolean,
   // Progress through the turn on screen: the ply range it spans (null = nothing
   // recorded yet) and how far playback has travelled into the current ply.
@@ -38,7 +44,7 @@ defineProps({
 defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-forward',
              'toggle-reveal', 'replay-turn', 'zoom-in', 'zoom-out',
              'toggle-pause', 'set-ai-delay', 'toggle-history-play', 'seek-ply',
-             'set-pause-after-playback', 'step-forward']);
+             'set-pause-after-playback', 'step-forward', 'seek-time']);
 </script>
 
 <template>
@@ -98,6 +104,11 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
         <BsIcon name="eye" :size="13" :color="revealAll ? 'var(--accent)' : 'var(--dim)'"/>
         {{revealAll ? 'Revealed' : 'Reveal all'}}
       </button>
+      <!-- Jump to any point in time (integer plies for discrete time, any real value
+           for continuous — a fraction shows the interpolated mid-slide board). -->
+      <TimeField v-if="histLength > 1"
+        :time="playheadTime" :max="histLength - 1" :timeType="timeType"
+        @seek="$emit('seek-time', $event)"/>
       <!-- Takes the bar's flexible space (where the spacer used to be), so the
            track is as wide as the rest of the row leaves it. -->
       <TurnTimeline v-if="turnRange"

@@ -392,6 +392,29 @@ function goBack()    { stopHistoryPlay(); if (histPos.value > 0)  histPos.value-
 function goForward() { stopHistoryPlay(); if (!atLatest.value)     histPos.value++; }
 function seekTo(pos) { stopHistoryPlay(); histPos.value = pos; }
 
+// The playhead as a single fractional time along the recorded plies (histPos +
+// histFrac), and jumping to an arbitrary such time. For a discrete-time game the
+// value snaps to a whole ply; for a continuous-time game a fraction parks the
+// clock partway through a ply, and renderUnits shows the interpolated mid-slide
+// board. Drives the bottom bar's time-jump field.
+const playheadTime = computed(() => histPos.value + histFrac.value);
+// From the LIVE field (props.field), which always carries the session's timeType —
+// history/reveal snapshots (what displayField becomes once scrubbed back) don't.
+const fieldTimeType = computed(() => props.field?.timeType ?? 'discrete');
+function seekTime(t) {
+  if (playRaf) { cancelAnimationFrame(playRaf); playRaf = 0; }
+  historyPlaying.value = false;
+  const max = Math.max(0, histLength.value - 1);
+  t = Math.min(max, Math.max(0, Number(t) || 0));
+  if (fieldTimeType.value === 'continuous') {
+    histPos.value = Math.min(Math.floor(t), max);
+    histFrac.value = histPos.value >= max ? 0 : (t - histPos.value);
+  } else {
+    histPos.value = Math.round(t);
+    histFrac.value = 0;
+  }
+}
+
 // ── history playback ("view play from here") ──────────────────
 // Auto-advances histPos through the recorded history from the current scrub
 // position to the live edge, so a jumped-to point can be watched forward. Purely
@@ -730,7 +753,11 @@ function smoothstep(f) { return f * f * (3 - 2 * f); }
 
 const renderUnits = computed(() => {
   const f = histFrac.value;
-  if (!historyPlaying.value || f <= 0) return displayUnits.value;
+  // Interpolate toward the next snapshot whenever the playhead sits between plies
+  // — during auto-play AND when a fractional time (scrubbed, or typed into the time
+  // field) parks the clock partway through a ply. This is what makes a continuous
+  // game's past turns slide instead of jumping snapshot-to-snapshot.
+  if (f <= 0) return displayUnits.value;
   const next = snapshotAt(histPos.value + 1);
   if (!next) return displayUnits.value;
   const ahead = new Map(
@@ -1336,11 +1363,12 @@ onUnmounted(() => {
       :paused="liveState?.paused ?? false" :aiDelay="liveState?.aiDelay ?? 0"
       :observerPaced="liveState?.observerPaced ?? false"
       :pauseAfterPlayback="pauseAfterPlayback" :awaitingStep="awaitingStep"
+      :playheadTime="playheadTime" :maxTime="histLength - 1" :timeType="fieldTimeType"
       :historyPlaying="historyPlaying"
       :turnRange="currentTurnRange" :histFrac="histFrac"
       @step-back="stepBack" @step-fwd="stepFwd" @toggle-play="togglePlay"
       @scrub="scrub" @go-back="goBack" @go-forward="goForward"
-      @seek-ply="seekTo"
+      @seek-ply="seekTo" @seek-time="seekTime"
       @toggle-reveal="toggleReveal"
       @replay-turn="$emit('replay-turn')"
       @toggle-pause="toggleLivePause" @set-ai-delay="setAiDelay"
