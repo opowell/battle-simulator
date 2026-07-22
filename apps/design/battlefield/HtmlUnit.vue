@@ -41,6 +41,14 @@ function tweenStyle(t) {
   return t ? { transform: `translate(${t.dx}px, ${t.dy}px)`, willChange: 'transform' } : null;
 }
 
+// Games that draw a numbered sprite composite (see e.g. CsMiniGame.js's spriteLayers —
+// SchematicLayer's SVG renderer draws that text layer directly) carry the intended glyph
+// there; fall back to the unit's own initial for the classic shape+letter marker games.
+function unitLabel(unit) {
+  const textLayer = unit.spriteLayers?.find(l => l.shape === 'text');
+  return textLayer ? textLayer.text : unit.name[0].toUpperCase();
+}
+
 function hpColor(frac, raw) {
   return frac > 0.5 ? raw : frac > 0.25 ? '#f2b441' : '#ff5f56';
 }
@@ -81,7 +89,7 @@ function hpColor(frac, raw) {
       <img v-if="unit.imagePath" class="hl-sprite" draggable="false"
            :src="teamSpriteHref(unit.imagePath, unit.teamObj?.raw, recolor)"/>
       <span v-else-if="showLetter" class="hl-letter"
-            :style="{ fontFamily: rdr.font, fontSize: r+'px' }">{{ unit.name[0].toUpperCase() }}</span>
+            :style="{ fontFamily: rdr.font, fontSize: r+'px' }">{{ unitLabel(unit) }}</span>
       <span v-if="unit.badge != null" class="hl-badge"
             :style="{ background: unit.teamObj.raw, fontFamily: rdr.font }">{{ unit.badge }}</span>
     </div>
