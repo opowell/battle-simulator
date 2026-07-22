@@ -247,7 +247,7 @@ function exitFork() { emit('exit-fork'); }
 
 // The `showAnalysisPanel` game option (default true for chess, absent/false —
 // and so hidden — for every other game). Read from session config exactly
-// like the other opt-in panels/switches above (gameHtmlRenderer, zoomEnabled).
+// like the other opt-in panels above (zoomEnabled).
 const analysisEnabled = computed(() => props.liveState?.params?.config?.showAnalysisPanel ?? false);
 // Analyze the position currently on screen: the live position while at the
 // latest ply (server resolves it from the authoritative session state), or
@@ -509,17 +509,9 @@ watch(() => props.liveState?.id, (id) => {
   }
 }, { immediate: true });
 
-// ── HTML board renderer (opt-in; see HtmlLayer.vue) ────────────
-// Local override driven by the live menu toggle: null follows the game's own setting,
-// true/false forces the HTML or SVG renderer for this session.
-const htmlRenderOverride = ref(null);
-// The game's own preference: the `htmlRenderer` game option (live sessions carry it in
-// params.config) or a static ui.htmlRenderer flag from the game definition.
-// HtmlLayer is the default for grid boards; SVG is the opt-out (via the `htmlRenderer`
-// game option, or the header switch). The `?? true` covers sessions created before the
-// option existed, replays, and grid games that don't declare it.
-const gameHtmlRenderer = computed(() =>
-  props.liveState?.params?.config?.htmlRenderer ?? ui.value.htmlRenderer ?? true);
+// ── board renderer (HtmlLayer vs SchematicLayer/IsoLayer) ──────
+// There is no HTML-vs-SVG choice: the HTML renderer is used wherever it can fully draw
+// the board; where it can't, SVG is the only option (see useHtmlRenderer below).
 // A GRID board: the terrain is a grid of square cells (boardType 'grid'), as opposed to
 // positioned shapes. This is a BOARD-type property (drives the minimap and grid-concept
 // features) — independent of how UNITS move. csmini is a grid board even in continuous
@@ -541,15 +533,13 @@ const htmlCanRenderUnits = computed(() => !displayField.value?.positioned);
 // extrudes cliffs per tile height — SVG-only, so those games get no switch.
 const isIsoSpriteBoard = computed(() =>
   !!ui.value.isometric && ui.value.isoTileMode === 'sprite');
-// Where an HTML/SVG choice exists at all — gates the header switch and, as a safety net,
-// actual use of either HTML renderer. A grid board still needs its units to be
-// cell-placeable (htmlCanRenderUnits) for the HTML renderer to apply.
-const canSwitchRenderer = computed(() =>
-  (isGridBoard.value && htmlCanRenderUnits.value) || isIsoSpriteBoard.value);
+// The HTML renderer is used whenever it can FULLY draw the board: a grid of square
+// cells with cell-placeable units, or an isometric sprite board. Everything HTML has no
+// equivalent for — positioned units, vision cones, shape terrain, hex grids, textured
+// iso — falls to SVG (SchematicLayer / IsoLayer). No user-facing SVG/HTML toggle: where
+// HTML works it is used; where it doesn't, SVG is the only option.
 const useHtmlRenderer = computed(() =>
-  canSwitchRenderer.value && (htmlRenderOverride.value ?? gameHtmlRenderer.value));
-// Each game starts from its own setting — drop any manual override on game switch.
-watch(() => props.liveState?.id, () => { htmlRenderOverride.value = null; });
+  (isGridBoard.value && htmlCanRenderUnits.value) || isIsoSpriteBoard.value);
 
 // ── zoom & pan (the `mapZoom` game option) ────────────────────
 // `zoomPx` is the tile size in screen px (null = fitted to the stage, the old behaviour);
@@ -1204,9 +1194,7 @@ onUnmounted(() => {
           :isDone="isDone" :isPending="isPending" :pendingPlayerId="pendingPlayerId"
           :statusPlayerId="analysisPlayerId"
           :showMenu="showMenu" :ui="ui"
-          :showRenderer="canSwitchRenderer" :htmlRenderer="useHtmlRenderer"
           @toggle-menu="showMenu = !showMenu"
-          @set-renderer="v => htmlRenderOverride = v"
           @show-help="showHelp = true"/>
 
         <SelectedUnitDetail v-if="selectedUnit && !selectedCity"

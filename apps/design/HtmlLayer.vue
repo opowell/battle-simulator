@@ -2,9 +2,10 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import HtmlUnit from './battlefield/HtmlUnit.vue';
 import FogOverlay from './battlefield/FogOverlay.vue';
-// Opt-in HTML/CSS renderer for square tile grids (the `htmlRenderer` game option, or the
-// in-game menu toggle — see Battlefield.vue's renderer routing). A lighter alternative to
-// SchematicLayer's SVG for the common square-grid case.
+// HTML/CSS renderer for square tile grids with cell-placeable units — used automatically
+// wherever it can fully draw the board (see Battlefield.vue's useHtmlRenderer). A lighter
+// renderer than SchematicLayer's SVG for the common square-grid case; boards it can't draw
+// (positioned units, vision cones, shapes, hex) fall to SVG. There is no user toggle.
 //
 // The board is a real CSS grid whose container is sized to an EXACT whole number of pixels
 // per cell (see cellPx/boardW below), so every cell edge lands on an integer. That matters

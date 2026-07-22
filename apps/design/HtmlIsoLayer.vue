@@ -1,9 +1,9 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import HtmlIsoUnit from './battlefield/HtmlIsoUnit.vue';
-// HTML/CSS isometric board renderer — the default for sprite-tile isometric games (civ2),
-// with IsoLayer's SVG as the opt-out (the `htmlRenderer` game option, or the header
-// switch; see Battlefield.vue's renderer routing). HtmlLayer is the flat-grid equivalent.
+// HTML/CSS isometric board renderer — used for sprite-tile isometric games (civ2); other
+// isometric modes (textured terrain) fall to IsoLayer's SVG (see Battlefield.vue's
+// useHtmlRenderer; there is no user toggle). HtmlLayer is the flat-grid equivalent.
 //
 // Scope is IsoLayer's 'sprite' tile mode + 'token' unit style only: flat boards whose
 // terrain is pre-drawn diamond art, blitted centred on each cell. IsoLayer's other mode

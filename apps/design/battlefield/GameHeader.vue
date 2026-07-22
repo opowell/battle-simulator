@@ -13,12 +13,8 @@ const props = defineProps({
   statusPlayerId:  { type: String, default: null },
   showMenu:        Boolean,
   ui:              Object,
-  // Board renderer switch — only offered for square tile grids, the boards HtmlLayer can
-  // draw (see Battlefield's isGridBoard). Lets you A/B the SVG and HTML renderers live.
-  showRenderer:    { type: Boolean, default: false },
-  htmlRenderer:    { type: Boolean, default: false },
 });
-defineEmits(['toggle-menu', 'show-help', 'set-renderer']);
+defineEmits(['toggle-menu', 'show-help']);
 const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
 </script>
 
@@ -62,17 +58,6 @@ const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
       <span v-if="myCiv.research" class="gh-civstat-item" title="Researching">{{myCiv.research}}</span>
       <span v-if="myCiv.anarchyTurns" class="gh-civstat-item gh-civstat-item--warn">Anarchy</span>
     </div>
-    <div v-if="showRenderer" class="gh-rdr">
-      <span class="gh-rdr-label">Board</span>
-      <div class="seg gh-seg">
-        <button :class="{ on: !htmlRenderer }" class="gh-seg-btn"
-                title="Draw the board with the SVG renderer"
-                @click="$emit('set-renderer', false)">SVG</button>
-        <button :class="{ on: htmlRenderer }" class="gh-seg-btn"
-                title="Draw the board with the HTML renderer"
-                @click="$emit('set-renderer', true)">HTML</button>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -89,10 +74,6 @@ const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
 .gh-civstat { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 10px; color: var(--dim); }
 .gh-civstat-item { display: flex; align-items: center; gap: 3px; }
 .gh-civstat-item--warn { color: var(--warn); }
-.gh-rdr { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
-.gh-rdr-label { font-size: 10px; color: var(--faint); letter-spacing: .06em; text-transform: uppercase; }
-.gh-seg { font-size: 10px; margin-left: auto; }
-.gh-seg-btn { padding: 2px 8px; }
 .gh-chip { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .gh-chip--ok { background: rgba(70,211,154,.1); color: var(--ok); }
 .gh-chip--warn { background: rgba(242,180,65,.1); color: var(--warn); }
