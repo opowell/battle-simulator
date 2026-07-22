@@ -517,7 +517,7 @@ export function renderState(state) {
 // blocked-cell occluder and the vision range/cone for the fog veil.
 
 const FLOOR_COLOR = '#c8c0a8';
-const WALL_COLOR = '#4a4640';
+const WALL_COLOR = '#000000';
 
 function spriteLayers(u) {
   return [
@@ -573,6 +573,7 @@ export function toGrid(state) {
       visionRange: VISION_RANGE,
       fovDegrees: FOV_DEGREES,
       showFacing: true,
+      showHpBars: false,
       aimedActionTypes: ['move', 'shoot', 'rotate'],
     },
   };
@@ -617,7 +618,7 @@ export const CsMiniGame = {
     // `play` dropdown here, to avoid two controls for the one switch. resolveSpaceTime
     // still reads `config.play`/`simultaneousTurns` either way (used by the demo flag).
   ],
-  ui: { showFacing: true },
+  ui: { showFacing: true, showHpBars: false },
   createInitialState,
   getLegalActions,
   applyActions,

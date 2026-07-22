@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import HtmlUnit from './battlefield/HtmlUnit.vue';
+import FogOverlay from './battlefield/FogOverlay.vue';
 // Opt-in HTML/CSS renderer for square tile grids (the `htmlRenderer` game option, or the
 // in-game menu toggle — see Battlefield.vue's renderer routing). A lighter alternative to
 // SchematicLayer's SVG for the common square-grid case.
@@ -19,7 +20,10 @@ import HtmlUnit from './battlefield/HtmlUnit.vue';
 // move arrows) stays absolutely positioned against the same integer origin.
 //
 // Not covered (these keep using the SVG SchematicLayer): hexes, non-grid shape maps,
-// continuous-map radial fog, aiming overlays and sprite-layer units.
+// aiming overlays and full multi-layer sprite composites (only a spriteLayers `text`
+// glyph is read, for the unit's marker label — see HtmlUnit's unitLabel). Continuous-map
+// radial fog is covered: FogOverlay (an SVG component built for SchematicLayer) is
+// dropped in as a borderless overlay using this renderer's own px/py/plen as its `fit`.
 // Globals (window.*) come from data.js / vision.js / teamSprite.js,
 // loaded as classic <script>s in index.html — vue3-sfc-loader can't parse an ESM import
 // of a plain .js.
@@ -208,6 +212,13 @@ const selectedVisionSet = computed(() => {
   return VISION.visibleTileSet(props.field, sources);
 });
 
+// Continuous-map fog (see FogOverlay.vue): a single veil with each visible unit's vision
+// region punched out, drawn in an SVG dropped on top of the board. It needs a `fit`
+// (world → screen) — this renderer's own px/py/plen already are one, in the same
+// integer-snapped coordinate space every other absolutely-positioned layer here uses.
+const continuousFogOn = computed(() => props.fog && props.field.locationType === 'continuous' && !props.revealAll);
+const fit = { x: px, y: py, len: plen };
+
 function isFogSquare(col, row) {
   if (gridFogVisibleSet.value)   return !gridFogVisibleSet.value.has(`${col},${row}`);
   if (squareFogVisibleSet.value) {
@@ -245,8 +256,11 @@ function unitR(u) {
   // Bare sprites have no stroke eating into them, so let them fill more of the cell.
   return Math.max(5, (u?.imagePath ? mult * 1.25 : mult) * cellPx.value);
 }
+// Continuous-space games default to a circle marker (matching SchematicLayer's SVG
+// renderer); grid games keep the classic square unless the game overrides it per type.
 function unitShape(u) {
-  return props.field.ui?.unitShapes?.[u.type] ?? 'square';
+  return props.field.ui?.unitShapes?.[u.type]
+    ?? (props.field.locationType === 'continuous' ? 'circle' : 'square');
 }
 // A playback tween's sub-cell shift, converted from tiles to pixels at the current
 // zoom. Null for every unit that isn't mid-slide, which is all of them outside
@@ -548,7 +562,7 @@ function handleUnitClick(e, u) {
         <HtmlUnit v-for="u in c.units" :key="u.id"
           :unit="u" :r="unitR(u)" :rdr="rdr" :shape="unitShape(u)"
           :tween="unitTween(u)"
-          :showLetter="!field.ui?.showFacing" :showHp="showHpBars"
+          :showHp="showHpBars"
           :recolor="field.ui?.recolorTeamSprites"
           :active="u.id === highlightUnitId && !field.ui?.blinkActiveUnit"
           :selected="u.id === selectedId && !field.ui?.highlightSelectedSquare"
@@ -561,12 +575,19 @@ function handleUnitClick(e, u) {
       </div>
     </div>
 
+    <!-- Continuous-map fog veil, drawn over the board+units (see continuousFogOn above) -->
+    <svg v-if="continuousFogOn" class="hl-noevents" :width="boxW" :height="boxH"
+         style="position: absolute; inset: 0;">
+      <FogOverlay :field="field" :fit="fit" :units="units" :rdr="rdr"
+                  :viewerId="viewerId" :selectedId="selectedId"/>
+    </svg>
+
     <!-- Drag ghost: follows the cursor, so it's the one element that can't be a grid cell.
          The inner grid lets HtmlUnit's place-self:center work outside the board lattice. -->
     <div v-if="dragUnit && dragPos" class="hl-ghost"
          :style="{ left: dragPos.x+'px', top: dragPos.y+'px' }">
       <HtmlUnit :unit="dragUnit" :r="unitR(dragUnit)" :rdr="rdr" :shape="unitShape(dragUnit)"
-        :showLetter="!field.ui?.showFacing" :showHp="false"
+        :showHp="false"
         :recolor="field.ui?.recolorTeamSprites"/>
     </div>
 
