@@ -115,21 +115,30 @@ function triggerTerritoryFx(territoryId, blinks, holdOwner) {
 // glide along their exact resolution-timeline paths. Replay steps through the
 // frames on a wall-clock timer, overriding unit positions in activeField, so
 // players can re-watch the resolved turn as often as they like.
-const REPLAY_MS_PER_FRAME = 100; // 61 frames ≈ 6s per replay
+const REPLAY_MS_PER_FRAME = 100; // 61 frames ≈ 6s per replay (default re-watch speed)
+// Wall-clock ms per unit of game-time when an observer plays a turn back at its
+// natural pace (liveState.stepSimTime). 1000 = real time: a csmini 5-second turn
+// takes 5 seconds on screen instead of finishing instantly.
+const MS_PER_SIM_SECOND = 1000;
 const replayAnim = ref(null);    // { frames, idx } while replaying
 let replayTimer = null;
 
 function replayTurn() {
-  const frames = liveState.value?.playback?.frames;
+  const s = liveState.value;
+  const frames = s?.playback?.frames;
   if (!frames?.length) return;
   stopReplay();
   replayAnim.value = { frames, idx: 0 };
+  // Observer lock-step: stretch the replay across the round's real sim-duration
+  // so it plays at natural speed; otherwise use the fixed re-watch speed.
+  const spanMs = (s.observerPaced && s.stepSimTime) ? s.stepSimTime * MS_PER_SIM_SECOND : REPLAY_MS_PER_FRAME * frames.length;
+  const perFrame = Math.max(16, spanMs / frames.length);
   replayTimer = setInterval(() => {
     if (!replayAnim.value) return;
     const next = replayAnim.value.idx + 1;
     if (next >= replayAnim.value.frames.length) { stopReplay(); return; }
     replayAnim.value = { ...replayAnim.value, idx: next };
-  }, REPLAY_MS_PER_FRAME);
+  }, perFrame);
 }
 
 function stopReplay() {
@@ -146,13 +155,23 @@ function stopReplay() {
 // settled, so a would-be-instant AI game unfolds at exactly watching speed. `seq`
 // guards against a duplicate ack advancing an unwatched step (see api-server.js
 // Session._advance).
-let ackedSeq = -1;
+let ackedSeq = -1, shownSeq = -1, shownAt = 0, ackTimer = null;
 const animating = () => !!hopAnim.value || fxBusy.value || !!replayAnim.value || animQueue.value.length > 0;
 function maybeAckAdvance() {
   const s = liveState.value;
   if (!s || !s.observerPaced || !s.awaitingAdvance || s.status !== 'active') return;
-  if (animating()) return;        // still playing the shown step — wait for it
   if (s.seq === ackedSeq) return; // already acked this step
+  if (animating()) return;        // still playing the shown step — wait for it
+  // Hold the step on screen for its full game-time (stepSimTime) at real speed, so
+  // a turn plays at its natural pace even when the animation itself is brief (a
+  // one-cell hop is ~0.2s but a csmini action is a whole in-game second).
+  const targetMs = (s.stepSimTime ?? 0) * MS_PER_SIM_SECOND;
+  const elapsed = performance.now() - shownAt;
+  if (elapsed < targetMs) {
+    clearTimeout(ackTimer);
+    ackTimer = setTimeout(maybeAckAdvance, targetMs - elapsed + 5);
+    return;
+  }
   ackedSeq = s.seq;
   api.control(s.id, { advance: s.seq }).catch(() => {});
 }
@@ -401,9 +420,17 @@ watch(liveState, (newState, oldState) => {
 
 // Runs AFTER the animation-building watcher above (registration order), so any
 // beats/replay for this step are already queued: if the step had nothing to
-// animate, we're idle here and ack immediately; otherwise animating() is true and
-// the ack waits for the animation-completion path (playNext / stopReplay).
-watch(liveState, () => maybeAckAdvance());
+// animate, we're idle here and ack once its game-time has elapsed; otherwise
+// animating() is true and the ack waits for the animation-completion path
+// (playNext / stopReplay). Stamp when each new awaiting step first appears so the
+// hold-for-sim-time in maybeAckAdvance measures from the right moment.
+watch(liveState, (s) => {
+  if (s?.observerPaced && s.awaitingAdvance && s.seq !== shownSeq) {
+    shownSeq = s.seq;
+    shownAt = performance.now();
+  }
+  maybeAckAdvance();
+});
 
 // ── field for the battlefield ────────────────────────────────
 function buildField(g, s) {

@@ -325,6 +325,7 @@ class Session {
     this._advancePending = false;
     this._seq = 0;
     this._awaitingAdvance = false;
+    this._stepSimTime = null;
     this._sawHumanPending = false;
     this.createdAt = new Date();
     this.status = 'active';
@@ -401,6 +402,30 @@ class Session {
     } else {
       this._advancePending = true;
     }
+  }
+
+  /**
+   * Game-time (in the game's own units) that the step just computed represents,
+   * or null if the game exposes no timing. A we-go round reports its resolved
+   * `playback.duration`; a discrete step is the max getActionDuration over its
+   * action(s), evaluated on `preState` (before the move applied). Observers scale
+   * this to wall-clock so playback runs at real sim-speed.
+   */
+  _computeStepSimTime(preState) {
+    const pb = this.engine.playback;
+    if (pb?.duration != null) return pb.duration;
+    const { game } = GAMES[this.gameName];
+    if (!game.getActionDuration || !preState) return null;
+    // The step's action(s) from the engine log (reliable across games — some set
+    // `lastAction` singular, not the engine-standard `lastActions`).
+    const entry = this.engine.log[this.engine.log.length - 1];
+    const actions = entry?.playerActions ?? [];
+    if (!actions.length) return null;
+    let max = 0;
+    for (const pa of actions) {
+      try { max = Math.max(max, Number(game.getActionDuration(preState, pa.action)) || 0); } catch {}
+    }
+    return max || null;
   }
 
   /** Park the run loop while paused; resolves when resumed (or the session ends). */
@@ -536,8 +561,16 @@ class Session {
         await this._waitWhilePaused();
         if (this.status !== 'active') break;
         this._sawHumanPending = false;
+        const preState = this.engine.state; // pre-step state, for sim-time timing below
         const { done } = await this.engine.step();
         this._seq++;
+        // How much game-time this step represents, so an observer can play it back
+        // at real sim-speed (e.g. csmini's 5-second turn takes 5 seconds on screen)
+        // instead of instantly. A we-go round carries its own resolved duration;
+        // a single sequential action is priced by the game's getActionDuration on
+        // the PRE-step state (post-step the unit has already moved, so distance —
+        // and duration — would read as 0).
+        this._stepSimTime = this._computeStepSimTime(preState);
         this._collectAnalysis();
         this._pushGridHistory(this._captureGrid());
         if (done) {
@@ -661,6 +694,9 @@ class Session {
       observerPaced: this.observerPaced,
       seq: this._seq,
       awaitingAdvance: this._awaitingAdvance,
+      // Game-time this step spans (game units); the observer plays it back over
+      // that long in real time so a turn unfolds at its natural pace.
+      stepSimTime: this._stepSimTime ?? null,
       debugAI: this.debugAI,
       status: this.status,
       result: this.result,
