@@ -18,11 +18,19 @@ const continuous = computed(() => props.timeType === 'continuous');
 const step = computed(() => (continuous.value ? 0.1 : 1));
 const fmt = (t) => (continuous.value ? Number(t).toFixed(1) : String(Math.round(t)));
 
-// Local editable copy; follows `time` unless the user is mid-edit.
+// Local editable copy; follows `time` unless the user is mid-edit. Explicit handlers
+// (not inline expressions) so the ref updates and Enter commits reliably under the
+// runtime SFC loader.
 const draft = ref(fmt(props.time));
 const editing = ref(false);
 watch(() => props.time, (t) => { if (!editing.value) draft.value = fmt(t); });
 
+function onFocus() { editing.value = true; }
+function onInput(e) { draft.value = e.target.value; }
+function onKeydown(e) {
+  if (e.key === 'Enter') { e.preventDefault(); commit(); e.target.blur(); }
+  else if (e.key === 'Escape') { editing.value = false; draft.value = fmt(props.time); e.target.blur(); }
+}
 function commit() {
   editing.value = false;
   const v = parseFloat(draft.value);
@@ -37,8 +45,7 @@ function nudge(d) { emit('seek', Math.min(props.max, Math.max(0, props.time + d)
     <span class="tf-label">Time</span>
     <button class="tf-arrow" :disabled="time <= 0" @click="nudge(-1)">‹</button>
     <input class="tf-input mono" :value="draft" inputmode="decimal"
-           @focus="editing = true" @input="draft = $event.target.value"
-           @change="commit" @blur="commit" @keydown.enter="$event.target.blur()"/>
+           @focus="onFocus" @input="onInput" @keydown="onKeydown" @blur="commit"/>
     <span class="tf-max mono">/ {{ fmt(max) }}</span>
     <button class="tf-arrow" :disabled="time >= max" @click="nudge(1)">›</button>
   </div>
