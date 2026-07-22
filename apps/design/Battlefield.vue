@@ -520,17 +520,21 @@ const htmlRenderOverride = ref(null);
 // option existed, replays, and grid games that don't declare it.
 const gameHtmlRenderer = computed(() =>
   props.liveState?.params?.config?.htmlRenderer ?? ui.value.htmlRenderer ?? true);
-// HtmlLayer only handles square tile grids (not hexes, non-grid shapes or continuous
-// maps) — this gates both the switch's availability and, as a safety net, actual use.
-// Continuous-location boards (locationType 'continuous', e.g. csmini) place units at
-// exact sub-tile points and slide them along per-frame playback paths; HtmlLayer files
-// units by integer cell, so it can't animate that motion — those must use SchematicLayer.
+// A GRID board: the terrain is a grid of square cells (boardType 'grid'), as opposed to
+// positioned shapes. This is a BOARD-type property (drives the minimap and grid-concept
+// features) — independent of how UNITS move. csmini is a grid board even in continuous
+// space. Hexes and isometric boards are their own thing.
 const isGridBoard = computed(() =>
   !ui.value.isometric
+  && displayField.value?.boardType === 'grid'
   && displayField.value?.grid === 'square'
-  && displayField.value?.locationType !== 'continuous'
   && (displayField.value?.tiles?.length ?? 0) > 0
   && !(displayField.value?.shapes?.length));
+// HtmlLayer files each unit into a CSS grid cell, so it can only render games whose units
+// live in cells. Games that supply a separate positioned unit channel (field.positioned,
+// e.g. csmini) place units at exact points and slide them along per-frame paths — those
+// need SchematicLayer's absolute placement even though their BOARD is a grid.
+const htmlCanRenderUnits = computed(() => !displayField.value?.positioned);
 // Isometric boards have their own HTML renderer (HtmlIsoLayer), which covers the same
 // slice of IsoLayer that IsoLayer's 'sprite' tile mode does: flat boards of pre-drawn
 // diamond art (civ2). 'texture' mode (ffta/xcom) skews terrain onto the ground plane and
@@ -538,8 +542,10 @@ const isGridBoard = computed(() =>
 const isIsoSpriteBoard = computed(() =>
   !!ui.value.isometric && ui.value.isoTileMode === 'sprite');
 // Where an HTML/SVG choice exists at all — gates the header switch and, as a safety net,
-// actual use of either HTML renderer.
-const canSwitchRenderer = computed(() => isGridBoard.value || isIsoSpriteBoard.value);
+// actual use of either HTML renderer. A grid board still needs its units to be
+// cell-placeable (htmlCanRenderUnits) for the HTML renderer to apply.
+const canSwitchRenderer = computed(() =>
+  (isGridBoard.value && htmlCanRenderUnits.value) || isIsoSpriteBoard.value);
 const useHtmlRenderer = computed(() =>
   canSwitchRenderer.value && (htmlRenderOverride.value ?? gameHtmlRenderer.value));
 // Each game starts from its own setting — drop any manual override on game switch.

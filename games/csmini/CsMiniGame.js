@@ -563,8 +563,16 @@ export function toGrid(state) {
 
   return {
     width: WIDTH, height: HEIGHT,
-    // Exact-position rendering (facing cones, sub-tile slides) regardless of the
-    // movement rule — a rendering signal, not the space model.
+    // Two independent axes (see apps/design App.vue buildField):
+    //   • boardType 'grid'  — the terrain IS a grid of square cells (like chess/civ1),
+    //     so it's a grid board (minimap, grid concept), NOT a shape/continuous board.
+    //   • spaceType         — how units move: 'discrete' (snapped to cells) or
+    //     'continuous' (free points), taken from the active quadrant.
+    boardType: 'grid',
+    spaceType: st.space,
+    // Units are supplied in a separate positioned channel (below) with facing cones and
+    // sub-tile points, so csmini renders through SchematicLayer's absolute placement
+    // (which draws the square-cell grid board too) rather than the HTML cell renderer.
     locationType: 'continuous',
     cells,
     units,

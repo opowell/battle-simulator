@@ -484,6 +484,18 @@ function buildField(g, s) {
   teams.forEach((t, i) => { ownerTeam[i + 1] = t.id; });
 
   const locationType = g.locationType ?? 'discrete';
+  // Two independent axes (see a game's toGrid):
+  //   • boardType — how the TERRAIN is drawn: a grid of square cells ('grid') vs
+  //     positioned shapes ('continuous', games with a `shapes` array like cs/doom).
+  //   • spaceType — how UNITS are placed: snapped to cells ('discrete') vs free
+  //     points ('continuous').
+  // These are independent: csmini is a GRID board (square cells) whose units may move
+  // in continuous space. `positioned` is whether the game supplies a separate
+  // positioned unit channel (g.units) instead of embedding units in cells — those
+  // need SchematicLayer's absolute placement, so the HTML cell renderer skips them.
+  const boardType = g.boardType ?? (g.shapes?.length ? 'continuous' : 'grid');
+  const spaceType = g.spaceType ?? locationType;
+  const positioned = g.units != null;
 
   // Discrete SQUARE-grid games locate a unit by an integer cell index, rendered at the
   // cell centre (hence +0.5). Hexagon-grid games (kdice) already give cell.x/y as an
@@ -583,6 +595,9 @@ function buildField(g, s) {
     // see games/coord.js). Gates the straight-line slide animation, the move-radius
     // circle, and exact-point move submission — replaces the old shapes?.length proxy.
     locationType,
+    boardType,
+    spaceType,
+    positioned,
     teams,
     walls: [],
     zones: [],
