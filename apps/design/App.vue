@@ -649,6 +649,16 @@ const historyFields = ref([]);
 const revealFields = ref([]);
 const revealLog    = ref([]);
 
+// The resolved board straight from the server grid — no hop/replay animation overrides
+// (unlike activeField below). This is the authoritative per-turn snapshot the history
+// recorder appends (see Battlefield's fieldHistory watcher), so a live we-go game's
+// history holds the real turn-end positions rather than whatever replay frame happened
+// to be on screen when the turn resolved. Recomputes only when liveState changes.
+const resolvedField = computed(() => {
+  const s = liveState.value;
+  return s ? buildField(s.grid, s) : null;
+});
+
 const activeField = computed(() => {
   const s = liveState.value;
   if (!s) return null;
@@ -1024,6 +1034,7 @@ async function restartGame() {
              @refresh="refresh"/>
       <Battlefield v-else-if="activeField"
                    :live-state="liveState"
+                   :resolved-field="resolvedField"
                    :observer-view="observerView"
                    :field="activeField"
                    :unit-fx="unitFx"

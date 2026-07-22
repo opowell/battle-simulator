@@ -25,6 +25,10 @@ import ObserverPerspective from './battlefield/ObserverPerspective.vue';
 
 const props = defineProps({
   liveState:     Object,
+  // The board straight from the server grid, no hop/replay overrides (App.vue's
+  // resolvedField). Recorded into fieldHistory so history holds real turn-end
+  // positions, not a replay frame — `field` may be mid-animation when a turn resolves.
+  resolvedField: { type: Object, default: null },
   // Observer perspective: null = full-information view, else the playerId being
   // watched through their own fog view. App.vue owns re-subscription; we render
   // the switcher (ObserverPerspective) and bubble picks via 'set-observer-view'.
@@ -190,9 +194,13 @@ const histPos      = ref(0);
 const histLength   = computed(() => revealAll.value ? props.revealFields.length : fieldHistory.value.length);
 const atLatest     = computed(() => histPos.value >= histLength.value - 1);
 
+// The board to record into history: the resolved server grid (never a replay/hop
+// frame). Falls back to `field` for games/paths that don't provide it.
+const snapshotField = () => props.resolvedField ?? props.field;
+
 watch(() => props.liveState?.id, () => {
   stopHistoryPlay();
-  fieldHistory.value = props.field ? [props.field] : [];
+  fieldHistory.value = snapshotField() ? [snapshotField()] : [];
   histPos.value = 0;
   dismissedResult.value = false;
   revealAll.value = false;
@@ -210,8 +218,8 @@ watch(() => props.historyFields, (h) => {
 });
 
 watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
-  if (oldLen === undefined || !props.field) return;
-  fieldHistory.value = [...fieldHistory.value, props.field];
+  if (oldLen === undefined || !snapshotField()) return;
+  fieldHistory.value = [...fieldHistory.value, snapshotField()];
   if (histPos.value >= fieldHistory.value.length - 2) histPos.value = fieldHistory.value.length - 1;
 });
 
@@ -225,9 +233,9 @@ watch(() => props.liveState?.fog ? props.liveState?.pendingPlayer : null, (pendi
   if (!humanPlayers.includes(pending)) return; // still AI's turn or game over
   if (humanPlayers.includes(prev))    return; // was already the human's turn (no-op)
   // AI → human transition: refresh the latest snapshot with the post-AI board.
-  if (fieldHistory.value.length > 0 && props.field) {
+  if (fieldHistory.value.length > 0 && snapshotField()) {
     const updated = [...fieldHistory.value];
-    updated[updated.length - 1] = props.field;
+    updated[updated.length - 1] = snapshotField();
     fieldHistory.value = updated;
   }
 });

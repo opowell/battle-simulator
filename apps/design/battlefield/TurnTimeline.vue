@@ -82,8 +82,11 @@ onUnmounted(() => { dragging.value = false; });
            playback, and a CSS ease on top of that would lag the board it tracks. -->
       <div class="tl-fill" :style="{ width: pct + '%' }"/>
       <span v-for="p in ticks" :key="p" class="tl-tick"
-            :class="{ 'tl-tick--done': p <= pos, 'tl-tick--at': p === pos }"
+            :class="{ 'tl-tick--done': p <= pos }"
             :style="{ left: tickPct(p) + '%' }"/>
+      <!-- The playhead knob sits at the exact fractional time (pos + frac), so a
+           jump/scrub to a mid-ply time shows the head partway between ticks. -->
+      <span class="tl-head" :style="{ left: pct + '%' }"/>
     </div>
     <span class="mono tl-count">{{ pos - start + 1 }}/{{ span + 1 }}</span>
   </div>
@@ -107,10 +110,11 @@ onUnmounted(() => { dragging.value = false; });
   background: var(--faint); pointer-events: none; transition: background .12s, height .12s, width .12s;
 }
 .tl-tick--done { background: var(--accent); }
-/* The playhead tick reads as a knob, so the current ply is findable at a glance. */
-.tl-tick--at {
-  width: 9px; height: 9px; margin-left: -4.5px;
-  background: var(--accent); box-shadow: 0 0 0 2px var(--bg1);
+/* The playhead knob, positioned at the fractional time so it can sit between ticks. */
+.tl-head {
+  position: absolute; top: 50%; width: 9px; height: 9px; margin-left: -4.5px;
+  transform: translateY(-50%); border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--bg1); pointer-events: none;
 }
 .tl-count { font-size: 11px; color: var(--dim); white-space: nowrap; min-width: 34px; text-align: right; }
 </style>
