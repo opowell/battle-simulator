@@ -44,8 +44,17 @@ function compact(a) {
  * Choose greedily for the player to move (state.activePlayers[0]). `game` is the
  * GameDefinition; the engine passes it as the 3rd chooseAction argument, and the
  * factory below also binds it so the agent works when driven directly.
+ *
+ * `opts.noise` (default 0.15) perturbs each non-terminal child's heuristic score
+ * by up to ±noise * (spread of this decision's scores) before argmax-ing, so the
+ * agent isn't a pure function of the position — it varies its play across games/
+ * turns instead of always taking the single top-scored move. Terminal (winning/
+ * losing/drawing) scores are never perturbed: they come from hooks.terminalValue
+ * at a magnitude (±1e6) noise can't threaten, so a decisive move is still always
+ * preferred over any heuristic one.
  */
-export function greedyChoose(state, legalActions, game, rng = Math.random) {
+export function greedyChoose(state, legalActions, game, rng = Math.random, opts = {}) {
+  const noise = opts.noise ?? 0.15;
   const mover = state.activePlayers?.[0];
   if (mover == null) return legalActions?.[0];
 
@@ -73,9 +82,20 @@ export function greedyChoose(state, legalActions, game, rng = Math.random) {
     if (childStates[i] != null) { idx.push(i); keptActions.push(a); keptChildren.push(childStates[i]); }
   });
   const heur = keptChildren.length ? hooks.evalChildren(state, mover, keptActions, keptChildren) : [];
+
+  // Scale the noise to this decision's own score spread so it perturbs close
+  // calls without swamping a heuristic that clearly favours one move.
+  let spread = 0;
+  if (noise > 0 && heur.length > 1) {
+    const finite = heur.filter(Number.isFinite);
+    if (finite.length > 1) spread = Math.max(...finite) - Math.min(...finite);
+  }
   idx.forEach((origI, k) => {
     const tv = hooks.terminalValue(keptChildren[k]);
-    values[origI] = tv != null ? tv : (heur[k] ?? 0);
+    if (tv != null) { values[origI] = tv; return; }
+    const h = heur[k] ?? 0;
+    const jitter = noise > 0 ? (rng() * 2 - 1) * noise * (spread || Math.abs(h) || 1) : 0;
+    values[origI] = h + jitter;
   });
 
   // argmax with a random tie-break so repeated games don't play out identically.
@@ -92,12 +112,12 @@ export function greedyChoose(state, legalActions, game, rng = Math.random) {
  * in api-server.js (`new`-free factory is fine — the agent holds no per-move
  * state beyond the last analysis it publishes for the AI panel).
  */
-export function makeGreedyAgent(game) {
+export function makeGreedyAgent(game, opts = {}) {
   const agent = {
     id: 'greedy',
     lastAnalysis: null,
     chooseAction(state, legalActions, g = game) {
-      const picked = greedyChoose(state, legalActions, g);
+      const picked = greedyChoose(state, legalActions, g, Math.random, opts);
       // greedyChoose returns {action,value} in the normal (>1 action) path and a
       // bare action in the trivial paths; normalise both.
       const action = picked && typeof picked === 'object' && 'action' in picked ? picked.action : picked;
