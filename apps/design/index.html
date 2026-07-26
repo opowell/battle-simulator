@@ -178,6 +178,32 @@ input[type=range]{padding:0;width:100%}
 <body>
 <div id="app"></div>
 
+<!-- Dev-only: connect to the standalone Vue Devtools backend (`npx @vue/devtools`).
+     The browser-extension devtools v7 can't inspect this no-build/global-build app,
+     so we load the standalone backend instead. Must run BEFORE vue.global.js so its
+     hook is installed before createApp(). Gated to local/private hosts so it never
+     loads on a public production domain, and swallows the error when the standalone
+     app isn't running. -->
+<script>
+(function () {
+  var h = location.hostname;
+  var isLocal =
+    h === 'localhost' || h === '127.0.0.1' || h === '::1' ||
+    /\.local$/.test(h) ||
+    /^10\./.test(h) ||
+    /^192\.168\./.test(h) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(h);
+  if (isLocal) {
+    // The standalone backend (`npx @vue/devtools`) binds 127.0.0.1:8098, so it is
+    // reached at localhost:8098 from a browser on the same machine — not at the
+    // page's host. Override via ?vue-devtools-host=HOST:PORT if it runs elsewhere.
+    var m = /[?&]vue-devtools-host=([^&]+)/.exec(location.search);
+    var host = m ? decodeURIComponent(m[1]) : 'localhost:8098';
+    document.write('<script src="http://' + host + '" onerror="void 0"><\/script>');
+  }
+})();
+</script>
+
 <script src="./vendor/vue.global.js"></script>
 <script src="./vendor/vue3-sfc-loader.js"></script>
 <script src="./vue-router.global.js"></script>
