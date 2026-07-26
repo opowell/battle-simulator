@@ -22,6 +22,7 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | `sc1` | StarCraft 1 | [games/sc1/](games/sc1/README.md) |
 | `sc2` | StarCraft 2 | [games/sc2/](games/sc2/README.md) |
 | `doom` | Doom | [games/doom/](games/doom/README.md) |
+| `memoir44` | Memoir '44 | [games/memoir44/](games/memoir44/README.md) |
 
 ## Quick start
 
@@ -37,7 +38,7 @@ node demo/chess-demo.js --auto
 node demo/xcom-demo.js --auto --greedy
 ```
 
-All demos are in `demo/`: `chess`, `tactical`, `cardbattle`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `csmini`, `ffta`, `sc2`, `doom`, `rogue`.
+All demos are in `demo/`: `chess`, `tactical`, `cardbattle`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `csmini`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
 
 ### Start the HTTP API server
 

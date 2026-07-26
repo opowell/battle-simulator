@@ -49,6 +49,7 @@ import { MudAndBloodGame }  from './games/mudandblood/index.js';
 import { KDiceGame }        from './games/kdice/index.js';
 import { WarodDotsGame }   from './games/warofdots/WarodDotsGame.js';
 import { SurvivGame }        from './games/surviv/index.js';
+import { Memoir44Game }      from './games/memoir44/index.js';
 
 // ---------------------------------------------------------------------------
 // Static file serving — /ui/<name>/* → apps/<name>/
@@ -267,6 +268,7 @@ const GAMES = {
   kdice:         { game: KDiceGame,         minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }, { id: 'p3', name: 'Player 3' }, { id: 'p4', name: 'Player 4' }] },
   warofdots:     { game: WarodDotsGame,     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'player', name: 'You' }, { id: 'ai', name: 'AI' }] },
   surviv:        { game: SurvivGame,        minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'blue', name: 'Blue' }, { id: 'red', name: 'Red' }] },
+  memoir44:      { game: Memoir44Game,      minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
 };
 
 // ---------------------------------------------------------------------------
