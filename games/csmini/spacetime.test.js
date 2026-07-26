@@ -53,15 +53,17 @@ test('discrete/discrete: a step spends one second and one move square (native)',
 
 test('continuous space / discrete time: one move goes multiple cells at once', () => {
   const s = init({ space: 'continuous', time: 'discrete' });
+  // Continuous spawns sit at their cell centre, so measure reach from the actual origin.
+  const o = u(s, 'CT-1').position;
   // Move budget is the SPEED distance (3), spent as real distance in one action.
   assert.equal(u(s, 'CT-1').perTurn.moveLeft, 3);
   const moves = legal(s, 'ct').filter(a => a.type === 'move' && a.unitId === 'CT-1');
   assert.ok(moves.length > 0, 'continuous destinations enumerated');
   // Some destination is more than one cell away (a lattice point, not a neighbour).
-  assert.ok(moves.some(m => Math.hypot(m.to.x - 0, m.to.y - 1) > 1.5), 'reaches beyond an adjacent cell');
-  const far = moves.reduce((b, m) => Math.hypot(m.to.x, m.to.y - 1) > Math.hypot(b.to.x, b.to.y - 1) ? m : b);
+  assert.ok(moves.some(m => Math.hypot(m.to.x - o.x, m.to.y - o.y) > 1.5), 'reaches beyond an adjacent cell');
+  const far = moves.reduce((b, m) => Math.hypot(m.to.x - o.x, m.to.y - o.y) > Math.hypot(b.to.x - o.x, b.to.y - o.y) ? m : b);
   const s2 = apply(s, 'ct', far);
-  const spent = Math.hypot(far.to.x - 0, far.to.y - 1);
+  const spent = Math.hypot(far.to.x - o.x, far.to.y - o.y);
   assert.ok(Math.abs(u(s2, 'CT-1').perTurn.moveLeft - (3 - spent)) < 1e-9, 'moveLeft spent by real distance');
 });
 
@@ -89,10 +91,11 @@ test('continuous space / discrete time: reach scales with the move budget', () =
   // In this quadrant the per-turn budget (moveLeft) IS the range, so a unit with
   // twice the budget (double speed → double range) reaches strictly farther.
   const base = init({ space: 'continuous', time: 'discrete' });
+  const o = u(base, 'CT-1').position;
   const withBudget = (b) => ({ ...base, units: base.units.map(x => x.id === 'CT-1' ? { ...x, perTurn: { ...x.perTurn, moveLeft: b } } : x) });
   const reach = (s) => Math.max(...CsMiniGame.getLegalActions(s, 'ct')
     .filter(a => a.type === 'move' && a.unitId === 'CT-1')
-    .map(a => Math.hypot(a.to.x - 0, a.to.y - 1)));
+    .map(a => Math.hypot(a.to.x - o.x, a.to.y - o.y)));
   assert.ok(reach(withBudget(6)) > reach(withBudget(3)) + 1, 'a bigger budget reaches farther');
 });
 

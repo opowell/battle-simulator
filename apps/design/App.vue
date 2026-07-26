@@ -508,8 +508,14 @@ function buildField(g, s) {
   // in a parallel `g.units` channel as decimal strings; a position is already the exact
   // point, so it renders directly with no cell-centre offset either.
   const cellCenterOffset = (locationType === 'continuous' || g.grid === 'hexagon') ? 0 : 0.5;
+  // A positioned game (its units come through the parallel g.units channel) that is
+  // nonetheless a DISCRETE square-grid board (csmini in discrete space) locates units by
+  // an integer cell index too, so it needs the same cell-centre offset as an embedded-cell
+  // grid game — otherwise the token sits on the cell's top-left corner. Continuous-space
+  // positioned games carry exact points and get no offset.
+  const positionedOffset = (boardType === 'grid' && spaceType === 'discrete' && g.grid !== 'hexagon') ? 0.5 : 0;
   const unitSource = locationType === 'continuous'
-    ? (g.units ?? []).map(u => ({ src: u, x: Number(u.x), y: Number(u.y), id: u.id }))
+    ? (g.units ?? []).map(u => ({ src: u, x: Number(u.x) + positionedOffset, y: Number(u.y) + positionedOffset, id: u.id }))
     : g.cells.filter(c => c.glyph).map(c => ({ src: c, x: c.x + cellCenterOffset, y: c.y + cellCenterOffset, id: c.unitId ?? `u_${c.x}_${c.y}` }));
 
   const units = unitSource
