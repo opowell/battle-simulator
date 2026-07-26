@@ -21,7 +21,7 @@ export function buildDeck() {
   const deck = [];
   const add = (n, fn) => { for (let i = 0; i < n; i++) deck.push(fn()); };
 
-  add(4, () => card('Recon in Force', 'any', 1));
+  add(4, () => card('Recon 1', 'any', 1));
   add(3, () => card('Probe Center', 'center', 2));
   add(2, () => card('Probe Left', 'left', 2));
   add(2, () => card('Probe Right', 'right', 2));

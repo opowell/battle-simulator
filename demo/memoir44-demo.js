@@ -16,9 +16,12 @@ const engine = new GameEngine(Memoir44Game, players, { maxTurns: 120, scenario }
 
 function describe(playerId, action) {
   if (action.type === 'end-turn') return `${playerId}: end turn`;
+  if (action.type === 'end-move') return `${playerId}: begin battle`;
   if (action.type === 'play-card') return `${playerId}: play ${action.cardId} (${action.section})`;
   if (action.type === 'move') return `${playerId}: ${action.unitId} → (${action.to.col},${action.to.row})`;
   if (action.type === 'attack') return `${playerId}: ${action.unitId} battles ${action.targetId}`;
+  if (action.type === 'take-ground') return `${playerId}: ${action.unitId} takes ground → (${action.to.col},${action.to.row})`;
+  if (action.type === 'decline-advance') return `${playerId}: ${action.unitId} holds`;
   return `${playerId}: ${JSON.stringify(action)}`;
 }
 

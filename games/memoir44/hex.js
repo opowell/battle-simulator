@@ -78,13 +78,21 @@ export function hexesBetween(a, b) {
 
 // --- sections & baselines --------------------------------------------------
 
-// The battlefield's three sections (left flank / center / right flank), split by
-// column: 4 + 5 + 4 across the 13 columns. Command "section cards" order units
-// within one section.
+// The battlefield's three sections (left flank / center / right flank). The two
+// dividing lines run through the boundary columns, so a hex sitting on a line
+// belongs to BOTH adjacent sections — "units on a hex straddling sections may be
+// ordered from either section" (rulebook). Columns 4 and 8 straddle.
+export function sectionsOf(col) {
+  const out = [];
+  if (col <= 4) out.push('left');
+  if (col >= 4 && col <= 8) out.push('center');
+  if (col >= 8) out.push('right');
+  return out;
+}
+
+// Primary section (for display / retreat-neutral logic): the first it belongs to.
 export function sectionOf(col) {
-  if (col <= 3) return 'left';
-  if (col >= 9) return 'right';
-  return 'center';
+  return sectionsOf(col)[0];
 }
 
 export const SECTIONS = ['left', 'center', 'right'];

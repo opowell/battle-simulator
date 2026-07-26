@@ -6,26 +6,34 @@ A turn-based adaptation of Days of Wonder's **Memoir '44** — WWII squad combat
 ## Board & sections
 
 The battlefield is 13 columns wide by 9 rows deep, split into three **sections** —
-left flank (cols 0–3), center (4–8), right flank (9–12). Command cards order units
-within a section. Hexes use offset coordinates `{ col, row }`; [hex.js](hex.js) does
-the axial/cube conversion for distance and line of sight.
+left flank, center, right flank. The two dividing lines run **through** the boundary
+columns, so a hex on a line belongs to both adjacent sections and may be ordered from
+either ([hex.js](hex.js) `sectionsOf`). Hexes use offset coordinates `{ col, row }`;
+[hex.js](hex.js) does the axial/cube conversion for distance and line of sight.
 
 ## A turn
+
+The turn is a phase machine that mirrors the rulebook's *play → order → move all →
+battle all → draw* sequence:
 
 1. **Play a command card** (`play-card`). It grants a number of *orders* in one
    section (or, for *General Advance*, in every section). Cards, [cards.js](cards.js):
 
    | Card | Orders |
    |---|---|
-   | Recon in Force | 1 (in a section you choose) |
+   | Recon 1 | 1 (in a section you choose) |
    | Probe (L/C/R) | 2 |
    | Attack (L/C/R) | 3 |
    | Assault (L/C/R) | 4 |
    | General Advance | 2 in **each** section |
 
-2. **Order units** — each ordered unit may **move** then **battle** (`move`, `attack`).
-   The first time a unit moves or battles it consumes one order from its section.
-3. **End turn** (`end-turn`) — draw back up to your hand size and pass.
+2. **Move phase** — move ordered units (`move`), then `end-move` to advance to battle.
+3. **Battle phase** — battle with ordered units one at a time (`attack`), resolving
+   each unit's combats (including Take Ground / Overrun) before the next.
+4. **End turn** (`end-turn`) — draw back up to your hand size and pass.
+
+The first time a unit moves or battles it consumes one order from a section it sits in.
+A unit adjacent to an enemy **must close-assault** it — it may not fire past it.
 
 ## Units ([units.js](units.js))
 
@@ -42,16 +50,29 @@ Roll one die per attack die granted (minus terrain protection):
 
 - **Infantry / Grenade** kill infantry & artillery figures; **Armor / Grenade** kill armor.
 - **Flag** forces the defender to retreat one hex toward its home edge; a flag that
-  can't be honored (blocked or off-board) becomes a casualty instead.
+  can't be honored (blocked or off-board) becomes a casualty instead. Terrain such as
+  sandbags/bunkers lets the defender **ignore the first flag**.
 - **Star** has no effect in the base rules.
 
 The last figure removed from a unit scores a **victory medal** for the attacker.
 
+### Take Ground & Armor Overrun
+
+After a close assault empties the target hex (enemy eliminated or forced to retreat),
+the attacker may advance into it (`take-ground`) or hold (`decline-advance`). Infantry
+and armor may take ground; artillery may not. An **armor** unit that takes ground may
+then make **one overrun combat** — a second battle from the hex it just seized — and
+may take ground again after it (but only one overrun per turn).
+
 ## Terrain ([terrain.js](terrain.js))
 
-Forest, town, hills and hedgerows subtract dice from attacks against a unit standing
-there, make a moving unit stop on entry, and block line of sight. Rivers are impassable
-except at bridges; artillery ignores all terrain effects.
+Terrain reduces the dice rolled against a unit standing on it (e.g. forest/town **−1
+infantry, −2 armor**), and most cover forces a moving unit to **stop on entry** and
+forbids it from battling that turn ("no battle on entry", all unit types — but it may
+still take ground). **Hills** block line of sight and give −1/−1, but only against an
+attacker on lower ground. Forest/town/hedgerow/hills block LOS. Rivers are impassable
+except at bridges; **beaches** cap a move at 2 hexes. Artillery ignores all terrain
+dice reductions and line of sight entirely.
 
 ## Scenarios ([scenarios.js](scenarios.js))
 
@@ -64,12 +85,19 @@ except at bridges; artillery ignores all terrain effects.
 First side to the scenario's medal count wins (`getResult`); wiping out the enemy army
 also ends it.
 
-## Simplifications
+## Scope
 
-This is a faithful core, not the full rulebook. Omitted for now: tactic/special cards
-(Ambush, Air Power, …), *take ground* / armor *overrun* follow-up battles, star-symbol
-effects, and the wider terrain/nation/expansion catalog. The `move → battle` order within
-a turn is relaxed (units may interleave) rather than strict all-move-then-all-battle.
+The full base-game **core rules** are implemented: the command-card order phase, strict
+move-then-battle sequencing, line of sight, range/terrain dice, flags & retreats (with
+ignore-first-flag terrain), Take Ground, and Armor Overrun.
+
+Not included (these are expansions / card-specific content beyond the base combat core):
+the **tactic cards** (Ambush, Air Power, Barrage, Dig In, Their Finest Hour, …) — the
+deck here is the section-card core; **nation-specific command rules** (Russian Commissar,
+Japanese Banzai, US Gung-Ho!, …); **Overlord/air/naval** rules; **Special Forces** unit
+types (snipers, engineers, tanks-with-quirks); and the expansion **terrain catalog**
+(the base-game terrain set is modeled). Objective hexes use the permanent
+capture-on-enter rule; the majority/temporary variants aren't modeled.
 
 ## Run it
 

@@ -66,6 +66,8 @@ function pegasusBridge() {
   for (const k of ['5,2', '6,2', '7,2', '6,3']) terrain[k] = 'town';   // Bénouville
   for (const k of ['1,3', '11,3', '2,5', '10,5']) terrain[k] = 'forest';
   terrain['4,6'] = 'hill'; terrain['8,6'] = 'hill';
+  // German defenders are dug in behind sandbags covering the bridge approaches.
+  for (const k of ['3,2', '9,2']) terrain[k] = 'sandbags';
 
   const units = [
     // British (player 0) — landed south of the canal, storming the bridges.

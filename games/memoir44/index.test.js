@@ -81,11 +81,11 @@ test('command phase: only play-card actions (or a forced pass)', () => {
   assert.ok(acts.every(a => a.type === 'play-card'));
 });
 
-test('playing a card sets orders and switches to the orders phase', () => {
+test('playing a card sets orders and switches to the move phase', () => {
   const s = Memoir44Game.createInitialState(players());
   const me = s.activePlayers[0];
   const s2 = playCard(s, me);
-  assert.equal(s2.gameSpecific.phase, 'orders');
+  assert.equal(s2.gameSpecific.phase, 'move');
   const totalOrders = Object.values(s2.gameSpecific.ordersLeft).reduce((a, b) => a + b, 0);
   assert.ok(totalOrders > 0);
   assert.equal(s2.gameSpecific.hands[me].length, 4); // one card spent
@@ -94,23 +94,39 @@ test('playing a card sets orders and switches to the orders phase', () => {
 test('ordered units are limited by the card and the section', () => {
   const s = Memoir44Game.createInitialState(players());
   const me = s.activePlayers[0];
-  // Play a single-section card; ordersLeft should be nonzero in exactly one section.
+  // Play a single-section card; ordersLeft should be nonzero in at least one section.
   const s2 = playCard(s, me, a => a.section !== undefined);
   const nonzero = Object.values(s2.gameSpecific.ordersLeft).filter(v => v > 0).length;
   assert.ok(nonzero >= 1);
 });
 
 // ---------------------------------------------------------------------------
-// orders / movement / combat
+// move phase → battle phase → combat
 // ---------------------------------------------------------------------------
 
-test('orders phase offers move and end-turn', () => {
+// Play a command card and skip the move phase to reach the battle phase.
+function toBattlePhase(state, me) {
+  const s = playCard(state, me);
+  return Memoir44Game.applyActions(s, [{ playerId: me, action: { type: 'end-move', unitId: '__player__' } }]);
+}
+
+test('move phase offers move and end-move (not attacks)', () => {
   const s = Memoir44Game.createInitialState(players());
   const me = s.activePlayers[0];
   const s2 = playCard(s, me);
   const acts = Memoir44Game.getLegalActions(s2, me);
-  assert.ok(acts.some(a => a.type === 'end-turn'));
+  assert.ok(acts.some(a => a.type === 'end-move'));
   assert.ok(acts.some(a => a.type === 'move'));
+  assert.ok(!acts.some(a => a.type === 'attack'));
+});
+
+test('battle phase offers attacks and end-turn', () => {
+  const s = Memoir44Game.createInitialState(players());
+  const me = s.activePlayers[0];
+  const s2 = toBattlePhase(s, me);
+  const acts = Memoir44Game.getLegalActions(s2, me);
+  assert.ok(acts.some(a => a.type === 'end-turn'));
+  assert.ok(!acts.some(a => a.type === 'move'));
 });
 
 test('moving a unit consumes an order and marks it moved', () => {
@@ -127,24 +143,96 @@ test('moving a unit consumes an order and marks it moved', () => {
   assert.ok(moved.perTurn.ordered && moved.perTurn.moved);
 });
 
-test('combat removes figures and awards a medal on a kill', () => {
-  // Craft a tiny deterministic state: an infantry adjacent to a 1-figure enemy,
-  // with a rigged rng that always rolls the killing "grenade" face.
+// Build a battle-phase state with two named units placed as specified.
+function stageBattle(overrides = {}) {
   const s = Memoir44Game.createInitialState(players());
-  const attacker = s.units.find(u => u.ownerId === 'allies' && u.type === 'infantry');
+  const attacker = s.units.find(u => u.ownerId === 'allies' && u.type === (overrides.attackerType ?? 'infantry'));
   const victim = s.units.find(u => u.ownerId === 'axis' && u.type === 'infantry');
   const units = s.units.map(u => {
-    if (u.id === attacker.id) return { ...u, position: { col: 5, row: 4 }, perTurn: { ordered: true, moved: false, battled: false, battleAllowed: true } };
-    if (u.id === victim.id) return { ...u, position: { col: 6, row: 4 }, figures: 1 };
+    if (u.id === attacker.id) return { ...u, position: overrides.attackerPos ?? { col: 5, row: 4 }, perTurn: { ordered: true, moved: false, battled: false, battleAllowed: true, overrunDone: false } };
+    if (u.id === victim.id) return { ...u, position: overrides.victimPos ?? { col: 6, row: 4 }, figures: overrides.victimFigures ?? 1 };
     return u;
   });
-  const gs = { ...s.gameSpecific, phase: 'orders', ordersLeft: { left: 0, center: 3, right: 0 }, currentCard: { name: 'x', section: 'center', orders: 3 } };
-  const staged = { ...s, units, gameSpecific: gs };
-  const grenadeRng = () => 3 / 6 + 0.001; // lands on the 'grenade' face (index 3)
-  const out = Memoir44Game.applyActions(staged, [{ playerId: 'allies', action: { type: 'attack', unitId: attacker.id, targetId: victim.id } }], grenadeRng);
-  const deadVictim = out.units.find(u => u.id === victim.id);
-  assert.equal(deadVictim.alive, false);
+  const gs = { ...s.gameSpecific, phase: 'battle', pendingAdvance: null, ordersLeft: { left: 0, center: 3, right: 0 }, currentCard: { name: 'x', section: 'center', orders: 3 } };
+  return { state: { ...s, units, currentPhase: 'battle', gameSpecific: gs }, attacker, victim };
+}
+
+const GRENADE_RNG = () => 3 / 6 + 0.001; // always lands on 'grenade' (index 3) — a hit on anything
+const FLAG_RNG = () => 5 / 6 + 0.001;    // always lands on 'flag' (index 5) — forces retreat
+
+test('combat removes figures and awards a medal on a kill', () => {
+  const { state, attacker, victim } = stageBattle();
+  const out = Memoir44Game.applyActions(state, [{ playerId: 'allies', action: { type: 'attack', unitId: attacker.id, targetId: victim.id } }], GRENADE_RNG);
+  assert.equal(out.units.find(u => u.id === victim.id).alive, false);
   assert.equal(out.gameSpecific.medals.allies, 1);
+});
+
+test('a close-assault kill offers Take Ground into the vacated hex', () => {
+  const { state, attacker, victim } = stageBattle();
+  const out = Memoir44Game.applyActions(state, [{ playerId: 'allies', action: { type: 'attack', unitId: attacker.id, targetId: victim.id } }], GRENADE_RNG);
+  assert.ok(out.gameSpecific.pendingAdvance);
+  const acts = Memoir44Game.getLegalActions(out, 'allies');
+  assert.deepEqual(acts.map(a => a.type).sort(), ['decline-advance', 'take-ground']);
+  const tg = acts.find(a => a.type === 'take-ground');
+  assert.deepEqual(tg.to, { col: 6, row: 4 }); // the hex the enemy was eliminated from
+  const advanced = Memoir44Game.applyActions(out, [{ playerId: 'allies', action: tg }]);
+  const moved = advanced.units.find(u => u.id === attacker.id);
+  assert.deepEqual(moved.position, { col: 6, row: 4 }); // now stands where the enemy was
+  assert.equal(advanced.gameSpecific.pendingAdvance, null);
+});
+
+test('armor may make a single overrun combat after taking ground', () => {
+  const { state, attacker } = stageBattle({ attackerType: 'armor' });
+  const out = Memoir44Game.applyActions(state, [{ playerId: 'allies', action: { type: 'attack', unitId: attacker.id, targetId: state.units.find(u => u.ownerId === 'axis' && u.type === 'infantry').id } }], GRENADE_RNG);
+  assert.equal(out.gameSpecific.pendingAdvance.allowOverrun, true);
+  const advanced = Memoir44Game.applyActions(out, [{ playerId: 'allies', action: { type: 'take-ground', unitId: attacker.id, to: out.gameSpecific.pendingAdvance.hex } }]);
+  const armor = advanced.units.find(u => u.id === attacker.id);
+  assert.equal(armor.perTurn.overrunDone, true);
+  assert.equal(armor.perTurn.battled, false); // free to battle once more
+});
+
+test('a unit adjacent to an enemy must close assault (cannot fire past it)', () => {
+  // Attacker at (5,4) adjacent to an enemy at (6,4); a distant enemy sits at (8,4).
+  const s = Memoir44Game.createInitialState(players());
+  const attacker = s.units.find(u => u.ownerId === 'allies' && u.type === 'artillery');
+  const [near, far] = s.units.filter(u => u.ownerId === 'axis').slice(0, 2);
+  const units = s.units.map(u => {
+    if (u.id === attacker.id) return { ...u, position: { col: 5, row: 4 }, perTurn: { ordered: true, moved: false, battled: false, battleAllowed: true, overrunDone: false } };
+    if (u.id === near.id) return { ...u, position: { col: 6, row: 4 } };
+    if (u.id === far.id) return { ...u, position: { col: 8, row: 4 } };
+    return u;
+  });
+  const gs = { ...s.gameSpecific, phase: 'battle', pendingAdvance: null, ordersLeft: { left: 0, center: 3, right: 0 } };
+  const acts = Memoir44Game.getLegalActions({ ...s, units, gameSpecific: gs }, 'allies');
+  const targets = acts.filter(a => a.type === 'attack' && a.unitId === attacker.id).map(a => a.targetId);
+  assert.deepEqual(targets, [near.id]); // only the adjacent enemy
+});
+
+test('a unit that enters must-stop terrain may not battle that turn', () => {
+  // Stage a lone infantry next to a forest hex and move it in.
+  const s = Memoir44Game.createInitialState(players());
+  const inf = s.units.find(u => u.ownerId === 'allies' && u.type === 'infantry');
+  const units = s.units.map(u => u.id === inf.id
+    ? { ...u, position: { col: 5, row: 3 }, perTurn: { ordered: false, moved: false, battled: false, battleAllowed: true, overrunDone: false } }
+    : u);
+  const board = { ...s.board, terrain: { ...s.board.terrain, '5,4': 'forest' } };
+  const gs = { ...s.gameSpecific, phase: 'move', ordersLeft: { left: 0, center: 3, right: 0 } };
+  const staged = { ...s, units, board, currentPhase: 'move', gameSpecific: gs };
+  const out = Memoir44Game.applyActions(staged, [{ playerId: 'allies', action: { type: 'move', unitId: inf.id, from: { col: 5, row: 3 }, to: { col: 5, row: 4 } } }]);
+  assert.equal(out.units.find(u => u.id === inf.id).perTurn.battleAllowed, false);
+});
+
+test('sandbags let the defender ignore the first flag (no retreat)', () => {
+  // Infantry FIRES from range 2 (5,4 -> 5,2): 2 base dice - 1 for sandbags = 1 die.
+  const { state, attacker } = stageBattle({ attackerPos: { col: 5, row: 4 }, victimPos: { col: 5, row: 2 }, victimFigures: 4 });
+  const board = { ...state.board, terrain: { ...state.board.terrain, '5,2': 'sandbags' } };
+  const staged = { ...state, board };
+  const victim = staged.units.find(u => u.ownerId === 'axis' && u.type === 'infantry');
+  const before = { ...victim.position };
+  const out = Memoir44Game.applyActions(staged, [{ playerId: 'allies', action: { type: 'attack', unitId: attacker.id, targetId: victim.id } }], FLAG_RNG);
+  const after = out.units.find(u => u.id === victim.id);
+  assert.deepEqual(after.position, before); // the single flag is ignored → stayed put
+  assert.equal(after.figures, 4);           // flags don't remove figures here
 });
 
 test('getResult declares a winner at the medal target', () => {
