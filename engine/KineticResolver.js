@@ -373,7 +373,13 @@ export function resolveTimeline({ game, turnStart, plans, rng, orderKey, diffEve
   for (const b of bodies.values()) { const s = b.segs[b.segs.length - 1]; if (s.t1 == null) s.t1 = simTime; }
   for (const p of projectiles.values()) { const s = p.segs[p.segs.length - 1]; if (s.t1 == null) s.t1 = simTime; }
 
-  return { state, result, entries, duration: simTime, playback: buildPlayback(turnStart, bodies, projectiles, deathAt, simTime) };
+  // `frameAt` keeps the motion model (segments) alive so the server can compute the
+  // EXACT state at any sim-time after the round resolves — what an off-sample mid-turn
+  // scrub requests (see GameEngine.playbackFrameAt). Clamped to the round's span.
+  const frameAt = simTime > 0
+    ? (t) => sampleFrame(turnStart, bodies, projectiles, deathAt, Math.min(Math.max(t, 0), simTime))
+    : null;
+  return { state, result, entries, duration: simTime, playback: buildPlayback(turnStart, bodies, projectiles, deathAt, simTime), frameAt };
 }
 
 // ── playback sampling: 60 even intervals over the round ────────────────────
@@ -382,29 +388,38 @@ function segAt(segs, t) {
   return segs[0];
 }
 
+// The exact resolved state at sim-time `t`, evaluated analytically from the motion
+// segments — NOT interpolated between samples. This is both the per-sample builder
+// below AND what an on-demand mid-turn scrub asks for: a client paused at a time
+// that falls between samples requests THIS (via GameEngine.playbackFrameAt →
+// api-server), so the paused board shows the true state, not a straight lerp that
+// would mis-place a unit across a motion event (an arrival, a death) between samples.
+export function sampleFrame(turnStart, bodies, projectiles, deathAt, t) {
+  const units = (turnStart.units ?? []).map(u => {
+    const b = bodies.get(u.id);
+    const alive = deathAt.has(u.id) ? deathAt.get(u.id) > t : true;
+    if (!b) return { id: u.id, x: null, y: null, alive };
+    const seg = segAt(b.segs, t);
+    const p = evalMotion(seg, Math.min(t, seg.t1 ?? t));
+    return { id: u.id, x: p.x, y: p.y, alive };
+  });
+  const projs = [];
+  for (const pr of projectiles.values()) {
+    const end = pr.segs[pr.segs.length - 1].t1;
+    if (t < pr.launchT || t > end) continue;
+    const seg = segAt(pr.segs, t);
+    const p = evalMotion(seg, t);
+    projs.push({ id: pr.id, x: p.x, y: p.y, targetId: pr.targetId });
+  }
+  return { t: Number(t.toFixed(4)), units, ...(projs.length ? { projectiles: projs } : {}) };
+}
+
 function buildPlayback(turnStart, bodies, projectiles, deathAt, duration) {
   if (!(duration > 0)) return null;
   const interval = duration / SAMPLES;
   const frames = [];
   for (let k = 0; k <= SAMPLES; k++) {
-    const t = k * interval;
-    const units = (turnStart.units ?? []).map(u => {
-      const b = bodies.get(u.id);
-      const alive = deathAt.has(u.id) ? deathAt.get(u.id) > t : true;
-      if (!b) return { id: u.id, x: null, y: null, alive };
-      const seg = segAt(b.segs, t);
-      const p = evalMotion(seg, Math.min(t, seg.t1 ?? t));
-      return { id: u.id, x: p.x, y: p.y, alive };
-    });
-    const projs = [];
-    for (const pr of projectiles.values()) {
-      const end = pr.segs[pr.segs.length - 1].t1;
-      if (t < pr.launchT || t > end) continue;
-      const seg = segAt(pr.segs, t);
-      const p = evalMotion(seg, t);
-      projs.push({ id: pr.id, x: p.x, y: p.y, targetId: pr.targetId });
-    }
-    frames.push({ t: Number(t.toFixed(4)), units, ...(projs.length ? { projectiles: projs } : {}) });
+    frames.push(sampleFrame(turnStart, bodies, projectiles, deathAt, k * interval));
   }
   return { duration, interval, frames };
 }

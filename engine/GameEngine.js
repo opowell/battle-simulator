@@ -62,11 +62,24 @@ export class GameEngine {
     this._eventQueue = new EventQueue();
     this._planStates = null;
     this._playback = null;
+    this._playbackFrameAt = null;
   }
 
   get state() { return this._state; }
   /** Sampled position frames of the last resolved simultaneous round (or null). */
   get playback() { return this._playback; }
+  /**
+   * Exact resolved state at fraction `f` (0..1) of the last simultaneous round —
+   * computed analytically from the motion segments, NOT interpolated between the
+   * sampled `playback.frames`. Returns { t, units:[{id,x,y,alive}], projectiles? } or
+   * null when there's no live playback model. Backs the mid-turn scrub's off-sample
+   * requests (api-server GET /sessions/:id/playback-frame).
+   */
+  playbackFrameAt(f) {
+    if (!this._playbackFrameAt || !this._playback) return null;
+    const frac = Math.min(Math.max(Number(f) || 0, 0), 1);
+    return this._playbackFrameAt(frac * this._playback.duration);
+  }
   get log() { return this._log; }
   get result() { return this._result; }
   get timeType() { return this.config.timeType ?? 'discrete'; }
@@ -111,6 +124,7 @@ export class GameEngine {
     this._eventQueue = new EventQueue();
     this._planStates = null;
     this._playback = null;
+    this._playbackFrameAt = null;
   }
 
   /**
@@ -222,6 +236,7 @@ export class GameEngine {
     });
     this._state = res.state;
     this._playback = res.playback;
+    this._playbackFrameAt = res.frameAt;
     for (const e of res.entries) {
       this._log.push({ turnNumber, phase: currentPhase, simultaneous: true, ...e });
     }

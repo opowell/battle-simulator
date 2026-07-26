@@ -40,6 +40,17 @@ window.api = {
   // narrows it to one player's fog-limited view instead.
   sessionObserver: (id, viewAs) => _req('/sessions/' + id + '?observer=1' + (viewAs ? '&viewAs=' + encodeURIComponent(viewAs) : '')),
   history:  (id)                    => _req('/sessions/' + id + '/history'),
+  // The EXACT resolved state at fraction `t` (0..1) of the last simultaneous round —
+  // requested when a mid-turn scrub is PAUSED between the sampled playback frames, so
+  // the board shows the server's true analytic state rather than a client-side lerp
+  // (see api-server GET /sessions/:id/playback-frame). `view` selects the perspective
+  // the same way subscribeSession does: { observer, viewAs } or { playerId }.
+  playbackFrame: (id, t, { observer = false, viewAs = null, playerId = null } = {}) => {
+    const persp = observer
+      ? ('&observer=1' + (viewAs ? '&viewAs=' + encodeURIComponent(viewAs) : ''))
+      : (playerId ? '&player=' + encodeURIComponent(playerId) : '');
+    return _req('/sessions/' + id + '/playback-frame?t=' + encodeURIComponent(t) + persp);
+  },
   log:      (id)                    => _req('/sessions/' + id + '/log'),
   create:   (body)                  => _req('/sessions', { method: 'POST', body: JSON.stringify(body) }),
   action:   (id, playerId, action)  => _req('/sessions/' + id + '/action', { method: 'POST', body: JSON.stringify({ playerId, action }) }),

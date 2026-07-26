@@ -577,6 +577,13 @@ export function toGrid(state) {
     //     'continuous' (free points), taken from the active quadrant.
     boardType: 'grid',
     spaceType: st.space,
+    // timeType — how the turn clock runs: 'discrete' (whole-turn move budget) vs
+    // 'continuous' (real-valued cooldown), from the active quadrant. The UI reads this
+    // (App.vue buildField, whose default is 'discrete') to decide the time-jump field's
+    // precision and whether a turn can be scrubbed to a fractional point — so it MUST be
+    // stamped here, or a continuous game whose config.time was left implicit would seek
+    // as discrete (integer plies only).
+    timeType: st.time,
     // Units are supplied in a separate positioned channel (below) with facing cones and
     // sub-tile points, so csmini renders through SchematicLayer's absolute placement
     // (which draws the square-cell grid board too) rather than the HTML cell renderer.
@@ -619,7 +626,10 @@ export const CsMiniGame = {
   evaluateState,
   // The single movement spec + its default quadrant (games/spacetime.js). Every
   // move rule in every mode is derived from `kinematics.speed`; `spacetime` just
-  // picks which of the four worlds is in force unless config overrides it.
+  // picks which of the four worlds is in force unless config overrides it. The
+  // conservative engine fallback is discrete/discrete (the `space`/`time` gameOptions
+  // default to continuous — that's the Lobby's showcase pre-fill, sent explicitly in
+  // config; toGrid stamps the RESOLVED quadrant so the UI never has to guess it).
   spacetime: { space: 'discrete', time: 'discrete', play: 'sequential' },
   kinematics,
   gameOptions: [

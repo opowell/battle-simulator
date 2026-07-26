@@ -731,6 +731,25 @@ class Session {
     if (this.fog && playerId && game.getVisibleState) return game.getVisibleState(rawState, playerId);
     return rawState;
   }
+
+  // The EXACT resolved state at fraction `f` (0..1) of the last simultaneous round —
+  // what a mid-turn scrub requests when it's paused BETWEEN the sampled playback
+  // frames, so the board shows the true state rather than a client-side lerp. Returns
+  // null when there's no live playback model. Fog-trimmed to the requester's currently
+  // visible units, exactly like toJSON's `playback` (same approximation: visibility is
+  // taken at the resolved state, not re-cast per sub-turn instant).
+  playbackFrameJSON(playerId = null, f = 0, { observer = false } = {}) {
+    const { game } = GAMES[this.gameName];
+    const fog = this.fog && !observer;
+    if (fog && !playerId) return null; // a playerless fog request gets nothing secret
+    const frame = this.engine.playbackFrameAt(f);
+    if (!frame) return null;
+    if (fog && playerId && game.getVisibleState) {
+      const visible = new Set(((game.getVisibleState(this.engine.state, playerId).units) ?? []).map(u => u.id));
+      return { ...frame, units: frame.units.filter(u => visible.has(u.id)) };
+    }
+    return frame;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,6 +1022,26 @@ async function handleGetState(res, id, url) {
   const playerId = url.searchParams.get('player') ?? null;
   try {
     send(res, 200, session.stateJSON(playerId));
+  } catch (e) {
+    err(res, 400, e.message);
+  }
+}
+
+async function handleGetPlaybackFrame(res, id, url) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+  // Same viewer resolution as handleGetSession: an observer (?observer=1, optionally
+  // ?viewAs=<player>) sees the full board; otherwise ?player=<id> is the fog viewer.
+  const observer = ['1', 'true'].includes(url.searchParams.get('observer'));
+  if (observer && !session.allowObservers) return err(res, 403, 'Observers not allowed for this session');
+  const viewAs = observer ? (url.searchParams.get('viewAs') || null) : null;
+  const playerId = observer ? viewAs : (url.searchParams.get('player') ?? null);
+  const t = parseFloat(url.searchParams.get('t'));
+  if (!Number.isFinite(t)) return err(res, 400, 'Query param t (fraction 0..1) is required');
+  try {
+    const frame = session.playbackFrameJSON(playerId, t, { observer: observer && !viewAs });
+    if (!frame) return err(res, 404, 'No playback frame available');
+    send(res, 200, frame);
   } catch (e) {
     err(res, 400, e.message);
   }
@@ -1450,6 +1489,11 @@ async function handleRequest(req, res) {
     // GET /sessions/:id/history
     if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'history')
       return await handleGetHistory(res, parts[1]);
+
+    // GET /sessions/:id/playback-frame?t=<fraction 0..1> — the exact resolved state
+    // at an off-sample mid-turn time, for a scrub paused between playback frames.
+    if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'playback-frame')
+      return await handleGetPlaybackFrame(res, parts[1], url);
 
     // POST /sessions/:id/action
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'action')

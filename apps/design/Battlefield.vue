@@ -90,6 +90,11 @@ const historyPlaying = ref(false);
 // playback section further down has been evaluated.
 const histFrac = ref(0);
 let playRaf = 0, playLastTs = 0;
+// Exact off-sample scrub frame (server-computed) — up here too, since stopHistoryPlay
+// (called by the immediate game-switch watcher during setup) clears it. Its fetch
+// machinery lives with seekTime further down.
+const exactFrame = ref(null); // { pos, frac, byId: Map<id,{x,y,alive}> } | null
+let exactFrameSeq = 0, exactFrameTimer = null;
 
 // ── view toggles ──────────────────────────────────────────────
 const showRuler  = ref(false);
@@ -221,6 +226,7 @@ watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
   if (oldLen === undefined || !snapshotField()) return;
   fieldHistory.value = [...fieldHistory.value, snapshotField()];
   if (histPos.value >= fieldHistory.value.length - 2) histPos.value = fieldHistory.value.length - 1;
+  clearExactFrame(); // a new turn replaces the playback model any pending frame was for
 });
 
 // In fog mode the AI's move is stripped from the log, so the log-length watch above
@@ -424,6 +430,64 @@ function seekTime(t) {
     histPos.value = Math.round(t);
     histFrac.value = 0;
   }
+  requestExactFrame(); // paused mid-turn → pull the server's exact state for this instant
+}
+
+// ── exact off-sample frames (server-computed) ─────────────────
+// A scrub PAUSED between the sampled playback frames shows the server's exact analytic
+// state at that instant, not a client lerp between samples — a lerp across a motion
+// event (an arrival, a death) that lands between two samples would mis-place the unit.
+// The sampled frames are used only for smooth motion WHILE animating (history
+// playback), and as a brief placeholder until the exact frame arrives. `exactFrame` is
+// keyed to the (pos, frac) it was fetched for, so a superseded request's late reply is
+// ignored and a stale value is never applied to a different playhead position.
+// (`exactFrame` / `exactFrameSeq` / `exactFrameTimer` are declared up top so the
+// game-switch watcher can clear them during setup.)
+
+// Whichever perspective the board is currently showing — an observer (optionally
+// pinned to one player's view) or the seated human — so the server trims the frame's
+// fog exactly like the live playback the board already displays.
+const viewerPerspective = computed(() => isObserver.value
+  ? { observer: true, viewAs: perspectiveViewer.value }
+  : { playerId: props.liveState?.humanPlayers?.[0] ?? null });
+
+// Is fractional turn-time `f` exactly on a sampled playback frame? Those are already
+// exact on the client, so no server round-trip is needed to display them.
+function isSampledFrame(f) {
+  const n = (props.liveState?.playback?.frames?.length ?? 0) - 1;
+  if (n <= 0) return true;
+  const at = f * n;
+  return Math.abs(at - Math.round(at)) < 1e-6;
+}
+
+function clearExactFrame() {
+  exactFrame.value = null;
+  exactFrameSeq++; // invalidate any in-flight request
+  if (exactFrameTimer) { clearTimeout(exactFrameTimer); exactFrameTimer = null; }
+}
+
+// Debounced fetch of the exact server frame for the current paused off-sample scrub.
+// Only for the turn the live playback describes (playbackFrames gates histPos ==
+// histLength - 2); earlier turns keep no motion model server-side and fall back to the
+// sampled/lerped path. Debounced so a drag across the timeline fetches once on settle
+// rather than on every pointermove.
+function requestExactFrame() {
+  if (exactFrameTimer) { clearTimeout(exactFrameTimer); exactFrameTimer = null; }
+  const pos = histPos.value, frac = histFrac.value;
+  const id = props.liveState?.id;
+  if (historyPlaying.value || frac <= 0 || !playbackFrames.value || isSampledFrame(frac) || !id) {
+    if (!exactFrame.value || exactFrame.value.pos !== pos || exactFrame.value.frac !== frac) clearExactFrame();
+    return;
+  }
+  const seq = ++exactFrameSeq;
+  exactFrameTimer = setTimeout(async () => {
+    exactFrameTimer = null;
+    try {
+      const frame = await window.api.playbackFrame(id, frac, viewerPerspective.value);
+      if (seq !== exactFrameSeq) return; // a newer scrub superseded this request
+      exactFrame.value = { pos, frac, byId: new Map((frame.units ?? []).map(u => [u.id, u])) };
+    } catch { /* keep the sampled placeholder on failure */ }
+  }, 60);
 }
 
 // ── history playback ("view play from here") ──────────────────
@@ -444,6 +508,7 @@ function stopHistoryPlay() {
   if (playRaf) { cancelAnimationFrame(playRaf); playRaf = 0; }
   historyPlaying.value = false;
   histFrac.value = 0;
+  clearExactFrame();
 }
 
 function toggleHistoryPlay() {
@@ -798,6 +863,21 @@ function sampleFrames(frames, frac) {
   return m;
 }
 
+// Turn a Map id->{x,y,alive} of resolved positions into render units: skip a unit
+// dead or missing at this instant (mirrors the endpoint-lerp branch's `n.dead` check
+// — leave it put rather than firing a mid-scrub removal), and carry BOTH the absolute
+// x/y and the sub-cell tween offset (see that branch for why HtmlLayer needs
+// baseX/baseY + tweenDx/tweenDy).
+function frameToRenderUnits(byId, halfW) {
+  return displayUnits.value.map(u => {
+    const s = byId.get(u.id);
+    if (!s || s.x == null || u.dead || s.alive === false) return u;
+    const dx = s.x - u.x, dy = s.y - u.y;
+    if ((dx === 0 && dy === 0) || Math.abs(dx) > halfW) return u;
+    return { ...u, x: s.x, y: s.y, baseX: u.x, baseY: u.y, tweenDx: dx, tweenDy: dy };
+  });
+}
+
 const renderUnits = computed(() => {
   const f = histFrac.value;
   // A fractional time parks the clock partway through a ply (during auto-play, a
@@ -814,19 +894,15 @@ const renderUnits = computed(() => {
   // the actual motion rather than a straight A→B slide between the turn's endpoints.
   const frames = playbackFrames.value;
   if (frames) {
-    const sampled = sampleFrames(frames, f);
-    return displayUnits.value.map(u => {
-      const s = sampled.get(u.id);
-      // Skip a unit already dead at this instant (mirrors the endpoint-lerp branch's
-      // `n.dead` check): leave it put rather than forcing a mid-scrub death that
-      // would fire removal FX. Its final resting state shows once the ply lands.
-      if (!s || s.x == null || u.dead || s.alive === false) return u;
-      const dx = s.x - u.x, dy = s.y - u.y;
-      if ((dx === 0 && dy === 0) || Math.abs(dx) > halfW) return u;
-      // baseX/baseY + tweenDx/tweenDy: see the endpoint-lerp branch below for why
-      // both the absolute x/y and the sub-cell offset forms are needed.
-      return { ...u, x: s.x, y: s.y, baseX: u.x, baseY: u.y, tweenDx: dx, tweenDy: dy };
-    });
+    // Paused between samples: show the server's EXACT state for this instant (fetched
+    // by requestExactFrame) rather than a lerp — the lerp is only correct WITHIN a
+    // sample interval that has no motion event, so we reserve it for animation
+    // smoothness (history playback) and as a brief placeholder until the exact frame
+    // lands. On an exact sampled frame, sampleFrames itself is exact (g == 0).
+    const ex = exactFrame.value;
+    if (!historyPlaying.value && ex && ex.pos === histPos.value && ex.frac === f)
+      return frameToRenderUnits(ex.byId, halfW);
+    return frameToRenderUnits(sampleFrames(frames, f), halfW);
   }
 
   // Fallback (no frames retained for this turn): slide toward the next snapshot. A

@@ -295,6 +295,38 @@ test('simultaneous mode samples playback frames with interpolated positions', as
   assert.ok(Math.abs(uaAt(mid).x - 0.5) < 1e-6);
 });
 
+test('playbackFrameAt returns the EXACT resolved state at an arbitrary sub-turn time', async () => {
+  const players = [
+    { id: 'a', name: 'a', agent: scriptAgent([a => a.type === 'move' && a.to.x === 1]) },
+    { id: 'b', name: 'b', agent: scriptAgent([a => a.type === 'move' && a.to.x === 2]) },
+  ];
+  const engine = new GameEngine(MiniGame, players, { simultaneousTurns: true });
+  engine._init();
+  await engine.step();
+
+  const uaX = (frame) => frame.units.find(u => u.id === 'ua').x;
+  // Round runs t=0..2: ua's move completes at t=1 (fraction 0.5), then it sits still.
+  // fraction 0.25 -> t=0.5, mid-move: halfway.
+  assert.ok(Math.abs(uaX(engine.playbackFrameAt(0.25)) - 0.5) < 1e-9);
+  // fraction 0.5 -> t=1: ARRIVED at x=1 — NOT 0.5, which a naive start→end lerp over
+  // the whole turn would wrongly give. This is exactly why a paused off-sample scrub
+  // must request the server's analytic state instead of lerping between endpoints.
+  assert.equal(uaX(engine.playbackFrameAt(0.5)), 1);
+  // On-sample fractions match the pre-sampled frame; out-of-range clamps to [0,1].
+  assert.equal(uaX(engine.playbackFrameAt(30 / 60)), uaX(engine.playback.frames[30]));
+  assert.equal(uaX(engine.playbackFrameAt(1.5)), uaX(engine.playback.frames[60]));
+  assert.equal(uaX(engine.playbackFrameAt(-1)), uaX(engine.playback.frames[0]));
+});
+
+test('playbackFrameAt is null before any simultaneous round resolves', () => {
+  const engine = new GameEngine(MiniGame, [
+    { id: 'a', name: 'a', agent: scriptAgent([]) },
+    { id: 'b', name: 'b', agent: scriptAgent([]) },
+  ], { simultaneousTurns: true });
+  engine._init();
+  assert.equal(engine.playbackFrameAt(0.5), null);
+});
+
 test('simultaneous planning states hide the other player\'s queued orders', async () => {
   const seenByB = [];
   const players = [
