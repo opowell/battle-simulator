@@ -16,7 +16,11 @@ const emit = defineEmits(['seek']);
 
 const continuous = computed(() => props.timeType === 'continuous');
 const step = computed(() => (continuous.value ? 0.1 : 1));
-const fmt = (t) => (continuous.value ? Number(t).toFixed(1) : String(Math.round(t)));
+// Two decimals for continuous so a typed value like 0.52 reads back as itself rather
+// than being rounded to 0.5 on commit; trailing-zero-trimmed so whole values stay clean.
+const fmt = (t) => (continuous.value
+  ? String(Math.round(Number(t) * 100) / 100)
+  : String(Math.round(t)));
 
 // Local editable copy; follows `time` unless the user is mid-edit. Explicit handlers
 // (not inline expressions) so the ref updates and Enter commits reliably under the

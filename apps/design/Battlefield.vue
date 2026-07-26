@@ -763,22 +763,80 @@ function snapshotAt(pos) {
 // rather than running at a constant speed and stopping dead on arrival.
 function smoothstep(f) { return f * f * (3 - 2 * f); }
 
+// The recorded kinetic frames for the turn the playhead currently sits within, but
+// only when that turn is the one liveState.playback describes — the transition INTO
+// the latest ply (histPos == histLength - 2). Those frames sample each unit's TRUE
+// position along its resolved path (curved, out-and-back, dying mid-move), so a
+// fractional time renders where the unit actually was, not a straight line between
+// the turn's endpoints. Only the latest turn's frames are retained server-side, so
+// scrubbing an earlier turn falls back to the endpoint lerp below.
+const playbackFrames = computed(() => {
+  const frames = props.liveState?.playback?.frames;
+  if (!frames?.length) return null;
+  return histPos.value === histLength.value - 2 ? frames : null;
+});
+
+// Interpolated unit positions at fractional turn-time `frac` (0-1): the frames are
+// evenly spaced across the turn, so scale into [0, N-1] and lerp between the two
+// bracketing frames. Returns a Map id -> { x, y, alive }.
+function sampleFrames(frames, frac) {
+  const span = frames.length - 1;
+  const at = Math.min(Math.max(frac, 0), 1) * span;
+  const i = Math.floor(at);
+  const g = at - i;
+  const a = frames[i], b = frames[Math.min(i + 1, span)];
+  const bById = new Map(b.units.map(u => [u.id, u]));
+  const m = new Map();
+  for (const ua of a.units) {
+    const ub = bById.get(ua.id) ?? ua;
+    const lerp1 = (p, q) => (p == null || q == null) ? (p ?? q) : p + (q - p) * g;
+    m.set(ua.id, {
+      x: lerp1(ua.x, ub.x), y: lerp1(ua.y, ub.y),
+      alive: ua.alive !== false && ub.alive !== false,
+    });
+  }
+  return m;
+}
+
 const renderUnits = computed(() => {
   const f = histFrac.value;
-  // Interpolate toward the next snapshot whenever the playhead sits between plies
-  // — during auto-play AND when a fractional time (scrubbed, or typed into the time
-  // field) parks the clock partway through a ply. This is what makes a continuous
-  // game's past turns slide instead of jumping snapshot-to-snapshot.
+  // A fractional time parks the clock partway through a ply (during auto-play, a
+  // scrub, or a value typed into the time field); interpolate the board so a
+  // continuous game's past turns slide instead of jumping snapshot-to-snapshot.
   if (f <= 0) return displayUnits.value;
+  // On a wrapping world a unit that crosses the seam has its x jump a whole world
+  // width; tweening that would send it sprinting the long way across the map, so
+  // any move over half the world just snaps.
+  const halfW = props.field?.world?.wrap ? (props.field.world.w ?? 0) / 2 : Infinity;
+
+  // Preferred path: follow the recorded kinetic frames so the unit traces its real
+  // resolved trajectory. This is what makes a mid-turn seek / history playback show
+  // the actual motion rather than a straight A→B slide between the turn's endpoints.
+  const frames = playbackFrames.value;
+  if (frames) {
+    const sampled = sampleFrames(frames, f);
+    return displayUnits.value.map(u => {
+      const s = sampled.get(u.id);
+      // Skip a unit already dead at this instant (mirrors the endpoint-lerp branch's
+      // `n.dead` check): leave it put rather than forcing a mid-scrub death that
+      // would fire removal FX. Its final resting state shows once the ply lands.
+      if (!s || s.x == null || u.dead || s.alive === false) return u;
+      const dx = s.x - u.x, dy = s.y - u.y;
+      if ((dx === 0 && dy === 0) || Math.abs(dx) > halfW) return u;
+      // baseX/baseY + tweenDx/tweenDy: see the endpoint-lerp branch below for why
+      // both the absolute x/y and the sub-cell offset forms are needed.
+      return { ...u, x: s.x, y: s.y, baseX: u.x, baseY: u.y, tweenDx: dx, tweenDy: dy };
+    });
+  }
+
+  // Fallback (no frames retained for this turn): slide toward the next snapshot. A
+  // straight line rather than the true path, but better than a snapshot-to-snapshot
+  // jump.
   const next = snapshotAt(histPos.value + 1);
   if (!next) return displayUnits.value;
   const ahead = new Map(
     computeUnits(next, tFloat.value, perspectiveViewer.value).map(u => [u.id, u]));
   const t = smoothstep(f);
-  // On a wrapping world a unit that crosses the seam has its x jump a whole world
-  // width; tweening that would send it sprinting the long way across the map, so
-  // any move over half the world just snaps.
-  const halfW = props.field?.world?.wrap ? (props.field.world.w ?? 0) / 2 : Infinity;
   return displayUnits.value.map(u => {
     const n = ahead.get(u.id);
     if (!n || u.dead || n.dead) return u;

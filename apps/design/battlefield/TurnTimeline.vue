@@ -36,22 +36,21 @@ const pct = computed(() => {
 function tickPct(p) { return span.value ? (p - props.start) / span.value * 100 : 0; }
 
 // ── seeking ───────────────────────────────────────────────────────────────────
-// Click and drag both land on the nearest tick: the ticks ARE the seekable states,
-// so snapping is what makes a click anywhere on the track do something predictable
-// rather than rounding down to whatever ply happens to sit left of the cursor.
+// Click and drag land on the exact fractional time under the cursor, not the nearest
+// tick: a continuous game can render any point within the turn (the parent samples
+// the recorded playback frames — see Battlefield's renderUnits), so snapping would
+// throw away most of the seekable range. A discrete game has nothing between plies to
+// show, so the parent's seek handler rounds the fraction back to a whole ply.
 const trackEl = ref(null);
 const dragging = ref(false);
 
-function plyAt(e) {
+function timeAt(e) {
   const r = trackEl.value.getBoundingClientRect();
   const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-  return props.start + Math.round(f * span.value);
+  return props.start + f * span.value;
 }
 
-function seek(e) {
-  const p = plyAt(e);
-  if (p !== props.pos) emit('seek', p);
-}
+function seek(e) { emit('seek', timeAt(e)); }
 
 function onDown(e) {
   if (e.button != null && e.button !== 0) return;

@@ -114,7 +114,7 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
       <TurnTimeline v-if="turnRange"
         :start="turnRange.start" :end="turnRange.end" :turn="turnRange.turn"
         :pos="histPos" :frac="histFrac"
-        @seek="$emit('seek-ply', $event)"/>
+        @seek="$emit('seek-time', $event)"/>
       <div v-else class="bb-spacer"/>
       <LiveControls
         :paused="paused" :aiDelay="aiDelay" :isDone="isDone"
