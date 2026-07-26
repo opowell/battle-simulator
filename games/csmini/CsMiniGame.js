@@ -223,12 +223,18 @@ function makeUnit(id, ownerId, num, x, y, facing) {
 export function createInitialState(players, config = {}) {
   const [ct, t] = players;
   const st = ST.resolveSpaceTime(CsMiniGame, config);
+  // In continuous space a unit's position is an exact point, so spawn it at the CENTRE
+  // of its cell (+0.5) — otherwise an integer spawn sits on the cell's top-left corner
+  // while every later move (a clicked cell centre, or a lattice point radiating from it)
+  // reads as mid-cell. In discrete space the position is an integer cell index that the
+  // UI renders centred for us (see App.vue buildField), so spawn on the index itself.
+  const c = st.space === 'continuous' ? 0.5 : 0;
   // Slot 0 renders blue, slot 1 red in the design UI — so CT is player 0, T is 1.
   const units = [
-    makeUnit('CT-1', ct.id, 1, 0, 1, EAST),
-    makeUnit('CT-2', ct.id, 2, 0, 4, EAST),
-    makeUnit('T-1', t.id, 1, 7, 1, WEST),
-    makeUnit('T-2', t.id, 2, 7, 4, WEST),
+    makeUnit('CT-1', ct.id, 1, 0 + c, 1 + c, EAST),
+    makeUnit('CT-2', ct.id, 2, 0 + c, 4 + c, EAST),
+    makeUnit('T-1', t.id, 1, 7 + c, 1 + c, WEST),
+    makeUnit('T-2', t.id, 2, 7 + c, 4 + c, WEST),
   ].map(u => ({ ...u, perTurn: freshPerTurn(st, u, null) }));
   return {
     gameName: 'CS-mini',
@@ -246,8 +252,9 @@ export function createInitialState(players, config = {}) {
       fogOfWar: config.fogOfWar ?? true,
       walls: WALLS,
       // Where each team pushes when it has no enemy in sight (the far spawn),
-      // so fog-blind units still advance instead of milling around.
-      enemyGoal: { [ct.id]: { x: 7, y: 2.5 }, [t.id]: { x: 0, y: 2.5 } },
+      // so fog-blind units still advance instead of milling around. Centred like the
+      // spawns above (+c) so the goal is the far spawn's actual point in either space.
+      enemyGoal: { [ct.id]: { x: 7 + c, y: 2.5 }, [t.id]: { x: 0 + c, y: 2.5 } },
       // Common-knowledge survivor counts. getResult reads THESE, not the units
       // array — because getVisibleState strips hidden enemies out of `units`, and
       // a naive count would then read a fogged-out enemy team as "eliminated" and
