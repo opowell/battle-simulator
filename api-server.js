@@ -695,9 +695,12 @@ class Session {
       observerPaced: this.observerPaced,
       seq: this._seq,
       awaitingAdvance: this._awaitingAdvance,
-      // Game-time this step spans (game units); the observer plays it back over
-      // that long in real time so a turn unfolds at its natural pace.
-      stepSimTime: this._stepSimTime ?? null,
+      // Game-time this step spans (game units), scaled by the game's own replay
+      // pace preference (default 1×, e.g. csmini slows its watch-pace down without
+      // changing the true sim-time actions cost). The observer plays it back over
+      // that long in real time so a turn unfolds at its (scaled) natural pace.
+      stepSimTime: this._stepSimTime == null ? null
+        : this._stepSimTime * (GAMES[this.gameName].game.replayPaceMultiplier ?? 1),
       debugAI: this.debugAI,
       status: this.status,
       result: this.result,

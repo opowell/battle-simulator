@@ -652,6 +652,10 @@ export const CsMiniGame = {
     config: { allowObservers: true, simultaneousTurns: true },
   },
   ui: { showFacing: true, showHpBars: false },
+  // Observer watch-pace only (api-server.js Session.toJSON scales stepSimTime by
+  // this) — 1 real sim-second of a turn plays back over 2 wall-clock seconds.
+  // True sim-time (action costs, move speed) is untouched.
+  replayPaceMultiplier: 2,
   createInitialState,
   getLegalActions,
   applyActions,
