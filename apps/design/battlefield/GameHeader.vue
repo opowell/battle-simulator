@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import CivStatusStrip from './CivStatusStrip.vue';
+import StatusChips from './StatusChips.vue';
 const props = defineProps({
   field:           Object,
   liveState:       Object,
@@ -8,16 +8,16 @@ const props = defineProps({
   isDone:          Boolean,
   isPending:       Boolean,
   pendingPlayerId: { type: String, default: null },
-  // Whose per-player status to resolve from field.civ below — the human's own
-  // side, not necessarily whoever's turn it currently is (see Battlefield's
+  // Whose entry to resolve from field.statusChips below — the human's own side,
+  // not necessarily whoever's turn it currently is (see Battlefield's
   // analysisPlayerId). Optional, data-shape-driven: renders nothing for games
-  // that don't populate field.civ.
+  // that don't populate field.statusChips.
   statusPlayerId:  { type: String, default: null },
   showMenu:        Boolean,
   ui:              Object,
 });
 defineEmits(['toggle-menu', 'show-help']);
-const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
+const myChips = computed(() => props.field?.statusChips?.[props.statusPlayerId] ?? []);
 </script>
 
 <template>
@@ -52,7 +52,7 @@ const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
     <div v-if="isLive && liveState?.id" class="mono gh-session" :title="liveState.id">
       {{liveState.id.slice(0, 8)}}
     </div>
-    <CivStatusStrip :civ="myCiv"/>
+    <StatusChips :chips="myChips"/>
   </div>
 </template>
 

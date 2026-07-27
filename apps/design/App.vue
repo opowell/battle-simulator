@@ -649,6 +649,10 @@ function buildField(g, s) {
     // Per-owner military roster (civ1), keyed by player id — used by the Military
     // overlay; absent for other games.
     military: g.military ?? null,
+    // Per-owner {icon,value,title,warn} chips for GameHeader's optional status strip
+    // (see StatusChips.vue) — a game's toGrid may set this; the design app has no
+    // idea what the chips mean, it just renders whatever the game hands it.
+    statusChips: g.statusChips ?? null,
   };
 }
 

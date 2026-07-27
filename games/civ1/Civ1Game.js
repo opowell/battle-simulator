@@ -1155,9 +1155,21 @@ export const Civ1Game = {
       m.byType[u.type] = (m.byType[u.type] ?? 0) + 1;
     }
 
+    // Generic {icon,value,title,warn} chips for the header's optional per-player status
+    // strip (apps/design/battlefield/StatusChips.vue is a domain-agnostic renderer —
+    // it has no idea what "gold" or "government" mean, only this game does).
+    const statusChips = Object.fromEntries(
+      Object.entries(civ).map(([pid, c]) => [pid, [
+        { icon: 'zap', value: c.gold, title: 'Treasury' },
+        { value: c.government, title: 'Government' },
+        { value: `${c.taxRate}/${c.luxRate}/${100 - c.taxRate - c.luxRate}`, title: 'Tax / Luxury / Science' },
+        ...(c.researchName ? [{ value: c.researchName, title: 'Researching' }] : []),
+        ...(c.anarchyTurns ? [{ value: 'Anarchy', warn: true }] : []),
+      ]]));
+
     // wrap: true tells the client the map is a horizontal cylinder (see wrapX above) —
     // Battlefield's click-to-pan centres on any column instead of clamping near the
     // east/west seam, and HtmlLayer draws duplicate columns there so panning stays seamless.
-    return { width, height, cells, wrap: true, civ, cities: citiesOut, military };
+    return { width, height, cells, wrap: true, civ, cities: citiesOut, military, statusChips };
   },
 };
