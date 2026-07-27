@@ -49,6 +49,9 @@ const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
         ○ AI thinking…
       </span>
     </div>
+    <div v-if="isLive && liveState?.id" class="mono gh-session" :title="liveState.id">
+      {{liveState.id.slice(0, 8)}}
+    </div>
     <CivStatusStrip :civ="myCiv"/>
   </div>
 </template>
@@ -63,6 +66,7 @@ const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
 .gh-menu-btn--on { border-color: var(--accent); }
 .gh-turn { font-size: 11px; color: var(--faint); margin-left: auto; }
 .gh-status { display: flex; }
+.gh-session { font-size: 10px; color: var(--faint); margin-top: 6px; }
 .gh-chip { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .gh-chip--ok { background: rgba(70,211,154,.1); color: var(--ok); }
 .gh-chip--warn { background: rgba(242,180,65,.1); color: var(--warn); }

@@ -2,6 +2,7 @@
 import LiveControls from './LiveControls.vue';
 import TurnTimeline from './TurnTimeline.vue';
 import TimeField from './TimeField.vue';
+import PlaybackSpeedControl from './PlaybackSpeedControl.vue';
 
 defineProps({
   isLive:          Boolean,
@@ -11,14 +12,9 @@ defineProps({
   histPos:         { type: Number, default: 0 },
   histLength:      { type: Number, default: 0 },
   atLatest:        Boolean,
-  liveState:       Object,
   isDone:          Boolean,
-  isPending:       Boolean,
-  pendingPlayerId: { type: String, default: null },
   canReveal:       Boolean,
   revealAll:       Boolean,
-  canReplayTurn:   Boolean,
-  replaying:       Boolean,
   showZoom:        Boolean,
   canZoomIn:       { type: Boolean, default: true },
   canZoomOut:      { type: Boolean, default: true },
@@ -40,11 +36,13 @@ defineProps({
   // recorded yet) and how far playback has travelled into the current ply.
   turnRange:       { type: Object, default: null },
   histFrac:        { type: Number, default: 0 },
+  // Wall-clock multiplier applied to every animated playback (see PlaybackSpeedControl).
+  playbackSpeed:   { type: Number, default: 1 },
 });
 defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-forward',
-             'toggle-reveal', 'replay-turn', 'zoom-in', 'zoom-out',
+             'toggle-reveal', 'zoom-in', 'zoom-out',
              'toggle-pause', 'set-ai-delay', 'toggle-history-play', 'seek-ply',
-             'set-pause-after-playback', 'step-forward', 'seek-time']);
+             'set-pause-after-playback', 'step-forward', 'seek-time', 'set-playback-speed']);
 </script>
 
 <template>
@@ -68,35 +66,22 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
       </span>
     </template>
     <template v-else-if="isLive">
-      <button class="iconbtn bb-icon" :disabled="histPos <= 0" @click="$emit('go-back')" title="Previous action">
-        <BsIcon name="back" :size="15" color="var(--dim)"/>
-      </button>
-      <span class="mono bb-count" :class="{ 'bb-count--latest': atLatest }">
-        {{histPos + 1}}/{{histLength}}
-      </span>
-      <button class="iconbtn bb-icon" :disabled="atLatest" @click="$emit('go-forward')" title="Next action">
-        <BsIcon name="back" :size="15" color="var(--dim)" class="bb-flip"/>
-      </button>
-      <span class="mono bb-sep">·</span>
-      <span class="mono bb-meta">
-        <b class="bb-meta-b">{{liveState.id.slice(0, 8)}}</b>
-      </span>
-      <span class="mono bb-sep">·</span>
-      <span class="mono bb-meta">
-        Turn <b class="bb-meta-b">{{liveState.turn ?? 0}}</b>
-      </span>
-      <span class="mono bb-sep">·</span>
-      <span class="mono bb-state"
-            :class="isDone ? 'bb-state--done' : isPending ? 'bb-state--pending' : 'bb-state--ai'">
-        {{isDone ? 'game over' : isPending ? ('your turn · ' + pendingPlayerId) : 'ai thinking…'}}
-      </span>
-      <button v-if="canReplayTurn" class="btn btn-sm bb-replay"
-              :class="{ 'bb-replay--on': replaying }"
-              @click="$emit('replay-turn')"
-              title="Replay the last resolved turn">
-        <BsIcon name="play" :size="13" :color="replaying ? 'var(--accent)' : 'var(--dim)'"/>
-        {{replaying ? 'Replaying…' : 'Replay turn'}}
-      </button>
+      <!-- Ply-by-ply action stepper. Redundant with TimeField for a continuous-time
+           game (which needs the numeric field for exact values, not whole steps) and
+           with TurnTimeline once the turn's own scrub bar is on screen, so it's
+           hidden in both cases rather than showing two ways to do the same thing. -->
+      <template v-if="!turnRange && timeType !== 'continuous'">
+        <button class="iconbtn bb-icon" :disabled="histPos <= 0" @click="$emit('go-back')" title="Previous action">
+          <BsIcon name="back" :size="15" color="var(--dim)"/>
+        </button>
+        <span class="mono bb-count" :class="{ 'bb-count--latest': atLatest }">
+          {{histPos + 1}}/{{histLength}}
+        </span>
+        <button class="iconbtn bb-icon" :disabled="atLatest" @click="$emit('go-forward')" title="Next action">
+          <BsIcon name="back" :size="15" color="var(--dim)" class="bb-flip"/>
+        </button>
+        <span class="mono bb-sep">·</span>
+      </template>
       <button v-if="canReveal" class="btn btn-sm bb-reveal"
               :class="{ 'bb-reveal--on': revealAll }"
               @click="$emit('toggle-reveal')"
@@ -104,9 +89,9 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
         <BsIcon name="eye" :size="13" :color="revealAll ? 'var(--accent)' : 'var(--dim)'"/>
         {{revealAll ? 'Revealed' : 'Reveal all'}}
       </button>
-      <!-- Jump to any point in time (integer plies for discrete time, any real value
-           for continuous — a fraction shows the interpolated mid-slide board). -->
-      <TimeField v-if="histLength > 1"
+      <!-- Jump to any point in time: only for continuous-time games, where a
+           fractional value needs typing rather than single-ply stepping. -->
+      <TimeField v-if="histLength > 1 && timeType === 'continuous'"
         :time="playheadTime" :max="histLength - 1" :timeType="timeType"
         @seek="$emit('seek-time', $event)"/>
       <!-- Takes the bar's flexible space (where the spacer used to be), so the
@@ -131,6 +116,7 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
       <span class="mono bb-label">{{field.label}}</span>
       <div class="bb-spacer"/>
     </template>
+    <PlaybackSpeedControl :speed="playbackSpeed" @set-speed="$emit('set-playback-speed', $event)"/>
     <template v-if="showZoom">
       <button class="iconbtn bb-icon" :disabled="!canZoomOut" @click="$emit('zoom-out')" title="Zoom out">
         <BsIcon name="zoomout" :size="15" color="var(--dim)"/>
@@ -139,7 +125,6 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
         <BsIcon name="zoomin" :size="15" color="var(--dim)"/>
       </button>
     </template>
-    <BsIcon name="clock" :size="14" color="var(--faint)"/>
   </div>
 </template>
 
@@ -153,15 +138,7 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
 .bb-count--latest { color: var(--faint); }
 .bb-flip { transform: scaleX(-1); }
 .bb-sep { font-size: 11px; color: var(--faint); }
-.bb-meta { font-size: 11px; color: var(--dim); }
-.bb-meta-b { color: var(--txt); }
-.bb-state { font-size: 11px; }
-.bb-state--done { color: var(--faint); }
-.bb-state--pending { color: var(--ok); }
-.bb-state--ai { color: var(--warn); }
 .bb-reveal { gap: 5px; }
-.bb-replay { gap: 5px; }
-.bb-replay--on { border-color: var(--accent); color: var(--accent); }
 .bb-reveal--on { border-color: var(--accent); color: var(--accent); }
 .bb-spacer { flex: 1; }
 .bb-label { font-size: 11px; color: var(--faint); }

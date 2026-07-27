@@ -122,6 +122,10 @@ const REPLAY_MS_PER_FRAME = 100; // 61 frames ≈ 6s per replay (default re-watc
 const MS_PER_SIM_SECOND = 1000;
 const replayAnim = ref(null);    // { frames, idx } while replaying
 let replayTimer = null;
+// Wall-clock speed multiplier for every animated playback (this replay, Battlefield's
+// history scrub and non-live field playback) — set by the footer's speed control.
+const playbackSpeed = ref(1);
+function setPlaybackSpeed(v) { playbackSpeed.value = v; }
 
 function replayTurn() {
   const s = liveState.value;
@@ -131,7 +135,7 @@ function replayTurn() {
   replayAnim.value = { frames, idx: 0 };
   // Observer lock-step: stretch the replay across the round's real sim-duration
   // so it plays at natural speed; otherwise use the fixed re-watch speed.
-  const spanMs = (s.observerPaced && s.stepSimTime) ? s.stepSimTime * MS_PER_SIM_SECOND : REPLAY_MS_PER_FRAME * frames.length;
+  const spanMs = ((s.observerPaced && s.stepSimTime) ? s.stepSimTime * MS_PER_SIM_SECOND : REPLAY_MS_PER_FRAME * frames.length) / playbackSpeed.value;
   const perFrame = Math.max(16, spanMs / frames.length);
   replayTimer = setInterval(() => {
     if (!replayAnim.value) return;
@@ -1052,12 +1056,11 @@ async function restartGame() {
                    :fog="liveState?.fog ?? false"
                    :games-count="apiGames.length"
                    :server-err="serverErr"
-                   :can-replay-turn="!!liveState?.playback"
-                   :replaying="!!replayAnim"
                    :fork-state="forkState"
                    :fork-error="forkError"
                    :pause-after-playback="pauseAfterPlayback"
                    :awaiting-step="awaitingStep"
+                   :playback-speed="playbackSpeed"
                    @exit="exitBattle"
                    @new-game="restartGame"
                    @open-settings="openSettings"
@@ -1068,10 +1071,10 @@ async function restartGame() {
                    @set-pause-after-playback="setPauseAfterPlayback"
                    @step-forward="stepForward"
                    @set-observer-view="setObserverView"
-                   @replay-turn="replayTurn"
                    @stop-replay="stopReplay"
                    @fork-move="doForkMove"
-                   @exit-fork="exitFork"/>
+                   @exit-fork="exitFork"
+                   @set-playback-speed="setPlaybackSpeed"/>
       <div v-else class="app-loading">
         Loading…
       </div>

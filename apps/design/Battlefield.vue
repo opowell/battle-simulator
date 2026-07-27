@@ -43,10 +43,6 @@ const props = defineProps({
   fog:           { type: Boolean, default: false },
   gamesCount:    { type: Number, default: 0 },
   serverErr:     { type: String, default: '' },
-  // Turn replay (simultaneous mode): a resolved round's sampled frames exist
-  // server-side, so the bottom bar offers a "Replay" that re-enacts the turn.
-  canReplayTurn: { type: Boolean, default: false },
-  replaying:     { type: Boolean, default: false },
   // Analysis-panel replay fork sandbox (App.vue owns the actual /fork-move calls
   // and builds `forkState.field` the same way it builds activeField — see
   // App.vue's doForkMove). Non-null means the board is showing the sandbox.
@@ -56,8 +52,11 @@ const props = defineProps({
   // and wait for a manual "Next", and whether we're currently so parked.
   pauseAfterPlayback: { type: Boolean, default: true },
   awaitingStep:       { type: Boolean, default: false },
+  // Wall-clock multiplier for every animated playback (history scrub, turn replay,
+  // non-live field playback) — App.vue owns it, the footer's speed control sets it.
+  playbackSpeed:      { type: Number, default: 1 },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'replay-turn', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -530,7 +529,7 @@ function stepPlayback(ts) {
   playRaf = 0;
   if (!historyPlaying.value) return;
   if (!playLastTs) playLastTs = ts;
-  let f = histFrac.value + (ts - playLastTs) / HISTORY_STEP_MS;
+  let f = histFrac.value + (ts - playLastTs) / (HISTORY_STEP_MS / props.playbackSpeed);
   playLastTs = ts;
   while (f >= 1) {
     if (histPos.value >= histLength.value - 1) { stopHistoryPlay(); return; }
@@ -782,7 +781,7 @@ watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
   const unitsById = new Map((props.field?.units ?? []).map(u => [u.id, u]));
   const pb = props.liveState.playback;
   const duration = pb?.duration ?? 0;
-  const totalMs = (pb?.frames?.length ?? 0) > 1 ? (pb.frames.length - 1) * REPLAY_MS_PER_FRAME : 0;
+  const totalMs = (pb?.frames?.length ?? 0) > 1 ? (pb.frames.length - 1) * REPLAY_MS_PER_FRAME / props.playbackSpeed : 0;
   const at = (t, fn) => {
     const delay = (duration > 0 && totalMs > 0) ? Math.min(1, Math.max(0, t) / duration) * totalMs : 0;
     if (delay > 0) csSoundTimers.push(setTimeout(fn, delay)); else fn();
@@ -1286,7 +1285,7 @@ let lastTs = 0;
 function raf(ts) {
   if (playing.value && props.field.turns > 1) {
     const dt   = Math.min((ts - lastTs) / 1000, 0.1);
-    const next = tFloat.value + dt * PLAY_SPEED;
+    const next = tFloat.value + dt * PLAY_SPEED * props.playbackSpeed;
     if (next >= props.field.turns - 1) {
       tFloat.value = props.field.turns - 1;
       playing.value = false;
@@ -1501,10 +1500,8 @@ onUnmounted(() => {
     <BottomBar
       :isLive="isLive" :field="field" :tFloat="tFloat" :playing="playing"
       :histPos="histPos" :histLength="histLength" :atLatest="atLatest"
-      :liveState="liveState" :isDone="isDone" :isPending="isPending"
-      :pendingPlayerId="pendingPlayerId"
+      :isDone="isDone"
       :canReveal="canReveal" :revealAll="revealAll"
-      :canReplayTurn="canReplayTurn" :replaying="replaying"
       :showZoom="zoomEnabled" :canZoomIn="canZoomIn" :canZoomOut="canZoomOut"
       :paused="liveState?.paused ?? false" :aiDelay="liveState?.aiDelay ?? 0"
       :observerPaced="liveState?.observerPaced ?? false"
@@ -1512,15 +1509,16 @@ onUnmounted(() => {
       :playheadTime="playheadTime" :maxTime="histLength - 1" :timeType="fieldTimeType"
       :historyPlaying="historyPlaying"
       :turnRange="currentTurnRange" :histFrac="histFrac"
+      :playbackSpeed="playbackSpeed"
       @step-back="stepBack" @step-fwd="stepFwd" @toggle-play="togglePlay"
       @scrub="scrub" @go-back="goBack" @go-forward="goForward"
       @seek-ply="seekTo" @seek-time="seekTime"
       @toggle-reveal="toggleReveal"
-      @replay-turn="$emit('replay-turn')"
       @toggle-pause="toggleLivePause" @set-ai-delay="setAiDelay"
       @set-pause-after-playback="$emit('set-pause-after-playback', $event)"
       @step-forward="$emit('step-forward')"
       @toggle-history-play="toggleHistoryPlay"
+      @set-playback-speed="$emit('set-playback-speed', $event)"
       @zoom-in="zoomBy(ZOOM_STEP)" @zoom-out="zoomBy(1 / ZOOM_STEP)"/>
   </div>
 

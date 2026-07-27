@@ -151,6 +151,7 @@ input[type=range]{padding:0;width:100%}
 .scrub-head{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:var(--accent);transform:translate(-50%,-50%);box-shadow:0 0 10px -1px var(--accent);cursor:grab;border:2px solid var(--bg0)}
 .iconbtn{width:34px;height:34px;display:grid;place-items:center;border-radius:var(--r);border:1px solid var(--line2);background:var(--bg2)}
 .iconbtn:hover{border-color:var(--line3);background:var(--bg3)}
+.iconbtn[disabled]{opacity:.4;pointer-events:none}
 .scanline{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 1px,transparent 1px 3px);z-index:7;mix-blend-mode:overlay}
 
 /* theme: minimal */
