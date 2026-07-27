@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import CivStatusStrip from './CivStatusStrip.vue';
 const props = defineProps({
   field:           Object,
   liveState:       Object,
@@ -7,9 +8,10 @@ const props = defineProps({
   isDone:          Boolean,
   isPending:       Boolean,
   pendingPlayerId: { type: String, default: null },
-  // Whose economy to show in the status strip below — the human's own side, not
-  // necessarily whoever's turn it currently is (see Battlefield's analysisPlayerId).
-  // Only civ1 populates field.civ, so this renders nothing for every other game.
+  // Whose per-player status to resolve from field.civ below — the human's own
+  // side, not necessarily whoever's turn it currently is (see Battlefield's
+  // analysisPlayerId). Optional, data-shape-driven: renders nothing for games
+  // that don't populate field.civ.
   statusPlayerId:  { type: String, default: null },
   showMenu:        Boolean,
   ui:              Object,
@@ -47,17 +49,7 @@ const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
         ○ AI thinking…
       </span>
     </div>
-    <div v-if="myCiv" class="mono gh-civstat">
-      <span class="gh-civstat-item" title="Treasury">
-        <BsIcon name="zap" :size="10" color="var(--faint)"/>{{myCiv.gold}}
-      </span>
-      <span class="gh-civstat-item" title="Government">{{myCiv.government}}</span>
-      <span class="gh-civstat-item" title="Tax / Luxury / Science">
-        {{myCiv.taxRate}}/{{myCiv.luxRate}}/{{100 - myCiv.taxRate - myCiv.luxRate}}
-      </span>
-      <span v-if="myCiv.research" class="gh-civstat-item" title="Researching">{{myCiv.research}}</span>
-      <span v-if="myCiv.anarchyTurns" class="gh-civstat-item gh-civstat-item--warn">Anarchy</span>
-    </div>
+    <CivStatusStrip :civ="myCiv"/>
   </div>
 </template>
 
@@ -71,9 +63,6 @@ const myCiv = computed(() => props.field?.civ?.[props.statusPlayerId] ?? null);
 .gh-menu-btn--on { border-color: var(--accent); }
 .gh-turn { font-size: 11px; color: var(--faint); margin-left: auto; }
 .gh-status { display: flex; }
-.gh-civstat { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 10px; color: var(--dim); }
-.gh-civstat-item { display: flex; align-items: center; gap: 3px; }
-.gh-civstat-item--warn { color: var(--warn); }
 .gh-chip { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .gh-chip--ok { background: rgba(70,211,154,.1); color: var(--ok); }
 .gh-chip--warn { background: rgba(242,180,65,.1); color: var(--warn); }
