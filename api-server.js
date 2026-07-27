@@ -29,7 +29,6 @@ import { ObscuroAgent } from './agents/ObscuroAgent.js';
 import { makeGreedyAgent } from './agents/GreedyAgent.js';
 
 import { ChessGame }         from './games/chess/index.js';
-import { cpSumsOverWorlds }  from './games/chess/ObscuroAgent.js';
 import { TacticalGame }      from './games/tactical/index.js';
 import { CardBattleGame }    from './games/cardbattle/index.js';
 import { Civ1Game }          from './games/civ1/index.js';
@@ -869,8 +868,13 @@ async function handleGames(res) {
     uiDefaults: game.uiDefaults ?? null,
     // `analyzable` tells the client which agents can back the position-analysis
     // panel (POST /sessions/:id/analyze) — the `analyze` function itself is
-    // server-only and never serialized.
-    agents: dedupeAgents([...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n, analyze }) => ({ id, name: n, analyzable: !!analyze }))]),
+    // server-only and never serialized. `clientAnalyze` (when present) lets the
+    // browser's analysis Web Worker run that same analysis locally instead: it's
+    // a { module, export } pointer the worker dynamically imports from /lib/ and
+    // resolves a dot-path into (see apps/design/analysis-worker.js). `clientGame`
+    // is the matching pointer for deriving legal actions client-side.
+    agents: dedupeAgents([...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n, analyze, clientAnalyze }) => ({ id, name: n, analyzable: !!analyze, clientAnalyze: clientAnalyze ?? null }))]),
+    clientGame: game.clientGame ?? null,
   })));
 }
 
@@ -1268,30 +1272,6 @@ async function handleAnalyzeStream(req, res, id, url) {
   if (!closed) res.end();
 }
 
-// Centipawn eval for a batch of belief worlds, for the browser analysis Web
-// Worker. The worker runs the (expensive, pure-JS) CFR locally but has no
-// Stockfish in the browser, so it POSTs each batch's belief worlds here and the
-// server returns the same batched leaf-eval sums the server-side analysis uses
-// (games/chess/ObscuroAgent.js cpSumsOverWorlds). Cheap (~tens of ms/batch);
-// the heavy compute stays off the server. Chess-only.
-async function handleCpEval(req, res, id) {
-  const session = sessions.get(id);
-  if (!session) return err(res, 404, 'Session not found');
-  if (session.gameName !== 'chess') return err(res, 400, 'cp-eval is chess-only');
-  let body;
-  try { body = await readBody(req); }
-  catch { return err(res, 400, 'Invalid JSON'); }
-  const { color, legalActions, worlds } = body;
-  if (!color || !Array.isArray(legalActions) || !Array.isArray(worlds) || !worlds.length)
-    return err(res, 400, 'Missing color/legalActions/worlds');
-  const { game } = GAMES[session.gameName];
-  try {
-    const cols = Math.min(legalActions.length, 16);
-    const { sums, n } = await cpSumsOverWorlds(game, worlds, color, legalActions, cols);
-    send(res, 200, { sums, n });
-  } catch (e) { err(res, 500, `cp-eval failed: ${e.message}`); }
-}
-
 // Play any legal move from a live or historical position into a throwaway
 // sandbox — never touches the real session. The client round-trips the
 // returned `state` back in as `forkState` for subsequent moves within the same
@@ -1514,10 +1494,6 @@ async function handleRequest(req, res) {
     // GET /sessions/:id/analyze-stream?playerId=&agentId=&ply= (SSE, live progress)
     if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze-stream')
       return await handleAnalyzeStream(req, res, parts[1], url);
-
-    // POST /sessions/:id/cp-eval — belief-batch centipawn eval for the browser analysis worker
-    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'cp-eval')
-      return await handleCpEval(req, res, parts[1]);
 
     // POST /sessions/:id/fork-move
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'fork-move')

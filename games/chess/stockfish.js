@@ -6,13 +6,23 @@
 // degrades gracefully: if the vendored files are missing or the engine fails to
 // load, `available()` returns false and the agents fall back to the JS search.
 //
-// The engine is loaded inside a worker thread (vendor/sf-worker.cjs) rather than
-// in-process, for one reason: the WASM heap grows with use and eventually aborts
-// with "memory access out of bounds", and only tearing down a whole worker
-// reclaims that memory (a fresh in-process instance shares the same linear
-// memory). We therefore recycle the worker periodically and respawn it if it
-// ever crashes — see maybeRecycle / init below. (The fetch-hiding quirk the
-// Emscripten loader needs now lives in the worker.)
+// Runs identically in Node and in the browser — same UCI protocol, same
+// multiPV/bestMove/evaluate API — just a different transport underneath:
+//   - Node: the engine lives in a worker thread (vendor/sf-worker.cjs), a thin
+//     bridge that requires the vendored CommonJS loader directly.
+//   - Browser: vendor/stockfish.cjs is ALSO the upstream stockfish.js browser
+//     build (github.com/nmrugg/stockfish.js) — loaded as a classic (non-module)
+//     Worker, it self-detects `importScripts` and bootstraps its own
+//     onmessage/postMessage UCI bridge, fetching vendor/stockfish.wasm relative
+//     to its own script URL. Both files are already served byte-for-byte over
+//     HTTP (api-server.js's serveLibModule, under /lib/), so no build step is
+//     needed to reach the browser — see apps/design/analysis-worker.js, which
+//     runs this module inside its own (nested) Worker.
+// Either way the engine is torn down and respawned periodically (maybeRecycle)
+// rather than reused indefinitely: the WASM heap grows with use and eventually
+// aborts with "memory access out of bounds", and only tearing down the whole
+// worker reclaims that memory (a fresh in-process instance shares the same
+// linear memory).
 // ---------------------------------------------------------------------------
 
 import { toFEN, uciToAction } from './fen.js';
@@ -20,13 +30,12 @@ import { toFEN, uciToAction } from './fen.js';
 // This module is imported both server-side (Node) and inside the browser
 // analysis Web Worker (apps/design/analysis-worker.js), which pulls in the whole
 // chess graph. Node's worker_threads/url/path/fs don't exist in a browser, so
-// they're loaded lazily behind an isNode guard: in the browser Stockfish is
-// simply unavailable (`available()` → false) and callers fall back to the JS
-// search or, for the analysis panel, fetch centipawn evals from the server.
+// they're loaded lazily behind an isNode guard.
 const isNode = typeof process !== 'undefined' && !!process.versions?.node;
-let Worker, fileURLToPath, path, fs;
+const isBrowser = !isNode && typeof Worker !== 'undefined';
+let Worker_, fileURLToPath, path, fs;
 if (isNode) {
-  ({ Worker } = await import('worker_threads'));
+  ({ Worker: Worker_ } = await import('worker_threads'));
   ({ fileURLToPath } = await import('url'));
   path = (await import('path')).default;
   fs = (await import('fs')).default;
@@ -38,6 +47,9 @@ const HERE = isNode ? path.dirname(fileURLToPath(import.meta.url)) : '';
 // ESM default and match the vendored CommonJS loader.
 const WORKER_PATH = isNode ? path.join(HERE, 'vendor', 'sf-worker.cjs') : '';
 const WASM_PATH = isNode ? path.join(HERE, 'vendor', 'stockfish.wasm') : '';
+// Sibling URL to this module's own — resolves correctly however this file was
+// itself fetched (mounted under a base path, served from /lib/, etc.).
+const BROWSER_ENGINE_URL = isBrowser ? new URL('./vendor/stockfish.cjs', import.meta.url).href : '';
 
 let worker = null;
 let readyPromise = null;
@@ -85,7 +97,7 @@ let sqliteSize = 0, lruSeq = 0;
 let sfCache = null;
 
 function loadCache() {
-  if (!isNode) return; // no disk cache in the browser
+  if (!isNode) { if (!sfCache) sfCache = new Map(); return; } // browser: in-memory only, no disk
   if (DatabaseSync && !sfCache) {
     if (db) return;
     // Concurrent processes (e.g. parallel test files) share this DB; a busy
@@ -168,14 +180,25 @@ function cacheSet(key, value) {
 function send(cmd) { if (worker) worker.postMessage(cmd); }
 
 // Spawn the engine worker and hand-shake it. Resolves true once usable.
+// Node and browser share everything past this point (send/request/multiPV/…);
+// only how a line handler gets attached and how the worker is constructed differ.
 function init() {
   if (readyPromise) return readyPromise;
   readyPromise = new Promise((resolve) => {
-    if (!isNode) return resolve(false); // browser: Stockfish runs server-side only
-    if (!fs.existsSync(WORKER_PATH) || !fs.existsSync(WASM_PATH)) return resolve(false);
+    if (!isNode && !isBrowser) return resolve(false); // neither Node nor a real Worker ctor available
 
     let w;
-    try { w = new Worker(WORKER_PATH); } catch { return resolve(false); }
+    if (isNode) {
+      if (!fs.existsSync(WORKER_PATH) || !fs.existsSync(WASM_PATH)) return resolve(false);
+      try { w = new Worker_(WORKER_PATH); } catch { return resolve(false); }
+    } else {
+      // Classic (non-module) Worker: vendor/stockfish.cjs self-bootstraps its
+      // own UCI onmessage/postMessage bridge when it detects it's running as a
+      // Worker (typeof importScripts === 'function') — see the file's own
+      // tail. It fetches vendor/stockfish.wasm synchronously relative to its
+      // own script URL, which BROWSER_ENGINE_URL already points at.
+      try { w = new Worker(BROWSER_ENGINE_URL); } catch { return resolve(false); }
+    }
     worker = w;
 
     let settled = false;
@@ -186,13 +209,13 @@ function init() {
     };
     listeners.push(onReady);
 
-    w.on('message', (line) => {
+    const onLine = (line) => {
       if (typeof line !== 'string') return;
-      if (line.startsWith('__error__')) { finish(false); return; } // engine failed to construct
+      if (line.startsWith('__error__')) { finish(false); return; } // engine failed to construct (Node bridge only)
       for (const l of [...listeners]) l(line);
-    });
+    };
     // An abort inside the WASM (the "memory access out of bounds" fault) kills
-    // the worker — surfaced here as 'error'/'exit' — but not this process. Drop
+    // the worker — surfaced here as an error/exit — but not this process. Drop
     // the dead worker so the next call respawns a fresh one; any in-flight
     // request falls through to its timeout.
     const die = () => {
@@ -200,8 +223,14 @@ function init() {
       if (worker === w) { worker = null; readyPromise = null; }
       failAllPending(); // an in-flight search will never complete now
     };
-    w.on('error', die);
-    w.on('exit', die);
+    if (isNode) {
+      w.on('message', onLine);
+      w.on('error', die);
+      w.on('exit', die);
+    } else {
+      w.onmessage = (e) => onLine(e.data);
+      w.onerror = die;
+    }
 
     send('uci'); send('isready');
     setTimeout(() => finish(false), 8000); // load watchdog
@@ -217,7 +246,10 @@ export function quit() {
   const w = worker;
   worker = null; readyPromise = null; listeners = [];
   failAllPending();
-  if (w) { w.removeAllListeners(); w.terminate().catch(() => {}); }
+  if (w) {
+    if (isNode) { w.removeAllListeners(); w.terminate().catch(() => {}); }
+    else w.terminate();
+  }
 }
 
 // Terminate the worker and spawn a fresh one once the search budget is spent, so
@@ -229,7 +261,10 @@ async function maybeRecycle() {
   callsSinceLoad = 0;
   const old = worker;
   worker = null; readyPromise = null; listeners = [];
-  if (old) { old.removeAllListeners(); try { await old.terminate(); } catch { /* ignore */ } }
+  if (old) {
+    if (isNode) { old.removeAllListeners(); try { await old.terminate(); } catch { /* ignore */ } }
+    else old.terminate();
+  }
   await init();
 }
 

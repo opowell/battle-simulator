@@ -1,14 +1,16 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue';
 import AnalysisCandidateList from './AnalysisCandidateList.vue';
 
 // Live/replay "what's good here" panel: pick an AI, see its ranked move
 // suggestions for the position currently on screen, with live search progress
 // (Stockfish "depth N/14", Obscuro "round N/30" — mirrors lichess's ticking
-// depth indicator) streamed over SSE from GET /sessions/:id/analyze-stream
-// (see api-server.js's handleAnalyzeStream / api.js's analyzeStream). Gated by
-// the game's `showAnalysisPanel` option (default true for chess) —
-// `enabled=false` renders nothing.
+// depth indicator). For the live position, when the game/agent opt in (see
+// `useWorker` below), this runs entirely client-side via a Web Worker
+// (apps/design/analysis-worker.js); otherwise it streams over SSE from GET
+// /sessions/:id/analyze-stream (see api-server.js's handleAnalyzeStream /
+// api.js's analyzeStream). Gated by the game's `showAnalysisPanel` option
+// (default true for chess) — `enabled=false` renders nothing.
 const props = defineProps({
   enabled:   { type: Boolean, default: false },
   sessionId: { type: String, default: null },
@@ -26,14 +28,24 @@ const props = defineProps({
 const emit = defineEmits(['hover-move', 'select-move', 'candidates']);
 
 // ── AI roster (which agents this game's server side can analyze with) ──────
-const agents = ref([]);
+// shallowRef, not ref: these plain data objects get passed to the analysis
+// Worker via postMessage, which structured-clones its argument — a reactive
+// Proxy (what a deep `ref` would wrap them in) can't be cloned and throws.
+const agents = shallowRef([]);
+// { module, export } pointer for deriving legal actions client-side — the
+// counterpart to each agent's own `clientAnalyze` pointer below. Null for
+// games that haven't opted into client-side analysis (falls back to SSE).
+const clientGame = shallowRef(null);
 onMounted(async () => {
   try {
     const games = await api.games();
-    agents.value = (games.find(g => g.name === props.gameName)?.agents ?? []).filter(a => a.analyzable);
-  } catch { agents.value = []; }
+    const g = games.find(g => g.name === props.gameName);
+    agents.value = (g?.agents ?? []).filter(a => a.analyzable);
+    clientGame.value = g?.clientGame ?? null;
+  } catch { agents.value = []; clientGame.value = null; }
 });
 const selectedAgentId = ref('obscuro');
+const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgentId.value) ?? null);
 watch(agents, (list) => {
   if (!list.some(a => a.id === selectedAgentId.value)) selectedAgentId.value = list[0]?.id ?? null;
 });
@@ -83,13 +95,16 @@ function scheduleAnalysis() {
 // never keeps ticking progress for a position we've already left.
 let activeStream = null;
 
-// Client-side analysis Web Worker (see apps/design/analysis-worker.js): runs the
-// Obscuro fog CFR entirely off the server/main thread. Used for the live fog
-// position with the Obscuro engine; every other case (non-fog, historical ply,
-// other engines) keeps the server SSE path. Created lazily and reused.
+// Client-side analysis Web Worker (see apps/design/analysis-worker.js, which is
+// fully generic — it just dynamically imports whatever `clientGame`/
+// `clientAnalyze` module pointers the selected agent declares): runs the whole
+// analysis entirely off the server/main thread. Used whenever both the game
+// and the selected agent have opted in; historical-ply review always keeps the
+// server SSE path (the worker only knows how to fetch the *live* position).
+// Created lazily and reused.
 let analysisWorker = null;
 const useWorker = computed(() =>
-  props.fog && selectedAgentId.value === 'obscuro' && props.ply == null,
+  props.ply == null && !!clientGame.value && !!currentAgent.value?.clientAnalyze,
 );
 function ensureWorker() {
   if (!analysisWorker) {
@@ -139,7 +154,8 @@ function runAnalysis() {
   if (useWorker.value) {
     ensureWorker().postMessage({
       type: 'analyze', base: window.api?.basePath || '',
-      sessionId: props.sessionId, playerId: props.playerId,
+      sessionId: props.sessionId, playerId: props.playerId, fog: props.fog,
+      clientGame: clientGame.value, clientAnalyze: currentAgent.value.clientAnalyze,
     });
     return;
   }

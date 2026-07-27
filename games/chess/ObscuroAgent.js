@@ -547,11 +547,11 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
   const cols = Math.min(legalActions.length, 16);
   const batchSize = opts.batchSize ?? 16;
 
-  // cp source. Server-side: run Stockfish locally over each batch. Browser
-  // analysis worker: there's no Stockfish in the browser, so it passes
-  // opts.cpEval(worlds, legalActions) → {sums, n} to fetch the same batched
-  // leaf-eval from the server (see api-server.js handleCpEval). When neither is
-  // available, candidates stay prob-only (cp: null).
+  // cp source: run Stockfish over each batch, wherever it's available — server
+  // (Node worker thread) or browser (nested Worker over the vendored WASM
+  // build; see stockfish.js). `opts.cpEval` is an optional override some
+  // caller can still supply instead. When neither is available, candidates
+  // stay prob-only (cp: null).
   const cpEval = opts.cpEval
     ? (worlds) => opts.cpEval(worlds, legalActions)
     : ((await stockfishAvailable())

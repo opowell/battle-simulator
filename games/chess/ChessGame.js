@@ -175,9 +175,20 @@ export const ChessGame = {
   name: 'Chess',
   colors: { light: '#f0d9b5', dark: '#b58863' },
   agents: [
-    { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent, analyze: ChessAgent.analyze },
-    { id: 'obscuro',  name: 'Obscuro (CFR)', agent: ObscuroAgent, analyze: analyzeObscuro },
+    { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent, analyze: ChessAgent.analyze,
+      // Lets the browser's analysis Web Worker (apps/design/analysis-worker.js —
+      // generic, no game-specific code) run this same `analyze` function locally
+      // instead of over SSE: it dynamically imports `module` from /lib/ and reads
+      // `export` off the result (dot-path into the namespace). See `clientGame`
+      // below for the matching legal-actions resolver.
+      clientAnalyze: { module: 'games/chess/ChessAgent.js', export: 'ChessAgent.analyze' } },
+    { id: 'obscuro',  name: 'Obscuro (CFR)', agent: ObscuroAgent, analyze: analyzeObscuro,
+      clientAnalyze: { module: 'games/chess/ObscuroAgent.js', export: 'analyzeObscuro' } },
   ],
+  // Client-side analysis needs to derive legal actions itself (the server does
+  // this via `game.getLegalActions` in resolveAnalysisContext); this points the
+  // generic browser worker at the same function.
+  clientGame: { module: 'games/chess/ChessGame.js', export: 'ChessGame' },
   gameOptions: [
     HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
