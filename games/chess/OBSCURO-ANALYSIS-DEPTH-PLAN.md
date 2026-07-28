@@ -6,9 +6,53 @@ session. Companion to [OBSCURO-UNLIMITED-BELIEF-PLAN.md](OBSCURO-UNLIMITED-BELIE
 [FOG-AI-FIX-PLAN.md](FOG-AI-FIX-PLAN.md) (search-side king-safety — already
 fixed, unrelated to this doc).
 
-## Status: NOT STARTED
+## Status: IMPLEMENTED (2026-07-28)
 
-This is a plan only — nothing below has been implemented yet.
+All seven steps below landed, plus two additions the user asked for on top of
+the original plan. Read the two "As built" sections before the plan body — they
+supersede it where they differ.
+
+### As built, addition 1: the ladder is an OUTER loop, not one deep call
+
+The plan assumed "iterative deepening" could be had for free by letting one
+`multiPV(depth: 30)` call deepen internally and forwarding its `onInfo` ticks.
+That is not enough once there is a belief population: an average is only
+meaningful over worlds scored at the SAME depth, and Stockfish's internal
+deepening is private to one call on one position. So the walk now runs an
+explicit ladder — score the whole population at depth 1, then re-score it all at
+depth 2, then 3 … — with depth as the outer loop and the population walk inner
+(`analyzeObscuroProgressive`). Each rung's cp aggregates are discarded and
+rebuilt; the CFR mixing is NOT recomputed per rung (it never consults Stockfish,
+so it does not depend on depth — only batches of genuinely new worlds fold in).
+
+`settledCp` keeps the last rung that produced numbers, so the eval column never
+blanks while a deeper rung is filling in, and a rung the engine cannot reach is
+abandoned after its first batch instead of burning one timeout per world.
+
+### As built, addition 2: the AI opponent runs the same ladder
+
+`ChessObscuroAgent._leafEval` now picks between two forms of one evaluator:
+
+- **Power level** fixes depth and breadth outright (unchanged: depth 2..7,
+  cols 5..14) — the dial bought a specific rung, so go straight to it.
+- **Time limit** buys full breadth (every legal child) and as many rungs as the
+  clock allows, via `makeIterativeChessLeafEval`. Each evaluation gets a slice of
+  `timeMs / (worlds × 8)` so root expansion — one evaluation per belief world,
+  before the round loop even starts — cannot swallow the budget. Measured: a
+  2 s and an 8 s limit both return within ~0.5% of budget, with leaf evals
+  reaching depth 8–9 (vs. the fixed 2–7 of power mode).
+
+### Measured: depth 30 is a ceiling, not a destination
+
+Timed on the vendored engine (Stockfish 11, single-threaded WASM, no NNUE) at
+multipv 16 on an ordinary middlegame: **depth 14 ≈ 1.4 s, depth 18 ≈ 7.3 s, and
+depth 20+ never finished inside `multiPV`'s per-call timeout.** So the ladder in
+practice tops out around depth 17–20 on a real position (higher on sparse ones,
+and much higher on a warm cache). This is fine — and is why the ladder reports
+the deepest rung that actually COMPLETED rather than the one it was aiming at.
+The plan's step 4 suggestion to raise the timeout multiplier was dropped in
+favour of this: bounding rungs by the caller's real budget (via UCI `stop`)
+answers the same problem without a magic constant.
 
 ## The ask
 

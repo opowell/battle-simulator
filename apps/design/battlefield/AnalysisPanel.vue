@@ -4,8 +4,8 @@ import AnalysisCandidateList from './AnalysisCandidateList.vue';
 
 // Live/replay "what's good here" panel: pick an AI, see its ranked move
 // suggestions for the position currently on screen, with live search progress
-// (Stockfish "depth N/14", Obscuro "round N/30" — mirrors lichess's ticking
-// depth indicator). For the live position, when the game/agent opt in (see
+// (Obscuro "Depth 12/30 · 480 / 1,200 worlds", Stockfish "Depth N/14" — mirrors
+// lichess's ticking depth indicator). For the live position, when the game/agent opt in (see
 // `useWorker` below), this runs entirely client-side via a Web Worker
 // (apps/design/analysis-worker.js); otherwise it streams over SSE from GET
 // /sessions/:id/analyze-stream (see api-server.js's handleAnalyzeStream /
@@ -66,21 +66,30 @@ const progress = ref(null);
 
 const fmtNum = (n) => (n ?? 0).toLocaleString();
 
+// Belief-population walk (Obscuro analysis): the engine refines along two axes
+// at once, so the line reports both — which rung of the Stockfish
+// iterative-deepening ladder it is on, and how much of the belief population has
+// been folded in at that rung (see analyzeObscuroProgressive). Once every world
+// has been evaluated at the top rung it is settled ("exhaustive" — the eval
+// column is the exact belief expectation). With nothing hidden the population is
+// a single world, so coverage is noise and only the depth is worth showing. On
+// the generative fallback (no finite set) `total` is null and it just keeps
+// refining, so we show how many worlds have been folded in so far.
+function beliefWalkLabel(data) {
+  const depth = data.depth ? `Depth ${data.depth}/${data.maxDepth}` : null;
+  const worlds = data.exhaustive ? `all ${fmtNum(data.total)} worlds`
+    : data.total ? `${fmtNum(data.evaluated)} / ${fmtNum(data.total)} worlds`
+    : `${fmtNum(data.evaluated ?? data.batch)} worlds`;
+  if (data.total === 1) return depth ?? worlds;
+  return depth ? `${depth} · ${worlds}` : worlds;
+}
+
 function progressLabel(data) {
   if (data.kind === 'depth') return `Depth ${data.depth}/${data.maxDepth}`;
   if (data.kind === 'round') return `Round ${data.round}/${data.maxRounds}`;
-  // Belief-population walk (Obscuro fog analysis): each batch folds another
-  // slice of the belief worlds into the running estimate (see
-  // analyzeObscuroProgressive). When the exact position set is finite we show
-  // real coverage and, once every world has been evaluated, a settled done
-  // state ("exhaustive" — the eval column is now the exact belief expectation).
-  // On the generative fallback (no finite set) `total` is null and it just
-  // keeps refining, so we show how many worlds have been folded in so far.
-  if (data.exhaustive) return `All ${fmtNum(data.total)} worlds evaluated`;
-  if (data.kind === 'batch') {
-    if (data.total) return `${fmtNum(data.evaluated)} / ${fmtNum(data.total)} worlds`;
-    return `${fmtNum(data.evaluated ?? data.batch)} worlds`;
-  }
+  // `exhaustive` also arrives on the final (kind-less) done frame, which is how
+  // a settled result keeps its label instead of clearing the progress line.
+  if (data.kind === 'batch' || data.exhaustive) return beliefWalkLabel(data);
   return null;
 }
 
@@ -214,7 +223,6 @@ watch(candidates, (c) => emit('candidates', c));
       <span class="an-title-wrap">
         <span class="panel-t">Analysis</span>
         <span v-if="loading" class="an-spinner" title="Analyzing…"/>
-        <span v-if="progress" class="an-progress mono">{{ progress }}</span>
       </span>
       <div class="seg an-onoff">
         <button :class="{ on: panelOn }" @click="panelOn = true">On</button>
@@ -232,6 +240,11 @@ watch(candidates, (c) => emit('candidates', c));
           {{ paused ? '► Resume' : '❙❙ Pause' }}
         </button>
       </div>
+
+      <!-- Own full-width row: the belief walk reports two axes at once
+           ("Depth 12/30 · 1,024 worlds"), which does not fit beside the
+           On/Off buttons in the header. -->
+      <div v-if="progress" class="an-progress mono">{{ progress }}</div>
 
       <div v-if="!playerId" class="an-msg">No human player to analyze for.</div>
       <div v-else-if="errorMsg" class="an-msg">{{ errorMsg }}</div>
@@ -254,7 +267,7 @@ watch(candidates, (c) => emit('candidates', c));
   animation: an-spin 0.7s linear infinite;
 }
 @keyframes an-spin { to { transform: rotate(360deg); } }
-.an-progress { font-size: 10px; color: var(--faint); }
+.an-progress { font-size: 10px; color: var(--faint); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .an-onoff button { padding: 2px 8px; font-size: 10px; }
 .an-controls { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .an-select { flex: 1; min-width: 0; background: var(--bg0); border: 1px solid var(--line); border-radius: var(--r); color: var(--txt); font-size: 11px; padding: 4px 6px; }

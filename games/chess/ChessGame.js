@@ -556,7 +556,13 @@ export const ChessGame = {
   // trackers for this turn exactly like sampleWorlds (idempotent via turnKey),
   // so the two are interchangeable within one decision.
   beliefPopulation(observation, playerId) {
-    if (!observation.gameSpecific.fogOfWar) return { exact: false, total: 0 };
+    // Perfect information is not "no belief" — it is a belief population of
+    // EXACTLY ONE world: nothing is hidden, so precisely one position is
+    // consistent with the observation, namely the observation itself. Saying so
+    // (rather than `{ exact: false, total: 0 }`) is what lets the analysis walk
+    // run one code path for both regimes instead of forking on fogOfWar; see
+    // ObscuroAgent.analyzeObscuroProgressive.
+    if (!observation.gameSpecific.fogOfWar) return { exact: true, total: 1 };
     const turnKey = observation.turnNumber ?? null;
     const exact = getExactBelief(observation, playerId);
     exact.beginTurn(observation, turnKey);
@@ -575,6 +581,10 @@ export const ChessGame = {
   // call earlier this turn to have established P; out-of-range indices are
   // skipped, and the result is empty when exact tracking isn't active.
   enumerateWorlds(observation, playerId, indices) {
+    // Perfect information: the single world of beliefPopulation's size-1 set is
+    // the observation itself. The exact-belief tracker below is never engaged
+    // with fog off, so it would answer with an empty set.
+    if (!observation.gameSpecific.fogOfWar) return (indices ?? []).includes(0) ? [observation] : [];
     const exact = getExactBelief(observation, playerId);
     const picks = exact.positionsAt(indices);
     if (!picks || !picks.length) return [];
