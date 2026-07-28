@@ -238,7 +238,7 @@ watch(candidates, (c) => emit('candidates', c));
       <div v-else-if="paused" class="an-msg an-msg--paused">Paused</div>
       <div v-else-if="loading && !candidates.length" class="an-msg">Analyzing…</div>
       <div v-else-if="!candidates.length" class="an-msg">No suggestions.</div>
-      <AnalysisCandidateList v-else :candidates="candidates" :hoveredIndex="hoveredIdx"
+      <AnalysisCandidateList v-else :candidates="candidates" :hoveredIndex="hoveredIdx" :max="5"
         @hover="onHover" @select="onSelect"/>
     </template>
   </div>

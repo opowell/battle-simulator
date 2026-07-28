@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 // Shared ranked-move row list: rank, move, cp/eval, mix %. Used by both
 // AiAnalysisPanel.vue (the AI's own post-hoc decision log) and AnalysisPanel.vue
 // (the live/replay "suggest a move" panel) so the two keep one visual language
@@ -11,8 +12,12 @@ const props = defineProps({
   // Optional: index of the row to visually mark as "chosen" (AiAnalysisPanel)
   // or "hovered" (AnalysisPanel) — separate from `candidates[i].chosen`.
   hoveredIndex: { type: Number, default: -1 },
+  // Optional: cap how many rows to render (candidates arrive pre-ranked, so
+  // this is just "top N"). Null/omitted shows everything passed in.
+  max: { type: Number, default: null },
 });
 const emit = defineEmits(['hover', 'select']);
+const rows = computed(() => props.max == null ? props.candidates : props.candidates.slice(0, props.max));
 
 function fmtMove(m) {
   if (!m) return '?';
@@ -38,7 +43,7 @@ function fmtProb(prob) {
 
 <template>
   <div class="ai-rows">
-    <div v-for="(c, i) in candidates" :key="c.key ?? i"
+    <div v-for="(c, i) in rows" :key="c.key ?? i"
          class="ai-row" :class="{ 'ai-row--chosen': c.chosen, 'ai-row--hovered': i === hoveredIndex }"
          @mouseenter="emit('hover', i)" @mouseleave="emit('hover', -1)" @click="emit('select', i)">
       <span class="mono ai-rank">{{ i + 1 }}</span>
