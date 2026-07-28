@@ -59,12 +59,6 @@ const board = computed(() => ({
           <path v-else :d="r.d" fill="black"/>
         </template>
       </mask>
-      <!-- unitVisionRegion's sector/polyarc is occluded by walls but not clipped to the
-           board rect itself, so a unit near the edge draws a cone (or its dashed outline
-           below) that overshoots the map — clip both to the actual board bounds. -->
-      <clipPath id="bfBoardClip" clipPathUnits="userSpaceOnUse">
-        <rect :x="board.x" :y="board.y" :width="board.w" :height="board.h"/>
-      </clipPath>
     </defs>
     <rect :x="board.x" :y="board.y" :width="board.w" :height="board.h"
           :fill="rdr.fogA" opacity="0.66" mask="url(#bfFogMask)"/>
@@ -72,9 +66,8 @@ const board = computed(() => ({
          team's shared vision underneath (which already includes it). -->
     <template v-if="highlightRegion">
       <circle v-if="highlightRegion.kind === 'circle'" class="selected-vision"
-              :cx="highlightRegion.cx" :cy="highlightRegion.cy" :r="highlightRegion.r"
-              clip-path="url(#bfBoardClip)"/>
-      <path v-else class="selected-vision" :d="highlightRegion.d" clip-path="url(#bfBoardClip)"/>
+              :cx="highlightRegion.cx" :cy="highlightRegion.cy" :r="highlightRegion.r"/>
+      <path v-else class="selected-vision" :d="highlightRegion.d"/>
     </template>
   </g>
 </template>
