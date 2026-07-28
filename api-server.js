@@ -284,6 +284,21 @@ const sessions = new Map();
 // server, not just the one that grew it — within seconds to a couple minutes.
 const MAX_GRID_HISTORY = 600;
 
+// `state.players[i].agent` is the live agent instance the engine actually calls
+// to choose that seat's moves (e.g. a ChessObscuroAgent) — never meant to leave
+// the server, and not always even serializable: Obscuro lazily attaches
+// `this.game = ChessGame` the first time it plays a move, and since
+// ChessGame.agents[].agent === the very same Obscuro singleton, that closes a
+// circular reference JSON.stringify chokes on (Node module singletons, so this
+// then breaks EVERY session in the process, not just the one that triggered
+// it). Strip agents down to an id wherever raw state reaches a client — used by
+// stateJSON (the only endpoint that ever hands out raw `players`; toJSON always
+// projects through curated fields instead).
+function sanitizePlayers(state) {
+  if (!state || !Array.isArray(state.players)) return state;
+  return { ...state, players: state.players.map(p => (p.agent ? { ...p, agent: { id: p.agent.id ?? null } } : p)) };
+}
+
 class Session {
   constructor(id, gameName, engine, apiAgents, fog = false, debugAI = false, params = {}) {
     this.id = id;
@@ -730,8 +745,8 @@ class Session {
     const { game } = GAMES[this.gameName];
     const rawState = this.engine.state;
     if (this.fog && !playerId) throw new Error('player required for fog-of-war session');
-    if (this.fog && playerId && game.getVisibleState) return game.getVisibleState(rawState, playerId);
-    return rawState;
+    const state = (this.fog && playerId && game.getVisibleState) ? game.getVisibleState(rawState, playerId) : rawState;
+    return sanitizePlayers(state);
   }
 
   // The EXACT resolved state at fraction `f` (0..1) of the last simultaneous round —

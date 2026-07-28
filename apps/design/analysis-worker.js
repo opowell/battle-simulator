@@ -38,7 +38,12 @@ self.onmessage = async (e) => {
     // …) — exactly what the server-side analysis sees. Legal moves are then
     // derived locally the same way the server does (resolveAnalysisContext).
     const res = await fetch(`${base}/sessions/${sessionId}/state?player=${encodeURIComponent(playerId)}`);
-    if (!res.ok) throw new Error(`state ${res.status}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      let detail = body;
+      try { detail = JSON.parse(body).error ?? body; } catch { /* not JSON */ }
+      throw new Error(`state ${res.status}${detail ? `: ${detail}` : ''}`);
+    }
     const state = await res.json();
     if (isCancelled()) return;
 
