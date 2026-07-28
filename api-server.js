@@ -1232,7 +1232,14 @@ async function handleAnalyze(req, res, id) {
   catch (e) { return err(res, 400, e.message); }
 
   try {
-    const result = await ctx.rosterEntry.analyze(ctx.viewState, ctx.legalActions, { game: ctx.game, color: ctx.color });
+    // A single HTTP response cannot stream partial progress, and the analysis
+    // walk below refines indefinitely (wider over belief worlds, deeper over the
+    // Stockfish ladder) until told to stop — so give this form a short budget and
+    // let it answer with the best it reached. The SSE/worker paths keep the long
+    // default: they show progress live and stop when the viewer looks away.
+    const result = await ctx.rosterEntry.analyze(ctx.viewState, ctx.legalActions, {
+      game: ctx.game, color: ctx.color, maxTotalMs: 15000,
+    });
     send(res, 200, { ...result, ply: body.ply ?? null });
   } catch (e) {
     err(res, 500, `Analysis failed: ${e.message}`);

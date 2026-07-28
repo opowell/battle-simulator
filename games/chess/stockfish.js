@@ -268,20 +268,34 @@ async function maybeRecycle() {
   await init();
 }
 
+// How often an in-flight search re-checks its caller's `isCancelled` (see below).
+const STOP_POLL_MS = 100;
+
 // Run one UCI request, collecting lines until `isDone(line)` returns a result.
 // Serialised behind `queue` so only one search runs at a time.
-function request(commands, isDone, timeoutMs) {
+//
+// `opts.isCancelled` lets a caller interrupt a search that is already running.
+// Cancellation used to take effect only BETWEEN calls, which was fine when every
+// call was a sub-second shallow search; on the iterative-deepening ladder a
+// single deep rung can run for tens of seconds, so a position change or an
+// expired move clock would otherwise be felt a whole rung late. Sending the UCI
+// `stop` command makes the engine emit its current-best `bestmove` immediately —
+// which the line handler already resolves on, so there is no new resolution
+// path. `opts.onStopped` fires when that happens, so the caller can tell a
+// truncated result (shallower than the depth it asked for) from a complete one.
+function request(commands, isDone, timeoutMs, { isCancelled, onStopped } = {}) {
   const run = async () => {
     await maybeRecycle();
     if (!(await init())) return null; // ensure a live worker (respawns if it crashed)
     callsSinceLoad++;
     return new Promise((resolve) => {
       let settled = false;
-      let timer;
+      let timer, poll;
       const done = (result) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        clearInterval(poll);
         listeners = listeners.filter(x => x !== handler);
         pending.delete(abort);
         resolve(result);
@@ -291,6 +305,14 @@ function request(commands, isDone, timeoutMs) {
       listeners.push(handler);
       pending.add(abort);
       try { for (const c of commands) send(c); } catch { /* fall through to timeout */ }
+      if (isCancelled) {
+        poll = setInterval(() => {
+          if (settled || !isCancelled()) return;
+          clearInterval(poll); poll = null;
+          onStopped?.();
+          try { send('stop'); } catch { /* engine gone — the timeout still fires */ }
+        }, STOP_POLL_MS);
+      }
       timer = setTimeout(() => done(null), timeoutMs);
     });
   };
@@ -344,8 +366,13 @@ export async function evaluate(fen, { movetime = 100 } = {}) {
  * arrive, keyed off the multipv-1 line so it's one tick per depth rather than
  * one per multipv slot), letting a caller show live search progress the way
  * lichess does. Purely a side channel — the awaited return value is unchanged.
+ *
+ * `isCancelled` interrupts an in-flight search (see request above): the engine
+ * returns whatever it had reached instead of running the depth out. A result cut
+ * short that way is NOT cached — it is shallower than the `depth` its cache key
+ * claims — and `onStopped` fires so the caller can treat it as truncated.
  */
-export async function multiPV(fen, { multipv = 10, depth = 2, onInfo } = {}) {
+export async function multiPV(fen, { multipv = 10, depth = 2, onInfo, isCancelled, onStopped } = {}) {
   if (!(await init())) return null;
   loadCache();
   const key = `${fen}|${multipv}|${depth}`;
@@ -354,6 +381,7 @@ export async function multiPV(fen, { multipv = 10, depth = 2, onInfo } = {}) {
 
   const best = new Map(); // multipv index -> { move, cp } (kept at the deepest seen)
   let lastReportedDepth = 0;
+  let stopped = false;
   const cmds = [`setoption name MultiPV value ${multipv}`, 'position fen ' + fen, 'go depth ' + depth];
   const result = await request(
     cmds,
@@ -375,8 +403,9 @@ export async function multiPV(fen, { multipv = 10, depth = 2, onInfo } = {}) {
       return line.startsWith('bestmove') ? [...best.values()] : undefined;
     },
     depth * 400 + 5000,
+    { isCancelled, onStopped: () => { stopped = true; onStopped?.(); } },
   );
-  if (result !== null) cacheSet(key, result);
+  if (result !== null && !stopped) cacheSet(key, result);
   return result;
 }
 

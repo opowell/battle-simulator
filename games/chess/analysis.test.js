@@ -35,16 +35,40 @@ test('ChessAgent.analyze: perfect info ranks the free-queen capture first', asyn
 });
 
 test('analyzeObscuro: perfect info ranks the free-queen capture first', async () => {
-  // Perfect info takes the same "just ask Stockfish" shortcut real Obscuro play
-  // does (see ObscuroAgent.js's PERFECT-INFORMATION SHORTCUT note) — a real,
-  // calibrated cp score per move, not the CFR tree's flat 100%/0% support.
+  // Perfect info is now just a belief population of size 1 (see
+  // ChessGame.beliefPopulation) walked by the one progressive analysis path, so
+  // the solve mode is the CFR tree's perfect-information collapse, 'minimax'.
+  // Its 100%/0% support carries no ranking information at a population of 1, so
+  // ranking falls to the real, calibrated Stockfish cp — the same numbers the
+  // old dedicated perfect-information branch showed.
   const { state, legal } = freeQueenState();
-  const r = await analyzeObscuro(state, legal, { rng: () => 0 });
+  const r = await analyzeObscuro(state, legal, { rng: () => 0, maxSfDepth: 8 });
   assert.equal(r.engine, 'obscuro');
-  assert.equal(r.mode, 'stockfish');
+  assert.equal(r.mode, 'minimax');
   assert.ok(r.candidates.length > 0);
   assert.equal(r.candidates[0].move.to, 'a8', 'best-ranked move should capture the queen');
   assert.ok(r.candidates[0].cp > 500, 'capturing a free queen should score as a large material swing');
+});
+
+test('analyzeObscuro: perfect info climbs the depth ladder, reporting top moves at each rung', async () => {
+  // The point of the ladder: a complete, self-consistent answer at every depth,
+  // not one opaque wait for a deep one. Every rung must report its own depth and
+  // a full ranked candidate list, and the depths must march upward.
+  const { state, legal } = freeQueenState();
+  const frames = [];
+  const r = await analyzeObscuro(state, legal, {
+    rng: () => 0, maxSfDepth: 6, onProgress: (info) => frames.push(info),
+  });
+  const depths = frames.map(f => f.depth);
+  assert.deepEqual(depths, [1, 2, 3, 4, 5, 6], 'one frame per rung, depth 1 upward');
+  for (const f of frames) {
+    assert.equal(f.maxDepth, 6);
+    assert.equal(f.total, 1, 'nothing hidden → a belief population of exactly one world');
+    assert.ok(f.candidates.length > 0, `rung ${f.depth} reports its ranked moves`);
+    assert.equal(f.candidates[0].move.to, 'a8', `rung ${f.depth} already sees the free queen`);
+  }
+  assert.equal(frames.at(-1).exhaustive, true, 'the top rung over the whole population is settled');
+  assert.equal(r.depth, 6, 'the final result reports the deepest rung actually searched');
 });
 
 // ---------------------------------------------------------------------------
@@ -66,7 +90,7 @@ test('ChessAgent.analyze: opts.color analyzes white even when activePlayers says
 test('analyzeObscuro: opts.color analyzes white even when activePlayers says black', async () => {
   const { state, legal } = freeQueenState();
   const notWhitesTurn = { ...state, activePlayers: ['black'] };
-  const r = await analyzeObscuro(notWhitesTurn, legal, { rng: () => 0, color: 'white' });
+  const r = await analyzeObscuro(notWhitesTurn, legal, { rng: () => 0, color: 'white', maxSfDepth: 6 });
   assert.ok(r.candidates.length > 0);
   assert.equal(r.candidates[0].move.to, 'a8', 'should still find the free-queen capture for white');
 });
@@ -77,7 +101,7 @@ test('analyzeObscuro: fog produces a probability distribution summing to ~1', as
   const view = ChessGame.getVisibleState(state, 'white');
   const legal = ChessGame.getLegalActions(state, 'white');
 
-  const r = await analyzeObscuro(view, legal, { particles: 4 });
+  const r = await analyzeObscuro(view, legal, { particles: 4, maxSfDepth: 4 });
   assert.equal(r.mode, 'cfr');
   const sum = r.candidates.reduce((a, c) => a + c.prob, 0);
   assert.ok(Math.abs(sum - 1) < 1e-6, `probabilities should sum to 1, got ${sum}`);
@@ -117,7 +141,7 @@ test('analyzeObscuro() does not commit a move to the belief', async () => {
   const view = ChessGame.getVisibleState(state, 'white');
   const legal = ChessGame.getLegalActions(state, 'white');
 
-  await analyzeObscuro(view, legal, { particles: 4 });
+  await analyzeObscuro(view, legal, { particles: 4, maxSfDepth: 2 });
   const belief = getBelief(view, 'white');
   assert.equal(belief.ownSnapshot, null, 'analyzeObscuro() must never commit a move to the belief');
 });
@@ -159,7 +183,7 @@ test('analyzeObscuroProgressive: a finite exact population exhausts and stops on
   // here (e.g. resample-with-replacement) would loop until maxTotalMs instead.
   const r = await analyzeObscuro(view, legal, {
     color: 'white', rng: () => 0.5, isCancelled: () => false,
-    maxRounds: 4, expandPerRound: 2, cfrPerRound: 1, batchSize: 8,
+    maxRounds: 4, expandPerRound: 2, cfrPerRound: 1, batchSize: 8, maxSfDepth: 3,
     onProgress: (info) => frames.push(info),
   });
   assert.ok(r, 'returns a final result');
