@@ -7,6 +7,20 @@ defineProps({
   showHpBars: { type: Boolean, default: true },
 });
 defineEmits(['select', 'hover']);
+
+// Same fallback every other HP consumer uses (SchematicLayer/HtmlUnit/SelectedUnitDetail):
+// `hpNow` only tracks the scripted death fade, `currentHp` is the real per-turn value.
+function hpFrac(u) {
+  return (u.currentHp ?? u.hpNow) / u.hpMax;
+}
+
+// A portraitless unit shows its board glyph large instead of just a team dot — the same
+// text HtmlUnit.vue's unitLabel() pulls from a game's spriteLayers (see CsMiniGame.js's
+// numbered circle tokens), falling back to the unit's initial for games with no glyph.
+function unitLabel(u) {
+  const textLayer = u.spriteLayers?.find(l => l.shape === 'text');
+  return textLayer ? textLayer.text : u.name?.[0]?.toUpperCase();
+}
 </script>
 
 <template>
@@ -34,8 +48,11 @@ defineEmits(['select', 'hover']);
             <img v-if="u.portraitPath || u.imagePath"
                  :src="teamSpriteHref(u.portraitPath ?? u.imagePath, team.raw, field?.ui?.recolorTeamSprites)" :alt="u.name"
                  class="roster-img"/>
-            <div v-else class="roster-portrait-empty">
-              <BsDot :color="u.dead ? 'var(--faint)' : team.raw" :size="10"/>
+            <div v-else class="roster-portrait-empty"
+                 :style="{background: u.dead ? 'var(--bg0)' : team.raw + '22'}">
+              <span v-if="unitLabel(u)" class="roster-portrait-num"
+                    :style="{color: u.dead ? 'var(--faint)' : team.raw}">{{unitLabel(u)}}</span>
+              <BsDot v-else :color="u.dead ? 'var(--faint)' : team.raw" :size="10"/>
             </div>
           </div>
           <div class="roster-meta">
@@ -45,12 +62,15 @@ defineEmits(['select', 'hover']);
             <div class="mono roster-id">{{u.id}}</div>
           </div>
           <div class="roster-bars">
+            <div v-if="!u.dead && u.hpMax != null && showHpBars" class="mono roster-hp-num">
+              HP {{Math.round(u.currentHp ?? u.hpNow)}}/{{u.hpMax}}
+            </div>
             <div v-if="!u.dead && u.hpMax != null && showHpBars"
                  class="roster-hp-track" :style="{background: rdr.hpTrack}">
               <div class="roster-hp-fill"
                    :style="{
-                     width: (u.hpNow/u.hpMax*100)+'%',
-                     background: u.hpNow/u.hpMax > 0.5 ? team.raw : u.hpNow/u.hpMax > 0.25 ? '#f2b441' : '#ff5f56',
+                     width: (hpFrac(u)*100)+'%',
+                     background: hpFrac(u) > 0.5 ? team.raw : hpFrac(u) > 0.25 ? '#f2b441' : '#ff5f56',
                    }"/>
             </div>
             <div v-if="!u.dead && u.maxMp != null" class="roster-mp-track">
@@ -79,11 +99,13 @@ defineEmits(['select', 'hover']);
 .roster-portrait { width: 100%; aspect-ratio: 1; overflow: hidden; background: var(--bg0); }
 .roster-img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block; }
 .roster-portrait-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.roster-portrait-num { font-size: 28px; font-weight: 800; line-height: 1; font-family: ui-monospace, monospace; }
 .roster-meta { padding: 4px 5px 3px; }
 .roster-name { font-size: 10px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; color: var(--txt); }
 .roster-name--dead { text-decoration: line-through; color: var(--faint); }
 .roster-id { font-size: 8px; color: var(--faint); line-height: 1.2; }
 .roster-bars { padding: 0 5px 5px; display: flex; flex-direction: column; gap: 2px; }
+.roster-hp-num { font-size: 9px; font-weight: 700; color: var(--txt); }
 .roster-hp-track { height: 3px; border-radius: 2px; overflow: hidden; }
 .roster-hp-fill { height: 100%; border-radius: 2px; transition: width .3s; }
 .roster-mp-track { height: 3px; border-radius: 2px; overflow: hidden; background: rgba(100,80,200,.2); }

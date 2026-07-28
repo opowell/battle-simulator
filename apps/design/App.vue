@@ -63,7 +63,7 @@ let fxKey = 0;
 const fxTimers = new Map();
 // Action types (by unit) that should flash the actor white — i.e. "took an
 // action" in the FFTA sense (used a skill), not merely repositioned.
-const FX_ACTION_TYPES = new Set(['ability', 'attack', 'cast', 'skill']);
+const FX_ACTION_TYPES = new Set(['ability', 'attack', 'cast', 'skill', 'shoot']);
 
 function triggerFx(unitId, fx) {
   if (!unitId || fx.x == null) return;

@@ -43,6 +43,8 @@ const VISION_RANGE = 5;    // 1 square/second × 5-second turn
 const FOV_DEGREES = 90;    // cone width, centred on facing
 const SHOT_DAMAGE = 1;
 const MOVE_EPS = 1e-9;     // below this a "move" spends no budget — treat as none left
+const UNIT_RADIUS = 0.3;   // continuous-space collision radius (map distance units == cells)
+const ROTATE_RATE = Math.PI / 4; // 45°/sec — one DIRS8 step's turn costs 1 "second", like a move step
 
 // The single movement spec (games/spacetime.js): SPEED is the one number every
 // quadrant derives from. In DISCRETE space it's grid cells; in CONTINUOUS space
@@ -65,9 +67,47 @@ const facingOf = (dx, dy) => Math.atan2(dy, dx);
 const EAST = facingOf(1, 0);
 const WEST = facingOf(-1, 0);
 
+// Smallest angle between two headings (radians, [0, PI]) — turning in place isn't
+// instant: a full about-face costs more "seconds" than a quarter-turn, the same way a
+// long move costs more than a short one. Every DIRS8 pair is a multiple of 45°, so this
+// always lands on a whole number of ROTATE_RATE steps (1..4).
+function angleDelta(a, b) {
+  let d = Math.abs(a - b) % (2 * Math.PI);
+  if (d > Math.PI) d = 2 * Math.PI - d;
+  return d;
+}
+const rotateTimeCost = (from, to) => angleDelta(from, to) / ROTATE_RATE;
+
 const inBounds = (x, y) => x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT;
 const isWall = (x, y) => WALL_SET.has(`${x},${y}`);
 const isPassable = (x, y) => inBounds(x, y) && !isWall(x, y);
+
+// Is a circle of radius `r` centred at (x,y) clear of every wall cell (and the outer
+// map edge)? Distance from the centre to a wall cell's nearest edge/corner must be at
+// least `r` — this is what actually keeps a unit's body from poking into a wall face,
+// not just its centre point (isPassable/isWall only check the point itself).
+function circleClearOfWalls(x, y, r) {
+  if (x - r < 0 || x + r > WIDTH || y - r < 0 || y + r > HEIGHT) return false;
+  for (const [wx, wy] of WALLS) {
+    const cx = Math.max(wx, Math.min(x, wx + 1));
+    const cy = Math.max(wy, Math.min(y, wy + 1));
+    if (Math.hypot(x - cx, y - cy) < r) return false;
+  }
+  return true;
+}
+
+// Same clearance check swept along a straight segment (sampled — the map is tiny and
+// this only runs over a handful of candidate destinations per turn), so a slide that
+// grazes a wall corner mid-path is rejected even when both endpoints are clear of it.
+function segmentClearOfWalls(x0, y0, x1, y1, r) {
+  const dist = Math.hypot(x1 - x0, y1 - y0);
+  const steps = Math.max(1, Math.ceil(dist / 0.1));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    if (!circleClearOfWalls(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, r)) return false;
+  }
+  return true;
+}
 
 // ── Line of sight / ballistics ──────────────────────────────────────────────
 
@@ -152,13 +192,15 @@ const kinematics = {
     }
     return out;
   },
-  // Continuous space: a point is walkable if its cell is open; the straight slide
-  // must not cross the wall; and it must be clear of other units (min separation).
-  walkable: (x, y) => isPassable(Math.floor(x), Math.floor(y)),
-  pathClear: (x0, y0, x1, y1) => losClear(x0, y0, x1, y1),
+  // Continuous space: a point is walkable if its cell is open AND a unit-radius circle
+  // there doesn't poke into the wall or off the map edge; the straight slide must stay
+  // clear of the wall along its whole length, not just at the endpoints; and the
+  // destination must be clear of every other unit's own radius (no overlapping bodies).
+  walkable: (x, y) => isPassable(Math.floor(x), Math.floor(y)) && circleClearOfWalls(x, y, UNIT_RADIUS),
+  pathClear: (x0, y0, x1, y1) => losClear(x0, y0, x1, y1) && segmentClearOfWalls(x0, y0, x1, y1, UNIT_RADIUS),
   occupied: (x, y, unit, state) =>
     state.units.some(u => u.alive && u.id !== unit.id
-      && Math.hypot(u.position.x - x, u.position.y - y) < 0.5),
+      && Math.hypot(u.position.x - x, u.position.y - y) < 2 * UNIT_RADIUS),
 };
 
 // The active quadrant, resolved once at createInitialState and stashed in state.
@@ -300,10 +342,13 @@ export function getLegalActions(state, playerId) {
       }
     }
 
-    // Rotate in place: face any of the eight directions you don't already face.
+    // Rotate in place: face any of the eight directions you don't already face — but
+    // only as far as this turn's remaining time affords (a full about-face costs 4x a
+    // quarter-turn, same as covering 4x the distance costs 4x the move time).
     for (const { dx, dy } of DIRS8) {
       const facing = facingOf(dx, dy);
       if (Math.abs(facing - unit.facing) < 1e-9) continue;
+      if (rotateTimeCost(unit.facing, facing) > unit.perTurn.time + MOVE_EPS) continue;
       actions.push({ type: 'rotate', unitId: unit.id, facing });
     }
 
@@ -373,7 +418,7 @@ export function applyActions(state, playerActions) {
   if (action.type === 'rotate') {
     const units = state.units.map(u =>
       u.id === action.unitId
-        ? { ...u, facing: action.facing, perTurn: { ...u.perTurn, time: u.perTurn.time - 1 } }
+        ? { ...u, facing: action.facing, perTurn: { ...u.perTurn, time: u.perTurn.time - rotateTimeCost(u.facing, action.facing) } }
         : u,
     );
     return { ...state, units, lastAction: { playerId, ...action } };
@@ -435,6 +480,37 @@ export function getResult(state) {
 // Under fog the passed state only holds enemies the mover can see; with none in
 // sight units push toward the far spawn so a blind team still advances.
 
+// Shortest 8-connected route around the wall, in grid cells (Dijkstra over the same
+// passable-cell graph `kinematics.neighbors` walks discrete moves through). Used only
+// to steer a blind unit toward its goal — straight-line Euclidean distance treats the
+// wall as if it weren't there, so a unit hugging its face would rate every reachable
+// point along that face as equally "closer" and idle/oscillate instead of routing
+// around the corner; true path distance strictly decreases as it works its way around.
+function gridPathDistance(fromX, fromY, toX, toY) {
+  const clampX = (v) => Math.max(0, Math.min(WIDTH - 1, Math.floor(v)));
+  const clampY = (v) => Math.max(0, Math.min(HEIGHT - 1, Math.floor(v)));
+  const sx = clampX(fromX), sy = clampY(fromY), tx = clampX(toX), ty = clampY(toY);
+  if (sx === tx && sy === ty) return euclidean(fromX, fromY, toX, toY);
+
+  const key = (x, y) => `${x},${y}`;
+  const dist = new Map([[key(sx, sy), 0]]);
+  const queue = [{ x: sx, y: sy, d: 0 }];
+  while (queue.length) {
+    queue.sort((a, b) => a.d - b.d);
+    const { x, y, d } = queue.shift();
+    if (d > dist.get(key(x, y))) continue; // stale entry, already beaten
+    if (x === tx && y === ty) return d;
+    for (const { dx, dy } of DIRS8) {
+      const nx = x + dx, ny = y + dy;
+      if (!isPassable(nx, ny)) continue;
+      const nd = d + Math.hypot(dx, dy);
+      const k = key(nx, ny);
+      if (!dist.has(k) || dist.get(k) > nd) { dist.set(k, nd); queue.push({ x: nx, y: ny, d: nd }); }
+    }
+  }
+  return euclidean(fromX, fromY, toX, toY); // unreachable (shouldn't happen on this map)
+}
+
 export function evaluateState(state, playerId) {
   const enemyId = state.players.find(p => p.id !== playerId)?.id;
   const goal = state.gameSpecific.enemyGoal?.[playerId];
@@ -451,7 +527,16 @@ export function evaluateState(state, playerId) {
       score -= 0.15 * d;
       if (foes.some(e => unitSees(u, e.position.x, e.position.y))) score += 0.5;
     } else if (goal) {
-      score -= 0.1 * euclidean(u.position.x, u.position.y, goal.x, goal.y);
+      // Once within reach of the push goal, keep sweeping the enemy's back line by turn
+      // number instead of parking there. Otherwise the fog-blind endgame — last unit on
+      // each side, neither ever spotting the other — has nothing left to evaluate once
+      // its unit arrives, and it idles at the goal for the rest of the match instead of
+      // continuing to search for the enemy it hasn't found yet.
+      const atGoal = gridPathDistance(u.position.x, u.position.y, goal.x, goal.y) < 1.5;
+      const sweepY = atGoal
+        ? 1 + (HEIGHT - 2) * (0.5 + 0.5 * Math.sin(state.turnNumber * 0.35 + (u.num === 2 ? Math.PI : 0)))
+        : goal.y;
+      score -= 0.1 * gridPathDistance(u.position.x, u.position.y, goal.x, sweepY);
     }
   }
   return score;
@@ -595,7 +680,8 @@ export function toGrid(state) {
       visionRange: VISION_RANGE,
       fovDegrees: FOV_DEGREES,
       showFacing: true,
-      showHpBars: false,
+      showHpBars: true,
+      combatFx: true,
       aimedActionTypes: ['move', 'shoot', 'rotate'],
     },
   };
@@ -617,6 +703,10 @@ export function getActionDuration(state, action) {
     if (!u) return 1;
     const dist = Math.hypot(action.to.x - u.position.x, action.to.y - u.position.y);
     return moveTimeCost(st, u, state, dist);
+  }
+  if (action.type === 'rotate') {
+    const u = state.units.find(x => x.id === action.unitId);
+    return u ? rotateTimeCost(u.facing, action.facing) : 1;
   }
   return 1;
 }
@@ -651,7 +741,7 @@ export const CsMiniGame = {
     players: [{ agent: 'greedy' }, { agent: 'greedy' }],
     config: { allowObservers: true, simultaneousTurns: true },
   },
-  ui: { showFacing: true, showHpBars: false },
+  ui: { showFacing: true, showHpBars: true, combatFx: true },
   // Observer watch-pace only (api-server.js Session.toJSON scales stepSimTime by
   // this) — 1 real sim-second of a turn plays back over 2 wall-clock seconds.
   // True sim-time (action costs, move speed) is untouched.
