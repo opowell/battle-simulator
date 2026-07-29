@@ -1,5 +1,5 @@
 <script setup>
-defineProps({ teams: Array });
+defineProps({ teams: Array, field: Object });
 </script>
 
 <template>
@@ -16,8 +16,11 @@ defineProps({ teams: Array });
           <span class="mono lost-count">{{team.units.length}}</span>
         </div>
         <div class="lost-units">
-          <span v-for="u in team.units" :key="u.id" class="mono lost-unit">
-            {{u.name}}
+          <span v-for="u in team.units" :key="u.id" class="lost-unit" :title="u.name">
+            <img v-if="u.imagePath"
+                 :src="teamSpriteHref(u.imagePath, team.raw, field?.ui?.recolorTeamSprites)"
+                 :alt="u.name" class="lost-unit-img"/>
+            <span v-else class="mono">{{u.name}}</span>
           </span>
         </div>
       </template>
@@ -33,5 +36,6 @@ defineProps({ teams: Array });
 .lost-team-name { font-size: 10px; font-weight: 600; }
 .lost-count { font-size: 10px; color: var(--faint); margin-left: auto; }
 .lost-units { display: flex; flex-wrap: wrap; gap: 4px; }
-.lost-unit { font-size: 11px; padding: 2px 7px; border-radius: 3px; background: var(--bg2); color: var(--faint); text-decoration: line-through; }
+.lost-unit { font-size: 11px; padding: 2px 7px; border-radius: 3px; background: var(--bg2); color: var(--faint); text-decoration: line-through; display: inline-flex; align-items: center; }
+.lost-unit-img { width: 20px; height: 20px; object-fit: contain; opacity: 0.7; }
 </style>

@@ -1225,7 +1225,7 @@ watch(displayUnits, (units) => {
   const updated = { ...everSeenUnits.value };
   for (const u of units) {
     if (!updated[u.id]) {
-      updated[u.id] = { id: u.id, name: u.name, team: u.team, type: u.type };
+      updated[u.id] = { id: u.id, name: u.name, team: u.team, type: u.type, imagePath: u.imagePath };
       changed = true;
     }
   }
@@ -1485,7 +1485,7 @@ onUnmounted(() => {
           @hover="id => hoveredId = id"/>
 
         <UnitsLostPanel v-if="ui.showUnitsLost"
-          :teams="lostUnitsTeams"/>
+          :teams="lostUnitsTeams" :field="field"/>
 
         <GameLog v-if="isLive"
           :log="logForDisplay" :historyLength="histLength" :histPos="histPos"
