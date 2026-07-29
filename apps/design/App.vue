@@ -743,9 +743,34 @@ function stopPoll() { if (_sub) { _sub.close(); _sub = null; } }
 // Player to view/subscribe as. Fog needs it so the server can filter the board;
 // simultaneous-turns needs it so the server can render this player's private
 // plan state (their queued orders) during the planning window.
+// Which seat we watch the game through. In a hotseat game (every seat human) this
+// follows whoever is on the clock, so the board, the fog and the analysis panel all
+// belong to the player actually being asked to move — previously it was pinned to
+// the first human seat, so on the other seat's turn you were shown one player's fog
+// while being advised about the other's position. With a single human seat (the
+// ordinary case) it resolves to that seat either way.
 function viewAsId(s) {
   const simultaneous = !!s?.params?.config?.simultaneousTurns;
-  return (s?.fog || simultaneous) ? (s.humanPlayers?.[0] ?? null) : null;
+  if (!(s?.fog || simultaneous)) return null;
+  const humans = s.humanPlayers ?? [];
+  const pending = s.pendingPlayer;
+  if (pending && humans.includes(pending)) return pending;
+  return humans[0] ?? null;
+}
+
+// Re-fetch the snapshot when the seat we should be watching through has changed
+// (hotseat: the turn passed to the other player). The server stamps every snapshot
+// with the seat it was rendered for, so this compares against that rather than
+// guessing — and re-fetching yields the same `viewerId` it asked for, so it settles
+// in one hop instead of looping.
+async function syncViewer(state) {
+  const want = viewAsId(state);
+  if (!want || state?.viewerId === want) return state;
+  try {
+    const fresh = await api.session(state.id, want);
+    if (liveState.value?.id === state.id) liveState.value = fresh;
+    return fresh;
+  } catch { return state; }
 }
 
 // A session we watch read-only: it allows observers and we hold no human seat
@@ -772,7 +797,12 @@ function maybeStartPoll(s) {
   _sub = api.subscribeSession(s.id, humanId, (fresh) => {
     liveState.value = fresh;
     if (fresh.status !== 'active') { stopPoll(); return; }
-    if (fresh.pendingPlayer && fresh.humanPlayers?.includes(fresh.pendingPlayer)) stopPoll();
+    if (fresh.pendingPlayer && fresh.humanPlayers?.includes(fresh.pendingPlayer)) {
+      stopPoll();
+      // The socket was opened for whichever seat we were watching; if the turn has
+      // landed on a DIFFERENT human seat (hotseat), that seat's view is the one to show.
+      syncViewer(fresh);
+    }
   });
 }
 
@@ -903,8 +933,11 @@ async function createSession(cfg) {
 async function submitAction({ playerId, action }) {
   if (!liveState.value) return;
   try {
-    const state = await api.action(liveState.value.id, playerId, action);
+    // The submit response is rendered for the seat that just moved; in a hotseat
+    // game the turn has now passed, so switch to the new player's view.
+    let state = await api.action(liveState.value.id, playerId, action);
     liveState.value = state;
+    state = await syncViewer(state);
     maybeStartPoll(state);
   } catch (e) { serverErr.value = e.message; }
 }

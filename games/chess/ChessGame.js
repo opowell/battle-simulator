@@ -472,6 +472,15 @@ export const ChessGame = {
       ...state,
       board: filteredBoard,
       units: boardToUnits(filteredBoard),
+      // The opponent's last move is exactly the thing fog is hiding, so it cannot
+      // ride along in the state we hand out — spelling out the from/to square of a
+      // move whose piece we just stripped from the board would undo the filtering
+      // above. (api-server.js's toJSON already filters its own copy of this; the
+      // raw /state endpoint — which the browser analysis worker fetches — did not,
+      // so the projection is done here at the source instead, for every consumer.
+      // debugAI's move-log reveal is unaffected: it is applied where the LOG is
+      // served, from the raw state, never from this projection.)
+      lastActions: state.lastActions?.filter(pa => pa.playerId === playerId) ?? null,
       // The authoritative set of squares this player can see, computed on the FULL board
       // so hidden enemies still block and occupy. The UI must render fog from this — it
       // cannot re-derive visibility from the filtered board, where a stripped piece (e.g. a

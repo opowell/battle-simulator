@@ -310,3 +310,88 @@ test('analyzeObscuro under fog: emits belief worlds with per-move cp per world',
   assert.equal(opener.beliefWorlds.worlds[0].cp, null, 'nothing is scored yet at that point');
   stockfishQuit();
 });
+
+// ---------------------------------------------------------------------------
+// The belief-upkeep contract the analysis path depends on. An imperfect-information
+// belief is built ACROSS turns: each turn it advances the opponent one ply and
+// filters against what we now see. That only works if our OWN last move was applied
+// to it first — otherwise the advance starts from a position where our pieces are
+// still on their old squares, nothing survives the filter, and exactness is
+// abandoned (after which the fallback confidently reports the enemy army still at
+// home). `onActionCommitted` is what applies our move; api-server.js's
+// Session.syncSeatBelief is what calls it for a human seat, which nothing did
+// before — see the second test for what that omission costs.
+// ---------------------------------------------------------------------------
+
+function fogGame() {
+  const players = [{ id: 'white' }, { id: 'black' }];
+  let st = ChessGame.createInitialState(players, { fogOfWar: true, difficulty: 30 });
+  const boardKey = b => Object.entries(b).filter(([, p]) => p)
+    .map(([sq, p]) => `${sq}${p.ownerId[0]}${p.type[0]}`).sort().join(',');
+  return {
+    get state() { return st; },
+    // Play `from`-`to` for `color`, optionally telling that seat's belief about it
+    // first (what a maintained seat does, via ChessGame.onActionCommitted).
+    play(color, from, to, { commit = false } = {}) {
+      const action = { type: 'move', from, to, unitId: st.board[from].id };
+      if (commit) ChessGame.onActionCommitted(ChessGame.getVisibleState(st, color), color, action);
+      st = ChessGame.applyActions(st, [{ playerId: color, action }]);
+    },
+    // What the analysis sees for `color`: is the belief exact, how big, and does it
+    // still contain the position that is actually on the board?
+    belief(color) {
+      const view = ChessGame.getVisibleState(st, color);
+      const pop = ChessGame.beliefPopulation(view, color);
+      if (!pop.exact) return { exact: false, total: null, holdsTruth: null };
+      const all = ChessGame.enumerateWorlds(view, color, [...Array(Math.min(pop.total, 20000)).keys()]);
+      return { exact: true, total: pop.total, holdsTruth: all.some(w => boardKey(w.board) === boardKey(st.board)) };
+    },
+  };
+}
+
+test('belief upkeep: a seat told its own moves stays exact and keeps the true position', () => {
+  const g = fogGame();
+  assert.deepEqual(g.belief('white'), { exact: true, total: 1, holdsTruth: true },
+    'the opening position is common knowledge, so P is the single true board');
+
+  g.play('white', 'e2', 'e4', { commit: true });
+  g.play('black', 'f7', 'f6');
+  let b = g.belief('white');
+  assert.equal(b.exact, true, 'still exact after one full round');
+  assert.ok(b.total > 1, 'and now uncertain, since black\'s reply was hidden');
+  assert.equal(b.holdsTruth, true, 'the real board is among the possibilities');
+
+  g.play('white', 'g1', 'f3', { commit: true });
+  g.play('black', 'd7', 'd6');
+  b = g.belief('white');
+  assert.equal(b.exact, true, 'still exact after two');
+  assert.ok(b.total > 10, `uncertainty compounds with each hidden reply, got ${b.total}`);
+  assert.equal(b.holdsTruth, true, 'the real board is STILL among the possibilities');
+});
+
+test('belief upkeep: a seat NOT told its own moves loses exactness from the second turn', () => {
+  // The regression this pins: without the commit, chess falls back to a heuristic
+  // guess, and the analysis silently averages over boards that cannot occur.
+  const g = fogGame();
+  assert.equal(g.belief('white').exact, true, 'turn 1 is fine either way — nothing of ours has moved yet');
+
+  g.play('white', 'e2', 'e4'); // no commit — the omission
+  g.play('black', 'f7', 'f6');
+  assert.equal(g.belief('white').exact, false,
+    'our own move never reached the belief, so nothing is consistent and exactness is dropped');
+});
+
+test('getVisibleState: the opponent\'s hidden move does not ride along in lastActions', () => {
+  const g = fogGame();
+  g.play('white', 'e2', 'e4', { commit: true });
+  g.play('black', 'b8', 'c6'); // to a square white cannot see
+
+  const view = ChessGame.getVisibleState(g.state, 'white');
+  assert.equal(view.board.c6, undefined, 'the knight itself is correctly hidden');
+  assert.ok(!(view.lastActions ?? []).some(pa => pa.playerId === 'black'),
+    'and so is the move that put it there — otherwise the from/to squares hand it straight back');
+  // Our own move stays: it is not a secret from us, and the UI animates it.
+  const own = ChessGame.getVisibleState(g.state, 'black').lastActions ?? [];
+  assert.ok(own.some(pa => pa.playerId === 'black' && pa.action.to === 'c6'),
+    'a seat still sees its own last move');
+});

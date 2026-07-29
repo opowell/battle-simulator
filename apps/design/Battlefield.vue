@@ -202,7 +202,14 @@ const atLatest     = computed(() => histPos.value >= histLength.value - 1);
 // frame). Falls back to `field` for games/paths that don't provide it.
 const snapshotField = () => props.resolvedField ?? props.field;
 
-watch(() => props.liveState?.id, () => {
+// Restart on a new session, and equally on a change of VIEWING SEAT (hotseat: the
+// turn passes, so App.vue's viewAsId re-fetches through the other player's eyes).
+// Every recorded frame is a snapshot of one seat's fog view; appending the new
+// seat's frames to the old seat's would make a timeline you cannot read — scrubbing
+// back would silently change whose eyes you are looking through, and anything
+// derived by diffing frames (see everSeenUnits below) would report the whole army
+// appearing and vanishing. One timeline per viewer instead.
+watch(() => [props.liveState?.id, props.liveState?.viewerId], () => {
   stopHistoryPlay();
   fieldHistory.value = snapshotField() ? [snapshotField()] : [];
   histPos.value = 0;
@@ -1028,18 +1035,15 @@ function handleSetMarker(col, row, type) {
   emit('set-marker', { playerId: humanPlayerId.value, col, row, type });
 }
 
-// Which human seat the analysis panel analyzes for. Prefers whoever's turn it
-// currently is (when that's a human seat) over humanPlayerId's fixed "first
-// human" — in a hotseat game (both seats human) humanPlayerId would otherwise
-// always resolve to the same seat and show that side's analysis even during
-// the other seat's turn. Falls back to humanPlayerId when the AI is pending
-// (the ordinary human-vs-AI case: preview my own side ahead of my next turn).
-const analysisPlayerId = computed(() => {
-  const humans = props.liveState?.humanPlayers ?? [];
-  const pending = props.liveState?.pendingPlayer;
-  if (pending && humans.includes(pending)) return pending;
-  return humanPlayerId.value;
-});
+// Which human seat the analysis panel analyzes for: whichever seat this snapshot
+// was rendered for, as stamped by the server (`viewerId`). Deliberately NOT
+// re-derived from pendingPlayer here — the board's fog comes from the snapshot, so
+// deriving the analysis side separately is how you end up advising one player
+// about their position while drawing the other player's fog. App.vue's viewAsId
+// owns the choice (it follows the active seat in a hotseat game and re-fetches
+// when the turn passes); this just follows it. `viewerId` is absent for
+// non-fog/observer snapshots, where the fixed human seat is the right answer.
+const analysisPlayerId = computed(() => props.liveState?.viewerId ?? humanPlayerId.value);
 
 // ── opening view ──────────────────────────────────────────────
 // A zoomable map is bigger than the stage, so opening it centred on the board drops the
@@ -1225,7 +1229,14 @@ const rosterTeams = computed(() =>
 // ── units lost tracking ───────────────────────────────────────
 const everSeenUnits = ref({});
 
-watch(() => props.liveState?.id, () => {
+// Reset on a new session, and also whenever the seat we're viewing through changes
+// (hotseat: the turn passes, see App.vue's viewAsId). This roster is "units seen at
+// least once, minus units visible now", which under fog already conflates captured
+// with merely out-of-sight; carrying it across a perspective switch made that much
+// worse — everything the PREVIOUS seat could see is invisible to the new one, so the
+// opponent's whole army would be listed as captured. Per-viewer, it degrades to
+// "captures this seat has actually witnessed", which is the honest fog answer.
+watch(() => [props.liveState?.id, props.liveState?.viewerId], () => {
   everSeenUnits.value = {};
 }, { immediate: true });
 

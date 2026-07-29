@@ -118,9 +118,19 @@ let activeStream = null;
 // and the selected agent have opted in; historical-ply review always keeps the
 // server SSE path (the worker only knows how to fetch the *live* position).
 // Created lazily and reused.
+//
+// FOG also keeps the SSE path, for a reason that isn't about cost: an
+// imperfect-information belief is built up ACROSS turns (each turn advances and
+// filters the set of positions still consistent with everything seen so far), so
+// it only exists where something persists between analyses. The server has that —
+// one long-lived tracker per session and seat, kept current by
+// Session.syncSeatBelief. The worker fetches a fresh position per call and keeps
+// nothing, so its tracker would attach mid-game every single time and fall back to
+// a guess. Under fog the belief IS the analysis, so it has to come from the side
+// that can actually maintain one.
 let analysisWorker = null;
 const useWorker = computed(() =>
-  props.ply == null && !!clientGame.value && !!currentAgent.value?.clientAnalyze,
+  props.ply == null && !props.fog && !!clientGame.value && !!currentAgent.value?.clientAnalyze,
 );
 function ensureWorker() {
   if (!analysisWorker) {

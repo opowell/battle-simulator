@@ -725,6 +725,12 @@ class Session {
       phase: rawState?.currentPhase ?? null,
       activePlayers: rawState?.activePlayers ?? [],
       humanPlayers: [...this.apiAgents.keys()],
+      // Which seat this snapshot was rendered for — i.e. whose fog it is. The
+      // client derives the viewer itself (App.vue's viewAsId) but must not
+      // re-derive it a second time somewhere else: a board drawn from one seat's
+      // eyes alongside an analysis computed for the other is silently misleading.
+      // Echoing it back keeps every consumer on the one authoritative answer.
+      viewerId: fogNoPlayer ? null : (playerId ?? null),
       pendingPlayer: pending?.playerId ?? null,
       // All humans currently waited on (simultaneous mode can have several at once).
       pendingPlayers: [...this.apiAgents.entries()].filter(([, a]) => a.pending).map(([id]) => id),
@@ -747,6 +753,35 @@ class Session {
     if (this.fog && !playerId) throw new Error('player required for fog-of-war session');
     const state = (this.fog && playerId && game.getVisibleState) ? game.getVisibleState(rawState, playerId) : rawState;
     return sanitizePlayers(state);
+  }
+
+  // Keep a HUMAN seat's imperfect-information belief up to date, the same way an AI
+  // seat's is kept by the generic ObscuroAgent (see agents/ObscuroAgent.js: it
+  // samples worlds — which advances the belief for this turn — and then reports its
+  // chosen move through onActionCommitted).
+  //
+  // Both halves are needed, in this order, on EVERY one of the seat's turns. A
+  // belief that advances the opponent from a position where our OWN last move was
+  // never applied is inconsistent with what we now observe, so it empties out and
+  // the tracker abandons exactness — after which chess's fallback hands back a
+  // confidently wrong guess (the enemy army still on its starting squares). Nothing
+  // used to do this for a human seat, because onActionCommitted's only caller is
+  // the AI agent, so the analysis panel — whose whole job is to reason about the
+  // HUMAN's side — was reading a broken belief from the second turn onward.
+  //
+  // Called just before the action is handed to the engine, so `engine.state` is
+  // still the pre-move position this seat actually observed when choosing.
+  // Idempotent per turn (the game's own trackers key on turn number), so it costs
+  // nothing when the analysis panel has already advanced the belief this turn.
+  syncSeatBelief(playerId, action) {
+    if (!this.fog) return;
+    const { game } = GAMES[this.gameName];
+    if (!game.beliefPopulation || !game.onActionCommitted || !game.getVisibleState) return;
+    try {
+      const view = game.getVisibleState(this.engine.state, playerId);
+      game.beliefPopulation(view, playerId);      // advance + filter for this turn
+      game.onActionCommitted(view, playerId, action); // then apply the move we just made
+    } catch { /* belief upkeep is best-effort; never block a legal move */ }
   }
 
   // The EXACT resolved state at fraction `f` (0..1) of the last simultaneous round —
@@ -1100,6 +1135,10 @@ async function handleSubmitAction(req, res, id) {
   } catch (e) {
     return err(res, 400, e.message);
   }
+
+  // Record the move against this seat's own fog belief before the engine advances
+  // past the position it was chosen from — see Session.syncSeatBelief.
+  session.syncSeatBelief(playerId, action);
 
   try {
     agent.submit(action);
