@@ -346,6 +346,7 @@ const cells = computed(() => {
         fogged:  !!gridFogVisibleSet.value && !gridFogVisibleSet.value.has(k),
         vision:  !!vis && vis.has(k),
         marker:  markers.get(k) ?? null,
+        anno:    circleMarks.value.has(k),
         units:   unitsAt.get(k) ?? [],
         checker: checkerOn.value && (rx + y) % 2 === 1,
         legal:   showLegal && legal.has(k),
@@ -505,7 +506,9 @@ function _onDragEnd() {
   dragUnit.value = null; dragPos.value = null; dragHoverSq.value = null;
 }
 function handleUnitMousedown(e, u) {
-  if (!props.dragToMove || u.dead) return;
+  // Right/middle-button presses are left alone here so they bubble to the root's
+  // onAnnoMouseDown below (right-click annotations work over units too).
+  if (e.button !== 0 || !props.dragToMove || u.dead) return;
   // A piece standing on a legal target square is a capture target — let the click through.
   if (props.legalSquares.some(([lc, lr]) => lc === Math.floor(u.x) && lr === Math.floor(u.y))) return;
   e.stopPropagation();
@@ -518,6 +521,91 @@ function handleUnitMousedown(e, u) {
 onUnmounted(() => {
   window.removeEventListener('mousemove', _onDragMove);
   window.removeEventListener('mouseup',   _onDragEnd);
+  window.removeEventListener('mousemove', _onAnnoMove);
+  window.removeEventListener('mouseup',   _onAnnoUp);
+});
+
+// ── right-click annotations (circles + arrows) ─────────────────────────────────
+// Chess.com/lichess-style board markup: right-click a square to ring it, right-click
+// and drag between two squares to draw an arrow between their centres, right-click
+// again on the same pair to erase it. Purely local UI state — never sent to the
+// server and never touched by fog/vision — annotations are exactly as useful under
+// fog as in the open, so a reveal must never wipe them.
+const circleMarks = ref(new Set());  // "x,y" keys
+const arrowMarks  = ref([]);         // [{ from: [x,y], to: [x,y] }]
+const annoFrom    = ref(null);       // [x, y] where the right-button press started
+const annoTo      = ref(null);       // [x, y] currently under the cursor, for the drag preview
+
+function arrowKey(from, to) { return `${from[0]},${from[1]}>${to[0]},${to[1]}`; }
+
+// Same client → cell lookup as _updateDragPos above, kept separate since this one has
+// no ghost to position and runs off the right mouse button instead.
+function cellAt(clientX, clientY) {
+  if (!rootEl.value) return null;
+  const r = rootEl.value.getBoundingClientRect();
+  const lx = clientX - r.left, ly = clientY - r.top;
+  let col = Math.floor((lx - originX.value) / cellPx.value);
+  const row = Math.floor((ly - originY.value) / cellPx.value);
+  if (wrap.value) col = ((col % W.value) + W.value) % W.value;
+  return (col >= 0 && col < W.value && row >= 0 && row < H.value) ? [col, row] : null;
+}
+
+function _onAnnoMove(e) { annoTo.value = cellAt(e.clientX, e.clientY); }
+function _onAnnoUp(e) {
+  window.removeEventListener('mousemove', _onAnnoMove);
+  window.removeEventListener('mouseup',   _onAnnoUp);
+  const from = annoFrom.value, to = cellAt(e.clientX, e.clientY);
+  annoFrom.value = null; annoTo.value = null;
+  if (!from || !to) return;
+  if (from[0] === to[0] && from[1] === to[1]) {
+    const k = `${from[0]},${from[1]}`;
+    const next = new Set(circleMarks.value);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    circleMarks.value = next;
+  } else {
+    const key = arrowKey(from, to);
+    const exists = arrowMarks.value.some(a => arrowKey(a.from, a.to) === key);
+    arrowMarks.value = exists
+      ? arrowMarks.value.filter(a => arrowKey(a.from, a.to) !== key)
+      : [...arrowMarks.value, { from, to }];
+  }
+}
+function onAnnoMouseDown(e) {
+  if (e.button !== 2) return;
+  const from = cellAt(e.clientX, e.clientY);
+  if (!from) return;
+  e.preventDefault(); // no native text/image selection while dragging out an arrow
+  annoFrom.value = from; annoTo.value = from;
+  window.addEventListener('mousemove', _onAnnoMove);
+  window.addEventListener('mouseup',   _onAnnoUp);
+}
+
+// Shared shaft+head geometry (lichess-style) for both a committed arrow and the live
+// drag preview — see suggestionArrowGeom above for the same shape, ranked differently.
+function annoArrowShape(from, to) {
+  const fx = from[0] + 0.5, fy = from[1] + 0.5;
+  const tx = to[0] + 0.5, ty = to[1] + 0.5;
+  const fullLen  = Math.hypot(plen(tx - fx), plen(ty - fy));
+  const rotDeg   = Math.atan2(ty - fy, tx - fx) * 180 / Math.PI;
+  const thick    = Math.max(5, cellPx.value * 0.16);
+  const headLen  = Math.max(10, cellPx.value * 0.34);
+  const headHalf = headLen * 0.62;
+  return {
+    shaftLeft: px(fx), shaftTop: py(fy), rotDeg,
+    shaftLen: Math.max(0, fullLen - headLen * 0.7), thick,
+    tipX: px(tx), tipY: py(ty), headLen, headHalf,
+  };
+}
+const annoBorderPx = computed(() => Math.max(2, Math.round(cellPx.value * 0.07)) + 'px');
+const annoArrowGeom = computed(() =>
+  arrowMarks.value.map(a => ({ key: arrowKey(a.from, a.to), ...annoArrowShape(a.from, a.to) })));
+// While dragging: no preview until the cursor leaves the starting square (a same-square
+// release toggles a circle instead, so a zero-length arrow would be misleading).
+const annoPreview = computed(() => {
+  if (!annoFrom.value || !annoTo.value) return null;
+  const [fx, fy] = annoFrom.value, [tx, ty] = annoTo.value;
+  if (fx === tx && fy === ty) return null;
+  return annoArrowShape(annoFrom.value, annoTo.value);
 });
 
 // ── clicks (same emit contract as SchematicLayer: select / sq-click / set-marker) ──
@@ -554,7 +642,9 @@ function handleUnitClick(e, u) {
 <template>
   <div ref="rootEl" class="bf-layer hl-root"
        :style="{ background: rdr.stage, cursor: dragUnit ? 'grabbing' : '' }"
-       @click="handleRootClick">
+       @click="handleRootClick"
+       @mousedown="onAnnoMouseDown"
+       @contextmenu.prevent>
 
     <!-- The board: an exact-pixel CSS grid, one cell per square -->
     <div class="hl-board" :style="boardStyle">
@@ -576,6 +666,7 @@ function handleUnitClick(e, u) {
         <div v-if="c.legal"    class="hl-fill hl-legal"/>
         <div v-if="c.dragHover" class="hl-fill hl-draghover"/>
         <div v-if="c.selEmpty" class="hl-fill hl-dashed"/>
+        <div v-if="c.anno" class="hl-anno-circle" :style="{ borderWidth: annoBorderPx }"/>
 
         <HtmlUnit v-for="u in c.units" :key="u.id"
           :unit="u" :r="unitR(u)" :rdr="rdr" :shape="unitShape(u)"
@@ -693,6 +784,38 @@ function handleUnitClick(e, u) {
            }"/>
     </template>
 
+    <!-- User-drawn annotations (right-click circle / right-click-drag arrow): local-only
+         board markup, plus a live preview of the arrow currently being dragged out —
+         see the script's "right-click annotations" section. -->
+    <template v-for="a in annoArrowGeom" :key="'anno'+a.key">
+      <div class="hl-noevents hl-anno-arrow"
+           :style="{
+             position:'absolute', left: a.shaftLeft+'px', top: a.shaftTop+'px',
+             width: a.shaftLen+'px', height: a.thick+'px', marginTop: (-a.thick/2)+'px',
+             transform: `rotate(${a.rotDeg}deg)`, transformOrigin: '0 50%',
+           }"/>
+      <div class="hl-noevents hl-anno-arrow-head"
+           :style="{
+             position:'absolute', left: (a.tipX - a.headLen)+'px', top: (a.tipY - a.headHalf)+'px',
+             borderWidth: a.headHalf+'px '+0+' '+a.headHalf+'px '+a.headLen+'px',
+             transform: `rotate(${a.rotDeg}deg)`, transformOrigin: (a.headLen)+'px '+a.headHalf+'px',
+           }"/>
+    </template>
+    <template v-if="annoPreview">
+      <div class="hl-noevents hl-anno-arrow hl-anno-arrow--preview"
+           :style="{
+             position:'absolute', left: annoPreview.shaftLeft+'px', top: annoPreview.shaftTop+'px',
+             width: annoPreview.shaftLen+'px', height: annoPreview.thick+'px', marginTop: (-annoPreview.thick/2)+'px',
+             transform: `rotate(${annoPreview.rotDeg}deg)`, transformOrigin: '0 50%',
+           }"/>
+      <div class="hl-noevents hl-anno-arrow-head hl-anno-arrow--preview"
+           :style="{
+             position:'absolute', left: (annoPreview.tipX - annoPreview.headLen)+'px', top: (annoPreview.tipY - annoPreview.headHalf)+'px',
+             borderWidth: annoPreview.headHalf+'px '+0+' '+annoPreview.headHalf+'px '+annoPreview.headLen+'px',
+             transform: `rotate(${annoPreview.rotDeg}deg)`, transformOrigin: (annoPreview.headLen)+'px '+annoPreview.headHalf+'px',
+           }"/>
+    </template>
+
     <!-- Queued move waypoints (civ1 goto orders): dashed hop + numbered stop, per unit -->
     <template v-for="seg in queueSegments" :key="'q'+seg.key">
       <div class="hl-noevents hl-queue-line"
@@ -779,6 +902,16 @@ img.hl-fill { display: block; width: 100%; height: 100%; }
 .hl-suggest-head.hl-suggest--top { border-left-color: rgba(66,198,230,0.85); background: none; opacity: 1; }
 .hl-suggest--hovered { background: rgba(242,180,65,0.95); opacity: 1; }
 .hl-suggest-head.hl-suggest--hovered { border-left-color: rgba(242,180,65,0.95); background: none; opacity: 1; }
+/* User-drawn annotations (right-click circle / right-click-drag arrow): a distinct
+   yellow so they never get mistaken for a game-state highlight (legal-move cyan,
+   last-move/suggestion amber, selection white). */
+.hl-anno-circle { place-self: center; width: 86%; height: 86%; border-radius: 50%;
+  border-style: solid; border-color: rgba(255, 221, 0, 0.85); box-sizing: border-box;
+  pointer-events: none; }
+.hl-anno-arrow { background: rgba(255, 221, 0, 0.85); border-radius: 2px; }
+.hl-anno-arrow-head { width: 0; height: 0; border-style: solid;
+  border-color: transparent transparent transparent rgba(255, 221, 0, 0.85); }
+.hl-anno-arrow--preview { opacity: 0.6; }
 .hl-queue-line { height: 0; opacity: 0.85; }
 .hl-queue-dot {
   position: absolute; transform: translate(-50%, -50%);
