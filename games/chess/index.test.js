@@ -644,6 +644,26 @@ test('fog markers: revealing a non-unique piece leaves other same-type markers a
   assert.equal(result.gameSpecific.markers.white.e8, 'r', 'two rooks remain — the e8 marker cannot be ruled out and must stay');
 });
 
+test('applyActions: a non-capture push into an occupied square fails instead of capturing', () => {
+  // The action set for fog search/analysis is generated once against the mover's
+  // OWN limited view of the board (a blocked pawn-push square is deliberately
+  // hidden — see getVisibleSquares) and then replayed against sampled hidden-state
+  // worlds that may disagree with that view. Here the mover's own action set says
+  // "d4-d5 is a plain push" but THIS particular world already has a black pawn on
+  // d5 — applying it must not silently overwrite (illegally "capture" via a
+  // straight push) the piece that's actually there.
+  const board = {
+    d4: unit('wPd', 'white', 'pawn', 'd4'),
+    d5: unit('bPd', 'black', 'pawn', 'd5'),
+  };
+  const state = markerFogState(board, { white: {}, black: {} });
+  const result = ChessGame.applyActions(state, [
+    { playerId: 'white', action: { type: 'move', from: 'd4', to: 'd5', unitId: 'wPd' } },
+  ]);
+  assert.equal(result.board.d4?.id, 'wPd', 'the white pawn stays put — the push failed');
+  assert.equal(result.board.d5?.id, 'bPd', 'the black pawn on d5 must not be overwritten by an illegal straight-push capture');
+});
+
 test('chess fog self-play completes with a valid result', async () => {
   const players = [
     { id: 'white', name: 'White', agent: ChessAgent },

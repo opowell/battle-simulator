@@ -303,33 +303,51 @@ export const ChessGame = {
     } else {
       // Regular move / capture / en passant / promotion
       const piece = board[action.from];
-      board[action.from] = undefined;
-      const newType = action.payload?.promote ?? piece.type;
-      board[action.to] = { ...piece, position: action.to, type: newType };
-      moved = [{ from: action.from, to: action.to }];
+      // The action set is generated once against the mover's OWN (fog-limited)
+      // view of the board and then replayed against many hidden-state worlds
+      // during search/analysis (see the "NO getSearchLegalActions" note above).
+      // Those can disagree: a pawn push whose target square looked empty to the
+      // mover (a blocked push square stays deliberately hidden — see
+      // getVisibleSquares in board.js) can turn out to be occupied in a
+      // specific sampled world. Blindly relocating the piece there would
+      // fabricate an illegal capture (pawns can't capture by pushing straight)
+      // and hand the leaf evaluator a position that could never occur — inflate
+      // its score enough and it gets suggested as the best move. Treat that
+      // case as the real move failing instead: the piece stays put and nothing
+      // else about the position changes.
+      const blockedHere = !action.isCapture && !action.isEnPassant && board[action.to] != null;
 
-      if (action.isEnPassant && action.capturedSquare) {
-        board[action.capturedSquare] = undefined;
-      }
+      if (blockedHere) {
+        moved = [];
+      } else {
+        board[action.from] = undefined;
+        const newType = action.payload?.promote ?? piece.type;
+        board[action.to] = { ...piece, position: action.to, type: newType };
+        moved = [{ from: action.from, to: action.to }];
 
-      // Update half-move clock
-      halfMoveClock = (piece.type === 'pawn' || action.isCapture) ? 0 : halfMoveClock + 1;
+        if (action.isEnPassant && action.capturedSquare) {
+          board[action.capturedSquare] = undefined;
+        }
 
-      // Track en passant target for next move
-      if (action.isDoublePush) {
-        const fi = action.from.charCodeAt(0) - 'a'.charCodeAt(0);
-        const fromRank = parseInt(action.from[1], 10);
-        const dir = playerId === 'white' ? 1 : -1;
-        enPassantTarget = String.fromCharCode('a'.charCodeAt(0) + fi) + (fromRank + dir);
-      }
+        // Update half-move clock
+        halfMoveClock = (piece.type === 'pawn' || action.isCapture) ? 0 : halfMoveClock + 1;
 
-      // Update castling rights if king or rook moved
-      castlingRights = updateCastlingRights(castlingRights, piece, action.from);
-      // Also revoke if a rook is captured on its starting square
-      if (action.isCapture && action.to) {
-        const captured = state.board[action.to];
-        if (captured?.type === 'rook') {
-          castlingRights = updateCastlingRights(castlingRights, captured, action.to);
+        // Track en passant target for next move
+        if (action.isDoublePush) {
+          const fi = action.from.charCodeAt(0) - 'a'.charCodeAt(0);
+          const fromRank = parseInt(action.from[1], 10);
+          const dir = playerId === 'white' ? 1 : -1;
+          enPassantTarget = String.fromCharCode('a'.charCodeAt(0) + fi) + (fromRank + dir);
+        }
+
+        // Update castling rights if king or rook moved
+        castlingRights = updateCastlingRights(castlingRights, piece, action.from);
+        // Also revoke if a rook is captured on its starting square
+        if (action.isCapture && action.to) {
+          const captured = state.board[action.to];
+          if (captured?.type === 'rook') {
+            castlingRights = updateCastlingRights(castlingRights, captured, action.to);
+          }
         }
       }
     }
