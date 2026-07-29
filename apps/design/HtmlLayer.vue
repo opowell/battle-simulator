@@ -61,6 +61,12 @@ const props = defineProps({
   // [{ from: [col,row], to: [col,row], rank, hovered }], drawn as chess.com-style
   // arrows between cell centres — see AnalysisPanel.vue.
   suggestionArrows: { type: Array, default: () => [] },
+  // A guessed board from the analysis engine's belief population (Battlefield.vue's
+  // beliefMarkers): [{ col, row, type }] for the pieces the fog could be hiding.
+  // Drawn ON TOP of the real fog — the veil itself is untouched, so what the viewer
+  // can actually see never changes; these are explicitly a hypothesis, and are
+  // styled apart from the player's own hand-placed markers to keep that clear.
+  beliefMarkers:    { type: Array, default: () => [] },
 });
 const emit = defineEmits(['select', 'sq-click', 'set-marker']);
 const imgSrc   = window.api.imgSrc;
@@ -248,6 +254,11 @@ const squareMarkerList = computed(() => {
 // Reveal mode shows every piece at its true position directly (no fog, see isVisible), so
 // no markers are needed there.
 const displayMarkers = computed(() => props.revealAll ? [] : squareMarkerList.value);
+// The belief overlay, on its own layer: a hand-placed marker is the player's own
+// note and must not be overwritten by a hypothesis, so where both land on one
+// square the belief piece is drawn alongside (offset + dashed) rather than
+// replacing it.
+const beliefList = computed(() => (!props.fog || props.revealAll) ? [] : props.beliefMarkers);
 
 // ── per-unit presentation ─────────────────────────────────────────────────────
 function isVisible(u) {
@@ -315,6 +326,8 @@ const cells = computed(() => {
   }
   const markers = new Map();
   for (const m of displayMarkers.value) markers.set(`${m.col},${m.row}`, m);
+  const beliefs = new Map();
+  for (const m of beliefList.value) beliefs.set(`${m.col},${m.row}`, m);
   const legal = new Set(props.legalSquares.map(([c, r]) => `${c},${r}`));
   const last  = new Set(props.lastMoveSquares.map(([c, r]) => `${c},${r}`));
   const vis   = selectedVisionSet.value;
@@ -346,6 +359,7 @@ const cells = computed(() => {
         fogged:  !!gridFogVisibleSet.value && !gridFogVisibleSet.value.has(k),
         vision:  !!vis && vis.has(k),
         marker:  markers.get(k) ?? null,
+        belief:  beliefs.get(k) ?? null,
         units:   unitsAt.get(k) ?? [],
         checker: checkerOn.value && (rx + y) % 2 === 1,
         legal:   showLegal && legal.has(k),
@@ -571,6 +585,9 @@ function handleUnitClick(e, u) {
         <div v-if="c.fogged"  class="hl-fill" :style="{ background: rdr.fogA }"/>
         <div v-if="c.vision"  class="hl-fill hl-vision"/>
         <img v-if="c.marker"  class="hl-marker-img" :src="markerSrc(c.marker)" draggable="false"/>
+        <div v-if="c.belief" class="hl-belief">
+          <img class="hl-belief-img" :src="markerSrc(c.belief)" draggable="false"/>
+        </div>
         <div v-if="c.selTint"  class="hl-fill hl-seltint"/>
         <div v-if="c.lastMove" class="hl-fill hl-lastmove"/>
         <div v-if="c.legal"    class="hl-fill hl-legal"/>
@@ -764,6 +781,13 @@ img.hl-fill { display: block; width: 100%; height: 100%; }
 .hl-dashed   { border: 2px dashed rgba(255,255,255,0.85); }
 .hl-ghost { position: absolute; display: grid; transform: translate(-50%, -50%); pointer-events: none; z-index: 2; opacity: 0.9; }
 .hl-marker-img { place-self: center; width: 80%; height: 80%; opacity: 0.55; image-rendering: pixelated; pointer-events: none; }
+/* Belief overlay: a dashed ring says "this is the engine's guess, not a sighting"
+   — deliberately unlike both a real piece and the player's own solid markers. */
+.hl-belief {
+  place-self: center; width: 86%; height: 86%; display: grid; pointer-events: none;
+  border: 1px dashed var(--accent); border-radius: 50%; opacity: 0.85;
+}
+.hl-belief-img { place-self: center; width: 78%; height: 78%; opacity: 0.75; image-rendering: pixelated; }
 
 .hl-zone { border-radius: 2px; }
 .hl-zone-label { position: absolute; left: 4px; top: 1px; font-size: 10px; letter-spacing: 0.5px; }

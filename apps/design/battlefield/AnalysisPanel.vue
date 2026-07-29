@@ -1,6 +1,7 @@
 <script setup>
 import { ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue';
 import AnalysisCandidateList from './AnalysisCandidateList.vue';
+import BeliefWorldStepper from './BeliefWorldStepper.vue';
 
 // Live/replay "what's good here" panel: pick an AI, see its ranked move
 // suggestions for the position currently on screen, with live search progress
@@ -25,7 +26,7 @@ const props = defineProps({
   logRevision: { type: Number, default: 0 },
   fog:       { type: Boolean, default: false },
 });
-const emit = defineEmits(['hover-move', 'select-move', 'candidates']);
+const emit = defineEmits(['hover-move', 'select-move', 'candidates', 'belief-world']);
 
 // ── AI roster (which agents this game's server side can analyze with) ──────
 // shallowRef, not ref: these plain data objects get passed to the analysis
@@ -63,6 +64,12 @@ const hoveredIdx = ref(-1);
 // "Round 12/30" — see progressLabel below), or null once the final result has
 // landed (or before anything's started).
 const progress = ref(null);
+// The belief population itself ({ total, exact, depth, moves, worlds }) — the
+// set of boards consistent with what the viewer can see, which the analysis
+// already reasons over internally (see games/chess/ObscuroAgent.js). Rides along
+// on a fraction of the progress frames because it is bulky, so a frame without
+// it means "unchanged", not "gone".
+const belief = ref(null);
 
 const fmtNum = (n) => (n ?? 0).toLocaleString();
 
@@ -122,15 +129,16 @@ function ensureWorker() {
     analysisWorker.onmessage = (e) => {
       const d = e.data || {};
       if (d.type === 'error') {
-        candidates.value = []; errorMsg.value = d.message || 'Analysis error';
+        candidates.value = []; belief.value = null; errorMsg.value = d.message || 'Analysis error';
         progress.value = null; loading.value = false; return;
       }
       candidates.value = d.candidates ?? candidates.value;
+      if (d.beliefWorlds) belief.value = d.beliefWorlds;
       if (d.type === 'done') {
         loading.value = false;
         progress.value = d.exhaustive ? progressLabel(d) : null;
       } else {
-        progress.value = progressLabel(d);
+        progress.value = progressLabel(d) ?? progress.value;
       }
     };
     analysisWorker.onerror = () => { errorMsg.value = 'Analysis worker failed'; loading.value = false; };
@@ -153,6 +161,7 @@ function runAnalysis() {
   // changed underneath it (e.g. right after playing a move) is actively
   // misleading, not just out of date.
   candidates.value = [];
+  belief.value = null;
   progress.value = null;
   if (!props.enabled || !panelOn.value || paused.value) return;
   if (!props.sessionId || !props.playerId || !selectedAgentId.value) return;
@@ -175,12 +184,18 @@ function runAnalysis() {
     (data) => {
       if (data.error) {
         candidates.value = [];
+        belief.value = null;
         errorMsg.value = data.error;
         progress.value = null;
         loading.value = false;
         return;
       }
-      candidates.value = data.candidates ?? [];
+      // A frame may legitimately carry no candidates (the belief-only opener,
+      // which hands over the plausible boards before the first batch is priced);
+      // that must not blank a list already on screen. Stale suggestions are
+      // cleared where the position/engine actually changes, not here.
+      if (data.candidates) candidates.value = data.candidates;
+      if (data.beliefWorlds) belief.value = data.beliefWorlds;
       // A settled, exhaustive result keeps its "All N worlds evaluated" label so
       // the viewer can see the answer is exact (not merely "done, stopped"); any
       // other done frame just clears the progress line.
@@ -188,13 +203,16 @@ function runAnalysis() {
         loading.value = false;
         progress.value = data.exhaustive ? progressLabel(data) : null;
       } else {
-        progress.value = progressLabel(data);
+        progress.value = progressLabel(data) ?? progress.value;
       }
     },
   );
 }
 
-onUnmounted(() => { stopAnalysis(); analysisWorker?.terminate(); analysisWorker = null; });
+onUnmounted(() => {
+  stopAnalysis(); analysisWorker?.terminate(); analysisWorker = null;
+  emit('belief-world', null); // never leave a guessed board painted over the fog
+});
 
 watch(
   () => [props.enabled, props.sessionId, props.playerId, props.ply, props.logRevision, selectedAgentId.value, panelOn.value, paused.value],
@@ -205,6 +223,7 @@ watch(
     // and any in-flight worker run so a stale one can't keep posting frames.
     stopAnalysis();
     candidates.value = [];
+    belief.value = null;
     progress.value = null;
     if (props.enabled && panelOn.value && !paused.value) scheduleAnalysis();
   },
@@ -215,6 +234,11 @@ function onHover(i) { hoveredIdx.value = i; emit('hover-move', i >= 0 ? (candida
 function onSelect(i) { emit('select-move', candidates.value[i]?.move ?? null); }
 
 watch(candidates, (c) => emit('candidates', c));
+// The board overlay must follow the panel's own on/off/pause state — a phantom
+// army left drawn over the fog after the analysis is switched off would read as
+// real information.
+const beliefShown = computed(() => panelOn.value && !paused.value && !!belief.value);
+watch(beliefShown, (on) => { if (!on) emit('belief-world', null); });
 </script>
 
 <template>
@@ -253,6 +277,13 @@ watch(candidates, (c) => emit('candidates', c));
       <div v-else-if="!candidates.length" class="an-msg">No suggestions.</div>
       <AnalysisCandidateList v-else :candidates="candidates" :hoveredIndex="hoveredIdx" :max="5"
         @hover="onHover" @select="onSelect"/>
+
+      <!-- Step through the boards the fog could be hiding (drawn as markers on
+           the real, still-fogged board). Only meaningful under fog: with perfect
+           information the population is the one board already on screen. -->
+      <BeliefWorldStepper v-if="fog && beliefShown"
+        :belief="belief" :candidates="candidates"
+        @world="emit('belief-world', $event)"/>
     </template>
   </div>
 </template>
