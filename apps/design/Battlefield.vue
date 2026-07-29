@@ -270,6 +270,15 @@ const analysisEnabled = computed(() => props.liveState?.params?.config?.showAnal
 const analysisPly = computed(() => (forking.value || atLatest.value) ? null : histPos.value);
 const analysisCandidates = ref([]);
 const hoveredSuggestion   = ref(null);
+// One member of the analysis engine's belief population — the board the panel's
+// stepper currently has selected (see AnalysisPanel.vue / BeliefWorldStepper.vue).
+// Null whenever nothing is selected or the panel is off. Its `hidden` list is
+// already in grid coordinates, so this stays game-agnostic: the board just paints
+// the guessed pieces as markers on top of the real fog, which is untouched.
+const beliefWorld = ref(null);
+const beliefMarkers = computed(() =>
+  (forking.value ? [] : (beliefWorld.value?.hidden ?? []))
+    .map(h => ({ col: h.x, row: h.y, type: h.type })));
 
 // Whoever is to move at the CURRENTLY DISPLAYED ply (not necessarily the live
 // game's pending player — while browsing replay these differ). Chess strictly
@@ -1443,6 +1452,7 @@ onUnmounted(() => {
           :zoomPx="zoomEnabled ? zoomPx : null"
           :center="viewCenter"
           :suggestionArrows="suggestionArrows"
+          :beliefMarkers="beliefMarkers"
           @select="selectUnit"
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>
@@ -1477,6 +1487,7 @@ onUnmounted(() => {
           :fog="fog"
           @candidates="analysisCandidates = $event"
           @hover-move="hoveredSuggestion = $event"
+          @belief-world="beliefWorld = $event"
           @select-move="forkPlayMove"/>
 
         <RosterPanel v-if="ui.showRoster !== false"

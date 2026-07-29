@@ -581,6 +581,91 @@ export class ExactBelief {
     }
     return out;
   }
+
+  /**
+   * Rank P by MARGINAL PLAUSIBILITY, so a viewer can be shown "the most likely
+   * board" rather than an arbitrary member of the set.
+   *
+   * Careful about what this is. The posterior over P is UNIFORM — every
+   * position in P is exactly as consistent with the observation history as
+   * every other, so "the single most likely board" is not a question the exact
+   * belief can answer on its own. What it CAN answer is which square holds
+   * which piece across the set: the per-square marginal p(square → piece) is a
+   * real, well-defined quantity (just a count over P). This ranks a position by
+   * how well it agrees with those marginals — the product-of-independent-
+   * marginals surrogate
+   *
+   *     score(pos) = Σ_squares log p(square → pos[square])
+   *
+   * — which puts the CONSENSUS board (each hidden piece where most of the set
+   * puts it) on top and the eccentric corners of P at the bottom. Squares that
+   * are identical across all of P (everything the viewer can actually see)
+   * contribute log 1 = 0, so only genuine uncertainty moves the score. The
+   * returned `prob` is that score softmaxed over the whole set, i.e. a proper
+   * distribution over P under the independence surrogate — NOT the true
+   * posterior, which is flat. Presented to the user as "plausibility".
+   *
+   * `approx` flags a population that is a re-acquired SUPERSET of the true P
+   * rather than the history-exact set (see tryReacquire / this.approx) — the
+   * ranking is still well-defined over it, but the caller must not present it as
+   * certainty, since the set itself may include impossible boards.
+   *
+   * Returns { total, top: [{ index, prob }] (best `limit` first), probs, approx } where
+   * `probs` is the plausibility of EVERY index (so a caller holding indices
+   * from some other enumeration — e.g. the analysis walk's evaluated worlds —
+   * can label them too). Null when exact tracking isn't active. Memoised per
+   * `positions` array identity, since the set is rebuilt each turn anyway.
+   */
+  rankByPlausibility(limit = 32) {
+    if (!this.exact || !this.positions?.length) return null;
+    const P = this.positions;
+    if (this._rankCache?.positions === P && this._rankCache.limit >= limit) {
+      const c = this._rankCache;
+      return { total: c.total, probs: c.probs, top: c.top.slice(0, limit) };
+    }
+
+    // Per-square histogram over the 13 possible codes (-6..+6 → 0..12), then a
+    // log-probability lookup table of the same shape. Typed arrays throughout:
+    // this is |P| × 64 work twice over, and |P| runs to CAP.
+    const counts = new Int32Array(64 * 13);
+    for (const p of P) {
+      for (let i = 0; i < 64; i++) counts[i * 13 + p[i] + 6]++;
+    }
+    const logTab = new Float64Array(64 * 13);
+    const logN = Math.log(P.length);
+    for (let j = 0; j < logTab.length; j++) logTab[j] = counts[j] ? Math.log(counts[j]) - logN : -Infinity;
+
+    const scores = new Float64Array(P.length);
+    let max = -Infinity;
+    for (let k = 0; k < P.length; k++) {
+      const p = P[k];
+      let s = 0;
+      for (let i = 0; i < 64; i++) s += logTab[i * 13 + p[i] + 6];
+      scores[k] = s;
+      if (s > max) max = s;
+    }
+    const probs = new Float64Array(P.length);
+    let sum = 0;
+    for (let k = 0; k < P.length; k++) { const e = Math.exp(scores[k] - max); probs[k] = e; sum += e; }
+    if (sum > 0) for (let k = 0; k < P.length; k++) probs[k] /= sum;
+
+    // Bounded selection rather than a full sort of up to CAP entries: `limit` is
+    // a UI page size (tens), so an insertion into a kept-sorted small array is
+    // cheaper than ordering the whole set.
+    const cap = Math.max(1, Math.min(limit, P.length));
+    const top = [];
+    for (let k = 0; k < P.length; k++) {
+      const s = scores[k];
+      if (top.length === cap && s <= top[top.length - 1].score) continue;
+      let i = top.length;
+      while (i > 0 && top[i - 1].score < s) i--;
+      top.splice(i, 0, { index: k, score: s, prob: probs[k] });
+      if (top.length > cap) top.pop();
+    }
+
+    this._rankCache = { positions: P, limit: cap, total: P.length, probs, top };
+    return { total: P.length, probs, top, approx: !!this.approx };
+  }
 }
 
 // Per-game store, same pattern as belief.js: keyed by the players array

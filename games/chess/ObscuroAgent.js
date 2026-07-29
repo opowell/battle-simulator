@@ -484,12 +484,13 @@ export async function analyzeObscuro(state, legalActions, opts = {}) {
 // discarding any world whose evaluation was interrupted part-way rather than
 // folding a half-searched score into the mean.
 export async function cpSumsOverWorlds(game, worlds, color, legalActions, cols, opts = {}) {
-  const { sfDepth = MAX_SF_DEPTH, isCancelled, deadline } = opts;
+  const { sfDepth = MAX_SF_DEPTH, isCancelled, deadline, onWorld } = opts;
   const stop = () => (isCancelled?.() ?? false) || (deadline != null && Date.now() > deadline);
   const leafEval = makeChessLeafEval(sfDepth, cols, { isCancelled: stop });
   const sums = new Array(legalActions.length).fill(0);
   let n = 0;
-  for (const world of worlds) {
+  for (let w = 0; w < worlds.length; w++) {
+    const world = worlds[w];
     if (stop()) break;
     const childStates = legalActions.map(a => game.applyActions(world, [{ playerId: color, action: a }]));
     const scores = await leafEval(world, color, legalActions, childStates);
@@ -497,6 +498,11 @@ export async function cpSumsOverWorlds(game, worlds, color, legalActions, cols, 
     if (stop()) break; // interrupted mid-world — its scores are partial, drop them
     n++;
     for (let i = 0; i < scores.length; i++) sums[i] += scores[i];
+    // Side channel for the UI's per-world view: the aggregate above answers
+    // "how good is this move on average", but the panel also lets a viewer ask
+    // "which board makes THIS move look best", which needs the individual
+    // world's scores kept rather than summed away.
+    onWorld?.(w, world, scores);
   }
   return { sums, n };
 }
@@ -593,14 +599,49 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
   // stay prob-only (cp: null) and the depth ladder is meaningless, so the walk
   // does a single sweep.
   const cpEval = opts.cpEval
-    ? ((worlds, sfDepth) => opts.cpEval(worlds, legalActions, sfDepth))
+    // `onWorld` is forwarded so an override can feed the per-world view too (the
+    // real evaluator below reports every world it prices through it).
+    ? ((worlds, sfDepth, onWorld) => opts.cpEval(worlds, legalActions, sfDepth, onWorld))
     : ((await stockfishAvailable())
-        ? ((worlds, sfDepth) => cpSumsOverWorlds(game, worlds, me, legalActions, cols, { sfDepth, isCancelled, deadline }))
+        ? ((worlds, sfDepth, onWorld) => cpSumsOverWorlds(game, worlds, me, legalActions, cols, { sfDepth, isCancelled, deadline, onWorld }))
         : null);
 
   const pop = game.beliefPopulation(state, me);
   const order = pop.exact ? shuffledIndices(pop.total, rng) : null;
   const total = pop.exact ? pop.total : null;
+
+  // ── the per-world view (see buildBeliefWorlds) ────────────────────────────
+  // Everything above collapses the belief population into ONE ranked move list.
+  // The panel additionally lets a viewer look at the population itself: step
+  // through the most plausible boards, or ask which board makes a particular
+  // candidate move look best. Both need individual worlds kept, so gather them
+  // alongside the aggregates — bounded, since the population runs to ~200k and
+  // this is a payload that crosses a Worker/SSE boundary every few frames.
+  //
+  // Only under fog. With perfect information there is nothing hidden to guess at
+  // — the population is the one board already on screen — so the whole per-world
+  // channel would be an empty payload on every frame.
+  const perWorldView = !!state.gameSpecific.fogOfWar;
+  const likelyCap = opts.likelyWorldsCap ?? 32;
+  const scoredCap = opts.scoredWorldsCap ?? 96;
+  const hiddenOf = (world) => game.hiddenPiecesOf?.(world, state, me) ?? [];
+  const ranked = perWorldView ? (game.rankBeliefWorlds?.(state, me, likelyCap) ?? null) : null;
+  // The most-plausible boards, materialised once: they don't depend on the
+  // engine at all, so the overlay can be on screen before the first rung lands.
+  const likelyWorlds = [];
+  if (ranked?.top?.length) {
+    const idx = ranked.top.map(t => t.index);
+    const worlds = game.enumerateWorlds(state, me, idx);
+    for (let i = 0; i < worlds.length; i++) {
+      likelyWorlds.push({ index: idx[i], prob: ranked.top[i].prob, hidden: hiddenOf(worlds[i]) });
+    }
+  }
+  // index → { index, prob, hidden, cp[] }, for the worlds the engine actually
+  // priced at the current rung. Rebuilt per rung like the cp aggregates, so
+  // every cp in it was searched to the same depth and the "best world for this
+  // move" ordering compares like with like.
+  let scoredWorlds = new Map();
+  let settledWorlds = new Map();
 
   // Mixing aggregate — accumulated across every batch of NEW worlds (see above).
   const probSum = new Map(); let probW = 0;
@@ -625,6 +666,10 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
       const cnt = cpN.get(key);
       return {
         move: a,
+        // Same identity the per-world cp vectors are indexed by (`moves` in the
+        // belief payload below), so the panel can line a candidate row up with
+        // its column without re-deriving move equality from the action object.
+        key,
         prob: probW ? (probSum.get(key) ?? 0) / probW : 0,
         cp: cnt ? Math.round(cpSum.get(key) / cnt) : (settledCp.get(key) ?? null),
       };
@@ -633,10 +678,40 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
       ? (a, b) => ((b.cp ?? -Infinity) - (a.cp ?? -Infinity)) || (b.prob - a.prob)
       : (a, b) => (b.prob - a.prob) || ((b.cp ?? -Infinity) - (a.cp ?? -Infinity)));
 
+  // The population itself, for the panel's world stepper — the union of the most
+  // PLAUSIBLE boards (engine-free, so they are on screen immediately) and the
+  // boards the engine has actually priced at the current rung (which carry a cp
+  // per candidate move, so "which board makes THIS move look best" is
+  // answerable). `moves` fixes the column order of every cp vector.
+  const buildBeliefWorlds = () => {
+    if (!perWorldView) return null;
+    const scored = scoredWorlds.size ? scoredWorlds : settledWorlds;
+    const byId = new Map();
+    for (const w of likelyWorlds) byId.set(w.index, { id: String(w.index), prob: w.prob, hidden: w.hidden, cp: null });
+    for (const [id, w] of scored) {
+      const prior = byId.get(id);
+      if (prior) prior.cp = w.cp;
+      else byId.set(id, { id: String(id), prob: w.prob, hidden: w.hidden, cp: w.cp });
+    }
+    return {
+      total, exact: pop.exact, depth: settledDepth || null,
+      // A re-acquired superset, not the history-exact set: the panel must not
+      // present these boards as certainties (see ExactBelief.rankByPlausibility).
+      approx: ranked?.approx ?? null,
+      moves: legalActions.map(k),
+      worlds: [...byId.values()],
+    };
+  };
+
   let batches = 0, last = null, covered = false, settledCovered = false;
+  // The plausible boards need nothing from the engine, so hand them over before
+  // the first batch's CFR solve + leaf eval (seconds, on a large population)
+  // rather than making the viewer stare at bare fog until then.
+  if (likelyWorlds.length) opts.onProgress?.({ kind: 'belief', total, beliefWorlds: buildBeliefWorlds() });
   for (let depth = 1; depth <= maxDepth; depth++) {
     // A fresh rung: previous depths' evals are superseded, not blended into.
     cpSum = new Map(); cpN = new Map();
+    scoredWorlds = new Map();
     let cursor = 0, evaluated = 0, sweepCount = 0, rungCp = 0;
     covered = false;
     // Every batch of NEW worlds contributes its equilibrium once; the exact
@@ -646,11 +721,16 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
     while (!spent()) {
       // Next batch of belief worlds.
       let worlds;
+      // Absolute population indices of `worlds`, so a world the engine prices
+      // can be filed under the same id the plausibility ranking uses. Null in
+      // the generative regime, which has no enumerable population to index into.
+      let batchIdx = null;
       if (pop.exact) {
         if (cursor >= order.length) break; // (unreachable: `covered` breaks below first)
         const idx = order.slice(cursor, cursor + batchSize);
         cursor += idx.length;
         worlds = game.enumerateWorlds(state, me, idx);
+        batchIdx = idx;
       } else {
         const w = game.sampleWorlds(state, me, batchSize, rng);
         worlds = (w && w.length) ? w : [state];
@@ -677,7 +757,19 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
       // Eval: raw cp sums over the SAME batch at THIS rung's depth, so the
       // running mean stays exact and every world in it is equally deep.
       if (cpEval) {
-        const { sums, n } = (await cpEval(worlds, depth)) ?? { sums: null, n: 0 };
+        // Keep each world's own scores as they go by, up to the cap — the
+        // aggregate below sums them away, but the per-world view needs them.
+        const onWorld = !perWorldView ? undefined : (w, world, scores) => {
+          if (scoredWorlds.size >= scoredCap) return;
+          const id = batchIdx ? batchIdx[w] : `s${batches}:${w}`;
+          if (scoredWorlds.has(id)) return;
+          scoredWorlds.set(id, {
+            prob: (ranked?.probs && typeof id === 'number') ? ranked.probs[id] : null,
+            hidden: hiddenOf(world),
+            cp: scores.map(s => Math.round(s)),
+          });
+        };
+        const { sums, n } = (await cpEval(worlds, depth, onWorld)) ?? { sums: null, n: 0 };
         if (n > 0 && sums) {
           rungCp += n;
           for (let i = 0; i < legalActions.length; i++) {
@@ -701,7 +793,13 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
       const exhaustive = covered && (depth >= maxDepth || !cpEval) && pop.exact;
       const candidates = buildCandidates();
       last = { engine: 'obscuro', mode, candidates, depth, maxDepth, batches, evaluated, total, exhaustive };
-      opts.onProgress?.({ kind: 'batch', depth, maxDepth, batch: batches, evaluated, total, exhaustive, candidates });
+      // The world list is bulky (one hidden-piece layout + one cp vector each)
+      // and only meaningfully changes as new worlds get priced, so it rides
+      // along on a fraction of the frames rather than every one. The panel keeps
+      // the last one it saw.
+      const belief = (batches === 1 || covered || batches % 8 === 0) ? buildBeliefWorlds() : null;
+      opts.onProgress?.({ kind: 'batch', depth, maxDepth, batch: batches, evaluated, total, exhaustive, candidates,
+        ...(belief ? { beliefWorlds: belief } : {}) });
       if (covered) break; // sweep complete — climb to the next rung
     }
 
@@ -711,6 +809,7 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
       settledDepth = depth;
       settledCovered = covered;
       for (const [key, cnt] of cpN) settledCp.set(key, Math.round(cpSum.get(key) / cnt));
+      if (scoredWorlds.size) settledWorlds = scoredWorlds;
     } else if (cpEval && depth > 1) {
       break; // engine can't reach this depth inside the budget — the ladder tops out
     }
@@ -724,7 +823,13 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
     // be searched in the time available). If the population is nonetheless fully
     // covered and we stopped of our own accord, the answer IS settled.
     if (settledCovered && pop.exact && !spent()) last.exhaustive = true;
+    last.beliefWorlds = buildBeliefWorlds();
     return last;
   }
-  return { engine: 'obscuro', mode: state.gameSpecific.fogOfWar ? 'cfr' : 'minimax', candidates: [] };
+  return {
+    engine: 'obscuro', mode: state.gameSpecific.fogOfWar ? 'cfr' : 'minimax', candidates: [],
+    // Even with no move ranking to show (cancelled before the first batch), the
+    // plausible-board list is already built and costs nothing to hand over.
+    beliefWorlds: buildBeliefWorlds(),
+  };
 }

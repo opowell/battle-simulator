@@ -600,6 +600,43 @@ export const ChessGame = {
     }));
   },
 
+  // Which members of the belief population to SHOW a human, ranked best-guess
+  // first — the counterpart of enumerateWorlds (same absolute indices) for the
+  // analysis panel's "most likely board" stepper. See ExactBelief.rankByPlausibility
+  // for what "likely" can and cannot mean over a uniform position set: this is
+  // agreement with the per-square marginals, not a posterior.
+  //
+  // `probs` (plausibility of EVERY index) comes back too, so a caller that
+  // already holds indices from a different enumeration — the analysis walk's
+  // engine-scored worlds — can label those with the same number.
+  rankBeliefWorlds(observation, playerId, limit = 32) {
+    // Perfect information: one world, the observation itself, with certainty.
+    if (!observation.gameSpecific.fogOfWar) return { total: 1, top: [{ index: 0, prob: 1 }], probs: null };
+    return getExactBelief(observation, playerId).rankByPlausibility(limit);
+  },
+
+  // The pieces a belief world places on squares the viewer cannot actually see —
+  // i.e. exactly what a "here's what the board probably looks like" overlay has
+  // to draw on top of the real fog. Derived by DIFFING the world against the
+  // (fog-filtered) observation rather than consulting a visibility set: anything
+  // the viewer can see is present and identical in every world by construction,
+  // so a piece that disagrees with the observation is by definition hidden.
+  // Emitted in the UI's grid coordinates (see toGrid) with the one-letter marker
+  // type the fog-marker renderer already speaks.
+  hiddenPiecesOf(world, observation, playerId) {
+    const FILES = 'abcdefgh';
+    const SYMS = { king: 'k', queen: 'q', rook: 'r', bishop: 'b', knight: 'n', pawn: 'p' };
+    const out = [];
+    for (const sq of Object.keys(world.board ?? {})) {
+      const pc = world.board[sq];
+      if (!pc || pc.ownerId === playerId) continue;
+      const seen = observation.board?.[sq];
+      if (seen && seen.ownerId === pc.ownerId && seen.type === pc.type) continue; // really on screen
+      out.push({ sq, type: SYMS[pc.type] ?? 'p', x: FILES.indexOf(sq[0]), y: 8 - parseInt(sq.slice(1), 10) });
+    }
+    return out;
+  },
+
   // Let both belief trackers record the move we just chose, so next turn they
   // can advance P / detect our own captured pieces.
   onActionCommitted(observation, playerId, action) {

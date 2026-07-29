@@ -4,6 +4,7 @@ import { ChessGame } from './index.js';
 import { ChessAgent } from './ChessAgent.js';
 import { analyzeObscuro, obscuroStrategy } from './ObscuroAgent.js';
 import { getBelief } from './belief.js';
+import { ExactBelief, fromBoardObject } from './exactBelief.js';
 import { getAllLegalMoves } from './moves.js';
 import { quit as stockfishQuit } from './stockfish.js';
 
@@ -212,5 +213,100 @@ test('obscuroStrategy: isCancelled cuts the CFR round loop short', async () => {
   });
   assert.ok(r.action, 'still returns a usable move from the rounds it did run');
   assert.ok(rounds < 50, `round loop stopped early once cancelled: ran ${rounds}/50`);
+  stockfishQuit();
+});
+
+// ---------------------------------------------------------------------------
+// The per-world view: showing a human WHICH boards the fog could be hiding, not
+// just the averaged move ranking derived from them. See ExactBelief
+// .rankByPlausibility, ChessGame.hiddenPiecesOf, and analyzeObscuro's
+// `beliefWorlds` payload.
+// ---------------------------------------------------------------------------
+
+test('rankByPlausibility: the consensus board outranks the eccentric ones', () => {
+  // Three positions differing only in where two hidden black pieces sit. World 0
+  // agrees with the majority on BOTH squares; worlds 1 and 2 each break with it
+  // on one, so they rank below it (and tie with each other).
+  const mk = (extra) => fromBoardObject(
+    { e1: unit('wK', 'white', 'king', 'e1'), e8: unit('bK', 'black', 'king', 'e8'), ...extra },
+    noCastle, null);
+  const b = new ExactBelief('white');
+  b.exact = true;
+  b.positions = [
+    mk({ d8: unit('bQ', 'black', 'queen', 'd8'), b8: unit('bN', 'black', 'knight', 'b8') }),
+    mk({ d8: unit('bQ', 'black', 'queen', 'd8'), g8: unit('bN', 'black', 'knight', 'g8') }),
+    mk({ h4: unit('bQ', 'black', 'queen', 'h4'), b8: unit('bN', 'black', 'knight', 'b8') }),
+  ];
+
+  const r = b.rankByPlausibility(3);
+  assert.equal(r.total, 3);
+  assert.equal(r.top[0].index, 0, 'the board agreeing with both marginals ranks first');
+  assert.ok(r.top[0].prob > r.top[1].prob, 'and is strictly more plausible than the next');
+  assert.ok(r.top[1].prob >= r.top[2].prob, 'the ranking is descending');
+  const sum = [...r.probs].reduce((a, p) => a + p, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-9, `plausibilities are a distribution, got ${sum}`);
+  // Every index is labelled, not just the ones on the returned page.
+  assert.equal(r.probs.length, 3);
+});
+
+test('hiddenPiecesOf: only what the viewer cannot already see, in grid coords', () => {
+  const players = [{ id: 'white' }, { id: 'black' }];
+  const state = ChessGame.createInitialState(players, { fogOfWar: true, difficulty: 30 });
+  const view  = ChessGame.getVisibleState(state, 'white');
+  // The one world of the first turn's population IS the true initial position;
+  // white nonetheless cannot see black's back two ranks. (beliefPopulation first:
+  // it is what establishes P for this turn — see enumerateWorlds.)
+  ChessGame.beliefPopulation(view, 'white');
+  const [world] = ChessGame.enumerateWorlds(view, 'white', [0]);
+  const hidden = ChessGame.hiddenPiecesOf(world, view, 'white');
+
+  assert.equal(hidden.length, 16, "black's whole army is hidden at the start");
+  assert.ok(hidden.every(h => h.type && h.type === h.type.toLowerCase()),
+    'marker types are the one-letter codes the fog-marker renderer speaks');
+  const a8 = hidden.find(h => h.sq === 'a8');
+  assert.deepEqual({ x: a8.x, y: a8.y }, { x: 0, y: 0 }, 'a8 maps to the top-left grid cell');
+  const e7 = hidden.find(h => h.sq === 'e7');
+  assert.deepEqual({ x: e7.x, y: e7.y, type: e7.type }, { x: 4, y: 1, type: 'p' });
+  // Nothing white, and nothing already on screen.
+  assert.ok(!hidden.some(h => h.sq.endsWith('1') || h.sq.endsWith('2')), 'own pieces are never markers');
+});
+
+test('analyzeObscuro under fog: emits belief worlds with per-move cp per world', async () => {
+  const players = [{ id: 'white' }, { id: 'black' }];
+  const state = ChessGame.createInitialState(players, { fogOfWar: true, difficulty: 30 });
+  const view  = ChessGame.getVisibleState(state, 'white');
+  const legal = ChessGame.getLegalActions(state, 'white');
+
+  // A stand-in engine: scores every move in every world, so the per-world
+  // channel is exercised without waiting on a real search.
+  const frames = [];
+  const r = await analyzeObscuro(view, legal, {
+    color: 'white', rng: () => 0.5, isCancelled: () => false,
+    maxRounds: 4, expandPerRound: 2, cfrPerRound: 1, batchSize: 8, maxSfDepth: 1,
+    cpEval: (worlds, actions, depth, onWorld) => {
+      worlds.forEach((w, i) => onWorld?.(i, w, actions.map((_, j) => 10 * j)));
+      return { sums: actions.map((_, j) => 10 * j * worlds.length), n: worlds.length };
+    },
+    onProgress: (info) => frames.push(info),
+  });
+
+  const bw = r.beliefWorlds;
+  assert.ok(bw, 'the final result carries the belief population');
+  assert.equal(bw.exact, true);
+  assert.deepEqual(bw.moves, legal.map(ChessGame.actionKey), 'cp columns are keyed to the legal moves');
+  assert.ok(bw.worlds.length >= 1, 'at least one world to show');
+  for (const w of bw.worlds) {
+    assert.ok(Array.isArray(w.hidden) && w.hidden.length > 0, 'each world says what the fog is hiding');
+    assert.equal(w.cp.length, legal.length, 'one cp per legal move, aligned with `moves`');
+  }
+  // Candidates carry the same key, so a panel can line a row up with its column.
+  assert.ok(r.candidates.every(c => bw.moves.includes(c.key)), 'every candidate row is addressable');
+
+  // The plausible boards are handed over BEFORE the engine has priced anything,
+  // so the overlay can be on screen while the search is still running.
+  const opener = frames[0];
+  assert.equal(opener.kind, 'belief', 'the first frame is the engine-free board list');
+  assert.ok(opener.beliefWorlds.worlds.length >= 1);
+  assert.equal(opener.beliefWorlds.worlds[0].cp, null, 'nothing is scored yet at that point');
   stockfishQuit();
 });
