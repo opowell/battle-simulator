@@ -1242,19 +1242,47 @@ const everSeenUnits = ref({});
 // opponent's whole army would be listed as captured. Per-viewer, it degrades to
 // "captures this seat has actually witnessed", which is the honest fog answer.
 //
-// The reset seeds from initialField (App.vue's turn-0 board, fog-filtered the same
-// way — see api-server's initialGridFor) instead of starting empty, so a unit lost
+// Two SEPARATE getters (Vue's multi-source watch form), not one getter returning
+// `[id, viewerId]` — a single getter returning a fresh array literal is a new
+// reference on every call, and Vue's default equality check for one-source watch
+// is reference equality, so it fired on every liveState update (id and viewerId
+// unchanged or not) and reset everSeenUnits back to empty after every single turn.
+// That silently discarded whatever the live watch below had just caught for an
+// enemy unit seen and then captured, moments after it was recorded. Multi-source
+// watch compares each source by its own value instead, so this only fires on an
+// actual id or viewerId change, as intended.
+watch([() => props.liveState?.id, () => props.liveState?.viewerId], () => {
+  everSeenUnits.value = {};
+}, { immediate: true });
+
+// Backfill "units I started with" from initialField (App.vue's turn-0 board,
+// fog-filtered the same way — see api-server's initialGridFor), so a unit lost
 // before this tab ever connected still counts: without this, opening a session
 // mid-game — or just reloading the tab — showed "Captured: None yet." regardless of
 // how many pieces were actually already gone (the live watch below only ever adds a
 // unit once it's *seen* this unit go from present to absent, so it had nothing to
 // diff against for anything that vanished pre-connect).
-watch(() => [props.liveState?.id, props.liveState?.viewerId, props.initialField], () => {
-  const seed = {};
-  for (const u of props.initialField?.units ?? []) {
-    seed[u.id] = { id: u.id, name: u.name, team: u.team, type: u.type, imagePath: u.imagePath };
+//
+// MERGE only, never replace: initialField is a `computed` re-deriving from the
+// whole liveState snapshot, so its object identity changes on every single turn,
+// not just on connect — this watcher re-fires far more often than the reset above.
+// An earlier version replaced everSeenUnits wholesale here, which meant every turn
+// silently erased whatever the live watch had already caught for enemy units seen
+// and then captured (initialField itself never reports those — under fog, turn 0
+// shows only your own starting units), collapsing the enemy side back to "None
+// yet" moments after a real capture. Merging is idempotent, so firing this often
+// is harmless — it only ever adds entries, never removes the live watch's work.
+watch(() => props.initialField, (f) => {
+  if (!f) return;
+  let changed = false;
+  const updated = { ...everSeenUnits.value };
+  for (const u of f.units) {
+    if (!updated[u.id]) {
+      updated[u.id] = { id: u.id, name: u.name, team: u.team, type: u.type, imagePath: u.imagePath };
+      changed = true;
+    }
   }
-  everSeenUnits.value = seed;
+  if (changed) everSeenUnits.value = updated;
 }, { immediate: true });
 
 watch(displayUnits, (units) => {
