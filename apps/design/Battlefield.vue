@@ -61,7 +61,7 @@ const props = defineProps({
   // non-live field playback) — App.vue owns it, the footer's speed control sets it.
   playbackSpeed:      { type: Number, default: 1 },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'set-marker', 'new-game', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'resign', 'set-marker', 'new-game', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -583,6 +583,7 @@ const REASON_LABELS = {
   'max-turns':            'Turn limit reached',
   'step-limit':           'Turn limit reached',
   'no-legal-actions':     'No legal actions',
+  'surrender':            'Surrender',
 };
 
 const reasonLabel = computed(() => {
@@ -1049,6 +1050,15 @@ function handleSetMarker(col, row, type) {
 // when the turn passes); this just follows it. `viewerId` is absent for
 // non-fog/observer snapshots, where the fixed human seat is the right answer.
 const analysisPlayerId = computed(() => props.liveState?.viewerId ?? humanPlayerId.value);
+
+// Concede as whichever human seat is currently on screen (in hotseat play that
+// follows the active seat, same as the analysis panel above).
+function confirmSurrender() {
+  if (!analysisPlayerId.value) return;
+  if (!window.confirm('Surrender this game?')) return;
+  showMenu.value = false;
+  emit('resign', analysisPlayerId.value);
+}
 
 // ── opening view ──────────────────────────────────────────────
 // A zoomable map is bigger than the stage, so opening it centred on the board drops the
@@ -1592,11 +1602,13 @@ onUnmounted(() => {
   <MenuOverlay
     :show="showMenu" :serverErr="serverErr" :gamesCount="gamesCount"
     :showRuler="showRuler" :showHpBars="showHpBars"
+    :canSurrender="!!analysisPlayerId && liveState?.status === 'active'"
     @close="showMenu = false"
     @exit="$emit('exit')"
     @open-settings="$emit('open-settings')"
     @toggle-ruler="showRuler = !showRuler"
-    @toggle-hp-bars="showHpBars = !showHpBars"/>
+    @toggle-hp-bars="showHpBars = !showHpBars"
+    @surrender="confirmSurrender"/>
 
   <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
     @close="selectedId = null" @submit="submitAction"/>

@@ -7,6 +7,7 @@
  *   GET  /sessions                    List sessions
  *   GET  /sessions/:id                Get session state
  *   POST /sessions/:id/action         Submit an action for the pending player
+ *   POST /sessions/:id/resign         Surrender the match as a given player
  *   DELETE /sessions/:id              Delete a session
  */
 
@@ -638,12 +639,47 @@ class Session {
         }
       }
     } catch (err) {
-      if (this.status !== 'closed') {
+      // A resign() forces status to 'done' and aborts any in-flight human agent to
+      // unblock this loop — that abort rejects the chooseAction() promise the engine
+      // was awaiting, throwing here. That's an intentional teardown, not a failure,
+      // so don't let it clobber the terminal status resign() already set.
+      if (this.status !== 'closed' && this.status !== 'done') {
         this.status = 'error';
         this.error = err.message;
         this._broadcast();
       }
     }
+  }
+
+  /**
+   * End the match immediately because `playerId` gave up — generic across every
+   * game (no per-game support needed) since it never touches game rules: it just
+   * forces the session's terminal result the same way a natural game-over does,
+   * then unblocks the run loop wherever it's parked (paused, an observer-paced
+   * advance gate, or a human agent's pending chooseAction) so it can notice the
+   * status change and stop on its own. Two players: the other one wins. Otherwise
+   * there's no single natural winner, so it's scored a draw (matching the engine's
+   * own no-legal-actions/max-turns fallback).
+   */
+  resign(playerId) {
+    if (this.status !== 'active') throw new Error(`Session is ${this.status}`);
+    if (!this.apiAgents.has(playerId)) throw new Error(`Player ${playerId} is not a human player in this session`);
+
+    const others = (this.engine.players ?? []).map(p => p.id).filter(id => id !== playerId);
+    const winnerId = others.length === 1 ? others[0] : null;
+    this.result = { outcome: winnerId ? 'win' : 'draw', winnerId, reason: 'surrender', resignedBy: playerId };
+    this.status = 'done';
+
+    this.paused = false;
+    const waiters = [...this._resumeWaiters, ...this._advanceWaiters];
+    this._resumeWaiters = [];
+    this._advanceWaiters = [];
+    for (const resume of waiters) resume();
+    for (const agent of this.apiAgents.values()) agent.abort('Player resigned');
+
+    this._persist();
+    this._broadcast();
+    return this.result;
   }
 
   close() {
@@ -1182,6 +1218,29 @@ async function handleSubmitAction(req, res, id) {
   send(res, 200, session.toJSON(playerId));
 }
 
+// Generic surrender: works the same for every game since it never touches game
+// rules — it just forces the match's terminal result (see Session.resign). Unlike
+// /action this doesn't require it to be that player's turn.
+async function handleResign(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+
+  const { playerId } = body;
+  if (!playerId) return err(res, 400, 'Missing playerId');
+
+  try {
+    session.resign(playerId);
+  } catch (e) {
+    return err(res, 400, e.message);
+  }
+
+  send(res, 200, session.toJSON(playerId));
+}
+
 // Live playback controls: pause/resume the run loop and set the AI pacing delay.
 // Not a game move — it doesn't touch the authoritative state or consume a turn; it
 // just changes how fast (and whether) the engine auto-advances. The change is
@@ -1573,6 +1632,10 @@ async function handleRequest(req, res) {
     // POST /sessions/:id/action
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'action')
       return await handleSubmitAction(req, res, parts[1]);
+
+    // POST /sessions/:id/resign — generic surrender, any game, any turn
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'resign')
+      return await handleResign(req, res, parts[1]);
 
     // POST /sessions/:id/marker
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'marker')

@@ -54,6 +54,9 @@ window.api = {
   log:      (id)                    => _req('/sessions/' + id + '/log'),
   create:   (body)                  => _req('/sessions', { method: 'POST', body: JSON.stringify(body) }),
   action:   (id, playerId, action)  => _req('/sessions/' + id + '/action', { method: 'POST', body: JSON.stringify({ playerId, action }) }),
+  // Generic surrender — ends the match immediately as a loss for `playerId`,
+  // regardless of whose turn it is or which game this session is running.
+  resign:   (id, playerId)          => _req('/sessions/' + id + '/resign', { method: 'POST', body: JSON.stringify({ playerId }) }),
   setMarker: (id, playerId, col, row, type) => _req('/sessions/' + id + '/marker', { method: 'POST', body: JSON.stringify({ playerId, col, row, type }) }),
   // Live playback controls: { paused?, aiDelay? }. Pauses/resumes the run loop and
   // sets the delay (ms) the engine waits between AI moves. Returns the applied values.

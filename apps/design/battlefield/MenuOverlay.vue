@@ -5,8 +5,9 @@ defineProps({
   gamesCount: { type: Number, default: 0 },
   showRuler:  Boolean,
   showHpBars: { type: Boolean, default: true },
+  canSurrender: Boolean,
 });
-defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars']);
+defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars', 'surrender']);
 const apiLabel = 'api · ' + window.location.host + window.api.basePath;
 </script>
 
@@ -49,6 +50,10 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
                   @click="$emit('close'); $emit('open-settings')">
             <BsIcon name="sliders" :size="14" color="var(--dim)"/> Settings
           </button>
+          <button v-if="canSurrender" class="btn btn-ghost menu-btn menu-btn--danger"
+                  @click="$emit('surrender')">
+            <BsIcon name="flag" :size="14" color="var(--danger)"/> Surrender
+          </button>
         </div>
       </div>
     </div>
@@ -68,4 +73,5 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
 .menu-games { font-size: 11px; color: var(--faint); }
 .menu-actions { padding: 10px; display: flex; flex-direction: column; gap: 4px; }
 .menu-btn { justify-content: flex-start; gap: 8px; }
+.menu-btn--danger { color: var(--danger); }
 </style>
