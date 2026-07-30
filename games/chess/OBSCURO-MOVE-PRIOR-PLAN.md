@@ -471,13 +471,30 @@ flat and why, so the history is still readable:
   stepper — the percentages should now be a real posterior, spread much more
   unevenly than the near-flat 5.2%/4.9% the marginal surrogate produces, and the
   top board should be a position the opponent plausibly played into.
-  **NOT DONE — the one item left unverified.** Everything above is covered by
-  automated tests and the harnesses; this is the only check that needs a browser.
-  Worth doing before trusting the panel's numbers to a user, and note that a real
-  posterior over a ~200k population is genuinely tiny per world, which is why the
-  stepper now formats percentages with value-dependent precision rather than a
-  fixed decimal (`fmtPct` in BeliefWorldStepper.vue) — "0.0%" everywhere would be a
-  formatting bug, not a flat belief.
+  **DONE 2026-07-30** — human vs Obscuro, fog on, analysis panel on, power 25.
+  Observed distributions, against the flat value the old surrogate was stuck at:
+
+  | turn | \|P\| | flat would be | observed |
+  |---|---|---|---|
+  | 1 | 1 | 100% | 100% (correct — the opening is common knowledge) |
+  | 2 | 13 | 7.7% | 9.6, 9.6, 8.3, 8.3 … 6.9, 6.8 |
+  | 3 | 9 | 11.1% | 14, 14, 12, 11, 11, 11, 10, 9.8, 8.0 (sums to 100) |
+  | 5 | 116 | 0.86% | 2.6, 2.0 … 1.2 (#16) … 0.92 (#32) |
+
+  So it is a proper distribution (sums to 1, strictly descending) and by turn 5 the
+  top board is **3× the flat value** — far more spread than the near-flat 5.2%/4.9%
+  the marginal surrogate produced. The spread is modest at small |P| (turn 2 is only
+  1.4× top-to-bottom), which is expected: one opponent ply is not much history to
+  discriminate on.
+
+  The top board was plausible every time — at turn 2 it had black playing the
+  developing Nb8-c6, and at turn 5 it placed both hidden knights on c6 and f6.
+
+  `fmtPct` (BeliefWorldStepper.vue) exercised across its branches: 14% / 2.6% /
+  0.92%. It formats with value-dependent precision because a real posterior over a
+  large population is genuinely tiny per world — a fixed decimal would print "0.0%"
+  everywhere, which would look like a flat belief rather than a formatting bug. The
+  `<0.01%` branch was not reached (it needs |P| in the tens of thousands).
 - Per repo root [CLAUDE.md](../../CLAUDE.md): do this in its own git worktree, and
   rebase onto **local** `main` first — `EnterWorktree` branches from `origin/main`,
   which this repo does not push to, so a new worktree starts stale.
