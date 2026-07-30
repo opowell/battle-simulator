@@ -2,8 +2,8 @@
 // Exact fog-of-war belief: the paper's position set P (Zhang & Sandholm 2026).
 //
 // Obscuro "maintains the full set P of possible positions given the
-// observations it has seen so far" and samples its search worlds uniformly
-// from it. This module implements that exactly for FoW chess:
+// observations it has seen so far" and samples its search worlds from it. This
+// module implements that exactly for FoW chess:
 //
 //   • P starts as {the standard initial position} (common knowledge).
 //   • Before each of our moves, P advances one opponent ply: for every
@@ -18,6 +18,24 @@
 //   • Our own chosen move is applied to every position after we commit it.
 //   • Positions are deduplicated by placement + castling rights + en passant
 //     (P is a set of STATES, not histories — the paper does the same, fn. 21).
+//
+// P IS A DISTRIBUTION, NOT JUST A SET. Every member carries a weight in
+// `this.weights` (parallel to `this.positions`, summing to 1), which is what
+// makes "which board is the real one?" answerable at all. Two ingredients:
+//
+//   • The ply advance multiplies a parent's weight by π(move | parent) — a move
+//     prior (movePrior.js), injectable, defaulting to whatever
+//     setDefaultMovePrior() was last handed. Because P is a set of STATES,
+//     colliding histories have their weights SUMMED rather than the second
+//     dropped; that plus "a parent with fewer legal moves passes more mass to
+//     each child" means even a UNIFORM π gives a genuinely non-uniform
+//     posterior, with no opponent model at all.
+//   • The observation filter below is the Bayesian update, for free:
+//     successors that fail consistent() are pruned, which removes mass, and
+//     renormalizing what survives IS conditioning on the observation.
+//
+// A re-acquired set (tryReacquire) has no history to weigh, so it falls back to
+// uniform weights and stays flagged `approx`.
 //
 // REPRESENTATION (the capacity tier): positions are Int8Array(66) — 64 signed
 // piece codes (+1..+6 white P N B R Q K, negative for black), castling bits at
@@ -39,9 +57,83 @@
 // literally knows the true position.
 // ---------------------------------------------------------------------------
 
+import { makeMovePrior, UNIFORM_PRIOR } from './movePrior.js';
+
 const CAP = 200000;          // paper: |P| usually ≤ 10⁶ (C++); avg ~17k
 const TIME_GUARD_MS = 4000;  // per-turn update budget
 const REACQUIRE_BOUND = 60000;
+
+// The π used by trackers that don't ask for a specific one — i.e. all of
+// production, via getExactBelief.
+//
+// τ = 200 IS A MEASURED NUMBER, NOT A GUESS, AND IT IS DELIBERATELY ON THE VAGUE
+// SIDE. Mean log-loss of the true position over 30 recorded fog games, both seats,
+// 1028 turns (games/chess/calibrate-belief.mjs; full table in
+// OBSCURO-MOVE-PRIOR-PLAN.md), as nats better than a flat posterior over the same
+// set — higher is better:
+//
+//   uniform π  +0.051   τ=400  +0.124   τ=200  +0.188   τ=100  +0.198   τ=35  −1.035
+//   τ=800      +0.088   τ=300  +0.147   τ=150  +0.212   τ=60   −0.088   τ=20  −3.457
+//
+// The optimum is τ≈150 and the cliff is brutal: by τ=60 the belief is already
+// WORSE than assuming nothing, and by τ=20 it is catastrophically worse. Note what
+// happens on the way down — the true board's median RANK keeps improving (24 → 18)
+// while log-loss collapses. That is overconfidence exactly: the ordering sharpens
+// while the probabilities become wild. It is why log-loss is the gate here and rank
+// is not, and it is the same failure belief.js's header records twice (THREAT_BIAS,
+// MAX_LURKERS). 200 sits on the safe side of the optimum, costs ~10% of the
+// available Δ, and buys a 3.3× margin to the cliff instead of 2.5×.
+let defaultPrior = makeMovePrior({ temperature: 200 });
+
+/** Swap the production π. Pass null to restore the uniform baseline. */
+export function setDefaultMovePrior(prior) { defaultPrior = prior ?? UNIFORM_PRIOR; }
+export function getDefaultMovePrior() { return defaultPrior; }
+
+// Per-seat override, for A/B harnesses that need one seat's belief to run a
+// different model from the other's IN THE SAME PROCESS — which is what a
+// seat-swapped strength comparison requires. Production never sets this.
+const priorBySeat = new Map();
+export function setMovePriorForSeat(color, prior) {
+  if (prior) priorBySeat.set(color, prior); else priorBySeat.delete(color);
+}
+
+// Exponent applied to the posterior when SAMPLING search worlds: draw ∝ w^α.
+// α = 1 is the posterior itself; α = 0 is uniform over P, ignoring the weights.
+//
+// IT SHIPS AT 0 — the belief is weighted, the SEARCH'S DRAW FROM IT IS NOT — and
+// that is the conservative reading of two measurements that disagree:
+//
+//   • Sample coverage FAVOURS α = 1, mildly. Over 558 turns, the chance a 16-world
+//     draw contains the TRUE position is 39.3% at α = 1 vs 36.1% at α = 0
+//     (`calibrate-belief.mjs --sample-n 16`). So weighting does not, as one might
+//     fear, spend the sample inside a confident slice that excludes reality.
+//   • Actual PLAY favours α = 0. Seat-swapped self-play, α=1 vs α=0 over the same
+//     τ=200 belief: 4 wins to 11 (`strength-belief.mjs --arm alpha`). Weak — 15
+//     decisive games — but it is the only measurement of the thing we actually care
+//     about, and on the informative subset (games the black seat won, the ones not
+//     swamped by white's large first-move advantage) it is 3-0 to α = 0.
+//
+// Coverage is a proxy; win/loss is the target. When a proxy and the target disagree,
+// follow the target, and prefer the option that changes nothing: α = 0 reproduces
+// the world sampling the AI had before any of this, so the belief's new weights
+// cannot regress play. Everything the weights were built for — calibration, the
+// analysis panel's real posterior, every mass-weighted aggregate — is independent of
+// α and keeps the full posterior.
+//
+// The reason to suspect α = 1 is genuinely hard here, and it is worth knowing before
+// re-litigating: the weight ordering puts the true position at median rank ~28 while
+// the search looks at ~16 worlds, so α = 1 concentrates a sample smaller than the
+// uncertainty it is concentrating over. Raising α needs a higher-powered strength
+// measurement than the harness currently gives (see its header) — not this comment.
+let sampleAlpha = 0;
+export function setBeliefSampleAlpha(a) { sampleAlpha = Number.isFinite(a) ? a : 0; }
+export function getBeliefSampleAlpha() { return sampleAlpha; }
+
+// Per-seat counterpart of the above, same purpose as setMovePriorForSeat.
+const alphaBySeat = new Map();
+export function setBeliefSampleAlphaForSeat(color, a) {
+  if (a == null) alphaBySeat.delete(color); else alphaBySeat.set(color, a);
+}
 
 // --- encoding ---------------------------------------------------------------
 
@@ -353,18 +445,40 @@ function consistent(ctx, cand) {
 }
 
 export class ExactBelief {
-  constructor(aiColor) {
+  constructor(aiColor, movePrior = null) {
     this.aiColor = aiColor;
     this.oppColor = other(aiColor);
     this.mySign = signOf(aiColor);
     this.exact = null;      // null = not initialised; true/false afterwards
     this.approx = false;    // true when P was re-acquired (tight superset)
     this.positions = null;  // Int8Array(66)[]
+    this.weights = null;    // Float64Array parallel to positions, Σ = 1
     this.firstTurnDone = false;
     this._lastTurnKey = null;
+    // Resolved at construction, not per sweep, so a tracker's model can't change
+    // under it mid-game — that would make its own weights incomparable.
+    this._prior = movePrior ?? defaultPrior;
+    this._alpha = alphaBySeat.get(aiColor) ?? sampleAlpha;
+    this._pi = new Float64Array(256); // per-parent π scratch; grown if needed
   }
 
-  _giveUp() { this.exact = false; this.positions = null; }
+  _giveUp() { this.exact = false; this.positions = null; this.weights = null; }
+
+  // Normalize a freshly built weight array to Σ = 1. Pruning inconsistent
+  // successors removed mass, so this is the conditioning step. A total of 0 can
+  // only come from float underflow over a long game (every surviving world
+  // vanishingly unlikely relative to the ones the observation killed); fall back
+  // to uniform rather than propagate NaN, since a flat belief over the right set
+  // is still correct-if-vague, while NaN weights would silently break sampling.
+  _setWeights(list) {
+    const n = list.length;
+    const w = new Float64Array(n);
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += list[i];
+    if (sum > 0) { const inv = 1 / sum; for (let i = 0; i < n; i++) w[i] = list[i] * inv; }
+    else w.fill(n ? 1 / n : 0);
+    this.weights = w;
+  }
 
   /**
    * Advance + filter P for this turn. Idempotent per `turnKey` (the agent may
@@ -385,11 +499,22 @@ export class ExactBelief {
       // Exactness needs the full history: only attach at the game's first turn.
       if ((observation.turnNumber ?? 1) !== 1) { this._giveUp(); return; }
       this.positions = [initialPosition()];
+      this.weights = Float64Array.of(1); // common knowledge: one world, certainly
       this.exact = true;
       if (this.aiColor === 'black') {
         this._advanceOpponent(ctx, t0); // white has already made one ply
       } else {
-        this.positions = this.positions.filter(p => consistent(ctx, p));
+        // Filter positions and weights in LOCKSTEP — they are parallel arrays and
+        // a `positions.filter()` that leaves `weights` alone silently misaligns
+        // every world with someone else's probability.
+        const kept = [], keptW = [];
+        for (let i = 0; i < this.positions.length; i++) {
+          if (!consistent(ctx, this.positions[i])) continue;
+          kept.push(this.positions[i]);
+          keptW.push(this.weights[i]);
+        }
+        this.positions = kept;
+        this._setWeights(keptW);
       }
     } else {
       this._advanceOpponent(ctx, t0);
@@ -397,7 +522,13 @@ export class ExactBelief {
     if (this.exact && (!this.positions || this.positions.length === 0)) this._giveUp();
   }
 
-  /** Apply our chosen move (an engine action) to every position in P. */
+  /**
+   * Apply our chosen move (an engine action) to every position in P. Our move is
+   * KNOWN, so it carries probability 1 and each position's weight passes straight
+   * through — but distinct parents can still collide into one successor (our move
+   * can erase the very difference between them, e.g. capturing on a square two
+   * worlds disagreed about), and those weights must be SUMMED, not dropped.
+   */
   commitOurMove(action) {
     if (!this.exact || !this.positions || !action?.from) return;
     const m = {
@@ -409,32 +540,63 @@ export class ExactBelief {
       castle: action.type === 'castle' ? (action.side === 'kingside' ? 1 : 2) : 0,
     };
     const next = [];
-    const seen = new Set();
-    for (const pos of this.positions) {
+    const nextW = [];
+    const seen = new Map(); // hash → index into next
+    const W = this.weights;
+    for (let i = 0; i < this.positions.length; i++) {
+      const pos = this.positions[i];
       const mover = pos[m.f];
       if (!mover || (mover > 0) !== (this.mySign > 0)) continue; // inconsistent
       const np = applyMove(pos, m, this.mySign);
+      const w = W ? W[i] : 1;
       const h = hashPos(np);
-      if (!seen.has(h)) { seen.add(h); next.push(np); }
+      const at = seen.get(h);
+      if (at !== undefined) { nextW[at] += w; continue; }
+      seen.set(h, next.length);
+      next.push(np);
+      nextW.push(w);
     }
     this.positions = next;
-    if (next.length === 0) this._giveUp();
+    if (next.length === 0) { this._giveUp(); return; }
+    this._setWeights(nextW);
   }
 
   // One opponent ply: successors of every position under every fog-legal
   // opponent move, minus impossibilities (king captured / no move available),
   // filtered INLINE against the current observation.
+  //
+  // This is where the belief's whole probabilistic content is created, so the
+  // bookkeeping matters more than it looks:
+  //
+  //   • π is computed over the parent's FULL fog-legal move list, BEFORE any
+  //     pruning, because that list is the opponent's actual choice set. The mass
+  //     on moves we then prune (they'd have captured our king, or the successor
+  //     contradicts what we see) is evidence, and dropping it is the Bayesian
+  //     update — _setWeights renormalizes what survives.
+  //   • Colliding successors ACCUMULATE. P is a set of states, so two histories
+  //     landing on one position are one member with the sum of their
+  //     probabilities. Dropping the second (what a Set does) is exactly the line
+  //     that used to make the posterior flat.
   _advanceOpponent(ctx, t0) {
     const oppSign = -this.mySign;
     const myKing = 6 * this.mySign;
     const { obsArr, visLo, visHi } = ctx;
     const next = [];
-    const seen = new Set();
-    for (const pos of this.positions) {
+    const nextW = [];
+    const seen = new Map(); // hash → index into next
+    const W = this.weights;
+    const prior = this._prior;
+    for (let pi = 0; pi < this.positions.length; pi++) {
+      const pos = this.positions[pi];
       if (Date.now() - t0 > TIME_GUARD_MS) { this._giveUp(); return; }
       const moves = genFogMoves(pos, oppSign);
       if (moves.length === 0) continue; // the opponent DID move
-      for (const m of moves) {
+      if (moves.length > this._pi.length) this._pi = new Float64Array(moves.length * 2);
+      const pmf = this._pi;
+      prior(pos, moves, oppSign, pmf);
+      const pw = W ? W[pi] : 1;
+      for (let j = 0; j < moves.length; j++) {
+        const m = moves[j];
         // Capturing our king ends the game — it didn't, so prune.
         if (pos[m.t] === myKing) continue;
         // Cheap pre-filter: a visible destination must show the moved piece.
@@ -445,14 +607,18 @@ export class ExactBelief {
         }
         const np = applyMove(pos, m, oppSign);
         if (!consistent(ctx, np)) continue;
+        const w = pw * pmf[j];
         const h = hashPos(np);
-        if (seen.has(h)) continue;
-        seen.add(h);
+        const at = seen.get(h);
+        if (at !== undefined) { nextW[at] += w; continue; }
+        seen.set(h, next.length);
         next.push(np);
+        nextW.push(w);
         if (next.length > CAP) { this._giveUp(); return; }
       }
     }
     this.positions = next;
+    this._setWeights(nextW);
   }
 
   /**
@@ -464,6 +630,12 @@ export class ExactBelief {
    * TIGHT SUPERSET of the true P (per-piece sets can't encode inter-piece
    * move-history correlations), marked `approx`; from here on it is advanced
    * exactly again, so it stays a superset — strictly better than particles.
+   *
+   * It is also the one path with NO POSTERIOR. Per-piece possible-squares carry
+   * no history, so there is nothing to weigh the placements by: the weights come
+   * out uniform, and the `approx` flag (which the panel already warns on) has to
+   * be read as "these numbers are not a posterior" as much as "this set is a
+   * superset". Subsequent plies re-introduce real weights on top.
    */
   tryReacquire(observation, belief, turnKey = null) {
     if (this.exact || !belief) return;
@@ -539,115 +711,120 @@ export class ExactBelief {
     if (!place(0, base)) return; // bailed on cap/time
     if (out.length === 0 || out.length > CAP) return;
     this.positions = out;
+    this._setWeights(new Array(out.length).fill(1)); // no history → no posterior
     this.exact = true;
     this.approx = true;              // superset, not the literal history-exact P
     this._lastTurnKey = turnKey;     // this turn is done; advance resumes next turn
   }
 
   /**
-   * Uniform sample of up to n positions from P, without replacement, in the
-   * engine's object shape: { board, cr, ep }.
+   * Sample up to n positions from P WITHOUT REPLACEMENT, in proportion to their
+   * posterior weight, in the engine's object shape: { board, cr, ep }.
+   *
+   * This is the draw that decides how the AI spends its search. It draws ∝ w^α where
+   * α is `sampleAlpha`, which DEFAULTS TO 0 — i.e. uniformly over P, deliberately
+   * ignoring the posterior. Read that comment before changing it: "sample the worlds
+   * that matter more often" is the obvious thing to want and it measured worse in
+   * actual play.
+   *
+   * Because the picks are already distributed by whatever measure α selects, a
+   * consumer must treat them as EQUALLY weighted samples — re-weighting them would
+   * count the posterior twice (see ChessGame.sampleWorlds).
+   *
+   * Efraimidis–Spirakis exponential race: draw E_i ~ Exp(1)/w_i^α and keep the n
+   * smallest. One O(|P|) pass with a kept-sorted array of size n (a handful), so
+   * no 200k-entry index array and no full sort. Weight 0 sorts last, which is
+   * what "possible but vanishingly unlikely" should do.
    */
   samplePositions(n, rng = Math.random) {
+    const idx = this.sampleIndices(n, rng);
+    if (!idx) return null;
+    return idx.map(i => {
+      const p = this.positions[i];
+      return { board: toBoardObject(p), cr: crObjectOf(p), ep: epOf(p) };
+    });
+  }
+
+  /**
+   * The draw itself, as absolute indices into P — samplePositions without the
+   * object conversion. Split out so the calibration harness can ask the question
+   * that actually explains the strength result ("does an n-world draw at this α
+   * even contain the true position?") without materialising boards, and so `α` can
+   * be overridden per call for that comparison.
+   */
+  sampleIndices(n, rng = Math.random, alpha = this._alpha) {
     if (!this.exact || !this.positions?.length) return null;
     const P = this.positions;
-    const picks = [];
-    if (P.length <= n) picks.push(...P);
-    else {
-      const idx = P.map((_, i) => i);
-      for (let i = 0; i < n; i++) {
-        const j = i + Math.floor(rng() * (idx.length - i));
-        [idx[i], idx[j]] = [idx[j], idx[i]];
-        picks.push(P[idx[i]]);
-      }
+    if (P.length <= n) return P.map((_, i) => i);
+    const W = alpha === 0 ? null : this.weights;
+    const best = []; // { key, i }, ascending by key
+    for (let i = 0; i < P.length; i++) {
+      const w = W ? (alpha === 1 ? W[i] : Math.pow(W[i], alpha)) : 1;
+      // rng() can legitimately return 0; -log(0) would make every such world an
+      // unbreakable last place rather than a very-unlikely one.
+      const key = w > 0 ? -Math.log(rng() || Number.MIN_VALUE) / w : Infinity;
+      if (best.length === n && key >= best[n - 1].key) continue;
+      let k = best.length;
+      while (k > 0 && best[k - 1].key > key) k--;
+      best.splice(k, 0, { key, i });
+      if (best.length > n) best.pop();
     }
-    return picks.map(p => ({ board: toBoardObject(p), cr: crObjectOf(p), ep: epOf(p) }));
+    return best.map(b => b.i);
   }
 
   /**
    * Positions at the given absolute indices into P, in the engine's object
-   * shape { board, cr, ep } — the enumeration counterpart of samplePositions
-   * (which draws uniformly at random). Lets a caller walk the WHOLE set once,
-   * in batches, without replacement. Out-of-range indices are skipped; null
-   * when exact tracking isn't active.
+   * shape { board, cr, ep, w } — the enumeration counterpart of samplePositions
+   * (which draws at random, in proportion to w). Lets a caller walk the WHOLE
+   * set once, in batches, without replacement. Out-of-range indices are skipped;
+   * null when exact tracking isn't active.
+   *
+   * `w` is the position's posterior weight, and an enumerating caller MUST use it
+   * — an unweighted mean over enumerated worlds is an average over the wrong
+   * measure. (Sampled worlds are the opposite case: the weight is already in the
+   * draw.) See ObscuroAgent.cpSumsOverWorlds.
    */
   positionsAt(indices) {
     if (!this.exact || !this.positions?.length) return null;
     const P = this.positions;
+    const W = this.weights;
     const out = [];
     for (const i of indices) {
       const p = P[i];
-      if (p) out.push({ board: toBoardObject(p), cr: crObjectOf(p), ep: epOf(p) });
+      if (p) out.push({ board: toBoardObject(p), cr: crObjectOf(p), ep: epOf(p), w: W ? W[i] : 1 / P.length });
     }
     return out;
   }
 
   /**
-   * Rank P by MARGINAL PLAUSIBILITY, so a viewer can be shown "the most likely
+   * Rank P by POSTERIOR LIKELIHOOD, so a viewer can be shown "the most likely
    * board" rather than an arbitrary member of the set.
    *
-   * Careful about what this is. The posterior over P is UNIFORM — every
-   * position in P is exactly as consistent with the observation history as
-   * every other, so "the single most likely board" is not a question the exact
-   * belief can answer on its own. What it CAN answer is which square holds
-   * which piece across the set: the per-square marginal p(square → piece) is a
-   * real, well-defined quantity (just a count over P). This ranks a position by
-   * how well it agrees with those marginals — the product-of-independent-
-   * marginals surrogate
-   *
-   *     score(pos) = Σ_squares log p(square → pos[square])
-   *
-   * — which puts the CONSENSUS board (each hidden piece where most of the set
-   * puts it) on top and the eccentric corners of P at the bottom. Squares that
-   * are identical across all of P (everything the viewer can actually see)
-   * contribute log 1 = 0, so only genuine uncertainty moves the score. The
-   * returned `prob` is that score softmaxed over the whole set, i.e. a proper
-   * distribution over P under the independence surrogate — NOT the true
-   * posterior, which is flat. Presented to the user as "plausibility".
+   * This used to be a much longer function, and the reason is worth knowing: the
+   * posterior over P was flat — every position exactly as consistent with the
+   * observation history as every other — so "the single most likely board" was
+   * not a question the belief could answer, and this ranked by a
+   * product-of-per-square-marginals surrogate instead (the CONSENSUS board, not
+   * the likely one). With `this.weights` there is a real posterior and the whole
+   * surrogate collapses to "sort by weight".
    *
    * `approx` flags a population that is a re-acquired SUPERSET of the true P
-   * rather than the history-exact set (see tryReacquire / this.approx) — the
-   * ranking is still well-defined over it, but the caller must not present it as
-   * certainty, since the set itself may include impossible boards.
+   * rather than the history-exact set (see tryReacquire / this.approx). There it
+   * means two things at once: the set may contain impossible boards, AND the
+   * weights are uniform rather than a posterior. The caller must not present
+   * either as certainty.
    *
-   * Returns { total, top: [{ index, prob }] (best `limit` first), probs, approx } where
-   * `probs` is the plausibility of EVERY index (so a caller holding indices
-   * from some other enumeration — e.g. the analysis walk's evaluated worlds —
-   * can label them too). Null when exact tracking isn't active. Memoised per
-   * `positions` array identity, since the set is rebuilt each turn anyway.
+   * Returns { total, top: [{ index, prob }] (best `limit` first), probs, approx },
+   * where `probs` is the weight of EVERY index (so a caller holding indices from
+   * some other enumeration — e.g. the analysis walk's evaluated worlds — can
+   * label them too). Null when exact tracking isn't active.
    */
-  rankByPlausibility(limit = 32) {
+  rankByLikelihood(limit = 32) {
     if (!this.exact || !this.positions?.length) return null;
     const P = this.positions;
-    if (this._rankCache?.positions === P && this._rankCache.limit >= limit) {
-      const c = this._rankCache;
-      return { total: c.total, probs: c.probs, top: c.top.slice(0, limit) };
-    }
-
-    // Per-square histogram over the 13 possible codes (-6..+6 → 0..12), then a
-    // log-probability lookup table of the same shape. Typed arrays throughout:
-    // this is |P| × 64 work twice over, and |P| runs to CAP.
-    const counts = new Int32Array(64 * 13);
-    for (const p of P) {
-      for (let i = 0; i < 64; i++) counts[i * 13 + p[i] + 6]++;
-    }
-    const logTab = new Float64Array(64 * 13);
-    const logN = Math.log(P.length);
-    for (let j = 0; j < logTab.length; j++) logTab[j] = counts[j] ? Math.log(counts[j]) - logN : -Infinity;
-
-    const scores = new Float64Array(P.length);
-    let max = -Infinity;
-    for (let k = 0; k < P.length; k++) {
-      const p = P[k];
-      let s = 0;
-      for (let i = 0; i < 64; i++) s += logTab[i * 13 + p[i] + 6];
-      scores[k] = s;
-      if (s > max) max = s;
-    }
-    const probs = new Float64Array(P.length);
-    let sum = 0;
-    for (let k = 0; k < P.length; k++) { const e = Math.exp(scores[k] - max); probs[k] = e; sum += e; }
-    if (sum > 0) for (let k = 0; k < P.length; k++) probs[k] /= sum;
+    // A tracker built by hand (tests) or an older path may have no weights; a
+    // flat distribution is the honest reading of "no posterior available".
+    const probs = this.weights ?? new Float64Array(P.length).fill(1 / P.length);
 
     // Bounded selection rather than a full sort of up to CAP entries: `limit` is
     // a UI page size (tens), so an insertion into a kept-sorted small array is
@@ -655,15 +832,14 @@ export class ExactBelief {
     const cap = Math.max(1, Math.min(limit, P.length));
     const top = [];
     for (let k = 0; k < P.length; k++) {
-      const s = scores[k];
-      if (top.length === cap && s <= top[top.length - 1].score) continue;
+      const w = probs[k];
+      if (top.length === cap && w <= top[top.length - 1].prob) continue;
       let i = top.length;
-      while (i > 0 && top[i - 1].score < s) i--;
-      top.splice(i, 0, { index: k, score: s, prob: probs[k] });
+      while (i > 0 && top[i - 1].prob < w) i--;
+      top.splice(i, 0, { index: k, prob: w });
       if (top.length > cap) top.pop();
     }
 
-    this._rankCache = { positions: P, limit: cap, total: P.length, probs, top };
     return { total: P.length, probs, top, approx: !!this.approx };
   }
 }
@@ -676,6 +852,6 @@ export function getExactBelief(state, aiColor) {
   let byColor = store.get(state.players);
   if (!byColor) { byColor = new Map(); store.set(state.players, byColor); }
   let b = byColor.get(aiColor);
-  if (!b) { b = new ExactBelief(aiColor); byColor.set(aiColor, b); }
+  if (!b) { b = new ExactBelief(aiColor, priorBySeat.get(aiColor) ?? null); byColor.set(aiColor, b); }
   return b;
 }

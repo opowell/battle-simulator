@@ -527,8 +527,11 @@ export const ChessGame = {
 
   // Belief sampler. Preferred source is the EXACT position set P (the paper's
   // belief: every position consistent with the full observation history,
-  // exactBelief.js), sampled uniformly — while it holds, the belief is perfect,
-  // and |P| = 1 means we literally know the board. If exact tracking has given
+  // exactBelief.js), sampled IN PROPORTION TO EACH POSITION'S POSTERIOR WEIGHT —
+  // while it holds, the belief is perfect, and |P| = 1 means we literally know
+  // the board. Note the asymmetry with enumerateWorlds below: a sampled world
+  // needs no `beliefWeight`, because the weight is already in the draw, and
+  // applying it again would count the posterior twice. If exact tracking has given
   // up (attached mid-game, or P outgrew its cap), we fall back to the heuristic
   // particle tracker (belief.js), which is kept in lockstep every turn so the
   // handover is seamless. With fog off there is nothing hidden, so we return []
@@ -619,6 +622,11 @@ export const ChessGame = {
       ...observation,
       board: pos.board,
       units: boardToUnits(pos.board),
+      // The world's posterior probability. Enumeration is without replacement and
+      // ignores the posterior, so every aggregate over these worlds has to carry
+      // the weight explicitly or it averages over the wrong measure. (sampleWorlds
+      // deliberately omits this — see there.)
+      beliefWeight: pos.w,
       gameSpecific: {
         ...observation.gameSpecific,
         castlingRights: pos.cr,
@@ -629,17 +637,17 @@ export const ChessGame = {
 
   // Which members of the belief population to SHOW a human, ranked best-guess
   // first — the counterpart of enumerateWorlds (same absolute indices) for the
-  // analysis panel's "most likely board" stepper. See ExactBelief.rankByPlausibility
-  // for what "likely" can and cannot mean over a uniform position set: this is
-  // agreement with the per-square marginals, not a posterior.
+  // analysis panel's "most likely board" stepper. These are real posterior
+  // probabilities: see ExactBelief.rankByLikelihood, and note the one case where
+  // they are not (a re-acquired set, flagged `approx`, has uniform weights).
   //
-  // `probs` (plausibility of EVERY index) comes back too, so a caller that
+  // `probs` (the probability of EVERY index) comes back too, so a caller that
   // already holds indices from a different enumeration — the analysis walk's
   // engine-scored worlds — can label those with the same number.
   rankBeliefWorlds(observation, playerId, limit = 32) {
     // Perfect information: one world, the observation itself, with certainty.
     if (!observation.gameSpecific.fogOfWar) return { total: 1, top: [{ index: 0, prob: 1 }], probs: null };
-    return getExactBelief(observation, playerId).rankByPlausibility(limit);
+    return getExactBelief(observation, playerId).rankByLikelihood(limit);
   },
 
   // The pieces a belief world places on squares the viewer cannot actually see —

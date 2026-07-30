@@ -476,11 +476,24 @@ export async function analyzeObscuro(state, legalActions, opts = {}) {
 
 // Batched Stockfish leaf eval over an EXPLICIT set of belief worlds, all scored
 // at the SAME depth (`opts.sfDepth`) so their scores are commensurable: returns
-// the per-legal-move SUM of cp across the worlds it managed to score, and the
-// count `n` of those worlds. Kept raw (sum + count, not a mean) so a caller
-// folding many batches together forms the exact population mean — Σsum / Σn —
-// instead of averaging per-batch means (which would misweight unequal final
-// batches). Bails promptly when the caller has moved on or the budget is spent,
+// the per-legal-move MASS-WEIGHTED SUM of cp across the worlds it managed to
+// score (Σ w·cp), the total mass `wsum` of those worlds, and their count `n`.
+//
+// The weighting is the point. Belief worlds are NOT equally likely — each carries
+// its posterior probability as `beliefWeight` (see ChessGame.enumerateWorlds) —
+// so a plain mean would be an average over the wrong measure, giving a world the
+// opponent almost certainly did not play into the same say as one they probably
+// did. Σ(w·cp)/Σw is the population expectation: exact once the walk is
+// exhaustive, and an unbiased running estimate while it is partial. Worlds with
+// no weight (the generative fallback, which samples uniformly, and sampled worlds
+// generally, whose weight is already in the draw) default to 1 and reduce this to
+// the plain mean.
+//
+// Kept raw (sums + mass, not a mean) so a caller folding many batches together
+// forms the exact population expectation instead of averaging per-batch means
+// (which would misweight unequal final batches). `n` is reported alongside because
+// "did the engine manage to price anything at this depth" is a count question, not
+// a mass one. Bails promptly when the caller has moved on or the budget is spent,
 // discarding any world whose evaluation was interrupted part-way rather than
 // folding a half-searched score into the mean.
 export async function cpSumsOverWorlds(game, worlds, color, legalActions, cols, opts = {}) {
@@ -488,7 +501,7 @@ export async function cpSumsOverWorlds(game, worlds, color, legalActions, cols, 
   const stop = () => (isCancelled?.() ?? false) || (deadline != null && Date.now() > deadline);
   const leafEval = makeChessLeafEval(sfDepth, cols, { isCancelled: stop });
   const sums = new Array(legalActions.length).fill(0);
-  let n = 0;
+  let n = 0, wsum = 0;
   for (let w = 0; w < worlds.length; w++) {
     const world = worlds[w];
     if (stop()) break;
@@ -496,22 +509,43 @@ export async function cpSumsOverWorlds(game, worlds, color, legalActions, cols, 
     const scores = await leafEval(world, color, legalActions, childStates);
     if (!scores) continue;
     if (stop()) break; // interrupted mid-world — its scores are partial, drop them
-    n++;
-    for (let i = 0; i < scores.length; i++) sums[i] += scores[i];
+    const pw = world.beliefWeight ?? 1;
+    n++; wsum += pw;
+    for (let i = 0; i < scores.length; i++) sums[i] += pw * scores[i];
     // Side channel for the UI's per-world view: the aggregate above answers
     // "how good is this move on average", but the panel also lets a viewer ask
     // "which board makes THIS move look best", which needs the individual
     // world's scores kept rather than summed away.
     onWorld?.(w, world, scores);
   }
-  return { sums, n };
+  return { sums, wsum, n };
 }
 
-// Fisher-Yates permutation of [0, n) so the batched enumeration walks the belief
-// population in a random order — every world covered exactly once, but early
-// batches aren't spatially biased toward one region of the position set. Built
-// once per analysis session (not per batch); an n-int array for n up to the
-// exact tracker's cap (~200k) is a few MB, released when the walk ends.
+// Walk order for the batched enumeration: DESCENDING posterior weight, so the
+// first batches carry most of the population's mass. The weighted running mean is
+// unbiased in any order, but front-loading the mass means a partial walk's numbers
+// are close to the final ones within a batch or two instead of after full
+// coverage — and the panel's "top N most likely boards" then falls out of the walk
+// for free, since first-seen and heaviest coincide (which is also why the
+// scoredWorlds cap below can keep first-seen worlds and still be keeping the
+// heaviest).
+//
+// The trade-off is deliberate and must not be misdescribed: partial coverage is
+// biased toward heavy worlds. That is what you want from an ESTIMATE of the
+// population mean; it is not a uniform sample of the population.
+function weightOrder(probs, n) {
+  if (!probs || probs.length !== n) return null;
+  const idx = new Array(n);
+  for (let i = 0; i < n; i++) idx[i] = i;
+  idx.sort((a, b) => probs[b] - probs[a]);
+  return idx;
+}
+
+// Fisher-Yates permutation of [0, n), the fallback walk order when no posterior is
+// available to sort by — every world covered exactly once, but early batches
+// aren't spatially biased toward one region of the position set. Built once per
+// analysis session (not per batch); an n-int array for n up to the exact tracker's
+// cap (~200k) is a few MB, released when the walk ends.
 function shuffledIndices(n, rng) {
   const idx = new Array(n);
   for (let i = 0; i < n; i++) idx[i] = i;
@@ -558,9 +592,10 @@ function shuffledIndices(n, rng) {
 //     ladder can still climb.
 //
 // Aggregation (see OBSCURO-UNLIMITED-BELIEF-PLAN.md's "crux"): the cp EVAL per
-// move is additive over worlds, so a world-count-weighted running mean converges
-// to the exact population expectation. The move PROBABILITY is an ensemble
-// average of each batch's own CFR equilibrium (weighted by batch size) — a
+// move is additive over worlds, so a MASS-weighted running mean — Σ(w·cp)/Σw over
+// each world's posterior probability, see cpSumsOverWorlds — converges to the
+// exact population expectation. The move PROBABILITY is an ensemble average of
+// each batch's own CFR equilibrium (weighted by batch mass) — a
 // well-defined blend, but NOT the single joint-equilibrium mixing (that would
 // need the KLUSS gadget to grow its world set mid-solve — Design A, not
 // attempted). Cancellation is checked between AND within batches, and now also
@@ -607,13 +642,12 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
         : null);
 
   const pop = game.beliefPopulation(state, me);
-  const order = pop.exact ? shuffledIndices(pop.total, rng) : null;
   const total = pop.exact ? pop.total : null;
 
   // ── the per-world view (see buildBeliefWorlds) ────────────────────────────
   // Everything above collapses the belief population into ONE ranked move list.
   // The panel additionally lets a viewer look at the population itself: step
-  // through the most plausible boards, or ask which board makes a particular
+  // through the most likely boards, or ask which board makes a particular
   // candidate move look best. Both need individual worlds kept, so gather them
   // alongside the aggregates — bounded, since the population runs to ~200k and
   // this is a payload that crosses a Worker/SSE boundary every few frames.
@@ -626,7 +660,16 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
   const scoredCap = opts.scoredWorldsCap ?? 96;
   const hiddenOf = (world) => game.hiddenPiecesOf?.(world, state, me) ?? [];
   const ranked = perWorldView ? (game.rankBeliefWorlds?.(state, me, likelyCap) ?? null) : null;
-  // The most-plausible boards, materialised once: they don't depend on the
+
+  // The walk order. `ranked.probs` is the posterior over the whole population, so
+  // prefer heaviest-first (see weightOrder); a random permutation is the fallback
+  // when there is no posterior to sort by (perfect information, where the
+  // population is a single world anyway, or a game whose belief exposes none).
+  const order = pop.exact
+    ? (weightOrder(ranked?.probs, pop.total) ?? shuffledIndices(pop.total, rng))
+    : null;
+
+  // The most-likely boards, materialised once: they don't depend on the
   // engine at all, so the overlay can be on screen before the first rung lands.
   const likelyWorlds = [];
   if (ranked?.top?.length) {
@@ -643,13 +686,16 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
   let scoredWorlds = new Map();
   let settledWorlds = new Map();
 
-  // Mixing aggregate — accumulated across every batch of NEW worlds (see above).
+  // Mixing aggregate — accumulated across every batch of NEW worlds (see above),
+  // each weighted by the batch's posterior MASS rather than its world count, so a
+  // batch of near-impossible worlds doesn't get an equal vote in the ensemble.
   const probSum = new Map(); let probW = 0;
-  // Eval aggregate — rebuilt from scratch at each rung of the ladder. `settledCp`
+  // Eval aggregate — rebuilt from scratch at each rung of the ladder. `cpMass` is
+  // the denominator of the weighted mean (Σ w, not a world count). `settledCp`
   // holds the deepest rung that actually produced numbers, so the eval column
   // never blanks out while a deeper rung is still being computed (or is being
   // abandoned because the engine can't reach it inside the budget).
-  let cpSum = new Map(), cpN = new Map();
+  let cpSum = new Map(), cpMass = new Map();
   const settledCp = new Map();
   let settledDepth = 0;
 
@@ -663,7 +709,7 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
   const buildCandidates = () => legalActions
     .map(a => {
       const key = k(a);
-      const cnt = cpN.get(key);
+      const mass = cpMass.get(key);
       return {
         move: a,
         // Same identity the per-world cp vectors are indexed by (`moves` in the
@@ -671,7 +717,7 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
         // its column without re-deriving move equality from the action object.
         key,
         prob: probW ? (probSum.get(key) ?? 0) / probW : 0,
-        cp: cnt ? Math.round(cpSum.get(key) / cnt) : (settledCp.get(key) ?? null),
+        cp: mass ? Math.round(cpSum.get(key) / mass) : (settledCp.get(key) ?? null),
       };
     })
     .sort(rankByCp
@@ -679,7 +725,7 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
       : (a, b) => (b.prob - a.prob) || ((b.cp ?? -Infinity) - (a.cp ?? -Infinity)));
 
   // The population itself, for the panel's world stepper — the union of the most
-  // PLAUSIBLE boards (engine-free, so they are on screen immediately) and the
+  // LIKELY boards (engine-free, so they are on screen immediately) and the
   // boards the engine has actually priced at the current rung (which carry a cp
   // per candidate move, so "which board makes THIS move look best" is
   // answerable). `moves` fixes the column order of every cp vector.
@@ -696,7 +742,8 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
     return {
       total, exact: pop.exact, depth: settledDepth || null,
       // A re-acquired superset, not the history-exact set: the panel must not
-      // present these boards as certainties (see ExactBelief.rankByPlausibility).
+      // present these boards as certainties, and its weights are uniform rather
+      // than a posterior (see ExactBelief.rankByLikelihood).
       approx: ranked?.approx ?? null,
       moves: legalActions.map(k),
       worlds: [...byId.values()],
@@ -704,13 +751,13 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
   };
 
   let batches = 0, last = null, covered = false, settledCovered = false;
-  // The plausible boards need nothing from the engine, so hand them over before
+  // The likely boards need nothing from the engine, so hand them over before
   // the first batch's CFR solve + leaf eval (seconds, on a large population)
   // rather than making the viewer stare at bare fog until then.
   if (likelyWorlds.length) opts.onProgress?.({ kind: 'belief', total, beliefWorlds: buildBeliefWorlds() });
   for (let depth = 1; depth <= maxDepth; depth++) {
     // A fresh rung: previous depths' evals are superseded, not blended into.
-    cpSum = new Map(); cpN = new Map();
+    cpSum = new Map(); cpMass = new Map();
     scoredWorlds = new Map();
     let cursor = 0, evaluated = 0, sweepCount = 0, rungCp = 0;
     covered = false;
@@ -722,7 +769,7 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
       // Next batch of belief worlds.
       let worlds;
       // Absolute population indices of `worlds`, so a world the engine prices
-      // can be filed under the same id the plausibility ranking uses. Null in
+      // can be filed under the same id the likelihood ranking uses. Null in
       // the generative regime, which has no enumerable population to index into.
       let batchIdx = null;
       if (pop.exact) {
@@ -746,7 +793,12 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
         });
         if (isCancelled?.()) break; // moved on mid-solve — discard this partial batch
         mode = r.mode;
-        const w = worlds.length;
+        // Batch MASS, not batch size: this batch's equilibrium is worth as much as
+        // the posterior probability of the worlds it was solved over. Worlds with
+        // no weight (generative fallback) default to 1 and recover the old
+        // count-weighting exactly.
+        let w = 0;
+        for (const world of worlds) w += world.beliefWeight ?? 1;
         probW += w;
         for (let i = 0; i < r.rows.length; i++) {
           const key = k(r.rows[i]);
@@ -769,13 +821,16 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
             cp: scores.map(s => Math.round(s)),
           });
         };
-        const { sums, n } = (await cpEval(worlds, depth, onWorld)) ?? { sums: null, n: 0 };
-        if (n > 0 && sums) {
+        // `wsum` defaults to `n` so an `opts.cpEval` override that predates the
+        // weighting (returning just { sums, n }) still folds in, as an unweighted
+        // mean over its own worlds.
+        const { sums = null, n = 0, wsum = n } = (await cpEval(worlds, depth, onWorld)) ?? {};
+        if (n > 0 && sums && wsum > 0) {
           rungCp += n;
           for (let i = 0; i < legalActions.length; i++) {
             const key = k(legalActions[i]);
             cpSum.set(key, (cpSum.get(key) ?? 0) + sums[i]);
-            cpN.set(key, (cpN.get(key) ?? 0) + n);
+            cpMass.set(key, (cpMass.get(key) ?? 0) + wsum);
           }
         }
       }
@@ -808,7 +863,7 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
       // partial results fall back to while it is still filling in.
       settledDepth = depth;
       settledCovered = covered;
-      for (const [key, cnt] of cpN) settledCp.set(key, Math.round(cpSum.get(key) / cnt));
+      for (const [key, mass] of cpMass) settledCp.set(key, Math.round(cpSum.get(key) / mass));
       if (scoredWorlds.size) settledWorlds = scoredWorlds;
     } else if (cpEval && depth > 1) {
       break; // engine can't reach this depth inside the budget — the ladder tops out
@@ -829,7 +884,7 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
   return {
     engine: 'obscuro', mode: state.gameSpecific.fogOfWar ? 'cfr' : 'minimax', candidates: [],
     // Even with no move ranking to show (cancelled before the first batch), the
-    // plausible-board list is already built and costs nothing to hand over.
+    // likely-board list is already built and costs nothing to hand over.
     beliefWorlds: buildBeliefWorlds(),
   };
 }

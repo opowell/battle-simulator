@@ -219,14 +219,16 @@ test('obscuroStrategy: isCancelled cuts the CFR round loop short', async () => {
 // ---------------------------------------------------------------------------
 // The per-world view: showing a human WHICH boards the fog could be hiding, not
 // just the averaged move ranking derived from them. See ExactBelief
-// .rankByPlausibility, ChessGame.hiddenPiecesOf, and analyzeObscuro's
+// .rankByLikelihood, ChessGame.hiddenPiecesOf, and analyzeObscuro's
 // `beliefWorlds` payload.
 // ---------------------------------------------------------------------------
 
-test('rankByPlausibility: the consensus board outranks the eccentric ones', () => {
-  // Three positions differing only in where two hidden black pieces sit. World 0
-  // agrees with the majority on BOTH squares; worlds 1 and 2 each break with it
-  // on one, so they rank below it (and tie with each other).
+test('rankByLikelihood: the heaviest world tops the ranking, every index labelled', () => {
+  // Three positions differing only in where two hidden black pieces sit, with an
+  // explicit posterior over them. (Where those weights COME FROM — colliding
+  // histories summing, π, the observation filter — is exact-belief.test.js's
+  // business; this checks only that the ranking is the posterior and that the
+  // returned shape still labels the whole population.)
   const mk = (extra) => fromBoardObject(
     { e1: unit('wK', 'white', 'king', 'e1'), e8: unit('bK', 'black', 'king', 'e8'), ...extra },
     noCastle, null);
@@ -237,16 +239,23 @@ test('rankByPlausibility: the consensus board outranks the eccentric ones', () =
     mk({ d8: unit('bQ', 'black', 'queen', 'd8'), g8: unit('bN', 'black', 'knight', 'g8') }),
     mk({ h4: unit('bQ', 'black', 'queen', 'h4'), b8: unit('bN', 'black', 'knight', 'b8') }),
   ];
+  b.weights = Float64Array.of(0.6, 0.3, 0.1);
 
-  const r = b.rankByPlausibility(3);
+  const r = b.rankByLikelihood(3);
   assert.equal(r.total, 3);
-  assert.equal(r.top[0].index, 0, 'the board agreeing with both marginals ranks first');
-  assert.ok(r.top[0].prob > r.top[1].prob, 'and is strictly more plausible than the next');
-  assert.ok(r.top[1].prob >= r.top[2].prob, 'the ranking is descending');
+  assert.equal(r.top[0].index, 0, 'the heaviest world ranks first');
+  assert.equal(r.top[0].prob, 0.6, 'and its prob IS its posterior weight');
+  assert.deepEqual(r.top.map(t => t.index), [0, 1, 2], 'the ranking is descending by weight');
   const sum = [...r.probs].reduce((a, p) => a + p, 0);
-  assert.ok(Math.abs(sum - 1) < 1e-9, `plausibilities are a distribution, got ${sum}`);
+  assert.ok(Math.abs(sum - 1) < 1e-9, `probabilities are a distribution, got ${sum}`);
   // Every index is labelled, not just the ones on the returned page.
   assert.equal(r.probs.length, 3);
+
+  // A hand-built tracker with no weights at all must still answer, flatly, rather
+  // than throw — several call sites construct one directly.
+  b.weights = null;
+  const flat = b.rankByLikelihood(3);
+  assert.ok(flat.probs.every(p => Math.abs(p - 1 / 3) < 1e-12), 'no posterior → uniform');
 });
 
 test('hiddenPiecesOf: only what the viewer cannot already see, in grid coords', () => {
@@ -278,17 +287,27 @@ test('analyzeObscuro under fog: emits belief worlds with per-move cp per world',
   const legal = ChessGame.getLegalActions(state, 'white');
 
   // A stand-in engine: scores every move in every world, so the per-world
-  // channel is exercised without waiting on a real search.
+  // channel is exercised without waiting on a real search. It also asserts the
+  // weighting contract — enumerated worlds must arrive carrying their posterior
+  // probability, heaviest first — and reports a mass-weighted sum, the shape
+  // cpSumsOverWorlds now returns.
   const frames = [];
+  const seenWeights = [];
   const r = await analyzeObscuro(view, legal, {
     color: 'white', rng: () => 0.5, isCancelled: () => false,
     maxRounds: 4, expandPerRound: 2, cfrPerRound: 1, batchSize: 8, maxSfDepth: 1,
     cpEval: (worlds, actions, depth, onWorld) => {
       worlds.forEach((w, i) => onWorld?.(i, w, actions.map((_, j) => 10 * j)));
-      return { sums: actions.map((_, j) => 10 * j * worlds.length), n: worlds.length };
+      let wsum = 0;
+      for (const w of worlds) { seenWeights.push(w.beliefWeight); wsum += w.beliefWeight; }
+      return { sums: actions.map((_, j) => 10 * j * wsum), wsum, n: worlds.length };
     },
     onProgress: (info) => frames.push(info),
   });
+  assert.ok(seenWeights.length > 0 && seenWeights.every(w => typeof w === 'number' && w > 0),
+    'every enumerated world carries a positive posterior weight');
+  assert.deepEqual(seenWeights, [...seenWeights].sort((a, b) => b - a),
+    'and the walk visits them heaviest first');
 
   const bw = r.beliefWorlds;
   assert.ok(bw, 'the final result carries the belief population');
@@ -302,7 +321,7 @@ test('analyzeObscuro under fog: emits belief worlds with per-move cp per world',
   // Candidates carry the same key, so a panel can line a row up with its column.
   assert.ok(r.candidates.every(c => bw.moves.includes(c.key)), 'every candidate row is addressable');
 
-  // The plausible boards are handed over BEFORE the engine has priced anything,
+  // The likely boards are handed over BEFORE the engine has priced anything,
   // so the overlay can be on screen while the search is still running.
   const opener = frames[0];
   assert.equal(opener.kind, 'belief', 'the first frame is the engine-free board list');

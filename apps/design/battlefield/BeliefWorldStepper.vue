@@ -10,9 +10,14 @@ import { ref, computed, watch } from 'vue';
 // see; this exposes that set directly. Two orderings, chosen by the move
 // selector:
 //
-//   • "Most likely" (no move selected) — worlds ranked by marginal
-//     plausibility, i.e. how well each agrees with where the population as a
-//     whole puts the hidden pieces. #1 is the consensus board.
+//   • "Most likely" (no move selected) — worlds ranked by their POSTERIOR
+//     PROBABILITY: how likely each board actually is, given everything the
+//     viewer has observed and a prior over how the opponent picks moves (see
+//     games/chess/exactBelief.js's weights and movePrior.js). #1 is the belief's
+//     genuine best guess at the real board. It used to be the CONSENSUS board —
+//     the one agreeing most with the population's per-square marginals — because
+//     the posterior over the position set was flat and there was nothing better
+//     to sort by; there now is.
 //   • A specific candidate move — worlds ranked by how good that move looks in
 //     them: primarily by the move's RANK among all moves in that world (#1 =
 //     a world where it is outright the best move available), cp breaking ties.
@@ -30,7 +35,7 @@ const props = defineProps({
 });
 const emit = defineEmits(['world']);
 
-// '' = the plausibility ordering; otherwise a candidate move's action key.
+// '' = the likelihood ordering; otherwise a candidate move's action key.
 const moveKey = ref('');
 const n = ref(1);
 
@@ -53,8 +58,8 @@ function rankIn(cp, col) {
 const rows = computed(() => {
   const col = cpColumn.value;
   if (col < 0) {
-    // Plausibility order. The engine-priced worlds that fell outside the
-    // top-plausibility page have no prob attached (generative belief, or an
+    // Likelihood order. The engine-priced worlds that fell outside the
+    // top-probability page have no prob attached (generative belief, or an
     // index past the ranking's cap) — keep them, but after the ranked ones.
     return worlds.value
       .map(w => ({ w, prob: w.prob }))
@@ -88,6 +93,15 @@ function fmtMove(m) {
   if (typeof m.from === 'string' && typeof m.to === 'string') return m.from + '→' + m.to;
   return m.type || 'move';
 }
+// A real posterior over ~200k worlds runs small, so a fixed 1 decimal would show
+// most of the population as a uniform "0.0%". Scale the precision to the value.
+function fmtPct(p) {
+  const v = p * 100;
+  if (v >= 10) return v.toFixed(0) + '%';
+  if (v >= 1) return v.toFixed(1) + '%';
+  if (v >= 0.01) return v.toFixed(2) + '%';
+  return v > 0 ? '<0.01%' : '0%';
+}
 function fmtCp(cp) {
   if (cp == null) return '—';
   if (Math.abs(cp) >= 90000) return cp > 0 ? '#' : '-#';
@@ -98,7 +112,7 @@ const label = computed(() => {
   const r = current.value;
   if (!r) return 'No belief worlds yet.';
   if (cpColumn.value < 0) {
-    const p = r.prob != null ? `${(r.prob * 100).toFixed(1)}% likely` : 'sampled world';
+    const p = r.prob != null ? `${fmtPct(r.prob)} likely` : 'sampled world';
     return `${p} · ${r.w.hidden?.length ?? 0} hidden`;
   }
 
@@ -118,9 +132,10 @@ const scope = computed(() => {
 });
 
 // A re-acquired population is a SUPERSET of the boards actually possible, so it
-// can contain impossible ones — the ranking is still meaningful, but the numbers
-// must not be read as certainty. Say so rather than letting "100.0% likely" imply
-// the engine knows something it doesn't.
+// can contain impossible ones, AND it was rebuilt from per-piece possible-squares
+// with no history to weigh them, so its probabilities are uniform rather than a
+// posterior. Say so rather than letting "100% likely" imply the engine knows
+// something it doesn't.
 const approx = computed(() => props.belief?.approx === true);
 
 watch(current, (r) => emit('world', r?.w ?? null), { immediate: true });
@@ -140,8 +155,8 @@ watch(current, (r) => emit('world', r?.w ?? null), { immediate: true });
       <span class="bw-scope mono">{{ scope }}</span>
     </div>
     <div class="bw-label mono">{{ label }}</div>
-    <div v-if="approx" class="bw-warn mono" title="The belief set was re-acquired rather than tracked from the first move, so it is a superset of the truly possible boards — treat these as guesses, not certainties.">
-      approximate belief — superset, may include impossible boards
+    <div v-if="approx" class="bw-warn mono" title="The belief set was re-acquired rather than tracked from the first move, so it is a superset of the truly possible boards and its percentages are a flat guess rather than a posterior — treat these as guesses, not certainties.">
+      approximate belief — superset, uniform weights, may include impossible boards
     </div>
   </div>
 </template>

@@ -6,7 +6,171 @@ Companion to [OBSCURO-UNLIMITED-BELIEF-PLAN.md](OBSCURO-UNLIMITED-BELIEF-PLAN.md
 (the depth ladder over that walk), and [FOG-AI-FIX-PLAN.md](FOG-AI-FIX-PLAN.md)
 (search-side king safety — already fixed, unrelated).
 
-## Status: NOT STARTED
+## Status: LANDED 2026-07-30 — steps 1–5 shipped, step 6 deliberately NOT
+
+Both gates passed. Production default is **τ = 200**, set in
+[exactBelief.js](exactBelief.js)'s `defaultPrior`.
+
+### Calibration — the deliverable
+
+Mean log-loss of the TRUE position over **30 recorded chess fog games, both seats,
+1028 turns** (`node games/chess/calibrate-belief.mjs`). Δ is nats better than a
+flat posterior over the same set (`log|P|` = 5.107); higher is better.
+
+| π | log-loss | Δ vs flat | med. rank | top-1 |
+|---|---|---|---|---|
+| flat posterior (before this work) | 5.107 | 0 | — | — |
+| uniform π (step 1, mechanism only) | 5.056 | **+0.051** | 38 | 23.4% |
+| τ=800 | 5.020 | +0.088 | 36 | 17.2% |
+| τ=400 | 4.984 | +0.124 | 32 | 17.4% |
+| τ=300 | 4.960 | +0.147 | 31 | 17.8% |
+| **τ=200 (shipped)** | **4.919** | **+0.188** | 28 | 18.3% |
+| τ=150 (optimum) | 4.895 | +0.212 | 24 | 18.9% |
+| τ=100 | 4.909 | +0.198 | 22 | 19.9% |
+| τ=60 | 5.195 | **−0.088** | 20 | 21.3% |
+| τ=35 | 6.142 | **−1.035** | 18 | 22.5% |
+| τ=20 | 8.564 | **−3.457** | 19 | 22.8% |
+
+- **Gate 1 (step 1 beats log|P|): passed, but only just** — +0.051 nats. The
+  mechanism alone is real and worth having, and it is nearly free, but it is not
+  where the value is. Anyone expecting the "first change is free" framing to
+  deliver most of the win should read this row again.
+- **Gate 2 (step 2 beats step 1): passed clearly** — +0.188 vs +0.051, ~3.7×.
+- **The ablations say the signal is NOT mostly captures.** At τ=300,
+  capture-term-only scores +0.058 (barely above uniform π) while
+  PST-term-only scores +0.145 — i.e. essentially the whole gain. The plan called
+  capture value "the dominant term"; **that was wrong**. Plausible reading: our
+  opponents' captures are mostly already visible (a capture on a square we can see
+  is pruned by the observation filter anyway), so the capture term re-prices
+  what we already knew, while the PST delta discriminates among the genuinely
+  hidden quiet moves. Worth a real look before adding more material terms.
+- **Over-sharpening is catastrophic, and the cliff is close.** By τ=60 the belief
+  is already worse than assuming nothing; by τ=20, 3.5 nats worse. Note that
+  median RANK keeps *improving* right through the collapse (24 → 18): the ordering
+  sharpens while the probabilities go wild. That is why log-loss is the gate here
+  and rank is not — and it is the third instance of the failure mode
+  [belief.js](belief.js)'s header already records twice. τ=200 was chosen over the
+  τ=150 optimum on purpose: it gives up ~10% of the available Δ for a 3.3×
+  margin to the cliff instead of 2.5×.
+- **Invariant held everywhere**: `notInP = 0` across all 1028 turns × every prior.
+  Give-ups (16 of 60 seat-replays) are identical under every prior, so the prior
+  does not cause them.
+
+### Cost
+
+- Per-turn `beginTurn` worst case **~1.0 s on an idle machine** against
+  `TIME_GUARD_MS = 4000` — the same before and after, since π is O(1) per move and
+  the sweep was always dominated by `consistent()`. **But it is wall-clock against a
+  wall-clock guard: the same replay under heavy concurrent load measured 2.7 s.**
+  Still inside the budget, with less margin than the idle number suggests, and the
+  consequence of blowing it is `_giveUp()` — the belief drops to the heuristic
+  particle fallback for the rest of the game. Worth remembering before adding
+  anything else to the per-successor path.
+- Whole-harness wall time 25.0 s (uniform π) → 27.8 s (τ=200): **~11%** for the
+  prior, and the Set→Map change is inside the noise.
+- **No underflow.** Zero weights never occurred (`w=0` column) over 1028 turns of
+  full games, so linear weights are sufficient and the log-weight contingency in
+  step 1 is not needed. `_setWeights` still falls back to uniform on a zero total
+  rather than propagating NaN.
+
+### Strength — NO DETECTABLE EFFECT, and the harness cannot currently detect one
+
+`node games/chess/strength-belief.mjs --arm {null,prior} --pairs N --max-turns 70`,
+ChessObscuroAgent vs itself under fog, seat-swapped pairs, `difficulty: 'easy'`:
+
+| arm | result | games |
+|---|---|---|
+| `null` (both seats identical — the CONTROL) | seat-A 5 – seat-B 7 | 12 |
+| `prior` (τ=200 belief vs uniform-π belief) | prior 9 – uniform π 7 | 16 |
+| `alpha` (same belief; draw ∝ posterior vs uniform) | **α=1 4 – α=0 11** (+1 draw) | 16 |
+
+**The prior itself is a tie at 9–7** — it neither helped nor hurt measurably. Two
+things make that the end of the story rather than the start of one:
+
+- **White wins ~15 of every 16 games regardless of arm**, and the same in the `null`
+  arm where the seats are identical. First-move advantage under fog dwarfs anything
+  the belief contributes. The seat swap cancels it — which is the entire reason the
+  numbers mean anything — but it also means a balanced pair contributes 1-1 and the
+  residual signal lives only in the rare games the black seat wins. **This harness is
+  far less sensitive than its game count suggests; a 16-game run resolves almost
+  nothing.** Anyone wanting a real answer needs either many hundreds of games or a
+  lower-variance measure than win/loss (per-move agreement with a deep reference
+  search, or material swing over the fog phase).
+- **The prior reaches play through exactly ONE channel** — which worlds
+  `samplePositions` hands the search. A better-calibrated belief being
+  strength-neutral there is entirely consistent, not paradoxical: the search draws
+  ~16 worlds out of a set whose median true-position rank is ~28, so the draw is
+  small relative to the uncertainty either way.
+
+**The `alpha` arm is the one result that leans, and it leans AGAINST weighting the
+search's draw.** `sampleAlpha` (`exactBelief.js`) controls that channel — draw ∝ w^α —
+and two measurements disagree about it:
+
+- **Sample coverage mildly favours α=1.** `calibrate-belief.mjs --sample-n 16` over
+  558 turns × 24 trials: a 16-world draw contains the TRUE position 39.3% of the time
+  at α=1 vs 36.1% at α=0. So weighting does not spend the sample inside a confident
+  slice that excludes reality.
+- **Play favours α=0**, 11–4 over 15 decisive games, and 3–0 on the informative
+  subset (games the black seat won — the ones not swamped by white's advantage).
+
+**Shipped α = 0.** Coverage is a proxy; win/loss is the target, and when they
+disagree, follow the target and prefer the option that changes nothing: α=0 is
+exactly the uniform world sampling the AI had before this work, so the new weights
+cannot regress play. Every other consumer of the weights — calibration, the panel's
+posterior, the mass-weighted aggregates — is independent of α and keeps the full
+posterior. Raising α needs a higher-powered strength measurement, not an argument.
+
+Note this is the *second* time on this change that the principled-sounding option
+measured worse than doing nothing, the first being τ<60. Both are the belief.js
+pattern: confidence is not free.
+
+**Read this before quoting a strength number from this subsystem.** The first run of
+this measurement returned a clean 0/16 against the prior and was completely
+fictional — two harness bugs (`result.winner` where the field is `winnerId`, so every
+decisive game was credited to one arm; and reuse of the exported *singleton* agent,
+whose `_carry` search-tree map is never reset between games, making results
+order-dependent). Both produced tidy sweeps, and a plausible causal story was
+already written down for the first one before the `null` arm exposed it. The control
+arm exists because of this; **run it, and disbelieve any lopsided result until it
+comes back mixed.**
+
+### What was NOT done
+
+- **Step 6 (weighted tail pruning at `CAP`) was not attempted**, per its own
+  warning. It trades the subsystem's central invariant for a better `CAP` failure
+  mode, and the calibration above shows exactly why that trade is bad here: the
+  worlds a prior wants to prune are the surprising ones, and the τ=60 row shows how
+  confidently wrong a prior can be about which those are.
+- **"Gives check"** stayed out of the prior. It is not O(1) on the typed
+  representation, and given that the PST term (not material) is carrying the
+  signal, there is no evidence it would pay for itself.
+
+### Where it lives
+
+- [movePrior.js](movePrior.js) — the model. `makeMovePrior({ temperature, … })`,
+  `UNIFORM_PRIOR`, `scoreMove`. Tests: [move-prior.test.js](move-prior.test.js).
+- [pieceTables.js](pieceTables.js) — NEW. `PIECE_VALUE` + `PST` extracted out of
+  [ChessAgent.js](ChessAgent.js) so the prior can share the evaluator's tables
+  without dragging its whole dependency chain into the belief's hot loop.
+- [exactBelief.js](exactBelief.js) — `this.weights`, `_setWeights`, the Map-based
+  accumulating dedupe in `_advanceOpponent`/`commitOurMove`, weighted
+  `samplePositions` (Efraimidis–Spirakis), `rankByLikelihood` (**renamed** from
+  `rankByPlausibility`; the marginal machinery and `_rankCache` are gone),
+  `setDefaultMovePrior` / `setMovePriorForSeat`.
+- [beliefCalibration.js](beliefCalibration.js) — the replay walk, shared by
+  [exact-belief.test.js](exact-belief.test.js) (which asserts the invariant) and
+  [calibrate-belief.mjs](calibrate-belief.mjs) (which reports the numbers).
+- [strength-belief.mjs](strength-belief.mjs) — seat-swapped A/B match runner.
+- [ChessGame.js](ChessGame.js) — `enumerateWorlds` now emits `beliefWeight` per
+  world; `sampleWorlds` deliberately does NOT (the weight is already in the draw).
+- [ObscuroAgent.js](ObscuroAgent.js) — `cpSumsOverWorlds` returns
+  `{ sums, wsum, n }` and every aggregate is mass-weighted; the walk order is
+  descending weight (`weightOrder`) instead of a shuffle.
+
+**Everything below this line is the original pre-implementation plan, preserved as
+written.** It still describes the design accurately, with two exceptions already
+flagged inline: `rankByPlausibility` is now `rankByLikelihood`, and π's signature
+is the per-parent batch form. Line references point at the pre-change file.
 
 ## The ask
 
@@ -91,8 +255,11 @@ the move record `{ f, t, promo, dbl, ep, castle }` from `genFogMoves`
 ([exactBelief.js:197](exactBelief.js#L197)) plus one array read for the captured
 piece (`pos[m.t]`):
 
-- **capture value** — `pos[m.t]`'s piece value (the dominant term; real players
-  take material)
+- **capture value** — `pos[m.t]`'s piece value. *(This was predicted to be "the
+  dominant term; real players take material". The ablation in the status section
+  above says otherwise: at τ=300 the capture term alone buys +0.058 nats and the
+  PST term alone +0.145. Kept anyway — it costs one array read — but it is not
+  where the signal is.)*
 - **promotion** — `m.promo`'s value
 - **piece-square delta** — a small table indexed by `[pieceType][square]`,
   scored as `PST[t][m.t] - PST[t][m.f]` (captures development/centralisation)
@@ -129,13 +296,19 @@ high-branching positions get systematically inflated.
 - `_giveUp` ([exactBelief.js:367](exactBelief.js#L367)): null the weights too.
 
 Keep π behind a single injectable function so step 2 is a swap, and so the
-uniform baseline stays testable:
+uniform baseline stays testable. **As built, the signature is the per-parent BATCH
+form rather than the per-move one sketched here:**
 
 ```js
-// π(m | pos), UNNORMALIZED; _advanceOpponent normalizes per parent.
-// () => 1 reproduces "uniform over this position's moves".
-movePrior(pos, m, oppSign) -> number
+// Fills out[0..moves.length-1] with π(m | pos), NORMALIZED (Σ = 1).
+movePrior(pos, moves, sign, out) -> void
 ```
+
+Two reasons the batch form won: normalizing per parent is not optional (without it
+high-branching positions hand out more total mass and mass is not conserved), and
+owning the softmax lets the prior subtract the per-parent max, so `temperature` can
+be small without overflowing. `out` is a scratch buffer reused across parents, so
+the whole sweep allocates nothing per position.
 
 ### 2. A real prior — new `games/chess/movePrior.js`
 
@@ -260,11 +433,12 @@ how often the escape hatch fires. If it fires often, the prior is bad.
   [OBSCURO-UNLIMITED-BELIEF-PLAN.md](OBSCURO-UNLIMITED-BELIEF-PLAN.md)) — still
   open, still unrelated.
 
-## Comments and docs that become WRONG and must be updated
+## Comments and docs that become WRONG and must be updated — ALL DONE
 
 The "posterior over P is uniform" reasoning is currently written down as settled
 fact in several places, because it was. Fix all of them or the next reader will be
-misled in the opposite direction:
+misled in the opposite direction. Each now explains that the posterior USED to be
+flat and why, so the history is still readable:
 
 - `ExactBelief.rankByPlausibility`'s doc comment
   ([exactBelief.js:585-618](exactBelief.js#L585-L618)) — a long explanation of why the
@@ -297,6 +471,13 @@ misled in the opposite direction:
   stepper — the percentages should now be a real posterior, spread much more
   unevenly than the near-flat 5.2%/4.9% the marginal surrogate produces, and the
   top board should be a position the opponent plausibly played into.
+  **NOT DONE — the one item left unverified.** Everything above is covered by
+  automated tests and the harnesses; this is the only check that needs a browser.
+  Worth doing before trusting the panel's numbers to a user, and note that a real
+  posterior over a ~200k population is genuinely tiny per world, which is why the
+  stepper now formats percentages with value-dependent precision rather than a
+  fixed decimal (`fmtPct` in BeliefWorldStepper.vue) — "0.0%" everywhere would be a
+  formatting bug, not a flat belief.
 - Per repo root [CLAUDE.md](../../CLAUDE.md): do this in its own git worktree, and
   rebase onto **local** `main` first — `EnterWorktree` branches from `origin/main`,
   which this repo does not push to, so a new worktree starts stale.
