@@ -952,6 +952,18 @@ async function submitAction({ playerId, action }) {
   } catch (e) { serverErr.value = e.message; }
 }
 
+// Concede the match as `playerId`, stopping the run loop and marking the
+// session done — works the same for every game since it's a session-level
+// operation, not a game move.
+async function resign(playerId) {
+  if (!liveState.value) return;
+  try {
+    const state = await api.resign(liveState.value.id, playerId);
+    liveState.value = state;
+    stopPoll();
+  } catch (e) { serverErr.value = e.message; }
+}
+
 // Live playback controls (pause/resume + AI move delay). The change is applied
 // server-side and broadcast to every subscriber; we also patch liveState with the
 // returned values so the controls reflect it even when we're not subscribed (e.g.
@@ -1113,6 +1125,7 @@ async function restartGame() {
                    @new-game="restartGame"
                    @open-settings="openSettings"
                    @submit-action="submitAction"
+                   @resign="resign"
                    @set-marker="setMarker"
                    @set-paused="p => setControl({ paused: p })"
                    @set-ai-delay="ms => setControl({ aiDelay: ms })"
