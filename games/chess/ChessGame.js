@@ -315,7 +315,18 @@ export const ChessGame = {
       // its score enough and it gets suggested as the best move. Treat that
       // case as the real move failing instead: the piece stays put and nothing
       // else about the position changes.
-      const blockedHere = !action.isCapture && !action.isEnPassant && board[action.to] != null;
+      let blockedHere = !action.isCapture && !action.isEnPassant && board[action.to] != null;
+      // A double push can ALSO fail on the square it jumps over (the pawn can't
+      // see past a blocker there either, per getVisibleSquares) even when the
+      // final square is genuinely empty in this world — it never gets there.
+      let midSquare = null;
+      if (!blockedHere && action.isDoublePush) {
+        const fi = action.from.charCodeAt(0) - 'a'.charCodeAt(0);
+        const fromRank = parseInt(action.from[1], 10);
+        const dir = playerId === 'white' ? 1 : -1;
+        midSquare = String.fromCharCode('a'.charCodeAt(0) + fi) + (fromRank + dir);
+        if (board[midSquare] != null) blockedHere = true;
+      }
 
       if (blockedHere) {
         moved = [];
@@ -333,12 +344,7 @@ export const ChessGame = {
         halfMoveClock = (piece.type === 'pawn' || action.isCapture) ? 0 : halfMoveClock + 1;
 
         // Track en passant target for next move
-        if (action.isDoublePush) {
-          const fi = action.from.charCodeAt(0) - 'a'.charCodeAt(0);
-          const fromRank = parseInt(action.from[1], 10);
-          const dir = playerId === 'white' ? 1 : -1;
-          enPassantTarget = String.fromCharCode('a'.charCodeAt(0) + fi) + (fromRank + dir);
-        }
+        if (action.isDoublePush) enPassantTarget = midSquare;
 
         // Update castling rights if king or rook moved
         castlingRights = updateCastlingRights(castlingRights, piece, action.from);

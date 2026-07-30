@@ -664,6 +664,26 @@ test('applyActions: a non-capture push into an occupied square fails instead of 
   assert.equal(result.board.d5?.id, 'bPd', 'the black pawn on d5 must not be overwritten by an illegal straight-push capture');
 });
 
+test('applyActions: a double push fails if a hidden piece blocks the square it jumps over', () => {
+  // Same fog mismatch as above, but for the two-square opening push: the mover's
+  // own view has d2-d4 as a clean double push, but THIS world has a black piece
+  // sitting on d3 — invisible to the mover (getVisibleSquares hides blocked pawn
+  // squares), but a real blocker the pawn can't jump over. The final square (d4)
+  // being empty must not be enough to let the move through.
+  const board = {
+    d2: unit('wPd', 'white', 'pawn', 'd2'),
+    d3: unit('bN', 'black', 'knight', 'd3'),
+  };
+  const state = markerFogState(board, { white: {}, black: {} });
+  const result = ChessGame.applyActions(state, [
+    { playerId: 'white', action: { type: 'move', from: 'd2', to: 'd4', unitId: 'wPd', isDoublePush: true } },
+  ]);
+  assert.equal(result.board.d2?.id, 'wPd', 'the white pawn stays put — it cannot jump the blocker on d3');
+  assert.equal(result.board.d3?.id, 'bN', 'the knight on d3 is untouched');
+  assert.equal(result.board.d4, undefined, 'd4 must stay empty — the pawn never got there');
+  assert.equal(result.gameSpecific.enPassantTarget, null, 'a failed double push sets no en passant target');
+});
+
 test('chess fog self-play completes with a valid result', async () => {
   const players = [
     { id: 'white', name: 'White', agent: ChessAgent },
