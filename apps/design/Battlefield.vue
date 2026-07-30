@@ -34,6 +34,11 @@ const props = defineProps({
   // the switcher (ObserverPerspective) and bubble picks via 'set-observer-view'.
   observerView:  { type: String, default: null },
   field:         Object,
+  // Turn-0 board (see App.vue's initialField / api-server's initialGridFor) — backfills
+  // the Captured panel's "ever seen" set on connect, so a piece lost before this tab
+  // opened still counts. Null for a game with no toGrid; the panel then falls back to
+  // whatever it accumulates live, same as before this prop existed.
+  initialField:  { type: Object, default: null },
   unitFx:        { type: Object, default: () => ({}) },
   territoryFx:   { type: Object, default: () => ({}) },
   historyFields: { type: Array, default: () => [] },
@@ -1236,8 +1241,20 @@ const everSeenUnits = ref({});
 // worse — everything the PREVIOUS seat could see is invisible to the new one, so the
 // opponent's whole army would be listed as captured. Per-viewer, it degrades to
 // "captures this seat has actually witnessed", which is the honest fog answer.
-watch(() => [props.liveState?.id, props.liveState?.viewerId], () => {
-  everSeenUnits.value = {};
+//
+// The reset seeds from initialField (App.vue's turn-0 board, fog-filtered the same
+// way — see api-server's initialGridFor) instead of starting empty, so a unit lost
+// before this tab ever connected still counts: without this, opening a session
+// mid-game — or just reloading the tab — showed "Captured: None yet." regardless of
+// how many pieces were actually already gone (the live watch below only ever adds a
+// unit once it's *seen* this unit go from present to absent, so it had nothing to
+// diff against for anything that vanished pre-connect).
+watch(() => [props.liveState?.id, props.liveState?.viewerId, props.initialField], () => {
+  const seed = {};
+  for (const u of props.initialField?.units ?? []) {
+    seed[u.id] = { id: u.id, name: u.name, team: u.team, type: u.type, imagePath: u.imagePath };
+  }
+  everSeenUnits.value = seed;
 }, { immediate: true });
 
 watch(displayUnits, (units) => {

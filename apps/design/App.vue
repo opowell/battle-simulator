@@ -663,6 +663,16 @@ const historyFields = ref([]);
 const revealFields = ref([]);
 const revealLog    = ref([]);
 
+// Turn-0 board, fog-filtered the same way the live one is (see api-server's
+// initialGridFor) — lets Battlefield's Captured panel backfill "units I started
+// with" on connect, instead of only knowing about a loss it happened to be open
+// for. Absent for a game with no toGrid; harmless either way (the panel just has
+// nothing to backfill from and falls back to its own live-observed tracking).
+const initialField = computed(() => {
+  const s = liveState.value;
+  return (s && s.initialGrid) ? buildField(s.initialGrid, s) : null;
+});
+
 // The resolved board straight from the server grid — no hop/replay animation overrides
 // (unlike activeField below). This is the authoritative per-turn snapshot the history
 // recorder appends (see Battlefield's fieldHistory watcher), so a live we-go game's
@@ -1084,6 +1094,7 @@ async function restartGame() {
                    :resolved-field="resolvedField"
                    :observer-view="observerView"
                    :field="activeField"
+                   :initial-field="initialField"
                    :unit-fx="unitFx"
                    :territory-fx="territoryFx"
                    :history-fields="historyFields"

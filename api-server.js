@@ -353,6 +353,10 @@ class Session {
     // spread across the whole game instead of memory growing without bound.
     this._gridStride = 1;
     this._gridStepCount = 0;
+    // Cache of initialGridFor's result, keyed by playerId (or '__observer__' /
+    // '__none__') — the turn-0 grid never changes, so there's no reason to
+    // rebuild it (createInitialState + fog-filter + toGrid) on every toJSON call.
+    this._initialGridCache = new Map();
     this._persisting = false;
     this._persistQueued = false;
     // Latest AI decision record per player (candidate moves + rankings), captured
@@ -510,6 +514,31 @@ class Session {
       if (!rawState || !game.toGrid) return null;
       return applyAxisLabels(game, game.toGrid(rawState));
     } catch { return null; }
+  }
+
+  /**
+   * The turn-0 grid, fog-filtered for `playerId` exactly like a live view (see toJSON) —
+   * used by the client to backfill "units I started with" once, on session (re)connect,
+   * so the Captured panel doesn't have to have been open since turn 1 to know about a
+   * piece it lost before that. Safe under fog because it's the SAME per-viewer
+   * getVisibleState projection every other live snapshot goes through: an observer or a
+   * non-fog game gets the whole board, a fog player gets only their own units (own
+   * pieces are never hidden from their own owner) plus whatever enemy units happened to
+   * already be visible at turn 0. Cached — the turn-0 position never changes, so there's
+   * no reason to redo createInitialState + toGrid on every request.
+   */
+  initialGridFor(playerId, observer = false) {
+    const key = observer ? '__observer__' : (playerId ?? '__none__');
+    if (this._initialGridCache.has(key)) return this._initialGridCache.get(key);
+    const { game } = GAMES[this.gameName];
+    if (!game.toGrid) return null;
+    const players = (this.params.players ?? []).map(p => ({ id: p.id, name: p.name ?? p.id }));
+    let state = game.createInitialState(players, this.params.config ?? {});
+    const fog = this.fog && !observer;
+    if (fog && playerId && game.getVisibleState) state = game.getVisibleState(state, playerId);
+    const grid = applyAxisLabels(game, game.toGrid(state));
+    this._initialGridCache.set(key, grid);
+    return grid;
   }
 
   /**
@@ -737,6 +766,8 @@ class Session {
       legalActions: pending?.legalActions ?? null,
       rendered: fogNoPlayer ? null : (rawState ? game.renderState(viewState) : null),
       grid: fogNoPlayer ? null : (viewState && game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null),
+      // Turn-0 grid, fog-filtered the same way — see initialGridFor.
+      initialGrid: fogNoPlayer ? null : this.initialGridFor(playerId, observer),
       lastActions,
       log,
       playback,
