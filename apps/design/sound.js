@@ -1,6 +1,7 @@
-// Tiny Web Audio "your turn" chime. No asset files — synthesised on the fly so it
-// works offline and needs no network/CSP allowances. Loaded as a plain <script> in
-// index.html (vue3-sfc-loader can't `import` a plain .js), exposing window.playTurnSound.
+// Tiny Web Audio "your turn" chime, plus a "victory" fanfare for game-over. No asset
+// files — synthesised on the fly so it works offline and needs no network/CSP
+// allowances. Loaded as a plain <script> in index.html (vue3-sfc-loader can't
+// `import` a plain .js), exposing window.playTurnSound / window.playWinSound.
 (function () {
   let ctx = null;
 
@@ -32,5 +33,47 @@
     } catch { /* audio is a nicety — never let it break the turn flow */ }
   }
 
+  function playWinSound() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ctx = ctx || new AC();
+      if (ctx.state === 'suspended') ctx.resume();
+
+      const now = ctx.currentTime;
+      // A quick rising "ta-da" run (C5→E5→G5→C6)...
+      const run = [523.25, 659.25, 783.99, 1046.5];
+      run.forEach((freq, i) => {
+        const t0 = now + i * 0.09;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t0);
+        osc.stop(t0 + 0.2);
+      });
+      // ...landing on a sustained major chord "cheer" swell.
+      const chordStart = now + run.length * 0.09;
+      const chord = [783.99, 1046.5, 1318.5]; // G5, C6, E6
+      for (const freq of chord) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, chordStart);
+        gain.gain.exponentialRampToValueAtTime(0.12, chordStart + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.0001, chordStart + 0.9);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(chordStart);
+        osc.stop(chordStart + 0.95);
+      }
+    } catch { /* audio is a nicety — never let it break the turn flow */ }
+  }
+
   window.playTurnSound = playTurnSound;
+  window.playWinSound = playWinSound;
 })();
