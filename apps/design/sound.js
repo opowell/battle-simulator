@@ -83,17 +83,23 @@
       if (ctx.state === 'suspended') ctx.resume();
 
       const now = ctx.currentTime;
-      // A descending two-note "womp womp", each note sliding down into a low sigh.
-      const notes = [[392.0, 0, 0.32], [293.66, 0.34, 0.55]]; // G4, then D4
+      // Classic sad-trombone "wah wah waaaah": three descending notes, each sliding
+      // down a bit at the end, slowing down and lengthening into a held final note.
+      const notes = [
+        [392.00, 0,    0.42], // G4 — "wah"
+        [349.23, 0.5,  0.42], // F4 — "wah"
+        [293.66, 1.0,  1.4],  // D4 — "waaaah", held and sliding down further
+      ];
       for (const [freq, offset, dur] of notes) {
         const t0 = now + offset;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(freq, t0);
-        osc.frequency.exponentialRampToValueAtTime(freq * 0.7, t0 + dur);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.82, t0 + dur);
         gain.gain.setValueAtTime(0.0001, t0);
-        gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.04);
+        gain.gain.setValueAtTime(0.16, t0 + dur * 0.6);
         gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
         osc.connect(gain).connect(ctx.destination);
         osc.start(t0);
