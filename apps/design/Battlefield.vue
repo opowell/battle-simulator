@@ -770,10 +770,16 @@ watch(() => (isPending.value ? pendingPlayerId.value : null), (pending, prev) =>
   if (pending && pending !== prev) window.playTurnSound?.();
 });
 
-// Cheer + confetti on a decisive win — keyed on isDone's false→true edge (not
-// `immediate`) so opening/resuming an already-finished game never replays it.
+// Cheer + confetti (or a losing stinger) on a decisive win — keyed on isDone's
+// false→true edge (not `immediate`) so opening/resuming an already-finished game
+// never replays it. With no human seated (pure spectating) there's no "you" to win
+// or lose, so it defaults to the celebration.
 watch(() => isDone.value, (done, prev) => {
-  if (done && !prev && props.liveState?.result?.outcome === 'win') {
+  if (!done || prev || props.liveState?.result?.outcome !== 'win') return;
+  const humanPlayers = props.liveState?.humanPlayers ?? [];
+  if (humanPlayers.length && !humanPlayers.includes(props.liveState.result.winnerId)) {
+    playLoseSound();
+  } else {
     playWinCelebration();
   }
 });
@@ -781,6 +787,10 @@ watch(() => isDone.value, (done, prev) => {
 function playWinCelebration() {
   window.playWinSound?.();
   window.playConfetti?.();
+}
+
+function playLoseSound() {
+  window.playLoseSound?.();
 }
 
 // CS weapon/action sound effects (games/cs/sounds/*.wav, see cs-sound.js). Keyed on
@@ -1559,7 +1569,8 @@ onUnmounted(() => {
     @toggle-ruler="showRuler = !showRuler"
     @toggle-hp-bars="showHpBars = !showHpBars"
     @surrender="confirmSurrender"
-    @test-celebration="playWinCelebration"/>
+    @test-celebration="playWinCelebration"
+    @test-lose="playLoseSound"/>
 
   <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
     @close="selectedId = null" @submit="submitAction"/>
