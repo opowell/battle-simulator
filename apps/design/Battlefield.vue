@@ -34,11 +34,6 @@ const props = defineProps({
   // the switcher (ObserverPerspective) and bubble picks via 'set-observer-view'.
   observerView:  { type: String, default: null },
   field:         Object,
-  // Turn-0 board (see App.vue's initialField / api-server's initialGridFor) — backfills
-  // the Captured panel's "ever seen" set on connect, so a piece lost before this tab
-  // opened still counts. Null for a game with no toGrid; the panel then falls back to
-  // whatever it accumulates live, same as before this prop existed.
-  initialField:  { type: Object, default: null },
   unitFx:        { type: Object, default: () => ({}) },
   territoryFx:   { type: Object, default: () => ({}) },
   historyFields: { type: Array, default: () => [] },
@@ -211,9 +206,8 @@ const snapshotField = () => props.resolvedField ?? props.field;
 // turn passes, so App.vue's viewAsId re-fetches through the other player's eyes).
 // Every recorded frame is a snapshot of one seat's fog view; appending the new
 // seat's frames to the old seat's would make a timeline you cannot read — scrubbing
-// back would silently change whose eyes you are looking through, and anything
-// derived by diffing frames (see everSeenUnits below) would report the whole army
-// appearing and vanishing. One timeline per viewer instead.
+// back would silently change whose eyes you are looking through. One timeline per
+// viewer instead.
 // Two separate sources (not one getter returning `[id, viewerId]`) so Vue compares
 // each value by identity: liveState is reassigned wholesale on every poll tick/move
 // (App.vue never diffs before writing it), so a getter returning a fresh array
@@ -1261,80 +1255,17 @@ const rosterTeams = computed(() =>
 );
 
 // ── units lost tracking ───────────────────────────────────────
-const everSeenUnits = ref({});
-
-// Reset on a new session, and also whenever the seat we're viewing through changes
-// (hotseat: the turn passes, see App.vue's viewAsId). This roster is "units seen at
-// least once, minus units visible now", which under fog already conflates captured
-// with merely out-of-sight; carrying it across a perspective switch made that much
-// worse — everything the PREVIOUS seat could see is invisible to the new one, so the
-// opponent's whole army would be listed as captured. Per-viewer, it degrades to
-// "captures this seat has actually witnessed", which is the honest fog answer.
-//
-// Two SEPARATE getters (Vue's multi-source watch form), not one getter returning
-// `[id, viewerId]` — a single getter returning a fresh array literal is a new
-// reference on every call, and Vue's default equality check for one-source watch
-// is reference equality, so it fired on every liveState update (id and viewerId
-// unchanged or not) and reset everSeenUnits back to empty after every single turn.
-// That silently discarded whatever the live watch below had just caught for an
-// enemy unit seen and then captured, moments after it was recorded. Multi-source
-// watch compares each source by its own value instead, so this only fires on an
-// actual id or viewerId change, as intended.
-watch([() => props.liveState?.id, () => props.liveState?.viewerId], () => {
-  everSeenUnits.value = {};
-}, { immediate: true });
-
-// Backfill "units I started with" from initialField (App.vue's turn-0 board,
-// fog-filtered the same way — see api-server's initialGridFor), so a unit lost
-// before this tab ever connected still counts: without this, opening a session
-// mid-game — or just reloading the tab — showed "Captured: None yet." regardless of
-// how many pieces were actually already gone (the live watch below only ever adds a
-// unit once it's *seen* this unit go from present to absent, so it had nothing to
-// diff against for anything that vanished pre-connect).
-//
-// MERGE only, never replace: initialField is a `computed` re-deriving from the
-// whole liveState snapshot, so its object identity changes on every single turn,
-// not just on connect — this watcher re-fires far more often than the reset above.
-// An earlier version replaced everSeenUnits wholesale here, which meant every turn
-// silently erased whatever the live watch had already caught for enemy units seen
-// and then captured (initialField itself never reports those — under fog, turn 0
-// shows only your own starting units), collapsing the enemy side back to "None
-// yet" moments after a real capture. Merging is idempotent, so firing this often
-// is harmless — it only ever adds entries, never removes the live watch's work.
-watch(() => props.initialField, (f) => {
-  if (!f) return;
-  let changed = false;
-  const updated = { ...everSeenUnits.value };
-  for (const u of f.units) {
-    if (!updated[u.id]) {
-      updated[u.id] = { id: u.id, name: u.name, team: u.team, type: u.type, imagePath: u.imagePath };
-      changed = true;
-    }
-  }
-  if (changed) everSeenUnits.value = updated;
-}, { immediate: true });
-
-watch(displayUnits, (units) => {
-  let changed = false;
-  const updated = { ...everSeenUnits.value };
-  for (const u of units) {
-    if (!updated[u.id]) {
-      updated[u.id] = { id: u.id, name: u.name, team: u.team, type: u.type, imagePath: u.imagePath };
-      changed = true;
-    }
-  }
-  if (changed) everSeenUnits.value = updated;
-}, { immediate: true });
-
+// Server-authoritative (see api-server's _recordCasualties / confirmedCaptures):
+// each entry is already scoped to what this viewer is allowed to know about — their
+// own losses always (a player's own units are never fog-stripped from themselves),
+// an enemy's only if they actually witnessed it die. Kept for the session's whole
+// lifetime server-side, so a reload never loses history the way a client-side
+// "units I've seen so far" tally would. No local bookkeeping needed at all.
 const lostUnitsTeams = computed(() => {
-  const currentIds = new Set(displayUnits.value.map(u => u.id));
-  const lost = [];
-  for (const [id, unit] of Object.entries(everSeenUnits.value)) {
-    if (!currentIds.has(id)) lost.push(unit);
-  }
+  const captures = props.liveState?.confirmedCaptures ?? [];
   return props.field.teams.map(t => ({
     ...t,
-    units: lost.filter(u => u.team === t.id),
+    units: captures.filter(c => c.ownerId === t.id),
   }));
 });
 

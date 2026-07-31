@@ -354,10 +354,15 @@ class Session {
     // spread across the whole game instead of memory growing without bound.
     this._gridStride = 1;
     this._gridStepCount = 0;
-    // Cache of initialGridFor's result, keyed by playerId (or '__observer__' /
-    // '__none__') — the turn-0 grid never changes, so there's no reason to
-    // rebuild it (createInitialState + fog-filter + toGrid) on every toJSON call.
-    this._initialGridCache = new Map();
+    // Every unit lost so far, generic across every game (see _recordCasualties):
+    // { id, ownerId, type, name, imagePath, ply, witnessedBy }. witnessedBy is the
+    // list of player ids who had this unit in their fog-filtered view the instant
+    // before it died — always includes ownerId (a player's own units are never
+    // fog-stripped from themselves) — so toJSON can hand each viewer exactly the
+    // deaths they're entitled to know about, own losses always included. Kept for
+    // the session's whole lifetime, unlike the client's old per-tab "ever seen"
+    // heuristic, so a reconnect/reload never loses history.
+    this.casualties = [];
     this._persisting = false;
     this._persistQueued = false;
     // Latest AI decision record per player (candidate moves + rankings), captured
@@ -518,28 +523,59 @@ class Session {
   }
 
   /**
-   * The turn-0 grid, fog-filtered for `playerId` exactly like a live view (see toJSON) —
-   * used by the client to backfill "units I started with" once, on session (re)connect,
-   * so the Captured panel doesn't have to have been open since turn 1 to know about a
-   * piece it lost before that. Safe under fog because it's the SAME per-viewer
-   * getVisibleState projection every other live snapshot goes through: an observer or a
-   * non-fog game gets the whole board, a fog player gets only their own units (own
-   * pieces are never hidden from their own owner) plus whatever enemy units happened to
-   * already be visible at turn 0. Cached — the turn-0 position never changes, so there's
-   * no reason to redo createInitialState + toGrid on every request.
+   * Diff `preState.units` (generic, per games/types.js: an alive-only array like
+   * chess's, or the alive:false-tagged form the type doc describes — both are
+   * handled) against the just-stepped `this.engine.state.units` and append one
+   * casualty entry per unit that dropped out. Zero game-specific code: it only
+   * relies on the universal Unit.id/ownerId/type contract, so it works for any
+   * game without that game having to opt in or annotate anything.
+   *
+   * For display, the unit's last position is still in preState, so its cell (and
+   * therefore imagePath/glyph) can be read straight out of a toGrid(preState)
+   * call — no per-game "describe this unit out of context" hook needed either.
+   *
+   * witnessedBy answers "who actually saw this die" — own team always (their
+   * units are never fog-stripped from themselves; see getVisibleState), plus
+   * anyone else whose fog view had this unit visible the instant before it
+   * vanished. That's the honest fog answer: a unit merely walking back out of
+   * sight is never a false "captured" (it's still in afterAlive, so never
+   * reaches this method at all), and an opponent's death off in the fog you
+   * never had eyes on is correctly never reported to you either.
    */
-  initialGridFor(playerId, observer = false) {
-    const key = observer ? '__observer__' : (playerId ?? '__none__');
-    if (this._initialGridCache.has(key)) return this._initialGridCache.get(key);
+  _recordCasualties(preState) {
+    if (!preState) return;
     const { game } = GAMES[this.gameName];
-    if (!game.toGrid) return null;
-    const players = (this.params.players ?? []).map(p => ({ id: p.id, name: p.name ?? p.id }));
-    let state = game.createInitialState(players, this.params.config ?? {});
-    const fog = this.fog && !observer;
-    if (fog && playerId && game.getVisibleState) state = game.getVisibleState(state, playerId);
-    const grid = applyAxisLabels(game, game.toGrid(state));
-    this._initialGridCache.set(key, grid);
-    return grid;
+    const alive = (arr) => (arr ?? []).filter(u => u.alive !== false);
+    const before = new Map(alive(preState.units).map(u => [u.id, u]));
+    const afterIds = new Set(alive(this.engine.state.units).map(u => u.id));
+    const dead = [...before.values()].filter(u => !afterIds.has(u.id));
+    if (!dead.length) return;
+    let preGrid = null;
+    if (game.toGrid) {
+      try { preGrid = applyAxisLabels(game, game.toGrid(preState)); } catch { preGrid = null; }
+    }
+    const players = this.params.players ?? [];
+    for (const u of dead) {
+      const cell = preGrid?.cells?.find(c => c.unitId === u.id);
+      const witnessedBy = [];
+      for (const p of players) {
+        if (p.id === u.ownerId) { witnessedBy.push(p.id); continue; }
+        if (!this.fog || !game.getVisibleState) { witnessedBy.push(p.id); continue; }
+        try {
+          const vis = game.getVisibleState(preState, p.id);
+          if ((vis.units ?? []).some(vu => vu.id === u.id)) witnessedBy.push(p.id);
+        } catch { /* treat as unwitnessed */ }
+      }
+      this.casualties.push({
+        id: u.id,
+        ownerId: u.ownerId,
+        type: u.type,
+        name: cell?.unitName ?? cell?.glyph ?? u.type,
+        imagePath: cell?.imagePath ?? null,
+        ply: this._seq,
+        witnessedBy,
+      });
+    }
   }
 
   /**
@@ -618,6 +654,7 @@ class Session {
         // and duration — would read as 0).
         this._stepSimTime = this._computeStepSimTime(preState);
         this._collectAnalysis();
+        this._recordCasualties(preState);
         this._pushGridHistory(this._captureGrid());
         if (done) {
           this.status = 'done';
@@ -802,8 +839,12 @@ class Session {
       legalActions: pending?.legalActions ?? null,
       rendered: fogNoPlayer ? null : (rawState ? game.renderState(viewState) : null),
       grid: fogNoPlayer ? null : (viewState && game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null),
-      // Turn-0 grid, fog-filtered the same way — see initialGridFor.
-      initialGrid: fogNoPlayer ? null : this.initialGridFor(playerId, observer),
+      // Every unit lost so far that this viewer is entitled to know about — see
+      // _recordCasualties. Observers and non-fog games get the whole list
+      // unconditionally (nothing to hide); a fog player gets their own losses
+      // always, plus only the enemy deaths their witnessedBy actually includes.
+      confirmedCaptures: fogNoPlayer ? [] : this.casualties.filter(c =>
+        observer || !this.fog || c.witnessedBy.includes(playerId)),
       lastActions,
       log,
       playback,
