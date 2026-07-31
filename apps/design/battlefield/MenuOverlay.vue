@@ -7,7 +7,7 @@ defineProps({
   showHpBars: { type: Boolean, default: true },
   canSurrender: Boolean,
 });
-defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars', 'surrender', 'test-celebration', 'test-lose']);
+defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars', 'surrender']);
 const apiLabel = 'api · ' + window.location.host + window.api.basePath;
 </script>
 
@@ -49,14 +49,6 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
           <button class="btn btn-ghost menu-btn"
                   @click="$emit('close'); $emit('open-settings')">
             <BsIcon name="sliders" :size="14" color="var(--dim)"/> Settings
-          </button>
-          <button class="btn btn-ghost menu-btn"
-                  @click="$emit('close'); $emit('test-celebration')">
-            <BsIcon name="zap" :size="14" color="var(--dim)"/> Test win celebration
-          </button>
-          <button class="btn btn-ghost menu-btn"
-                  @click="$emit('close'); $emit('test-lose')">
-            <BsIcon name="flag" :size="14" color="var(--dim)"/> Test lose sound
           </button>
           <button v-if="canSurrender" class="btn btn-ghost menu-btn menu-btn--danger"
                   @click="$emit('surrender')">

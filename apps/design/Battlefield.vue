@@ -1572,9 +1572,7 @@ onUnmounted(() => {
     @open-settings="$emit('open-settings')"
     @toggle-ruler="showRuler = !showRuler"
     @toggle-hp-bars="showHpBars = !showHpBars"
-    @surrender="confirmSurrender"
-    @test-celebration="playWinCelebration"
-    @test-lose="playLoseSound"/>
+    @surrender="confirmSurrender"/>
 
   <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
     @close="selectedId = null" @submit="submitAction"/>
