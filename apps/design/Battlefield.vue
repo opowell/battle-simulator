@@ -1349,6 +1349,10 @@ function submitAction(action) {
   // Moving while browsing replay (or already inside a fork) explores a sandbox
   // instead of playing a real move — see forkPlayMove above.
   if (analysisEnabled.value && (forking.value || !atLatest.value)) { forkPlayMove(action); return; }
+  // Lichess/chess.com-style move sound, right as the piece is released onto its new
+  // square (this is the same drag-release / click-to-move path that produced `action`
+  // above — see handleSqClick). Chess-only: window.playChessMoveSound (chess-sound.js).
+  if (action.type === 'move' && props.liveState?.game === 'chess') window.playChessMoveSound?.();
   emit('submit-action', { playerId: pendingPlayerId.value, action });
 }
 
