@@ -770,6 +770,19 @@ watch(() => (isPending.value ? pendingPlayerId.value : null), (pending, prev) =>
   if (pending && pending !== prev) window.playTurnSound?.();
 });
 
+// Cheer + confetti on a decisive win — keyed on isDone's false→true edge (not
+// `immediate`) so opening/resuming an already-finished game never replays it.
+watch(() => isDone.value, (done, prev) => {
+  if (done && !prev && props.liveState?.result?.outcome === 'win') {
+    playWinCelebration();
+  }
+});
+
+function playWinCelebration() {
+  window.playWinSound?.();
+  window.playConfetti?.();
+}
+
 // CS weapon/action sound effects (games/cs/sounds/*.wav, see cs-sound.js). Keyed on
 // `log.length` growing — same trigger as the fieldHistory watcher above — so replay
 // scrubbing (which doesn't change log.length) never re-fires a shot that already
@@ -1608,7 +1621,8 @@ onUnmounted(() => {
     @open-settings="$emit('open-settings')"
     @toggle-ruler="showRuler = !showRuler"
     @toggle-hp-bars="showHpBars = !showHpBars"
-    @surrender="confirmSurrender"/>
+    @surrender="confirmSurrender"
+    @test-celebration="playWinCelebration"/>
 
   <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
     @close="selectedId = null" @submit="submitAction"/>
