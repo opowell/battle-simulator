@@ -14,9 +14,10 @@
 
       const now = ctx.currentTime;
 
-      // A short burst of filtered noise reads as a wooden "clack" — a plain oscillator
-      // here would sound like a synth beep, not a piece landing on a board.
-      const dur = 0.08;
+      // A short burst of HIGH-passed filtered noise gives the bright, plasticky "tock"
+      // lichess/chess.com use — centering the band up near 2.8kHz (rather than ~1kHz)
+      // is what actually reads as "bright" instead of "wooden thud".
+      const dur = 0.055;
       const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
@@ -25,28 +26,44 @@
       noise.buffer = buffer;
       const filter = ctx.createBiquadFilter();
       filter.type = 'bandpass';
-      filter.frequency.value = 1000;
-      filter.Q.value = 0.8;
+      filter.frequency.value = 2800;
+      filter.Q.value = 1.1;
       const noiseGain = ctx.createGain();
       noiseGain.gain.setValueAtTime(0.0001, now);
-      noiseGain.gain.exponentialRampToValueAtTime(0.45, now + 0.004);
+      noiseGain.gain.exponentialRampToValueAtTime(0.5, now + 0.002);
       noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
       noise.connect(filter).connect(noiseGain).connect(ctx.destination);
       noise.start(now);
       noise.stop(now + dur);
 
-      // A short low thump underneath gives the clack some weight.
+      // A brief high "ping" layered under the noise gives the click a clear pitch
+      // center (rather than pure hiss) — pitched up near 1.8kHz and decaying fast so
+      // it reads as a crisp tap, not a bell.
+      const ping = ctx.createOscillator();
+      ping.type = 'triangle';
+      ping.frequency.setValueAtTime(1800, now);
+      ping.frequency.exponentialRampToValueAtTime(1500, now + 0.03);
+      const pingGain = ctx.createGain();
+      pingGain.gain.setValueAtTime(0.0001, now);
+      pingGain.gain.exponentialRampToValueAtTime(0.22, now + 0.003);
+      pingGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+      ping.connect(pingGain).connect(ctx.destination);
+      ping.start(now);
+      ping.stop(now + 0.05);
+
+      // A touch of low body keeps it from sounding thin — much quieter and shorter
+      // than the noise/ping above so it stays underneath rather than dominating.
       const thump = ctx.createOscillator();
       thump.type = 'sine';
-      thump.frequency.setValueAtTime(200, now);
-      thump.frequency.exponentialRampToValueAtTime(85, now + 0.06);
+      thump.frequency.setValueAtTime(320, now);
+      thump.frequency.exponentialRampToValueAtTime(180, now + 0.025);
       const thumpGain = ctx.createGain();
       thumpGain.gain.setValueAtTime(0.0001, now);
-      thumpGain.gain.exponentialRampToValueAtTime(0.3, now + 0.004);
-      thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+      thumpGain.gain.exponentialRampToValueAtTime(0.14, now + 0.003);
+      thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
       thump.connect(thumpGain).connect(ctx.destination);
       thump.start(now);
-      thump.stop(now + 0.08);
+      thump.stop(now + 0.04);
     } catch { /* audio is a nicety — never let it break the move flow */ }
   }
 
