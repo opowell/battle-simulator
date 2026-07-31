@@ -83,28 +83,53 @@
       if (ctx.state === 'suspended') ctx.resume();
 
       const now = ctx.currentTime;
-      // Classic sad-trombone "wah wah waaaah": three descending notes, each sliding
-      // down a bit at the end, slowing down and lengthening into a held final note.
+      // Classic sad-trombone "wah wah wah waaaah". A plain oscillator envelope reads
+      // as a synth beep, not brass — what actually gives it that muted-horn "wah"
+      // vowel is a resonant bandpass filter sweeping open then closed on each note
+      // (the same trick a wah-wah pedal uses), so one continuous sawtooth voice runs
+      // through a single swept filter rather than four independent tone bursts.
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.Q.value = 5;
+      const gain = ctx.createGain();
+      osc.connect(filter).connect(gain).connect(ctx.destination);
+
+      // Four descending notes (G4, F4, E4, D4), each sagging ~6% flat right before
+      // the next lands, plus a light vibrato on the held final "waaaah".
       const notes = [
-        [392.00, 0,    0.42], // G4 — "wah"
-        [349.23, 0.5,  0.42], // F4 — "wah"
-        [293.66, 1.0,  1.4],  // D4 — "waaaah", held and sliding down further
+        { freq: 392.00, start: 0,    dur: 0.5 },
+        { freq: 349.23, start: 0.55, dur: 0.5 },
+        { freq: 329.63, start: 1.1,  dur: 0.5 },
+        { freq: 293.66, start: 1.65, dur: 1.9 },
       ];
-      for (const [freq, offset, dur] of notes) {
-        const t0 = now + offset;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sawtooth';
+      gain.gain.setValueAtTime(0.0001, now);
+      for (const { freq, start, dur } of notes) {
+        const t0 = now + start;
+        const tEnd = t0 + dur;
         osc.frequency.setValueAtTime(freq, t0);
-        osc.frequency.exponentialRampToValueAtTime(freq * 0.82, t0 + dur);
-        gain.gain.setValueAtTime(0.0001, t0);
-        gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.04);
-        gain.gain.setValueAtTime(0.16, t0 + dur * 0.6);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(t0);
-        osc.stop(t0 + dur + 0.02);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.94, tEnd);
+        gain.gain.exponentialRampToValueAtTime(0.3, t0 + 0.05);
+        gain.gain.setValueAtTime(0.3, t0 + dur * 0.55);
+        gain.gain.exponentialRampToValueAtTime(0.0001, tEnd);
+        filter.frequency.setValueAtTime(500, t0);
+        filter.frequency.exponentialRampToValueAtTime(1600, t0 + dur * 0.35);
+        filter.frequency.exponentialRampToValueAtTime(500, tEnd);
       }
+
+      const last = notes[3];
+      const vibrato = ctx.createOscillator();
+      const vibratoGain = ctx.createGain();
+      vibrato.frequency.value = 5.5;
+      vibratoGain.gain.value = 20; // cents
+      vibrato.connect(vibratoGain).connect(osc.detune);
+      const vibratoStart = now + last.start + last.dur * 0.3;
+      const stopAt = now + last.start + last.dur + 0.05;
+      vibrato.start(vibratoStart);
+      vibrato.stop(stopAt);
+      osc.start(now);
+      osc.stop(stopAt);
     } catch { /* audio is a nicety — never let it break the turn flow */ }
   }
 
