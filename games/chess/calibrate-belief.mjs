@@ -21,7 +21,7 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { replayBelief, mean } from './beliefCalibration.js';
-import { makeMovePrior, UNIFORM_PRIOR } from './movePrior.js';
+import { makeMovePrior, UNIFORM_PRIOR, FITTED_WEIGHTS } from './movePrior.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SESSIONS = join(HERE, '..', '..', 'sessions');
@@ -48,6 +48,11 @@ const PRIORS = taus
      ...taus.split(',').map(t => [`τ=${t}`, makeMovePrior({ temperature: Number(t) })])]
   : [
     ['uniform-π', UNIFORM_PRIOR],
+    // The shipped model. NOTE it is fitted on these same sessions, so its number
+    // here is IN-SAMPLE and flattering; the honest held-out comparison is
+    // `fit-move-prior.mjs --e2e`, which refits per fold. This arm is for
+    // "did anything regress", not for quoting.
+    ['FITTED (shipped, in-sample)', makeMovePrior(FITTED_WEIGHTS)],
     ['τ=800', makeMovePrior({ temperature: 800 })],
     ['τ=400', makeMovePrior({ temperature: 400 })],
     ['τ=300', makeMovePrior({ temperature: 300 })],

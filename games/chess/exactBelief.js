@@ -57,7 +57,7 @@
 // literally knows the true position.
 // ---------------------------------------------------------------------------
 
-import { makeMovePrior, UNIFORM_PRIOR } from './movePrior.js';
+import { makeMovePrior, UNIFORM_PRIOR, FITTED_WEIGHTS } from './movePrior.js';
 
 const CAP = 200000;          // paper: |P| usually ≤ 10⁶ (C++); avg ~17k
 const TIME_GUARD_MS = 4000;  // per-turn update budget
@@ -66,24 +66,29 @@ const REACQUIRE_BOUND = 60000;
 // The π used by trackers that don't ask for a specific one — i.e. all of
 // production, via getExactBelief.
 //
-// τ = 200 IS A MEASURED NUMBER, NOT A GUESS, AND IT IS DELIBERATELY ON THE VAGUE
-// SIDE. Mean log-loss of the true position over 30 recorded fog games, both seats,
-// 1028 turns (games/chess/calibrate-belief.mjs; full table in
-// OBSCURO-MOVE-PRIOR-PLAN.md), as nats better than a flat posterior over the same
-// set — higher is better:
+// THESE WEIGHTS ARE FITTED, NOT TUNED BY HAND (movePrior.js FITTED_WEIGHTS;
+// regenerate with games/chess/fit-move-prior.mjs --write). Mean log-loss of the
+// true position, as nats better than a flat posterior over the same set — higher
+// is better. 3-fold CV over 37 recorded fog games, both seats, 1320 turns: each
+// fold's weights fitted on the other two thirds, belief measured on the held-out
+// third (`fit-move-prior.mjs --e2e`):
 //
-//   uniform π  +0.051   τ=400  +0.124   τ=200  +0.188   τ=100  +0.198   τ=35  −1.035
-//   τ=800      +0.088   τ=300  +0.147   τ=150  +0.212   τ=60   −0.088   τ=20  −3.457
+//   uniform π  +0.006   τ=200  +0.135   τ=150  +0.155   τ=60  −0.236
+//   FITTED     +0.691   FITTED+floor (shipped)  +0.683   FITTED×1.5  +0.626
 //
-// The optimum is τ≈150 and the cliff is brutal: by τ=60 the belief is already
-// WORSE than assuming nothing, and by τ=20 it is catastrophically worse. Note what
-// happens on the way down — the true board's median RANK keeps improving (24 → 18)
-// while log-loss collapses. That is overconfidence exactly: the ordering sharpens
-// while the probabilities become wild. It is why log-loss is the gate here and rank
-// is not, and it is the same failure belief.js's header records twice (THREAT_BIAS,
-// MAX_LURKERS). 200 sits on the safe side of the optimum, costs ~10% of the
-// available Δ, and buys a 3.3× margin to the cliff instead of 2.5×.
-let defaultPrior = makeMovePrior({ temperature: 200 });
+// Median rank of the true board: 18 under τ=200, 9 under FITTED. The single-τ
+// model could not beat ~+0.16 wherever τ was put, because its terms want
+// temperatures a factor of 14 apart (rook PST τ≈11 … promotion τ≈154) and one
+// knob had to cover them all. That is also what made the old cliff so steep:
+// dropping τ to sharpen the PST terms drove capture into confidently-wrong first.
+//
+// SHARPENING IS STILL NOT FREE — ×1.5 on the fitted weights costs 0.065. What
+// changed is that MLE lands on the model's own optimum, so no knob points at the
+// cliff any more, and `floor` bounds what a single confident error can cost.
+// Log-loss is still the gate and rank still is not — see belief.js's header
+// (THREAT_BIAS, MAX_LURKERS) for the two earlier times an over-sharp belief made
+// the AI worse.
+let defaultPrior = makeMovePrior(FITTED_WEIGHTS);
 
 /** Swap the production π. Pass null to restore the uniform baseline. */
 export function setDefaultMovePrior(prior) { defaultPrior = prior ?? UNIFORM_PRIOR; }
@@ -286,7 +291,10 @@ function visibilityMask(p, sign) {
 // Moves are {f, t, promo (code 0|2..5), dbl, ep (captured idx | -1), castle
 // (0 none, 1 kingside, 2 queenside)}.
 
-function genFogMoves(p, sign) {
+// Exported for fit-move-prior.mjs: the fitter must normalize π over EXACTLY the
+// choice set production normalizes over, or the weights it learns are for a
+// different model than the one being served.
+export function genFogMoves(p, sign) {
   const out = [];
   const push = (f, t, promo = 0, dbl = false, ep = -1, castle = 0) =>
     out.push({ f, t, promo, dbl, ep, castle });

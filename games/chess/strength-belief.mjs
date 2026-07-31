@@ -4,6 +4,9 @@
 //   node games/chess/strength-belief.mjs [--pairs N] [--max-turns N] [--tau 200]
 //                                        [--arm prior|alpha|null]
 //
+// The `prior` arm tests the SHIPPED π (movePrior.js FITTED_WEIGHTS) against
+// uniform π; `--tau N` swaps in the old single-temperature model instead.
+//
 // Calibration (calibrate-belief.mjs) answers "is the belief more accurate". This
 // answers the separate and harder question of whether that accuracy converts into
 // wins, by playing ChessObscuroAgent against itself under fog with the two seats
@@ -49,18 +52,21 @@ import { GameEngine } from '../../engine/index.js';
 import { ChessGame } from './ChessGame.js';
 import { ChessObscuroAgent } from './ObscuroAgent.js';
 import { setMovePriorForSeat, setBeliefSampleAlphaForSeat } from './exactBelief.js';
-import { makeMovePrior, UNIFORM_PRIOR } from './movePrior.js';
+import { makeMovePrior, UNIFORM_PRIOR, FITTED_WEIGHTS } from './movePrior.js';
 import { quit as stockfishQuit } from './stockfish.js';
 
 const argv = process.argv.slice(2);
 const arg = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
 const pairs = Number(arg('pairs', '3'));
 const maxTurns = Number(arg('max-turns', '30'));
-const tau = Number(arg('tau', '200'));
+// Default: whatever production actually serves (the FITTED weights). `--tau N`
+// overrides it with the old single-temperature model, which is how you reproduce
+// the 2026-07-30 numbers — but note that is no longer the shipped π.
+const tau = Number(arg('tau', '0'));
 const armName = arg('arm', 'prior');
 if (!['prior', 'alpha', 'null'].includes(armName)) throw new Error(`--arm must be prior|alpha|null, got ${armName}`);
 
-const prior = makeMovePrior({ temperature: tau });
+const prior = tau > 0 ? makeMovePrior({ temperature: tau }) : makeMovePrior(FITTED_WEIGHTS);
 // `A` is the arm under test, `B` the control it must beat.
 const labels = armName === 'prior' ? { a: 'prior', b: 'uniform-π' }
   : armName === 'alpha' ? { a: 'α=1', b: 'α=0' }
@@ -136,7 +142,7 @@ setBeliefSampleAlphaForSeat('white', null);
 setBeliefSampleAlphaForSeat('black', null);
 
 const decisive = tally.priorWins + tally.uniformWins;
-console.log(`\narm ${armName}: ${labels.a} vs ${labels.b}, τ=${tau}, ${pairs} seat-swapped pairs` +
+console.log(`\narm ${armName}: ${labels.a} vs ${labels.b}, π=${tau > 0 ? `τ=${tau}` : 'FITTED'}, ${pairs} seat-swapped pairs` +
   ` (${games.length} games), maxTurns ${maxTurns}`);
 console.log(`  ${labels.a.padEnd(10)} ${tally.priorWins}`);
 console.log(`  ${labels.b.padEnd(10)} ${tally.uniformWins}`);
