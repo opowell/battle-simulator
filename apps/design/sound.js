@@ -1,7 +1,8 @@
-// Tiny Web Audio "your turn" chime, plus a "victory" fanfare for game-over. No asset
-// files — synthesised on the fly so it works offline and needs no network/CSP
+// Tiny Web Audio "your turn" chime, plus "victory"/"defeat" stingers for game-over. No
+// asset files — synthesised on the fly so it works offline and needs no network/CSP
 // allowances. Loaded as a plain <script> in index.html (vue3-sfc-loader can't
-// `import` a plain .js), exposing window.playTurnSound / window.playWinSound.
+// `import` a plain .js), exposing window.playTurnSound / window.playWinSound /
+// window.playLoseSound.
 (function () {
   let ctx = null;
 
@@ -74,6 +75,34 @@
     } catch { /* audio is a nicety — never let it break the turn flow */ }
   }
 
+  function playLoseSound() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ctx = ctx || new AC();
+      if (ctx.state === 'suspended') ctx.resume();
+
+      const now = ctx.currentTime;
+      // A descending two-note "womp womp", each note sliding down into a low sigh.
+      const notes = [[392.0, 0, 0.32], [293.66, 0.34, 0.55]]; // G4, then D4
+      for (const [freq, offset, dur] of notes) {
+        const t0 = now + offset;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, t0);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.7, t0 + dur);
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t0);
+        osc.stop(t0 + dur + 0.02);
+      }
+    } catch { /* audio is a nicety — never let it break the turn flow */ }
+  }
+
   window.playTurnSound = playTurnSound;
   window.playWinSound = playWinSound;
+  window.playLoseSound = playLoseSound;
 })();
