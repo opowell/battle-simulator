@@ -66,11 +66,18 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
       </span>
     </template>
     <template v-else-if="isLive">
-      <!-- Ply-by-ply action stepper. Redundant with TimeField for a continuous-time
-           game (which needs the numeric field for exact values, not whole steps) and
-           with TurnTimeline once the turn's own scrub bar is on screen, so it's
-           hidden in both cases rather than showing two ways to do the same thing. -->
-      <template v-if="!turnRange && timeType !== 'continuous'">
+      <!-- Ply-by-ply action stepper: the one nav control guaranteed to reach every
+           recorded ply regardless of how the game groups plies into turns. Kept
+           visible even when TurnTimeline is also showing (below) — for a game like
+           chess, where a "turn" is one player's move but `turnNumber` only advances
+           after the second player replies, a turn's span flips between 0 and 1 ply
+           from one move to the next, so gating these buttons on that span made them
+           flicker in and out and left crossing a turn boundary unreachable half the
+           time. TurnTimeline's fine scrub is genuinely redundant only within a single
+           multi-ply turn, not across turns, so it's additive rather than a swap-out.
+           Hidden only for continuous-time games, which use TimeField's typed value
+           instead of whole-ply stepping. -->
+      <template v-if="timeType !== 'continuous'">
         <button class="iconbtn bb-icon" :disabled="histPos <= 0" @click="$emit('go-back')" title="Previous action">
           <BsIcon name="back" :size="15" color="var(--dim)"/>
         </button>
@@ -96,7 +103,7 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
         @seek="$emit('seek-time', $event)"/>
       <!-- Takes the bar's flexible space (where the spacer used to be), so the
            track is as wide as the rest of the row leaves it. -->
-      <TurnTimeline v-if="turnRange"
+      <TurnTimeline v-if="turnRange && turnRange.start !== turnRange.end"
         :start="turnRange.start" :end="turnRange.end" :turn="turnRange.turn"
         :pos="histPos" :frac="histFrac"
         @seek="$emit('seek-time', $event)"/>

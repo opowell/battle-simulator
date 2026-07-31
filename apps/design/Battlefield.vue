@@ -214,7 +214,13 @@ const snapshotField = () => props.resolvedField ?? props.field;
 // back would silently change whose eyes you are looking through, and anything
 // derived by diffing frames (see everSeenUnits below) would report the whole army
 // appearing and vanishing. One timeline per viewer instead.
-watch(() => [props.liveState?.id, props.liveState?.viewerId], () => {
+// Two separate sources (not one getter returning `[id, viewerId]`) so Vue compares
+// each value by identity: liveState is reassigned wholesale on every poll tick/move
+// (App.vue never diffs before writing it), so a getter returning a fresh array
+// literal each time would look "changed" on every single tick and wipe the history
+// constantly — chess's frequent live-state churn made this the common case, not an
+// edge case.
+watch([() => props.liveState?.id, () => props.liveState?.viewerId], () => {
   stopHistoryPlay();
   fieldHistory.value = snapshotField() ? [snapshotField()] : [];
   histPos.value = 0;
