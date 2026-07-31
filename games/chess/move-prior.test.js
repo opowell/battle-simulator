@@ -7,8 +7,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeMovePrior, UNIFORM_PRIOR, scoreMove } from './movePrior.js';
-import { fromBoardObject } from './exactBelief.js';
+import {
+  makeMovePrior, UNIFORM_PRIOR, scoreMove, moveFeatures, weightVector,
+  weightsFromVector, NUM_FEATURES, FITTED_WEIGHTS,
+} from './movePrior.js';
+import { fromBoardObject, genFogMoves, getDefaultMovePrior } from './exactBelief.js';
 
 const unit = (id, ownerId, type, position) => ({ id, ownerId, type, position, alive: true });
 const idx = (sq) => (sq.charCodeAt(1) - 49) * 8 + (sq.charCodeAt(0) - 97);
@@ -124,6 +127,133 @@ test('movePrior: the PST is oriented per colour', () => {
   const bDev = scoreMove(b, mv('b8', 'c6'), -1);
   assert.equal(wDev, bDev, 'mirrored development scores the same for both colours');
   assert.ok(wDev > 0, 'and developing a knight off the back rank is an improvement');
+});
+
+// A busy position with something of every kind in it: captures for both sides,
+// a pawn one square from promoting, an en-passant target, and castling rights.
+function busy() {
+  return fromBoardObject({
+    a1: unit('wR', 'white', 'rook', 'a1'),
+    e1: unit('wK', 'white', 'king', 'e1'),
+    h1: unit('wR', 'white', 'rook', 'h1'),
+    c3: unit('wN', 'white', 'knight', 'c3'),
+    d4: unit('wQ', 'white', 'queen', 'd4'),
+    b5: unit('wP', 'white', 'pawn', 'b5'),
+    g2: unit('wP', 'white', 'pawn', 'g2'),
+    a7: unit('bP', 'black', 'pawn', 'a7'),
+    c5: unit('bP', 'black', 'pawn', 'c5'),
+    d7: unit('bB', 'black', 'bishop', 'd7'),
+    e8: unit('bK', 'black', 'king', 'e8'),
+    h8: unit('bR', 'black', 'rook', 'h8'),
+    f2: unit('bP', 'black', 'pawn', 'f2'),
+  }, { white: { kingSide: true, queenSide: true }, black: { kingSide: true, queenSide: false } }, 'c6');
+}
+
+test('movePrior: moveFeatures · weightVector IS scoreMove', () => {
+  // The fitter (fit-move-prior.mjs) learns weights against `moveFeatures` and
+  // production serves them through `scoreMove`. If the two ever describe
+  // different models, the weights are silently for a model nobody runs — so the
+  // identity is pinned here over every fog-legal move of a busy position.
+  const pos = busy();
+  const out = new Float64Array(NUM_FEATURES);
+  const cases = [
+    {}, { captureWeight: 0.7, promoWeight: 0.6, pstWeight: 2, castleBonus: 202.4 },
+    FITTED_WEIGHTS, { pstWeight: [0, 4.2, 2.6, 4.1, 9.5, 2.0, -0.85], castleBonus: 33 },
+  ];
+  let checked = 0;
+  for (const sign of [1, -1]) {
+    for (const m of genFogMoves(pos, sign)) {
+      moveFeatures(pos, m, sign, out);
+      for (const w of cases) {
+        const v = weightVector(w);
+        let dot = 0;
+        for (let k = 0; k < NUM_FEATURES; k++) dot += v[k] * out[k];
+        assert.ok(Math.abs(dot - scoreMove(pos, m, sign, w)) < 1e-9,
+          `features·weights must equal scoreMove for ${JSON.stringify(m)}`);
+      }
+      checked++;
+    }
+  }
+  assert.ok(checked > 40, `the fixture should exercise plenty of moves, got ${checked}`);
+  // And the round trip through the fitter's flat representation is lossless.
+  const w = weightsFromVector(weightVector(FITTED_WEIGHTS));
+  for (const m of genFogMoves(pos, 1)) {
+    assert.ok(Math.abs(scoreMove(pos, m, 1, w) - scoreMove(pos, m, 1, FITTED_WEIGHTS)) < 1e-9);
+  }
+});
+
+test('movePrior: pstWeight may be per piece type, and picks the MOVER\'s', () => {
+  const pos = busy();
+  const nMove = { f: idx('c3'), t: idx('e4'), promo: 0, dbl: false, ep: -1, castle: 0 };
+  const flat = scoreMove(pos, nMove, 1, { pstWeight: 3 });
+  const perType = scoreMove(pos, nMove, 1, { pstWeight: [0, 1, 3, 1, 1, 1, 1] });
+  assert.equal(flat, perType, 'a knight move reads the knight slot');
+  // A promotion is a pawn's decision even though a queen arrives: the weight
+  // comes from the mover, the TABLE from the arriving piece.
+  const promo = { f: idx('f2'), t: idx('f1'), promo: 5, dbl: false, ep: -1, castle: 0 };
+  assert.equal(
+    scoreMove(pos, promo, -1, { pstWeight: [0, 2, 1, 1, 1, 1, 1] }),
+    scoreMove(pos, promo, -1, { pstWeight: 2 }),
+    'promotion uses the pawn weight, not the queen weight');
+});
+
+test('movePrior: the floor bounds how wrong one ply can be', () => {
+  const pos = fixture();
+  const moves = [mv('d8', 'd7'), mv('d8', 'd6'), mv('d8', 'd4'), mv('d8', 'c8')];
+  const out = new Float64Array(8);
+  // τ=1 is absurdly sharp on purpose: without a floor the non-capture moves
+  // underflow to 0, which is exactly how a confident prior annihilates the true
+  // world. The floor is what stops that being possible at all.
+  makeMovePrior({ temperature: 1 })(pos, moves, -1, out);
+  assert.equal(out[0], 0, 'unfloored, a sharp prior really does hand out zero');
+
+  const floor = 0.03;
+  makeMovePrior({ temperature: 1, floor })(pos, moves, -1, out);
+  let sum = 0;
+  for (let i = 0; i < moves.length; i++) {
+    assert.ok(out[i] >= floor / moves.length - 1e-12,
+      `no move below floor/|M| = ${floor / moves.length}, got ${out[i]}`);
+    sum += out[i];
+  }
+  assert.ok(Math.abs(sum - 1) < 1e-12, `still normalized, got ${sum}`);
+  // -log(floor/|M|) is the worst a single ply can cost, ~4.9 nats here.
+  assert.ok(-Math.log(out[0]) < 5, 'worst-case per-ply log-loss is bounded');
+  assert.throws(() => makeMovePrior({ temperature: 100, floor: 1 }), /floor/);
+});
+
+test('movePrior: the shipped model expects kings to WANDER, not to hide', () => {
+  // The one qualitative claim the fit makes that the hand-written model got
+  // backwards. ChessAgent's king table is a normal midgame table (corner good,
+  // centre bad); under fog, players walk kings out, and FITTED_WEIGHTS carries a
+  // negative king weight to say so. If someone "fixes" that sign, this fails.
+  assert.ok(FITTED_WEIGHTS.pstWeight[6] < 0, 'king PST weight is negative');
+  const pos = fromBoardObject({
+    e4: unit('wK', 'white', 'king', 'e4'),
+    a8: unit('bK', 'black', 'king', 'a8'),
+  }, null, null);
+  const toCentre = scoreMove(pos, mv('e4', 'd5'), 1, FITTED_WEIGHTS);
+  const toEdge = scoreMove(pos, mv('e4', 'e3'), 1, FITTED_WEIGHTS);
+  assert.ok(toCentre > toEdge, `centralising the king scores higher: ${toCentre} vs ${toEdge}`);
+  // The hand model, by construction, said the opposite.
+  assert.ok(scoreMove(pos, mv('e4', 'd5'), 1) < scoreMove(pos, mv('e4', 'e3'), 1));
+});
+
+test('movePrior: production actually serves the fitted model', () => {
+  // The weights are worth nothing if getExactBelief still hands out the old one.
+  // Compare distributions rather than function identity, so this survives
+  // exactBelief building its prior however it likes.
+  const pos = busy();
+  const moves = genFogMoves(pos, -1);
+  const a = new Float64Array(moves.length), b = new Float64Array(moves.length);
+  getDefaultMovePrior()(pos, moves, -1, a);
+  makeMovePrior(FITTED_WEIGHTS)(pos, moves, -1, b);
+  for (let j = 0; j < moves.length; j++) {
+    assert.ok(Math.abs(a[j] - b[j]) < 1e-12, 'the default π is FITTED_WEIGHTS');
+  }
+  // …and the floor is part of what ships, not just of the constant.
+  for (let j = 0; j < moves.length; j++) {
+    assert.ok(a[j] >= FITTED_WEIGHTS.floor / moves.length - 1e-12, 'floored in production');
+  }
 });
 
 test('movePrior: the king is priced below a queen, on purpose', () => {
