@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { Node, Infoset, evalNode, chainHash } from './infoset.js';
+import { MIN_EXPANDED_ROOT_WORLDS } from './settings.js';
 
 // Wrap a concrete state as a leaf node: terminal (with its result value) or a
 // heuristic-valued frontier node awaiting expansion.
@@ -301,7 +302,7 @@ export async function expandRoot(tree, hooks, opts = {}) {
   // can eat the whole budget after only a world or two — silently degrading the
   // search to a near-single-world one. Eight worlds bounds the overrun to a few
   // engine calls while keeping the belief genuinely multi-world.
-  const minWorlds = Math.min(opts.minWorlds ?? 8, tree.worlds.length);
+  const minWorlds = Math.min(opts.minWorlds ?? MIN_EXPANDED_ROOT_WORLDS, tree.worlds.length);
   const walkTag = Symbol('carry-walk');
   for (let i = 0; i < tree.worlds.length; i++) {
     const w = tree.worlds[i];

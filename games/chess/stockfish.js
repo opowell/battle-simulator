@@ -63,7 +63,9 @@ let queue = Promise.resolve(); // serialises searches (UCI is single-threaded/st
 // proactively every RECYCLE_AFTER searches (below the observed failure point),
 // and reactively if it ever does abort (the worker dies, this process does not).
 let callsSinceLoad = 0;
-const RECYCLE_AFTER = 400;
+// Exported so games/chess/obscuro-settings.js can list it alongside every
+// other fog-chess default.
+export const RECYCLE_AFTER = 400;
 
 // Abort callbacks for in-flight requests. When the worker dies mid-search we
 // call these to resolve each pending request as null immediately, rather than
@@ -87,7 +89,7 @@ if (isNode) { try { ({ DatabaseSync } = await import('node:sqlite')); } catch {}
 
 const CACHE_PATH_SQLITE = isNode ? path.join(HERE, 'vendor', 'sf-cache.sqlite') : '';
 const CACHE_PATH_NDJSON = isNode ? path.join(HERE, 'vendor', 'sf-cache.ndjson') : '';
-const CACHE_MAX = 20_000;
+export const CACHE_MAX = 20_000;
 
 // SQLite state (used when DatabaseSync is available)
 let db = null, stmtGet, stmtSet, stmtTouch, stmtEvict;
@@ -269,7 +271,7 @@ async function maybeRecycle() {
 }
 
 // How often an in-flight search re-checks its caller's `isCancelled` (see below).
-const STOP_POLL_MS = 100;
+export const STOP_POLL_MS = 100;
 
 // Run one UCI request, collecting lines until `isDone(line)` returns a result.
 // Serialised behind `queue` so only one search runs at a time.
@@ -411,16 +413,26 @@ export async function multiPV(fen, { multipv = 10, depth = 2, onInfo, isCancelle
 
 // Difficulty is a 0–100 number (0 = weakest, 100 = strongest). Legacy string
 // tiers are mapped onto the scale so old saved sessions keep working.
-const LEGACY_DIFFICULTY = { easy: 10, medium: 35, hard: 65, expert: 90 };
+export const LEGACY_DIFFICULTY = { easy: 10, medium: 35, hard: 65, expert: 90 };
 export function difficultyToNumber(difficulty) {
   const n = typeof difficulty === 'number' ? difficulty : (LEGACY_DIFFICULTY[difficulty] ?? 25);
   return n < 0 ? 0 : n > 100 ? 100 : n;
 }
 
-// Map difficulty (0–100) to engine strength (Skill Level 0–20) and time per move.
+// Map difficulty (0–100) to engine strength (Skill Level 0–20) and time per
+// move. Endpoints re-exported via games/chess/obscuro-settings.js's
+// SF_DIFFICULTY_RAMP for documentation; this function is the source of truth.
+export const SF_DIFFICULTY_RAMP = {
+  movetimeMs: { min: 50, max: 1000 },
+  skill: { min: 0, max: 20 },
+};
 export function sfOptsForDifficulty(difficulty) {
   const t = difficultyToNumber(difficulty) / 100;
-  return { movetime: Math.round(50 + t * 950), skill: Math.round(t * 20) };
+  const { movetimeMs, skill } = SF_DIFFICULTY_RAMP;
+  return {
+    movetime: Math.round(movetimeMs.min + t * (movetimeMs.max - movetimeMs.min)),
+    skill: Math.round(skill.min + t * (skill.max - skill.min)),
+  };
 }
 
 /**

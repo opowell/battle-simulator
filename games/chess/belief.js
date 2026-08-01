@@ -39,8 +39,12 @@ const NO_CASTLING = { white: { kingSide: false, queenSide: false }, black: { kin
 // set P (fewer valid placements truncated away), at a modest sampling cost. Kept
 // below the 64-square max so a wildly-uncertain piece late in the game doesn't
 // blow up the candidate lists.
-const MAX_POSSIBLE = 48;
-const THREAT_BIAS = 3;   // how strongly to over-sample placements that attack our pieces
+//
+// Exported (with the rest of this section) so games/chess/obscuro-settings.js
+// can list them alongside every other fog-chess default; the values and their
+// reasoning stay here, next to the sampling code they tune.
+export const MAX_POSSIBLE = 48;
+export const THREAT_BIAS = 3;   // how strongly to over-sample placements that attack our pieces
 // At most this many invisible pieces per particle may be placed on a square that
 // attacks one of our pieces. Real positions rarely have the whole hidden army
 // bearing down at once; without this cap, threat-biased sampling hallucinates
@@ -48,12 +52,17 @@ const THREAT_BIAS = 3;   // how strongly to over-sample placements that attack o
 // (THREAT_BIAS is kept modest for the same reason — over-weighting phantom
 // attackers made the AI play passively, shuffling its king and pawns rather than
 // developing; we still surface real threats, just without imagining a swarm.)
-const MAX_LURKERS = 2;
+export const MAX_LURKERS = 2;
 
 // Relative likelihood that a piece of each type is the one that captured on a
 // forced (known-capture) square — chess recaptures strongly favour the least
 // valuable capturer. Used by the forced-square inference in sample().
-const RECAPTURE_TYPE_WEIGHT = { pawn: 9, knight: 3, bishop: 3, rook: 1.5, queen: 1, king: 0.5 };
+export const RECAPTURE_TYPE_WEIGHT = { pawn: 9, knight: 3, bishop: 3, rook: 1.5, queen: 1, king: 0.5 };
+// How many resample attempts sample() gets per requested particle, and how
+// long (as a multiple of n) it keeps rejecting phantom self-checks before
+// giving up and accepting anything (see the two uses below).
+export const MAX_ATTEMPTS_PER_PARTICLE = 6;
+export const PHANTOM_CHECK_REJECT_WINDOW = 4;
 
 function opp(color) { return color === 'white' ? 'black' : 'white'; }
 
@@ -302,7 +311,7 @@ export class Belief {
     // More attempts per requested world so a larger belief (now that we sample
     // more worlds) still yields the distinct particles it asks for rather than
     // giving up early — a fuller, more representative draw from P.
-    const maxAttempts = n * 6;
+    const maxAttempts = n * MAX_ATTEMPTS_PER_PARTICLE;
     for (let attempt = 0; attempt < maxAttempts && particles.length < n; attempt++) {
       const pb = { ...board };
       const used = new Set();
@@ -380,7 +389,7 @@ export class Belief {
       // (evidenced) square, or by a visible piece, are kept. If non-check worlds
       // are genuinely scarce, the last attempts accept anything so a cornered
       // belief still yields particles.
-      if (myKingSq && attempt < n * 4 && isAttackedBy(pb, myKingSq, this.oppColor)) {
+      if (myKingSq && attempt < n * PHANTOM_CHECK_REJECT_WINDOW && isAttackedBy(pb, myKingSq, this.oppColor)) {
         const hiddenCheckers = placedHidden.filter(ph =>
           !this.forcedEnemy.has(ph.sq) && attacksSquare(pb, ph.type, this.oppColor, ph.sq, myKingSq));
         const evidencedCheck = isAttackedBy(

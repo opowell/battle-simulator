@@ -18,7 +18,12 @@
 //     mass onto a* and sample from what remains.
 // ---------------------------------------------------------------------------
 
-const MAX_SUPPORT = 3;
+// Defaults live here (the module that actually uses them) and are re-exported
+// as part of agents/obscuro/settings.js's aggregate for discoverability.
+export const MAX_SUPPORT = 3;
+// A runner-up must clear this probability floor to be considered for the
+// mixed support at all — screens out numerical noise in the last iterate.
+export const MIN_SUPPORT_PROB = 1e-3;
 
 /**
  * @param {number[]} dist        last-iterate probability over `actions`
@@ -58,7 +63,7 @@ export function purify(dist, actions, opts = {}) {
   const kept = [top];
   for (let r = 1; r < ranked.length && kept.length < maxSupport; r++) {
     const cand = ranked[r];
-    if (cand.p > 1e-3 && stable(cand.i)) kept.push(cand);
+    if (cand.p > MIN_SUPPORT_PROB && stable(cand.i)) kept.push(cand);
   }
   if (kept.length === 1) return pure();
 

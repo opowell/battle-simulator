@@ -28,6 +28,7 @@
 // ---------------------------------------------------------------------------
 
 import { makeHooks, runObscuroSearch } from './obscuro/search.js';
+import { DIAL, DIAL_CONVEX_EXPONENT } from './obscuro/settings.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const ri = (a, b, t) => Math.round(lerp(a, b, t));
@@ -38,7 +39,12 @@ const ri = (a, b, t) => Math.round(lerp(a, b, t));
 // collapses to near-nothing. At 1.5, power 50 is ~0.35 of full budget (a real
 // medium opponent) instead of ~0.22 under the old 2.2, which made "50" play like
 // a beginner: too few belief worlds and too short a search to grow a usable tree.
-const rc = (a, b, t) => Math.round(a + (b - a) * Math.pow(t, 1.5));
+// The min/max endpoints themselves live in obscuro/settings.js's DIAL — this is
+// just the curve shape they're plugged into.
+const rc = (a, b, t) => Math.round(a + (b - a) * Math.pow(t, DIAL_CONVEX_EXPONENT));
+// Evaluate one DIAL entry at dial position t ∈ [0,1]: a bare number is a
+// constant the dial doesn't move, {min,max,curve} picks the matching ramp.
+const ramp = (spec, t) => (typeof spec === 'number' ? spec : (spec.curve === 'convex' ? rc : ri)(spec.min, spec.max, t));
 
 function defaultActionKey(a) {
   return JSON.stringify([a.type ?? null, a.unitId ?? null, a.from ?? null, a.to ?? null, a.targetId ?? null, a.side ?? null, a.payload ?? null]);
@@ -102,30 +108,33 @@ export class ObscuroAgent {
     // TIME mode: a per-move wall-clock limit (0 = random … up to 10 min) instead
     // of a power level. The budget IS the limit; the rest of the search is scaled
     // generously (saturating near a minute) and left for the budget to bound.
+    // Endpoints: DIAL.time in obscuro/settings.js.
     const timeMs = gs.aiTimeMs;
     if (typeof timeMs === 'number') {
-      if (timeMs <= 0) return { random: true, purifyMax: 3 };
+      const D = DIAL.time;
+      if (timeMs <= 0) return { random: true, purifyMax: D.purifyMax };
       const u = Math.min(1, timeMs / 60000);
       return {
         timeMode: true,
-        worlds:         o.particles     ?? Math.max(2, Math.round(4 + u * 44)),
+        worlds:         o.particles     ?? Math.max(D.worlds.floor, ramp(D.worlds, u)),
         timeBudgetMs:   o.timeBudgetMs  ?? timeMs,
-        maxRounds:      o.maxRounds     ?? 100000,
-        maxInfosets:    o.maxInfosets   ?? Math.round(1000 + u * 24000),
-        expandPerRound: o.expandPerRound ?? 24,
-        cfrPerRound:    o.cfrPerRound   ?? 10,
-        finalCfr:       o.finalCfr      ?? 200,
-        purifyMax:      o.purifyMax     ?? 3,
+        maxRounds:      o.maxRounds     ?? D.maxRounds,
+        maxInfosets:    o.maxInfosets   ?? ramp(D.maxInfosets, u),
+        expandPerRound: o.expandPerRound ?? D.expandPerRound,
+        cfrPerRound:    o.cfrPerRound   ?? D.cfrPerRound,
+        finalCfr:       o.finalCfr      ?? D.finalCfr,
+        purifyMax:      o.purifyMax     ?? D.purifyMax,
         // Continuous action resolution (games with getSearchActions): rings×spokes of
         // exact move points per unit. More budget → finer positioning.
-        moveRings:      o.moveRings     ?? ri(1, 3, u),
-        moveSpokes:     o.moveSpokes    ?? ri(6, 12, u),
+        moveRings:      o.moveRings     ?? ramp(D.moveRings, u),
+        moveSpokes:     o.moveSpokes    ?? ramp(D.moveSpokes, u),
       };
     }
 
-    // POWER mode: the 0–100 dial.
+    // POWER mode: the 0–100 dial. Endpoints: DIAL.power in obscuro/settings.js.
     const d = gs.difficulty;
     const t = (typeof d === 'number' ? Math.max(0, Math.min(100, d)) : 50) / 100;
+    const D = DIAL.power;
     // Scaled toward the paper's regime at the top of the dial (it samples
     // hundreds of worlds and grows ~10^6-node trees at seconds/move). The wall-
     // clock timeBudgetMs is the real limiter, so the round/infoset caps can be
@@ -136,18 +145,18 @@ export class ObscuroAgent {
     // reaches roughly the paper's per-move budget.
     return {
       difficulty: d,
-      worlds:         o.particles     ?? Math.max(1, rc(1, 48, t)),
-      timeBudgetMs:   o.timeBudgetMs  ?? rc(30, 2000, t),
-      maxRounds:      o.maxRounds     ?? rc(6, 100, t),
-      maxInfosets:    o.maxInfosets   ?? rc(400, 6000, t),
-      expandPerRound: o.expandPerRound ?? ri(6, 24, t),
-      cfrPerRound:    o.cfrPerRound   ?? ri(3, 10, t),
-      finalCfr:       o.finalCfr      ?? rc(15, 100, t),
-      purifyMax:      o.purifyMax     ?? 3,
+      worlds:         o.particles     ?? Math.max(1, ramp(D.worlds, t)),
+      timeBudgetMs:   o.timeBudgetMs  ?? ramp(D.timeBudgetMs, t),
+      maxRounds:      o.maxRounds     ?? ramp(D.maxRounds, t),
+      maxInfosets:    o.maxInfosets   ?? ramp(D.maxInfosets, t),
+      expandPerRound: o.expandPerRound ?? ramp(D.expandPerRound, t),
+      cfrPerRound:    o.cfrPerRound   ?? ramp(D.cfrPerRound, t),
+      finalCfr:       o.finalCfr      ?? ramp(D.finalCfr, t),
+      purifyMax:      o.purifyMax     ?? D.purifyMax,
       // Continuous action resolution (games with getSearchActions): rings×spokes of
       // exact move points per unit, from coarse (weak/fast) to fine at the top of the dial.
-      moveRings:      o.moveRings     ?? ri(1, 3, t),
-      moveSpokes:     o.moveSpokes    ?? ri(4, 12, t),
+      moveRings:      o.moveRings     ?? ramp(D.moveRings, t),
+      moveSpokes:     o.moveSpokes    ?? ramp(D.moveSpokes, t),
     };
   }
 

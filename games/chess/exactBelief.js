@@ -59,9 +59,11 @@
 
 import { makeMovePrior, UNIFORM_PRIOR, FITTED_WEIGHTS } from './movePrior.js';
 
-const CAP = 200000;          // paper: |P| usually ≤ 10⁶ (C++); avg ~17k
-const TIME_GUARD_MS = 4000;  // per-turn update budget
-const REACQUIRE_BOUND = 60000;
+// Exported so games/chess/obscuro-settings.js can list them; kept defined here,
+// next to the tracker that tunes them.
+export const CAP = 200000;          // paper: |P| usually ≤ 10⁶ (C++); avg ~17k
+export const TIME_GUARD_MS = 4000;  // per-turn update budget
+export const REACQUIRE_BOUND = 60000;
 
 // The π used by trackers that don't ask for a specific one — i.e. all of
 // production, via getExactBelief.
@@ -130,8 +132,9 @@ export function setMovePriorForSeat(color, prior) {
 // the search looks at ~16 worlds, so α = 1 concentrates a sample smaller than the
 // uncertainty it is concentrating over. Raising α needs a higher-powered strength
 // measurement than the harness currently gives (see its header) — not this comment.
-let sampleAlpha = 0;
-export function setBeliefSampleAlpha(a) { sampleAlpha = Number.isFinite(a) ? a : 0; }
+export const SAMPLE_ALPHA_DEFAULT = 0;
+let sampleAlpha = SAMPLE_ALPHA_DEFAULT;
+export function setBeliefSampleAlpha(a) { sampleAlpha = Number.isFinite(a) ? a : SAMPLE_ALPHA_DEFAULT; }
 export function getBeliefSampleAlpha() { return sampleAlpha; }
 
 // Per-seat counterpart of the above, same purpose as setMovePriorForSeat.

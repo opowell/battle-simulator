@@ -22,6 +22,7 @@
 
 import { RegretMinimizer } from './pcfr.js';
 import { freezeStrategies, observeAll, cfrDescend, evalNode } from './infoset.js';
+import { RESOLVE_PRIOR_UNIFORM_BLEND } from './settings.js';
 
 // ṽ(h): the engine-informed value of a world to `me` — the acting player's best
 // child as evaluated at root expansion (= the engine's eval of the position).
@@ -89,7 +90,7 @@ export function buildGadget(tree, hooks, cfg = {}) {
   }
   // Non-uniform Resolve prior: even mix of the blueprint opponent distribution
   // and uniform, so likely worlds get more weight but all keep positive weight.
-  for (const g of J) g.alpha = 0.5 * (g.y / (ySum || 1) + 1 / m);
+  for (const g of J) g.alpha = RESOLVE_PRIOR_UNIFORM_BLEND * (g.y / (ySum || 1) + 1 / m);
 
   return { J, m, opp, maxmargin: new RegretMinimizer(m), pmax: 0 };
 }

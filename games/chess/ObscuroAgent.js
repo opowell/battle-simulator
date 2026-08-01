@@ -34,9 +34,52 @@ import {
   available as stockfishAvailable,
 } from './stockfish.js';
 
+// Difficulty-dial (0-100, t = difficulty/100) endpoints for chess's own two
+// leaf evaluators (_leafEval's power-mode ladder rung, _proportionalPick's
+// perfect-information sampling), on top of the generic search dial in
+// agents/obscuro/settings.js. Re-exported via obscuro-settings.js.
+export const CHESS_DIAL = {
+  // Fog-search leaf eval (power mode): fixed Stockfish depth/breadth per node.
+  leafEval: {
+    sfDepth: { min: 2, max: 4 },   // Math.round(2 + t*2); measured — see the comment on this dial's use below
+    cols:    { min: 5, max: 14 },  // Math.round(5 + t*9): MultiPV lines requested per node
+  },
+  // Perfect-information proportional pick: broad-but-shallow MultiPV scoring,
+  // sampled by win-probability sharpness (beta).
+  proportionalPick: {
+    multipvCap: 20,               // min(legalActions.length, 20)
+    depth: { min: 10, max: 16 },  // Math.round(10 + t*6)
+    // beta: 0 → uniform, 1 at t=0.5 → probability ∝ win-prob, up to 12 at t=1 → near-best.
+    betaAtHalf: 1,
+    betaMax: 12,
+  },
+  // Time-mode leaf eval: how many evaluations of the move budget to reserve
+  // per belief world for root expansion before the round loop starts (see
+  // _leafEval's perCallMs formula: budget / (worlds * evalsPerWorldReserve)).
+  timeModeEvalsPerWorldReserve: 8,
+  timeModeMinPerCallMs: 30,
+};
+
+// obscuroStrategy / analyzeObscuroProgressive defaults — the analysis-panel and
+// test-harness search sizes, distinct from ChessObscuroAgent's own move-time
+// dial above (these run outside a real move's difficulty setting).
+export const ANALYSIS_DEFAULTS = {
+  // obscuroStrategy: the inspection helper's own search-size fallbacks (used by
+  // tests and by analyzeObscuroProgressive's per-batch mixing call below).
+  strategy: { particles: 8, maxRounds: 30, expandPerRound: 8, cfrPerRound: 4, purifyMax: 3 },
+  // analyzeObscuroProgressive: the belief-population walk's mixing search (run
+  // once per batch, so it can afford to be bigger than obscuroStrategy's default).
+  batchMixing: { maxRounds: 100, expandPerRound: 16, cfrPerRound: 8 },
+  maxTotalMs: 5 * 60 * 1000,   // safety net for a missed disconnect, not a quality cap
+  batchSize: 16,                // worlds enumerated/sampled per batch
+  sweepBatches: 4,               // generative fallback: batches per ladder rung
+  likelyWorldsCap: 32,           // "most likely boards" overlay size
+  scoredWorldsCap: 96,           // per-world cp view cap
+};
+
 // Material (Stockfish cp) scores are clamped so an imagined king capture from
 // phantom hidden pieces can't swamp a concrete material decision.
-const LEAF_CLAMP = 1500;
+export const LEAF_CLAMP = 1500;
 const clip = v => (v > LEAF_CLAMP ? LEAF_CLAMP : v < -LEAF_CLAMP ? -LEAF_CLAMP : v);
 
 // The search's terminal win/loss magnitude, on the same cp scale as the leaves.
@@ -204,10 +247,8 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
   // also made a cold-cache expansion so slow that only a couple of belief
   // worlds fit in the budget — reintroducing single-world behaviour through the
   // back door. Shallow-ish leaves keep every world expandable within budget;
-  // the dial still buys leaf depth at the top: depth 6–7 is where the engine
-  // starts pricing two-ply tactics (e.g. "quiet move → pawn takes the hanging
-  // bishop") into the parent MultiPV scores, which our small trees cannot be
-  // relied on to discover in-tree for every belief world.
+  // see the measured depth-vs-tree-size tradeoff below (CHESS_DIAL.leafEval)
+  // for where the current top of the range comes from.
   //
   // The two dials pick the two forms of the SAME evaluator (see
   // makeIterativeChessLeafEval): POWER fixes the ladder's top rung and its
@@ -227,7 +268,8 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
       // breadth, because breadth is already full: scoreChildren always asks for
       // at least one MultiPV line per child that needs one.
       const cfg = this._config(observation);
-      const perCallMs = Math.max(30, Math.round(timeMs / (Math.max(1, cfg.worlds ?? 1) * 8)));
+      const { timeModeEvalsPerWorldReserve: reserve, timeModeMinPerCallMs: floorMs } = CHESS_DIAL;
+      const perCallMs = Math.max(floorMs, Math.round(timeMs / (Math.max(1, cfg.worlds ?? 1) * reserve)));
       return makeIterativeChessLeafEval({
         maxDepth: MAX_SF_DEPTH, cols: 0, perCallMs, deadline: Date.now() + timeMs,
       });
@@ -249,8 +291,9 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
     // tactics the tree cannot. Revisit the top of this range only after the tree
     // grows by an order of magnitude. `sfDepth` overrides it so that re-measuring
     // stays a flag rather than an edit.
-    const sfDepth = this.opts.sfDepth ?? Math.max(1, Math.round(2 + t * 2)); // 2..4
-    const cols = Math.round(5 + t * 9);                 // 5..14
+    const { sfDepth: sfDepthR, cols: colsR } = CHESS_DIAL.leafEval;
+    const sfDepth = this.opts.sfDepth ?? Math.max(1, Math.round(sfDepthR.min + t * (sfDepthR.max - sfDepthR.min)));
+    const cols = Math.round(colsR.min + t * (colsR.max - colsR.min));
     return makeChessLeafEval(sfDepth, cols);
   }
 
@@ -310,15 +353,16 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
       const t = difficultyToNumber(gs.difficulty) / 100;
       // Score broadly so weak-but-legal moves stay reachable at low power; deeper at
       // higher power for more accurate scores (strength there comes from sharper β too).
-      const multipv = Math.min(legalActions.length, 20);
-      const depth = Math.round(10 + t * 6); // 10..16
+      const { multipvCap, depth: depthR, betaAtHalf, betaMax } = CHESS_DIAL.proportionalPick;
+      const multipv = Math.min(legalActions.length, multipvCap);
+      const depth = Math.round(depthR.min + t * (depthR.max - depthR.min));
       const pv = await multiPV(fen, { multipv, depth });
       if (!pv || !pv.length) return null;
 
       // cp (mover's perspective) → win probability in (0,1). Mate scores saturate.
       const winProb = cp => (cp >= 90000 ? 1 : cp <= -90000 ? 0 : 1 / (1 + Math.pow(10, -cp / 400)));
-      // β: 0 → uniform, 1 → probability exactly proportional to win-prob score, →12 → near-best.
-      const beta = t <= 0.5 ? (t / 0.5) : (1 + (t - 0.5) / 0.5 * 11);
+      // β: 0 → uniform, betaAtHalf at t=0.5 → probability ∝ win-prob, betaMax at t=1 → near-best.
+      const beta = t <= 0.5 ? (t / 0.5) * betaAtHalf : (betaAtHalf + (t - 0.5) / 0.5 * (betaMax - betaAtHalf));
 
       const scored = [];
       for (const { move, cp } of pv) {
@@ -428,7 +472,7 @@ export async function obscuroStrategy(state, legalActions, opts = {}) {
   // opts.worlds lets a caller supply the belief cloud explicitly (the batched
   // enumeration cursor passes the next slice of the population — see
   // analyzeObscuroProgressive) instead of sampling a fresh one here.
-  let worlds = opts.worlds ?? (fog ? game.sampleWorlds(state, me, opts.particles ?? 8, rng) : null);
+  let worlds = opts.worlds ?? (fog ? game.sampleWorlds(state, me, opts.particles ?? ANALYSIS_DEFAULTS.strategy.particles, rng) : null);
   if (!worlds || worlds.length === 0) worlds = [state];
 
   const hooks = makeHooks(game, me, { rng });
@@ -438,13 +482,14 @@ export async function obscuroStrategy(state, legalActions, opts = {}) {
   const onRound = opts.onProgress
     ? (round, maxRounds, info) => opts.onProgress({ kind: 'round', round, maxRounds, candidates: rankCandidates(info.rows, info.dist) })
     : undefined;
+  const strategyDefaults = ANALYSIS_DEFAULTS.strategy;
   const res = await runObscuroSearch(hooks, worlds, {
     opp, rootActions: legalActions, rng,
     timeBudgetMs: opts.timeBudgetMs ?? 0,
-    maxRounds: opts.maxRounds ?? 30,
-    expandPerRound: opts.expandPerRound ?? 8,
-    cfrPerRound: opts.cfrPerRound ?? 4,
-    purifyMax: opts.purifyMax ?? 3,
+    maxRounds: opts.maxRounds ?? strategyDefaults.maxRounds,
+    expandPerRound: opts.expandPerRound ?? strategyDefaults.expandPerRound,
+    cfrPerRound: opts.cfrPerRound ?? strategyDefaults.cfrPerRound,
+    purifyMax: opts.purifyMax ?? strategyDefaults.purifyMax,
     onRound,
     // So a solve stops mid-flight when the analysis position changes (rather
     // than running out its rounds after the viewer has already moved on).
@@ -620,7 +665,7 @@ function shuffledIndices(n, rng) {
 // maxTotalMs is a safety net for a missed disconnect, not a quality cap.
 // ---------------------------------------------------------------------------
 export async function analyzeObscuroProgressive(state, legalActions, opts) {
-  const maxTotalMs = opts.maxTotalMs ?? 5 * 60 * 1000;
+  const maxTotalMs = opts.maxTotalMs ?? ANALYSIS_DEFAULTS.maxTotalMs;
   const t0 = Date.now();
   const deadline = t0 + maxTotalMs;
   const game = (await import('./ChessGame.js')).ChessGame;
@@ -637,11 +682,11 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
   if (me !== state.activePlayers[0]) state = { ...state, activePlayers: [me] };
 
   const cols = Math.min(legalActions.length, 16);
-  const batchSize = opts.batchSize ?? 16;
+  const batchSize = opts.batchSize ?? ANALYSIS_DEFAULTS.batchSize;
   const maxDepth = opts.maxSfDepth ?? MAX_SF_DEPTH;
   // Generative fallback only: how many batches count as one "sweep" of an
   // unbounded population before the ladder moves up a rung.
-  const sweepBatches = opts.sweepBatches ?? 4;
+  const sweepBatches = opts.sweepBatches ?? ANALYSIS_DEFAULTS.sweepBatches;
 
   // cp source: run Stockfish over each batch, wherever it's available — server
   // (Node worker thread) or browser (nested Worker over the vendored WASM
@@ -672,8 +717,8 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
   // — the population is the one board already on screen — so the whole per-world
   // channel would be an empty payload on every frame.
   const perWorldView = !!state.gameSpecific.fogOfWar;
-  const likelyCap = opts.likelyWorldsCap ?? 32;
-  const scoredCap = opts.scoredWorldsCap ?? 96;
+  const likelyCap = opts.likelyWorldsCap ?? ANALYSIS_DEFAULTS.likelyWorldsCap;
+  const scoredCap = opts.scoredWorldsCap ?? ANALYSIS_DEFAULTS.scoredWorldsCap;
   const hiddenOf = (world) => game.hiddenPiecesOf?.(world, state, me) ?? [];
   const ranked = perWorldView ? (game.rankBeliefWorlds?.(state, me, likelyCap) ?? null) : null;
 
@@ -803,9 +848,12 @@ export async function analyzeObscuroProgressive(state, legalActions, opts) {
       // Mixing: one CFR equilibrium over this batch, folded in weighted by size.
       let mode = last?.mode ?? (state.gameSpecific.fogOfWar ? 'cfr' : 'minimax');
       if (foldProb) {
+        const batchMixing = ANALYSIS_DEFAULTS.batchMixing;
         const r = await obscuroStrategy(state, legalActions, {
           worlds, color: me, rng, isCancelled,
-          maxRounds: opts.maxRounds ?? 100, expandPerRound: opts.expandPerRound ?? 16, cfrPerRound: opts.cfrPerRound ?? 8,
+          maxRounds: opts.maxRounds ?? batchMixing.maxRounds,
+          expandPerRound: opts.expandPerRound ?? batchMixing.expandPerRound,
+          cfrPerRound: opts.cfrPerRound ?? batchMixing.cfrPerRound,
         });
         if (isCancelled?.()) break; // moved on mid-solve — discard this partial batch
         mode = r.mode;

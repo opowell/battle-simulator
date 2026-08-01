@@ -17,8 +17,9 @@ import { observationKey, canonicalBoardSig, Infoset } from './infoset.js';
 import { makeLeaf, expandRoot, doExpansionStep, warmStartInfoset, harvestCarried } from './gtcfr.js';
 import { buildGadget, runGadgetCFR } from './kluss.js';
 import { purify } from './purify.js';
+import { SEARCH_DEFAULTS, PURIFY_MAX_SUPPORT } from './settings.js';
 
-const DEFAULT_WIN = 1e6;
+const DEFAULT_WIN = SEARCH_DEFAULTS.win;
 
 // A real macrotask boundary that yields to the host event loop, in both Node
 // (setImmediate) and the browser analysis Web Worker (setTimeout — setImmediate
@@ -107,7 +108,7 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
     const rootKey = hooks.obsKey(worlds[0], hooks.me);
     carried = harvestCarried(cfg.carry.tree, cfg.carry.actionKey, hooks)
       .filter(c => hooks.obsKey(c.node.state, hooks.me) === rootKey)
-      .slice(0, Math.max(16, worlds.length)); // bound the root width
+      .slice(0, Math.max(SEARCH_DEFAULTS.carriedRootWidthFloor, worlds.length)); // bound the root width
   }
   // Identity-free state signature: carried states carry engine piece ids while
   // sampled worlds may synthesize theirs, and the same placement must dedupe.
@@ -171,9 +172,9 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   const gadget = buildGadget(tree, hooks, { opp: cfg.opp, prevValue: cfg.prevValue });
   tree.gadget = gadget;
 
-  const expandPerRound = cfg.expandPerRound ?? 8;
-  const cfrPerRound = cfg.cfrPerRound ?? 4;
-  const maxRounds = cfg.maxRounds ?? 200;
+  const expandPerRound = cfg.expandPerRound ?? SEARCH_DEFAULTS.expandPerRound;
+  const cfrPerRound = cfg.cfrPerRound ?? SEARCH_DEFAULTS.cfrPerRound;
+  const maxRounds = cfg.maxRounds ?? SEARCH_DEFAULTS.maxRounds;
   const maxInfosets = cfg.maxInfosets ?? Infinity;
   let step = 0;
   // Snapshot the root strategy after each solve so purification can tell which
@@ -221,9 +222,9 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   // A final, longer solve so the equilibrium settles on the frozen tree (Fig. 8:
   // expander threads stop first, solver runs on a little longer). Bounded by a
   // small extra time allowance so a large tree can't blow past the budget.
-  const finalCfr = cfg.finalCfr ?? 40;
-  const finalDeadline = budgetMs ? t0 + budgetMs * 1.35 : Infinity;
-  const chunk = Math.max(1, Math.min(finalCfr, 10));
+  const finalCfr = cfg.finalCfr ?? SEARCH_DEFAULTS.finalCfr;
+  const finalDeadline = budgetMs ? t0 + budgetMs * SEARCH_DEFAULTS.finalCfrDeadlineFactor : Infinity;
+  const chunk = Math.max(1, Math.min(finalCfr, SEARCH_DEFAULTS.finalCfrChunkCap));
   for (let done = 0; done < finalCfr; done += chunk) {
     if (cfg.isCancelled?.()) break; // caller abandoned this solve — see the round loop
     runGadgetCFR(tree, hooks, gadget, chunk);
@@ -236,7 +237,7 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   // every snapshot since the half-time point T½ — only stable actions may join
   // the mixed support during purification.
   const half = Math.floor(snapshots.length / 2);
-  const eps = 1e-3;
+  const eps = SEARCH_DEFAULTS.stableSnapshotEps;
   root.stableSince = root.actions.map((_, k) => snapshots.slice(half).every(s => (s[k] ?? 0) > eps));
 
   const strat = [...root.rm.lastStrategy()];
@@ -247,9 +248,9 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
   // p_max ≈ 0), meaning our strategy is safe. When Resolve is entering (a real
   // threat) we commit to the top move. Perfect information (one world) is always
   // pure — there is nothing to hide.
-  const safe = cfg.safe ?? (tree.worlds.length > 1 && gadget.pmax < 0.05);
+  const safe = cfg.safe ?? (tree.worlds.length > 1 && gadget.pmax < SEARCH_DEFAULTS.safePmaxThreshold);
   const { action, dist } = purify(strat, root.actions, {
-    maxSupport: cfg.purifyMax ?? 3,
+    maxSupport: cfg.purifyMax ?? PURIFY_MAX_SUPPORT,
     rng,
     infoset: root,
     safe,
