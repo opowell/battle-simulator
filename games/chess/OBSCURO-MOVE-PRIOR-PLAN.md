@@ -109,6 +109,64 @@ answers before being caught:
    A wrong sign on the term the whole exercise was about, from a numerical detail.
 2. **Split by GAME, never by ply.** Plies within a game share a position stream.
 
+### 2026-08-01 — α measured properly: no effect found, and the old evidence is gone
+
+[move-quality.mjs](move-quality.mjs) replaces win/loss with a PAIRED per-move
+measurement: same recorded position, same fog, same legal actions, scored by cp
+loss against a deep Stockfish reference on the TRUE board. 220 positions, 6 games,
+both seats — and, unlike anything before it in this subsystem, a null control that
+is exactly zero:
+
+| arm | paired Δ (negative favours A) | z | identical moves |
+|---|---|---|---|
+| **null control (α=0 vs α=0)** | **0.00 ± 0.00** | — | **100%** |
+| α=1 vs α=0 | −4.97 ± 8.07 cp | −0.62 | 70% |
+| α=0.5 vs α=0 | −0.09 ± 7.96 cp | −0.01 | 68% |
+| fitted π vs uniform π (both α=1) | −7.99 ± 7.95 cp | −1.00 | 70% |
+
+**No significant effect — but all three lean toward weighting**, which is the
+opposite direction from the 11–4 win/loss result that put `sampleAlpha = 0` in the
+code. That result is not overturned; it is unsupported. Keep α=0 (it is still the
+option that changes nothing), and note that ~2,000 positions ≈ 55 games would
+resolve a 5 cp effect at 2σ — about 15 minutes of compute now, versus the
+hundreds of games the win/loss harness would need.
+
+**Getting the instrument to work was the whole job.** The first version ran the
+agent on a wall clock; its null control agreed only **20%** of the time, because
+whichever arm ran second inherited a warmer Stockfish cache and searched deeper in
+the same milliseconds. A paired design in name only, with a ±50 cp noise floor.
+The fix is that the budget must be STRUCTURAL, not temporal: power mode fixes leaf
+depth, `timeBudgetMs: 0` removes the wall clock from the search loop, and the tree
+is bounded by rounds/infosets. Then same seed ⇒ same moves ⇒ null control = 0.00.
+
+### Search scale: where a move's time actually goes (same day)
+
+Profiling a real move (leaf evaluator wrapped to count engine calls), 16 belief
+worlds, 12 sequential moves with KLUSS carryover: **~1.5 s/move, flat, ~80% of it
+inside Stockfish**, ~180 engine calls and ~5,000–7,000 children scored per move.
+Per-call cost is ~3 ms at leaf depth 1, ~7 ms at 2, ~11 ms at 4, ~23 ms at 7.
+
+Two things this settles:
+
+- **Depth-1 leaves — the paper's design point — do NOT transfer at our scale.** On
+  the same 128 positions: depth 2 and depth 4 both score ~109 cp mean loss, depth 7
+  scores 121, and **depth 1 scores 142 while also being the slowest configuration
+  measured** (it buys more expansions but each is worth less). Our trees are ~100×
+  smaller than the paper's, so leaves have to carry tactics the tree cannot find.
+  Revisit only after the tree gets much bigger.
+- **The ceiling on parallelism is ~5×, not 14×.** ~80% of the move is engine calls
+  (parallelizable across a worker pool), ~20% is single-threaded JS CFR. Amdahl
+  caps a pool at 5× unless CFR is parallelized too. Worth knowing before building
+  the pool: the machine has 14 cores and `stockfish.js` uses exactly one.
+
+Two claims made along the way that measurement refuted, recorded so they are not
+re-derived: (1) **the engine protocol is not the bottleneck** — a worker
+round-trip is 0.015 ms and a full depth-1 MultiPV-40 call is 3.98 ms, so batching
+messages could recover under 0.6 ms of a ~5 ms call; the WASM engine's own compute
+is ~80% of it. (2) **`sampleWorlds` does not draw with replacement** — a stale
+comment said so, but the exact path (Efraimidis–Spirakis) and the heuristic path
+(rejection with a key set) both return distinct worlds already.
+
 **What did NOT change and should not be quoted as if it had: strength.** The
 belief still reaches play through exactly one channel — which worlds
 `samplePositions` hands the search — and `sampleAlpha` is still 0, so a sharper
