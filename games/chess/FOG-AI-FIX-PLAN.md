@@ -296,9 +296,16 @@ depth 4):
 
 Under fog these are not edge cases: there is no check rule, so "we are attacking
 the enemy king" is a normal, frequent state — exactly the tactically sharpest one.
-A clean instrumented run of `move-quality.mjs` measured **10.19% of all leaf
+A clean instrumented run of `move-quality.mjs` measured **10.19% of leaf
 evaluations (11,106 of 108,944) falling back to the static evaluator**, with no
 competing load and zero truncated rungs.
+
+**READ THAT NUMBER WITH ITS CONFIGURATION.** It was measured on the *depth-1*
+grid arm, which is NOT what ships — the dial tops out at leaf depth 4. Re-measured
+at depth 4: **~1% fallbacks and 1–2 refused nodes per 800 engine calls.** The
+refusal is real and the mechanism is real, but its frequency is strongly
+depth-dependent, and at the shipped depth it is a small effect, not a tenth of
+the search. Do not quote the 10% as a property of the AI.
 
 Why it stayed invisible: `scoreChildren` computes an `engineOk` flag, and the
 fixed-depth wrapper `makeChessLeafEval` throws it away (`.scores`). The search
@@ -307,13 +314,35 @@ carries on with worse numbers and reports nothing. `getLeafEvalStats()` /
 and truncated rungs, and `move-quality.mjs` prints them under every result — a
 run with a nonzero fallback share is not comparable with a clean one.
 
-**The fix is not yet made.** The natural one: detect the illegal-parent case
-before calling the engine (the mover can capture the enemy king ⇒ the position is
-already near-terminal) and score it directly at +LEAF_CLAMP, the same cap the
-`KING_HANG` comment already applies to imagined king captures, instead of asking
-an engine that will refuse and then guessing with material. Note the asymmetry is
-deliberate and must be preserved: our own king hanging is a real, self-inflicted
-−SEARCH_WIN; capturing theirs is phantom-prone and stays capped.
+### The fix, and what it was actually worth
+
+`scoreChildren` now detects a position the engine will refuse (`engineWouldRefuse`:
+the side not to move is in check, the kings are adjacent, or a king is already
+gone) and, instead of making a doomed MultiPV call on the parent, prices the
+CHILDREN individually — each child is legal, since there the opponent is merely in
+check — negating cp onto the mover's scale. Capped at `REFUSED_CHILD_CAP` (8,
+best-static-score first) because refused nodes would otherwise multiply engine
+work several-fold; the tail keeps the static evaluator, which is what the whole
+node used to get.
+
+A/B on identical positions at the SHIPPED leaf depth (2 games, both seats, 50
+moves, `--grid 4:8`):
+
+| | mean cp loss | median | ms/move | fallbacks | refused nodes |
+|---|---|---|---|---|---|
+| cap 0 (old behaviour) | 87.4 | 58.0 | 712 | 0.96% | 1 |
+| cap 8 (the fix) | 87.6 | 55.0 | **662** | 1.02% | 2 |
+
+**Quality is unchanged within noise, and it is slightly FASTER** — skipping a call
+that was always going to fail pays for the per-child calls. So this is kept on
+its merits (a silent failure mode replaced by a real evaluation, and one less
+wasted engine timeout), not because it measurably strengthened play at the depth
+we ship. On the depth-1 arm, where refusals are ~10× more common, it costs real
+time — which is one more reason the dial stays at 2..4.
+
+Note the value asymmetry is preserved throughout: our own king hanging is a real,
+self-inflicted −SEARCH_WIN, while capturing theirs stays capped at +LEAF_CLAMP
+because it is phantom-prone.
 
 ### While in there: two measurement lessons
 

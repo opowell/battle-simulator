@@ -154,7 +154,8 @@ function reportLeafHealth() {
   const total = st.engineLeaves + st.fallbackLeaves;
   const pct = total ? (100 * st.fallbackLeaves / total) : 0;
   console.log(`leaf evaluations: ${total} (${st.calls} engine calls), ` +
-    `static-eval fallbacks ${st.fallbackLeaves} (${pct.toFixed(2)}%), truncated rungs ${st.truncated}`);
+    `static-eval fallbacks ${st.fallbackLeaves} (${pct.toFixed(2)}%), ` +
+    `engine-refused nodes ${st.refusedNodes}, truncated rungs ${st.truncated}`);
   if (pct > 0.5) {
     console.log('  ^ MEASUREMENT DEGRADED. Stockfish was timing out — almost always because');
     console.log('    something else heavy was running on this machine. Re-run it alone.');
