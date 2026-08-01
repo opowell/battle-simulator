@@ -348,6 +348,19 @@ console.log(`median cp loss A ${median(stats.a).toFixed(1)}   B ${median(stats.b
 console.log(`reference-best move played:  A ${(100 * stats.aTop / stats.n).toFixed(1)}%   B ${(100 * stats.bTop / stats.n).toFixed(1)}%`);
 console.log(`PAIRED DIFFERENCE (A − B, negative favours A): ${d.toFixed(2)} ± ${se.toFixed(2)} cp  (z = ${(d / se).toFixed(2)})`);
 console.log(`positions where A lost less: ${wins}, where B lost less: ${losses}, tied: ${stats.n - wins - losses}`);
+
+// THE SIGN TEST IS THE STATISTIC TO READ, not the mean. cp loss has a brutal
+// tail — a single blundered queen is 900 while the median position is ~75 — so
+// the mean's standard error is dominated by a handful of positions and barely
+// improves with more data (going 220 → 1345 positions moved SE 8.1 → 17.6,
+// because the extra positions were late-game ones with bigger swings). The
+// count of which arm lost less is bounded per position and cannot be swamped
+// that way. Report both; believe this one.
+const dec = wins + losses;
+if (dec > 0) {
+  const z = (wins - dec / 2) / Math.sqrt(dec * 0.25);
+  console.log(`SIGN TEST over the ${dec} decisive positions: A better ${(100 * wins / dec).toFixed(1)}%  (z = ${z.toFixed(2)})`);
+}
 console.log(`\nOnly the ${stats.n - stats.same} positions where the arms disagreed can carry signal.`);
 if (armName !== 'null') {
   console.log('Run `--arm null` before believing any of this: the control must come back ~0.');

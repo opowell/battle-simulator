@@ -1,21 +1,39 @@
 // ---------------------------------------------------------------------------
 // Stockfish backend — a standalone, vendored UCI engine (no install required).
 //
-// We bundle Stockfish 11 (single-threaded WASM build) under ./vendor. It is the
+// We bundle Stockfish 18 ("lite", single-threaded WASM) under ./vendor. It is the
 // strong evaluator the Obscuro subgame scores its leaves with. Everything
 // degrades gracefully: if the vendored files are missing or the engine fails to
 // load, `available()` returns false and the agents fall back to the JS search.
+//
+// WHY THIS BUILD, of the five upstream ships. Measured on identical midgame
+// positions against the Stockfish 11 build this replaced:
+//
+//   depth 1, multipv 40   3.98 ms → 1.88 ms      depth 7, multipv 30  24 ms → 23 ms
+//   depth 4, multipv 40   ~9.3 ms → 5.88 ms      load                 87 ms
+//
+// ~2× faster at the depths the search actually uses, and a far better evaluator:
+// SF11 predates NNUE, so it was the classical hand-written eval. Evaluation
+// quality is the largest single lever in the Obscuro paper's own ablations
+// (their agent beats the same search with a crude eval 81.9%), which makes this
+// the cheapest strength change available to us.
+//   • "single" (not the threaded build) because the threaded ones need
+//     SharedArrayBuffer, i.e. COOP/COEP headers on every page that loads them —
+//     and our workload is thousands of TINY depth-1..4 calls, where more threads
+//     per search buy far less than more engines would.
+//   • "lite" (7.3 MB) because the full-net build is 113 MB, which is not a
+//     download to put in front of a browser.
 //
 // Runs identically in Node and in the browser — same UCI protocol, same
 // multiPV/bestMove/evaluate API — just a different transport underneath:
 //   - Node: the engine lives in a worker thread (vendor/sf-worker.cjs), a thin
 //     bridge that requires the vendored CommonJS loader directly.
-//   - Browser: vendor/stockfish.cjs is ALSO the upstream stockfish.js browser
-//     build (github.com/nmrugg/stockfish.js) — loaded as a classic (non-module)
+//   - Browser: vendor/sf18-lite-single.cjs is ALSO the upstream browser build
+//     (github.com/nmrugg/stockfish.js) — loaded as a classic (non-module)
 //     Worker, it self-detects `importScripts` and bootstraps its own
-//     onmessage/postMessage UCI bridge, fetching vendor/stockfish.wasm relative
-//     to its own script URL. Both files are already served byte-for-byte over
-//     HTTP (api-server.js's serveLibModule, under /lib/), so no build step is
+//     onmessage/postMessage UCI bridge, fetching the .wasm named in its URL
+//     hash. Both files are already served byte-for-byte over HTTP
+//     (api-server.js's serveLibModule, under /lib/), so no build step is
 //     needed to reach the browser — see apps/design/analysis-worker.js, which
 //     runs this module inside its own (nested) Worker.
 // Either way the engine is torn down and respawned periodically (maybeRecycle)
@@ -46,10 +64,24 @@ const HERE = isNode ? path.dirname(fileURLToPath(import.meta.url)) : '';
 // and respawned to reclaim WASM memory. Both are .cjs to opt out of the repo's
 // ESM default and match the vendored CommonJS loader.
 const WORKER_PATH = isNode ? path.join(HERE, 'vendor', 'sf-worker.cjs') : '';
-const WASM_PATH = isNode ? path.join(HERE, 'vendor', 'stockfish.wasm') : '';
+const WASM_PATH = isNode ? path.join(HERE, 'vendor', 'sf18-lite-single.wasm') : '';
 // Sibling URL to this module's own — resolves correctly however this file was
 // itself fetched (mounted under a base path, served from /lib/, etc.).
-const BROWSER_ENGINE_URL = isBrowser ? new URL('./vendor/stockfish.cjs', import.meta.url).href : '';
+//
+// The engine bundle finds its own .wasm from `location.hash` when one is given,
+// and otherwise by rewriting a trailing `.js` on its own URL. Ours is vendored
+// as `.cjs` (to opt out of the repo's ESM default), so that rewrite would miss —
+// hence the explicit, encoded wasm URL in the hash.
+const BROWSER_ENGINE_URL = isBrowser
+  ? new URL('./vendor/sf18-lite-single.cjs', import.meta.url).href
+    + '#' + encodeURIComponent(new URL('./vendor/sf18-lite-single.wasm', import.meta.url).href)
+  : '';
+
+// Bumped whenever the engine changes. The cache stores evaluations keyed by
+// position, and SF11's numbers are not SF18's numbers — without this tag the
+// 23 MB of cached SF11 output would be served as if this engine had produced it.
+// Old rows simply stop matching and age out through the existing LRU.
+const ENGINE_TAG = 'sf18l';
 
 let worker = null;
 let readyPromise = null;
@@ -146,7 +178,10 @@ function compactNdjson() {
   catch { /* ignore */ }
 }
 
-function cacheGet(key) {
+// Every cache key is namespaced by ENGINE_TAG here, in ONE place, so no call
+// site can forget and read another engine's numbers back as this one's.
+function cacheGet(rawKey) {
+  const key = ENGINE_TAG + '|' + rawKey;
   if (db) {
     // A concurrent writer can make any sqlite op throw (SQLITE_BUSY); a cache
     // miss is always an acceptable answer.
@@ -164,7 +199,8 @@ function cacheGet(key) {
   return v;
 }
 
-function cacheSet(key, value) {
+function cacheSet(rawKey, value) {
+  const key = ENGINE_TAG + '|' + rawKey;
   if (db) {
     try {
       const isNew = !stmtGet.get(key);
@@ -194,11 +230,12 @@ function init() {
       if (!fs.existsSync(WORKER_PATH) || !fs.existsSync(WASM_PATH)) return resolve(false);
       try { w = new Worker_(WORKER_PATH); } catch { return resolve(false); }
     } else {
-      // Classic (non-module) Worker: vendor/stockfish.cjs self-bootstraps its
-      // own UCI onmessage/postMessage bridge when it detects it's running as a
-      // Worker (typeof importScripts === 'function') — see the file's own
-      // tail. It fetches vendor/stockfish.wasm synchronously relative to its
-      // own script URL, which BROWSER_ENGINE_URL already points at.
+      // Classic (non-module) Worker: vendor/sf18-lite-single.cjs self-bootstraps
+      // its own UCI onmessage/postMessage bridge when it detects it's running as
+      // a Worker (typeof importScripts === 'function') — see the file's own
+      // tail. It reads the .wasm URL out of its own location.hash, which
+      // BROWSER_ENGINE_URL supplies (the bundle's fallback of rewriting a
+      // trailing `.js` cannot work on a file vendored as `.cjs`).
       try { w = new Worker(BROWSER_ENGINE_URL); } catch { return resolve(false); }
     }
     worker = w;

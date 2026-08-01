@@ -113,10 +113,13 @@ function findKingSquare(board, color) {
 }
 
 // The top of the iterative-deepening ladder. A CEILING the ladder climbs toward,
-// not a depth it will usually reach: measured on this vendored engine (Stockfish
-// 11, single-threaded WASM, no NNUE) at multipv 16 on an ordinary middlegame,
-// depth 14 takes ~1.4 s, depth 18 ~7 s, and everything past ~19 blows through
-// multiPV's per-call timeout. Whatever rung the caller's budget affords is the
+// not a depth it will usually reach: timed at multipv 16 on an ordinary
+// middlegame, depth 14 took ~1.4 s, depth 18 ~7 s, and everything past ~19 blew
+// through multiPV's per-call timeout. (Those timings were taken on the Stockfish
+// 11 build vendored until 2026-08-01; Stockfish 18 lite is ~2× faster at the
+// shallow depths this search actually uses, so the deep rungs are reachable
+// somewhat sooner — the ceiling is unchanged because it was never the binding
+// constraint.) Whatever rung the caller's budget affords is the
 // rung that gets reported, so the number the UI shows is always a real,
 // completed search rather than an aspiration.
 export const MAX_SF_DEPTH = 30;
