@@ -31,6 +31,10 @@ export function getCombatStrengths(attacker, defender, state) {
   if (attacker.attrs?.veteran) att *= 1.5;
   if (defender.attrs?.veteran) def *= 1.5;
 
+  // Fortify bonus: +50% defense while dug in (attrs.fortified — see Civ1Game.js's
+  // 'fortify' action; cleared the moment the unit gets a fresh order).
+  if (defender.attrs?.fortified) def *= 1.5;
+
   return { att, def };
 }
 

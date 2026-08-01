@@ -132,6 +132,8 @@ function fmtAction(action) {
   if (t === 'build-mine')     return 'Build Mine';
   if (t === 'clear-terrain')  return 'Clear Terrain';
   if (t === 'skip-unit')      return 'Skip Unit';
+  if (t === 'fortify')        return 'Fortify';
+  if (t === 'sentry')         return 'Sentry';
   if (t === 'end-turn')  return action.direction ? `End Turn · Face ${action.direction}` : 'End Turn';
   if (t === 'end-phase') return 'End Phase';
   if (t === 'pass')      return 'Pass';
