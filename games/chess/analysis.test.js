@@ -48,7 +48,14 @@ test('analyzeObscuro: perfect info ranks the free-queen capture first', async ()
   assert.equal(r.mode, 'minimax');
   assert.ok(r.candidates.length > 0);
   assert.equal(r.candidates[0].move.to, 'a8', 'best-ranked move should capture the queen');
-  assert.ok(r.candidates[0].cp > 500, 'capturing a free queen should score as a large material swing');
+  // Threshold 300, not 500: modern Stockfish normalises cp toward WIN
+  // PROBABILITY rather than material, so the numbers are not centipawns in the
+  // "queen = 900" sense. Measured on this exact position under the vendored
+  // SF18: Rxa8 scores ~470, and up-a-whole-queen scores ~890 (SF11 rated the
+  // same capture above 500, which is what this assertion used to encode). What
+  // the test is actually for is that a free queen reads as a large swing and not
+  // a rounding error, so assert that and stay off the engine's calibration.
+  assert.ok(r.candidates[0].cp > 300, 'capturing a free queen should score as a large material swing');
 });
 
 test('analyzeObscuro: perfect info climbs the depth ladder, reporting top moves at each rung', async () => {
