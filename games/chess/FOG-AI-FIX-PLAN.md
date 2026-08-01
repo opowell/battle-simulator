@@ -278,3 +278,51 @@ and `isAttackedBy(world.board, "f7", "white")`.
 Note: the live game shares ONE agent instance across moves (KLUSS blueprint/prevValue
 carryover); a fresh agent per call does not. Belief is per (players-array, colour) and
 now advances at most once per turnNumber regardless of how often sampleWorlds is called.
+
+## 2026-08-01 — the leaf evaluator is silently blind in ~10% of positions
+
+Found while chasing an unrelated timing discrepancy, and it is the more important
+result: **Stockfish returns NOTHING for positions that are illegal in standard
+chess but ordinary under fog**, and `scoreChildren` then quietly substitutes the
+static JS evaluator for every child of that node. Measured directly (multipv 30,
+depth 4):
+
+| position | engine lines |
+|---|---|
+| ordinary middlegame | 30 |
+| **enemy king en prise** | **0 — engine refuses** |
+| **kings adjacent** | **0** |
+| **side to move can capture the king** | **0** |
+
+Under fog these are not edge cases: there is no check rule, so "we are attacking
+the enemy king" is a normal, frequent state — exactly the tactically sharpest one.
+A clean instrumented run of `move-quality.mjs` measured **10.19% of all leaf
+evaluations (11,106 of 108,944) falling back to the static evaluator**, with no
+competing load and zero truncated rungs.
+
+Why it stayed invisible: `scoreChildren` computes an `engineOk` flag, and the
+fixed-depth wrapper `makeChessLeafEval` throws it away (`.scores`). The search
+carries on with worse numbers and reports nothing. `getLeafEvalStats()` /
+`resetLeafEvalStats()` (ObscuroAgent.js) now count engine leaves, fallback leaves
+and truncated rungs, and `move-quality.mjs` prints them under every result — a
+run with a nonzero fallback share is not comparable with a clean one.
+
+**The fix is not yet made.** The natural one: detect the illegal-parent case
+before calling the engine (the mover can capture the enemy king ⇒ the position is
+already near-terminal) and score it directly at +LEAF_CLAMP, the same cap the
+`KING_HANG` comment already applies to imagined king captures, instead of asking
+an engine that will refuse and then guessing with material. Note the asymmetry is
+deliberate and must be preserved: our own king hanging is a real, self-inflicted
+−SEARCH_WIN; capturing theirs is phantom-prone and stays capped.
+
+### While in there: two measurement lessons
+
+- **Never time a search while anything else heavy runs.** Five identical
+  invocations launched concurrently returned five different cp figures (52.3,
+  56.0, 67.6, 105.1, 84.4) at identical seeds and positions, and ~1.7× the
+  per-move wall clock. Under load the engine calls time out into the same static
+  fallback above, so contention does not merely slow a run — it changes what the
+  AI plays. An earlier grid run reporting 43 s/move (against ~0.65 s measured
+  alone) was this, compounded with a cold cache.
+- The `ms/move` column in `move-quality.mjs --grid` is therefore **correct**; the
+  environment it was first measured in was not.
