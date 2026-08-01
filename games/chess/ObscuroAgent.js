@@ -233,13 +233,23 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
       });
     }
     const t = difficultyToNumber(gs.difficulty) / 100;
-    // `sfDepth` is overridable so the leaf-depth/tree-size tradeoff can be
-    // MEASURED rather than argued. It is the dominant cost in the whole search:
-    // 99% of a move's wall clock is inside these calls, and they run ~4 ms at
-    // depth 1 against ~200 ms at the depths this dial picks. The paper spends its
-    // budget the opposite way — depth-1 leaves, ~10⁶-node trees — and the only
-    // honest way to compare is at equal wall clock (move-quality.mjs --grid).
-    const sfDepth = this.opts.sfDepth ?? Math.max(1, Math.round(2 + t * 5)); // 2..7
+    // Leaf depth tops out at 4, NOT 7 — measured, not guessed. ~80% of a move's
+    // wall clock is inside these calls (~7 ms at depth 2, ~11 ms at 4, ~23 ms at
+    // 7), so depth trades directly against tree size, and move-quality.mjs
+    // measured that trade on 128 identical positions at matched cost (~1.0 s/move
+    // both ways): mean cp loss against a deep reference was
+    //
+    //   depth 2, 18 rounds  108.9      depth 7, 4 rounds  121.5
+    //   depth 4,  8 rounds  109.2      depth 1, 36 rounds 142.3
+    //
+    // Depth 7 is DOMINATED — it buys tactical leaves with tree size, and the tree
+    // was worth more. Depth 1 is the paper's own design point and is the worst
+    // option here, because our trees are ~100× smaller than the ~10⁶-node trees
+    // that make shallow leaves work: at this scale the leaves have to see the
+    // tactics the tree cannot. Revisit the top of this range only after the tree
+    // grows by an order of magnitude. `sfDepth` overrides it so that re-measuring
+    // stays a flag rather than an edit.
+    const sfDepth = this.opts.sfDepth ?? Math.max(1, Math.round(2 + t * 2)); // 2..4
     const cols = Math.round(5 + t * 9);                 // 5..14
     return makeChessLeafEval(sfDepth, cols);
   }
