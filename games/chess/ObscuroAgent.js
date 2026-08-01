@@ -134,6 +134,27 @@ export const MAX_SF_DEPTH = 30;
 // One MultiPV call on the parent position scores all the mover's moves at once
 // (cp is already from the mover's perspective). Children that hang the mover's
 // king are a fog-of-war loss the engine cannot see, so they are scored directly.
+// LEAF-EVAL DEGRADATION, MADE VISIBLE.
+//
+// When the engine returns nothing — a timeout, a busy cache, a worker that died
+// mid-search — scoreChildren silently substitutes the static JS evaluator for
+// that child, and the fixed-depth wrapper throws `engineOk` away. So the search
+// keeps running and quietly plays a *different, weaker* game with no signal
+// whatsoever. That is how five identical runs of move-quality.mjs, launched
+// concurrently on one machine, produced five different cp-loss figures (52.3,
+// 56.0, 67.6, 105.1, 84.4) despite identical seeds and identical positions: under
+// load the engine calls started timing out into this fallback.
+//
+// The counters exist so that "was this measurement degraded?" is answerable
+// after the fact instead of guessed at. Any harness reporting numbers from this
+// search should print `fallbackLeaves` alongside them; a nonzero share means the
+// run is not comparable with a clean one.
+let leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0 };
+export function getLeafEvalStats() { return { ...leafStats }; }
+export function resetLeafEvalStats() {
+  leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0 };
+}
+
 async function scoreChildren(state, mover, actions, childStates, { sfDepth, cols, isCancelled }) {
   const them = otherColor(mover);
   const out = new Array(actions.length);
@@ -169,8 +190,12 @@ async function scoreChildren(state, mover, actions, childStates, { sfDepth, cols
       }
     }
     for (const i of need) {
-      out[i] = cpByIdx.has(i) ? clip(cpByIdx.get(i)) : clip(evaluate(childStates[i].board, mover));
+      const fromEngine = cpByIdx.has(i);
+      if (fromEngine) leafStats.engineLeaves++; else leafStats.fallbackLeaves++;
+      out[i] = fromEngine ? clip(cpByIdx.get(i)) : clip(evaluate(childStates[i].board, mover));
     }
+    leafStats.calls++;
+    if (truncated) leafStats.truncated++;
   }
   return { scores: out, engineOk };
 }

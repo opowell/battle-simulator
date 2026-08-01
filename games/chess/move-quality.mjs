@@ -48,7 +48,7 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ChessGame } from './ChessGame.js';
-import { ChessObscuroAgent, makeChessLeafEval } from './ObscuroAgent.js';
+import { ChessObscuroAgent, makeChessLeafEval, getLeafEvalStats, resetLeafEvalStats } from './ObscuroAgent.js';
 import { setBeliefSampleAlphaForSeat, setMovePriorForSeat } from './exactBelief.js';
 import { makeMovePrior, UNIFORM_PRIOR, FITTED_WEIGHTS } from './movePrior.js';
 import { quit as stockfishQuit } from './stockfish.js';
@@ -88,6 +88,8 @@ const knobs = {
   finalCfr: 50,
 };
 const seed0 = Number(arg('seed', '12345'));
+// --verbose prints per-ply cost, which is how the ms/move mystery got solved.
+const VERBOSE = argv.includes('--verbose');
 const seatArg = arg('seat', 'both');
 const seats = seatArg === 'both' ? ['white', 'black'] : [seatArg];
 
@@ -143,6 +145,22 @@ for (const f of readdirSync(SESSIONS).sort()) {
 }
 if (!games.length) { console.error('No chess fog games in sessions/.'); process.exit(1); }
 
+// Print how much of this run was actually evaluated by the engine. A run with
+// fallback leaves is a run where Stockfish timed out and the static evaluator
+// stood in — its numbers are not comparable with a clean run's. See
+// ObscuroAgent.getLeafEvalStats.
+function reportLeafHealth() {
+  const st = getLeafEvalStats();
+  const total = st.engineLeaves + st.fallbackLeaves;
+  const pct = total ? (100 * st.fallbackLeaves / total) : 0;
+  console.log(`leaf evaluations: ${total} (${st.calls} engine calls), ` +
+    `static-eval fallbacks ${st.fallbackLeaves} (${pct.toFixed(2)}%), truncated rungs ${st.truncated}`);
+  if (pct > 0.5) {
+    console.log('  ^ MEASUREMENT DEGRADED. Stockfish was timing out — almost always because');
+    console.log('    something else heavy was running on this machine. Re-run it alone.');
+  }
+}
+
 const actionKey = a => (a.type === 'castle' ? `O-${a.side}` : `${a.from}${a.to}${a.payload?.promote ?? ''}`);
 
 /**
@@ -179,6 +197,7 @@ async function replayArm(sess, seat, spec, seed) {
       const tm = Date.now();
       const chosen = legal.length > 1 ? await agent.chooseAction(obs, legal) : legal[0];
       searchMs += Date.now() - tm;
+      if (VERBOSE) process.stdout.write(`      ply ${i} search ${Date.now() - tm} ms (worlds ${agent.lastAnalysis?.worlds})\n`);
       picks.push({ ply: i, key: chosen ? actionKey(chosen) : null });
       ChessGame.onActionCommitted(obs, seat, pa.action);
     }
@@ -222,7 +241,9 @@ async function referencesFor(sess, seat) {
     const pa = log[i].playerActions?.[0];
     if (!pa?.action) break;
     if (pa.playerId === seat) {
+      const tr = Date.now();
       const r = await referenceAt(state, seat);
+      if (VERBOSE) process.stdout.write(`      ply ${i} REFERENCE ${Date.now() - tr} ms (${r?.n ?? 0} moves)\n`);
       if (r) refs.set(i, r);
     }
     state = ChessGame.applyActions(state, [pa]);
@@ -251,6 +272,9 @@ if (argv.includes('--grid')) {
     for (const seat of seats) {
       const refs = await referencesFor(games[g].sess, seat);
       if (!refs.size) continue;
+      // The reference sweep is a deliberate deep search; only the ARMS' leaf
+      // health says whether the measurement itself was degraded.
+      resetLeafEvalStats();
       const seed = seed0 + g * 977 + (seat === 'white' ? 0 : 1);
       for (let c = 0; c < configs.length; c++) {
         const { picks, searchMs } = await replayArm(games[g].sess, seat, configs[c], seed);
@@ -282,14 +306,7 @@ if (argv.includes('--grid')) {
       (100 * a.top / Math.max(1, a.moves)).toFixed(1).padStart(11));
   }
   console.log('\nLower cp loss at lower ms/move is strictly better; anything else is a trade.');
-  console.log(
-    '\nDO NOT TRUST THE ms/move COLUMN YET. On 2026-08-01 it reported 43 s/move for\n' +
-    'depth 1 / 36 rounds, while directly profiling the SAME configuration — cold, and\n' +
-    'again over 12 sequential moves with carryover — measured 1.5-2.3 s/move, engine\n' +
-    '~80% of wall. A 30x disagreement means this column is measuring something other\n' +
-    'than per-move search cost (engine recycling every 400 calls and the belief sweep\n' +
-    'on late-game |P| are the open suspects) and it has not been reconciled. The cp\n' +
-    'columns are unaffected: they are deterministic and depend on no clock.');
+  reportLeafHealth();
   await stockfishQuit?.();
   process.exit(0);
 }
@@ -304,6 +321,7 @@ for (let g = 0; g < games.length; g++) {
   for (const seat of seats) {
     const refs = await referencesFor(sess, seat);
     if (!refs.size) continue;
+    resetLeafEvalStats();
     // Same seed for both arms: common random numbers, so the streams start
     // identical and only α/π can pull them apart.
     const seed = seed0 + g * 977 + (seat === 'white' ? 0 : 1);
@@ -362,6 +380,7 @@ if (dec > 0) {
   console.log(`SIGN TEST over the ${dec} decisive positions: A better ${(100 * wins / dec).toFixed(1)}%  (z = ${z.toFixed(2)})`);
 }
 console.log(`\nOnly the ${stats.n - stats.same} positions where the arms disagreed can carry signal.`);
+reportLeafHealth();
 if (armName !== 'null') {
   console.log('Run `--arm null` before believing any of this: the control must come back ~0.');
 }
