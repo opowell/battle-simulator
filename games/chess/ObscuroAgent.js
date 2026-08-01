@@ -149,11 +149,44 @@ export const MAX_SF_DEPTH = 30;
 // after the fact instead of guessed at. Any harness reporting numbers from this
 // search should print `fallbackLeaves` alongside them; a nonzero share means the
 // run is not comparable with a clean one.
-let leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0 };
+let leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0, refusedNodes: 0 };
 export function getLeafEvalStats() { return { ...leafStats }; }
 export function resetLeafEvalStats() {
-  leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0 };
+  leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0, refusedNodes: 0 };
 }
+
+// Squares one king-step apart. Two kings adjacent is a position standard chess
+// cannot reach and Stockfish will not evaluate — under fog it is ordinary.
+function kingsAdjacent(a, b) {
+  if (!a || !b) return false;
+  return Math.abs(a.charCodeAt(0) - b.charCodeAt(0)) <= 1
+      && Math.abs(a.charCodeAt(1) - b.charCodeAt(1)) <= 1;
+}
+
+/**
+ * Would a standard chess engine REFUSE this position? Under fog these states are
+ * routine — there is no check rule, so attacking the enemy king is just a strong
+ * move rather than an illegal position — but Stockfish returns zero lines for
+ * them, which used to silently drop every child of such a node onto the static
+ * evaluator. Measured at 10.19% of all leaf evaluations.
+ */
+function engineWouldRefuse(board, mover) {
+  const them = otherColor(mover);
+  const theirK = findKingSquare(board, them);
+  if (!theirK) return true;                            // king already captured
+  if (isAttackedBy(board, theirK, mover)) return true; // side-not-to-move "in check"
+  return kingsAdjacent(findKingSquare(board, mover), theirK);
+}
+
+// How many children of a refused node get a real engine evaluation of their own.
+// The parent cannot be scored in one MultiPV call, so each child needs its own —
+// which is why this is capped rather than unbounded: refused nodes are ~10% of
+// all nodes, so pricing every child of every one of them would multiply engine
+// work ~4×. The cap spends the budget on the children most likely to matter
+// (best static score first) and leaves the tail on the static evaluator, which
+// is what the whole node used to get.
+const REFUSED_CHILD_CAP = Number(
+  (typeof process !== 'undefined' && process.env?.OBSCURO_REFUSED_CHILD_CAP) ?? 8);
 
 async function scoreChildren(state, mover, actions, childStates, { sfDepth, cols, isCancelled }) {
   const them = otherColor(mover);
@@ -169,6 +202,44 @@ async function scoreChildren(state, mover, actions, childStates, { sfDepth, cols
   // answer is exact and depth-independent, so it counts as a completed rung.
   let engineOk = need.length === 0;
   let truncated = false;
+
+  // A position the engine will refuse: skip the doomed MultiPV call on the
+  // parent (it costs a full timeout to learn nothing) and price the children
+  // individually instead. Each CHILD is legal — the opponent is to move and
+  // merely in check — so the engine answers there. cp comes back from the
+  // child's mover (them), so it is negated onto our scale.
+  if (need.length && engineWouldRefuse(state.board, mover) && await stockfishAvailable()) {
+    const order = [...need].sort((a, b) =>
+      evaluate(childStates[b].board, mover) - evaluate(childStates[a].board, mover));
+    const priced = new Set();
+    const side = them === 'white' ? 'w' : 'b';
+    for (const i of order.slice(0, REFUSED_CHILD_CAP)) {
+      const cs = childStates[i];
+      if (engineWouldRefuse(cs.board, them)) continue; // child refused too — leave it
+      let pv = null;
+      try {
+        pv = await multiPV(toFEN(cs.board, cs.gameSpecific, side, cs.turnNumber ?? 1),
+          { multipv: 1, depth: sfDepth, isCancelled, onStopped: () => { truncated = true; } });
+      } catch { pv = null; }
+      if (pv?.length && typeof pv[0].cp === 'number') {
+        out[i] = clip(-pv[0].cp);
+        priced.add(i);
+        leafStats.engineLeaves++;
+      }
+      leafStats.calls++;
+    }
+    for (const i of need) {
+      if (priced.has(i)) continue;
+      leafStats.fallbackLeaves++;
+      out[i] = clip(evaluate(childStates[i].board, mover));
+    }
+    leafStats.refusedNodes++;
+    if (truncated) leafStats.truncated++;
+    // The rung is "complete" when the engine answered for the children we chose
+    // to price; the capped tail is a deliberate approximation, not a truncation.
+    return { scores: out, engineOk: priced.size > 0 && !truncated };
+  }
+
   if (need.length) {
     let pv = null;
     if (await stockfishAvailable()) {
