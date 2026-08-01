@@ -126,10 +126,42 @@ is exactly zero:
 
 **No significant effect — but all three lean toward weighting**, which is the
 opposite direction from the 11–4 win/loss result that put `sampleAlpha = 0` in the
-code. That result is not overturned; it is unsupported. Keep α=0 (it is still the
-option that changes nothing), and note that ~2,000 positions ≈ 55 games would
-resolve a 5 cp effect at 2σ — about 15 minutes of compute now, versus the
-hundreds of games the win/loss harness would need.
+code. That result is not overturned; it is unsupported.
+
+#### Then it was run at scale, twice, and the answer is NO EFFECT
+
+`--games 37 --max-plies 100`, 1,345 paired positions per run:
+
+| run | mean paired Δ | sign test (A better) |
+|---|---|---|
+| seed 12345 | −0.70 ± 17.60 cp (z = −0.04) | 342/636 = **53.8%** (z = 1.90) |
+| seed 777, confirmatory | +18.62 ± 21.58 cp (z = 0.86) | 259/510 = **50.8%** (z = 0.35) |
+
+**α = 0 stays, and this question is closed.** Two independent runs, ~2,700 paired
+positions, null on both the mean and the robust statistic, with the two runs
+disagreeing about the *sign* of the mean.
+
+Two methodological things worth more than the result itself:
+
+- **The mean is the wrong statistic here and more data made it worse.** cp loss
+  is brutally heavy-tailed (median ~45–75, mean ~240–260), so its standard error
+  is set by a handful of blunders: going 220 → 1,345 positions moved SE from
+  8.1 to 17.6. The sign test is bounded per position and cannot be swamped, so
+  `move-quality.mjs` now reports both. Read the sign test.
+- **The z = 1.90 in the first run was a post-hoc artifact and is exactly how a
+  false finding gets made.** The sign test was adopted *after* the mean came back
+  null — defensible a priori for a heavy-tailed metric, but chosen having already
+  seen the data, so it was treated as a hypothesis and run again on a fresh seed.
+  It evaporated (z = 1.90 → 0.35). One caveat on that replication: the engine was
+  upgraded (SF11 → SF18) between the runs, so it is not a pure repeat — but 50.8%
+  is a coin flip on its own terms, whatever the reference engine.
+
+So the belief's 5× better calibration buys **nothing measurable in play** through
+the one channel that reaches the search. That is not a paradox: the search draws
+~16 worlds and the true board's median rank is 9, so a better ORDERING of a set
+the search barely samples changes few actual decisions — 46–60% of moves are
+byte-identical between the arms. If the posterior is to pay off in strength, it
+needs a channel other than which worlds get sampled.
 
 **Getting the instrument to work was the whole job.** The first version ran the
 agent on a wall clock; its null control agreed only **20%** of the time, because
