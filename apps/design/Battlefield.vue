@@ -1229,6 +1229,21 @@ function handleSqClick(col, row, x, y) {
 
 const selectedUnit = computed(() => displayUnits.value.find(u => u.id === selectedId.value) || null);
 
+// Auto-advance to another unit that still wants orders once the selected one no
+// longer does (civ1: it used up its moves, or was just given a standing fortify/
+// sentry order — see Civ1Game.js's toGrid `needsOrders`). Opt-in via ui.autoAdvanceUnit
+// since most games have no such per-unit "still needs orders" concept at all — a plain
+// mp-hits-zero check would be wrong for them (see queuingMoves above on why `mp` alone
+// isn't a safe cross-game signal). Only fires on a true→not-true transition, so it
+// never fights a selection the player just made themselves by clicking elsewhere.
+watch(() => selectedUnit.value?.needsOrders, (needsOrders, prev) => {
+  if (!ui.value.autoAdvanceUnit || !isPending.value || prev !== true || needsOrders === true) return;
+  const myTeam = pendingPlayerId.value;
+  const next = displayUnits.value.find(u => u.team === myTeam && u.needsOrders && u.id !== selectedId.value);
+  if (next) { selectUnit(next.id); centerOn(next.x, next.y); }
+  else selectedId.value = null;
+});
+
 // Cities render through the same glyph→pseudo-unit pipeline as real units (see
 // App.vue's buildField) — `badge` is only ever set on those city tokens (the size
 // number), so it doubles as "this selection is a city, not a unit" here. When it is,

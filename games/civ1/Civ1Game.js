@@ -46,6 +46,25 @@ export function chebyshevWrapped(a, b, width) {
   return Math.max(wrapDX(a.x, b.x, width), Math.abs(a.y - b.y));
 }
 
+// Most units see only their 8 neighbours, as in the original (see getVisibleState's
+// fog-of-war `canSee`). Shared with wakeSentryUnits below — a sentried unit stands
+// down until an enemy comes within the same radius it would otherwise be fogged behind.
+const UNIT_VISION = 1;
+
+// Wakes any of `playerId`'s sentried units that now have an enemy within sight —
+// classic "sentry: enemy sighted" behaviour. Called when a player's turn starts
+// (after their units' moves refresh), so a woken unit shows up needing orders right
+// away instead of silently sitting out the turn it was supposed to interrupt.
+function wakeSentryUnits(units, playerId, boardWidth) {
+  const enemies = units.filter(u => u.alive && u.ownerId !== playerId);
+  if (!enemies.length) return units;
+  return units.map(u => {
+    if (!u.alive || u.ownerId !== playerId || !u.attrs?.sentry) return u;
+    const sighted = enemies.some(e => chebyshevWrapped(u.position, e.position, boardWidth) <= UNIT_VISION);
+    return sighted ? { ...u, attrs: { ...u.attrs, sentry: false } } : u;
+  });
+}
+
 const UNIT_IMAGES = {
   settlers:      `${BASE}/units/settlers`,
   diplomat:      `${BASE}/units/diplomat`,
@@ -188,6 +207,20 @@ function getLegalActions(state, playerId) {
       }
 
       actions.push({ type: 'skip-unit', unitId: unit.id });
+
+      // Fortify (defensive bonus while stationary — land/sea only, matching the
+      // original) and sentry (stand down until an enemy comes into view — see
+      // wakeSentryUnits below). Both are standing orders: they end this unit's turn
+      // now and every future one too, without asking, until something gives it a
+      // fresh order (see the attrs-clearing in applyMove/attack/build*/queue-move
+      // below) — that's also what lets the auto-advance-to-next-unit UI feature
+      // skip past them (see Civ1Game's `needsOrders` in toGrid).
+      if (stats.domain !== 'air' && !unit.attrs?.fortified) {
+        actions.push({ type: 'fortify', unitId: unit.id });
+      }
+      if (!unit.attrs?.sentry) {
+        actions.push({ type: 'sentry', unitId: unit.id });
+      }
     } else {
       // No moves left this turn: further clicks plan a route instead of acting right
       // away (see games/moveQueue.js) — one queued waypoint per future turn, consumed
@@ -285,8 +318,10 @@ function moveCost(unit, tile) {
 function applyMove(units, cities, board, playerId, unit, to) {
   const tile = board.tiles[`${to.x},${to.y}`];
   const newMovesLeft = Math.max(0, unit.movesLeft - moveCost(unit, tile));
+  // Moving is a fresh order: drop any standing fortify/sentry (matches queued
+  // waypoints too — this runs for those the same way it does for a direct 'move').
   const newUnits = units.map(u =>
-    u.id === unit.id ? { ...u, position: to, movesLeft: newMovesLeft } : u);
+    u.id === unit.id ? { ...u, position: to, movesLeft: newMovesLeft, attrs: { ...u.attrs, fortified: false, sentry: false } } : u);
 
   const enemyCity = cities.find(c => c.ownerId !== playerId && c.position.x === to.x && c.position.y === to.y);
   const newCities = enemyCity
@@ -361,6 +396,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       }
       return u;
     });
+    units = wakeSentryUnits(units, nextPlayerId, board.width);
     units = runQueuedMoves(units, nextPlayerId,
       (to, unit, pid, curUnits) => isMoveTargetLegal(to, board, curUnits, pid, UNITS[unit.type].domain),
       (curUnits, pid, unit, to) => {
@@ -390,8 +426,11 @@ function applyActions(state, playerActions, rng = Math.random) {
   // ── queue-move ────────────────────────────────────────────────────────────
   // The unit has no moves left this turn; remember the destination and run it
   // automatically once moves refresh (see runQueuedMoves, called on 'end-turn').
+  // Queuing a move is a fresh order, same as moving right now — drop any standing
+  // fortify/sentry so the unit doesn't look parked while it's actually got a plan.
   if (action.type === 'queue-move') {
     units = enqueueWaypoint(units, action.unitId, action.to);
+    units = units.map(u => u.id === action.unitId ? { ...u, attrs: { ...u.attrs, fortified: false, sentry: false } } : u);
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -439,7 +478,7 @@ function applyActions(state, playerActions, rng = Math.random) {
 
     units = units.map(u => {
       if (u.id === action.unitId) {
-        if (result.attackerSurvived) return { ...u, hp: result.attackerHpLeft, movesLeft: 0 };
+        if (result.attackerSurvived) return { ...u, hp: result.attackerHpLeft, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } };
         return { ...u, alive: false, hp: 0, movesLeft: 0 };
       }
       if (u.id === action.targetId) {
@@ -510,7 +549,7 @@ function applyActions(state, playerActions, rng = Math.random) {
     else if (action.type === 'build-mine') patch = { mined: true, irrigated: false };
     else patch = { terrain: CLEARS_TO[tile.terrain] ?? 'plains', irrigated: false, mined: false };
     const newTiles = { ...board.tiles, [k]: { ...tile, ...patch } };
-    units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0 } : u);
+    units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } } : u);
     return { ...state, units, board: { ...board, tiles: newTiles }, lastActions: playerActions };
   }
 
@@ -556,8 +595,24 @@ function applyActions(state, playerActions, rng = Math.random) {
   }
 
   // ── skip-unit ─────────────────────────────────────────────────────────────
+  // Deliberately leaves attrs.fortified/attrs.sentry untouched — "wait" on an
+  // already-fortified/sentried unit isn't a new order, same as the original.
   if (action.type === 'skip-unit') {
     units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0 } : u);
+    return { ...state, units, lastActions: playerActions };
+  }
+
+  // ── fortify / sentry (standing orders) ──────────────────────────────────────
+  if (action.type === 'fortify') {
+    units = units.map(u => u.id === action.unitId
+      ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: true, sentry: false } }
+      : u);
+    return { ...state, units, lastActions: playerActions };
+  }
+  if (action.type === 'sentry') {
+    units = units.map(u => u.id === action.unitId
+      ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: true } }
+      : u);
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -745,9 +800,8 @@ function createInitialState(players, config = {}) {
 // ── Fog of war ────────────────────────────────────────────────────────────────
 
 function getVisibleState(state, playerId) {
-  // Most units see only their 8 neighbours, as in the original; cities (bigger,
-  // garrisoned, elevated) see a little further.
-  const UNIT_VISION = 1;
+  // Cities (bigger, garrisoned, elevated) see a little further than the module-level
+  // UNIT_VISION units use (also shared with wakeSentryUnits above).
   const CITY_VISION = 2;
   const myUnits  = state.units.filter(u => u.alive && u.ownerId === playerId);
   const myCities = state.cities.filter(c => c.ownerId === playerId);
@@ -873,6 +927,10 @@ export const Civ1Game = {
     hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
     blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
     defaultTileSize: 40, moveQueue: true,
+    // Once the selected unit runs out of orders (moves used up, or it's been given a
+    // standing fortify/sentry order — see toGrid's `needsOrders`), jump selection to
+    // another of the player's units that still wants orders (see Battlefield.vue).
+    autoAdvanceUnit: true,
     // Health bars read as clutter on a strategy map at this zoom — off by default,
     // toggleable from the menu's settings overlay (see games/civ1/gameOptions).
     showHpBars: false,
@@ -1051,6 +1109,14 @@ export const Civ1Game = {
           // (drives the goto-path overlay drawn for every unit — see App.vue/HtmlLayer).
           mp: u?.movesLeft, maxMp: u ? UNITS[u.type].moves : undefined,
           queue: u?.queue?.length ? u.queue : null,
+          // Standing-order tags shown in the side panel (generic apps/design display
+          // channel — see SelectedUnitDetail.vue's statusEffects tags).
+          statusEffects: u ? [...(u.attrs?.fortified ? ['fortified'] : []), ...(u.attrs?.sentry ? ['sentry'] : [])] : undefined,
+          // Whether this unit still wants orders this turn: has moves left and isn't
+          // parked on a standing order. Drives the generic auto-advance-to-next-unit
+          // UI feature (ui.autoAdvanceUnit below, see Battlefield.vue) — most games
+          // don't have a persistent per-unit order state, so this is undefined for them.
+          needsOrders: u ? (u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.sentry) : undefined,
         });
       }
     }

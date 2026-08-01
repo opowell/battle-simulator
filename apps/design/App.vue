@@ -550,6 +550,10 @@ function buildField(g, s) {
       abilities:     c.abilities,
       equipment:     c.equipment,
       statusEffects: c.statusEffects,
+      // Whether this unit still wants orders this turn (a game's toGrid may set this —
+      // see Civ1Game.js's `needsOrders`); drives Battlefield.vue's opt-in
+      // ui.autoAdvanceUnit feature. Undefined for games with no such concept.
+      needsOrders:   c.needsOrders,
       moved:         c.moved,
       acted:         c.acted,
       isActive:      c.isActive,

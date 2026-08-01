@@ -14,6 +14,8 @@ export function formatAction(a) {
   if (a.type === 'found-city') return `${a.unitId}: Found city here`;
   if (a.type === 'build-road') return `${a.unitId}: Build road`;
   if (a.type === 'skip-unit')  return `${a.unitId}: Skip (no action)`;
+  if (a.type === 'fortify')    return `${a.unitId}: Fortify`;
+  if (a.type === 'sentry')     return `${a.unitId}: Sentry`;
   if (a.type === 'play-card')  return `Play ${a.payload?.card} (hand[${a.payload?.handIndex}])`;
   if (a.type === 'ability')    return `${a.unitId}: ${a.abilityName} → ${a.targetId}`;
   if (a.type === 'rotate')     return `${a.unitId}: Rotate${a.target ? ' → ' + pos(a.target) : ''}`;
