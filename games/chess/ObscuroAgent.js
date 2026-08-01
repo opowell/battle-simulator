@@ -233,7 +233,13 @@ export class ChessObscuroAgent extends GenericObscuroAgent {
       });
     }
     const t = difficultyToNumber(gs.difficulty) / 100;
-    const sfDepth = Math.max(1, Math.round(2 + t * 5)); // 2..7
+    // `sfDepth` is overridable so the leaf-depth/tree-size tradeoff can be
+    // MEASURED rather than argued. It is the dominant cost in the whole search:
+    // 99% of a move's wall clock is inside these calls, and they run ~4 ms at
+    // depth 1 against ~200 ms at the depths this dial picks. The paper spends its
+    // budget the opposite way — depth-1 leaves, ~10⁶-node trees — and the only
+    // honest way to compare is at equal wall clock (move-quality.mjs --grid).
+    const sfDepth = this.opts.sfDepth ?? Math.max(1, Math.round(2 + t * 5)); // 2..7
     const cols = Math.round(5 + t * 9);                 // 5..14
     return makeChessLeafEval(sfDepth, cols);
   }

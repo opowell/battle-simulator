@@ -583,9 +583,12 @@ export const ChessGame = {
   // --- Whole-population enumeration (drives the analysis panel's batched,
   // eventually-exhaustive belief walk — see ObscuroAgent.analyzeObscuroProgressive).
   //
-  // sampleWorlds draws n worlds at random *with replacement*; these two let a
-  // caller instead walk the ENTIRE materialized belief set P once, in batches,
-  // without replacement, and know when it has been covered exhaustively. Only
+  // sampleWorlds draws n DISTINCT worlds at random (Efraimidis–Spirakis in the
+  // exact path, rejection-with-a-key-set in the heuristic one — neither can
+  // return a duplicate, matching the paper's "sampled at random without
+  // replacement from the set of possible states"); these two let a caller
+  // instead walk the ENTIRE materialized belief set P once, in batches, in a
+  // fixed order, and know when it has been covered exhaustively. Only
   // the exact tracker has a finite materialized population — belief.js is a
   // generative sampler with no enumerable set — so this reports exact:false in
   // the fallback case and the caller keeps sampling there. Prepares the belief
