@@ -572,14 +572,14 @@ export const ChessGame = {
       const picks = idx && exact.positionsAt(idx);
       if (picks && picks.length) {
         const alpha = exact.sampleAlpha ?? 0;
-        const weighted = getBeliefReachWeighting(playerId);
+        const beta = getBeliefReachWeighting(playerId);
         return picks.map(pos => ({
           ...observation,
           board: pos.board,
           units: boardToUnits(pos.board),
           // The importance weight, NOT the raw posterior. runObscuroSearch
           // normalises across the sample, so only relative values matter.
-          ...(weighted && alpha < 1 ? { beliefWeight: Math.pow(pos.w ?? 0, 1 - alpha) } : {}),
+          ...(beta > 0 && alpha < 1 ? { beliefWeight: Math.pow(pos.w ?? 0, beta * (1 - alpha)) } : {}),
           // Position-specific rights/en-passant so in-tree move generation for
           // BOTH sides is exact per world (the heuristic path can't know these).
           gameSpecific: {

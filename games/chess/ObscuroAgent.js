@@ -247,7 +247,14 @@ async function scoreChildren(state, mover, actions, childStates, { sfDepth, cols
       try {
         pv = await multiPV(toFEN(state.board, state.gameSpecific, side, state.turnNumber ?? 1),
           {
-            multipv: Math.max(need.length, cols), depth: sfDepth,
+            // ALL actions, not just `need`: MultiPV returns the engine's own top-N
+            // legal moves, and asking for `need.length` (which excludes the
+            // king-hanging children we score ourselves) means the engine's N and
+            // ours are different sets — every move in ours but not in its top-N
+            // came back unpriced and silently fell through to the static
+            // evaluator. Width is nearly free (measured: multipv 1 and multipv 40
+            // cost the same), so ask for enough to cover everything.
+            multipv: Math.max(actions.length, cols), depth: sfDepth,
             isCancelled, onStopped: () => { truncated = true; },
           });
       } catch { pv = null; }
@@ -259,6 +266,14 @@ async function scoreChildren(state, mover, actions, childStates, { sfDepth, cols
         const a = uciToAction(move, actions);
         if (a) { const i = actions.indexOf(a); if (i >= 0) cpByIdx.set(i, cp); }
       }
+    }
+    if (process.env?.OBSCURO_DEBUG_FALLBACK && cpByIdx.size < need.length && leafStats.calls < 12) {
+      const side = mover === 'white' ? 'w' : 'b';
+      console.error(`[fallback] actions=${actions.length} need=${need.length} pv=${pv?.length ?? 'null'} ` +
+        `mapped=${cpByIdx.size} depth=${sfDepth} cols=${cols}\n  fen: ` +
+        toFEN(state.board, state.gameSpecific, side, state.turnNumber ?? 1) +
+        `\n  unpriced: ` + need.filter(i => !cpByIdx.has(i)).slice(0, 8)
+          .map(i => `${actions[i].from}${actions[i].to}${actions[i].type === 'castle' ? '(O-O)' : ''}`).join(' '));
     }
     for (const i of need) {
       const fromEngine = cpByIdx.has(i);
