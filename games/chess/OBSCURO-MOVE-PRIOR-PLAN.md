@@ -726,25 +726,33 @@ weights are supplied, so every other game and the heuristic particle path are
 untouched. Behind `setBeliefReachWeightingForSeat`; `exact-belief.test.js` pins
 the channel open.
 
-Measured, 1,420 paired positions (`move-quality.mjs --arm reach`):
+Measured three times, 1,420 paired positions each (`move-quality.mjs`). **The
+first run was invalid**: it predated the multiPV depth-sweep fix
+([FOG-AI-FIX-PLAN.md](FOG-AI-FIX-PLAN.md)), which was dropping ~10% of leaf values
+onto the static evaluator — and that degradation penalises the WEIGHTED arm harder,
+exactly as predicted, because a bad leaf value in a heavily-weighted world costs
+more. Its verdict inverted once the bug was fixed:
 
-| statistic | value | reading |
+| arm | mean paired Δ (− favours weighting) | sign test |
 |---|---|---|
-| mean paired Δ | +24.44 ± 18.85 cp (z = 1.30) | uniform reach better |
-| sign test | A better 189/404 = 46.8% (z = −1.29) | uniform reach better |
+| β=1, before the leaf fix (VOID) | +24.44 ± 18.85 (z = 1.30) | 46.8% (z = −1.29) |
+| β=1, after | **−5.37 ± 20.72 (z = −0.26)** | 48.9% (z = −0.44) |
+| β=0.5 tempered, after | **−27.06 ± 15.08 (z = −1.79)** | 48.0% (z = −0.77) |
 
-Both lean the same way, neither reaches 2σ. **`REACH_WEIGHTING_DEFAULT = false`** —
-also the option that changes nothing, which is how τ<60 and α=1 were settled after
-the principled choice measured worse. Third time in this subsystem.
+**Still `REACH_WEIGHTING_DEFAULT = 0` (off), but no longer because the evidence is
+against it — because it is not yet for it.** Nothing reaches 2σ, and for the
+tempered arm the two statistics DISAGREE: the mean says weighting avoids enough
+large losses to be worth ~27 cp/move, while the sign test says it wins slightly
+fewer positions outright. That is the signature of a heavy-tailed metric where the
+effect lives in the tail — plausible for a belief change (it should matter in the
+sharp positions, not the quiet ones) and equally consistent with noise.
 
-The likely mechanism is variance, not incorrectness: it is a correct estimator of
-the right measure computed from ~4 effective worlds instead of 16, and the
-posterior's median true-board rank is 9 — good, not good enough to bet a 4× smaller
-sample on.
+**What blocks a verdict is still measurement quality: these runs logged 20–21%
+static-eval fallbacks**, against 5–8% in a short grid run at the same leaf depth.
+The parser fix halved the rate but did not remove it, and something about long
+runs (later, sparser positions?) makes it worse. Fix that before spending another
+90 minutes here: on a fifth of the leaves the search is not being told what the
+engine thinks, and no belief question can be resolved through that much noise.
 
-**Two caveats that keep this open rather than closed.** (1) That run logged **21%
-static-eval fallbacks** against ~1% clean — a shared machine — so it is not
-quotable, and the degradation plausibly penalises the weighted arm harder, since a
-bad leaf value in a heavily-weighted world costs more. Re-run idle. (2) The arm
-worth measuring next is not on/off but **tempered**: reach ∝ w^β with β≈0.5 keeps
-part of the correction while raising the effective sample.
+The mechanism, the toggle and the exponent are all in place, so a re-run is a
+command rather than a rebuild.
