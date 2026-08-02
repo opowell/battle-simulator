@@ -55,21 +55,25 @@ self.onmessage = async (e) => {
     const analyze = resolveExport(analyzeMod, clientAnalyze.export);
     if (isCancelled()) return;
 
-    // Mirrors api-server.js's resolveAnalysisContext: under fog, always analyze
-    // the requesting viewer's own side (the only side they can reason about);
-    // otherwise analyze whoever is actually to move.
+    // Mirrors api-server.js's resolveAnalysisContext for the only case that ever
+    // reaches this worker — the LIVE position: under fog, always analyze the
+    // requesting viewer's own side (the only side they can reason about);
+    // otherwise analyze whoever is actually to move. (Historical plies, where
+    // the analysed side follows the ply instead, stay on the server path.)
     const color = fog ? playerId : (state.activePlayers?.[0] ?? playerId);
     const legalActions = Game.getLegalActions(state, color);
     if (!legalActions || !legalActions.length) {
-      self.postMessage({ type: 'done', reqId, candidates: [] });
+      self.postMessage({ type: 'done', reqId, color, candidates: [] });
       return;
     }
 
     const result = await analyze(state, legalActions, {
       color, isCancelled,
-      onProgress: (info) => { if (!isCancelled()) self.postMessage({ type: 'progress', reqId, ...info }); },
+      // `color` on every frame: the panel labels suggestions that are for a side
+      // other than the viewer's own (see AnalysisPanel.vue).
+      onProgress: (info) => { if (!isCancelled()) self.postMessage({ type: 'progress', reqId, color, ...info }); },
     });
-    if (!isCancelled()) self.postMessage({ type: 'done', reqId, ...(result ?? { candidates: [] }) });
+    if (!isCancelled()) self.postMessage({ type: 'done', reqId, color, ...(result ?? { candidates: [] }) });
   } catch (err) {
     if (!isCancelled()) self.postMessage({ type: 'error', reqId, message: String((err && err.message) || err) });
   }

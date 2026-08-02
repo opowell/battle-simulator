@@ -64,6 +64,14 @@ const hoveredIdx = ref(-1);
 // "Round 12/30" — see progressLabel below), or null once the final result has
 // landed (or before anything's started).
 const progress = ref(null);
+// Which side these suggestions are FOR, as reported by whoever produced them
+// (see api-server.js's resolveAnalysisContext). Usually the viewer's own seat,
+// but at a historical ply the analysis follows the side to move there, and with
+// full information it follows the side to move at the live position too — so
+// this can be the opponent, and then it has to be said out loud.
+const analyzedSide = ref(null);
+const otherSide = computed(() =>
+  analyzedSide.value && analyzedSide.value !== props.playerId ? analyzedSide.value : null);
 // The belief population itself ({ total, exact, depth, moves, worlds }) — the
 // set of boards consistent with what the viewer can see, which the analysis
 // already reasons over internally (see games/chess/ObscuroAgent.js). Rides along
@@ -140,9 +148,10 @@ function ensureWorker() {
       const d = e.data || {};
       if (d.type === 'error') {
         candidates.value = []; belief.value = null; errorMsg.value = d.message || 'Analysis error';
-        progress.value = null; loading.value = false; return;
+        progress.value = null; analyzedSide.value = null; loading.value = false; return;
       }
       candidates.value = d.candidates ?? candidates.value;
+      if (d.color) analyzedSide.value = d.color;
       if (d.beliefWorlds) belief.value = d.beliefWorlds;
       if (d.type === 'done') {
         loading.value = false;
@@ -173,6 +182,7 @@ function runAnalysis() {
   candidates.value = [];
   belief.value = null;
   progress.value = null;
+  analyzedSide.value = null;
   if (!props.enabled || !panelOn.value || paused.value) return;
   if (!props.sessionId || !props.playerId || !selectedAgentId.value) return;
 
@@ -197,9 +207,11 @@ function runAnalysis() {
         belief.value = null;
         errorMsg.value = data.error;
         progress.value = null;
+        analyzedSide.value = null;
         loading.value = false;
         return;
       }
+      if (data.color) analyzedSide.value = data.color;
       // A frame may legitimately carry no candidates (the belief-only opener,
       // which hands over the plausible boards before the first batch is priced);
       // that must not blank a list already on screen. Stale suggestions are
@@ -235,6 +247,7 @@ watch(
     candidates.value = [];
     belief.value = null;
     progress.value = null;
+    analyzedSide.value = null;
     if (props.enabled && panelOn.value && !paused.value) scheduleAnalysis();
   },
   { immediate: true },
@@ -280,6 +293,11 @@ watch(beliefShown, (on) => { if (!on) emit('belief-world', null); });
            On/Off buttons in the header. -->
       <div v-if="progress" class="an-progress mono">{{ progress }}</div>
 
+      <!-- Suggestions for somebody other than the viewer (a historical ply where
+           the opponent is to move, or a full-information game mid-opponent-turn).
+           Unlabelled, they read as the viewer's own options. -->
+      <div v-if="otherSide" class="an-side">{{ otherSide }} to move</div>
+
       <div v-if="!playerId" class="an-msg">No human player to analyze for.</div>
       <div v-else-if="errorMsg" class="an-msg">{{ errorMsg }}</div>
       <div v-else-if="paused" class="an-msg an-msg--paused">Paused</div>
@@ -314,6 +332,7 @@ watch(beliefShown, (on) => { if (!on) emit('belief-world', null); });
 .an-select { flex: 1; min-width: 0; background: var(--bg0); border: 1px solid var(--line); border-radius: var(--r); color: var(--txt); font-size: 11px; padding: 4px 6px; }
 .an-pause { font-size: 10px; padding: 4px 8px; white-space: nowrap; border: 1px solid var(--line2); border-radius: var(--r); background: var(--bg2); color: var(--dim); }
 .an-pause--on { color: var(--warn); border-color: var(--warn); }
+.an-side { font-size: 10px; color: var(--warn); margin-bottom: 6px; text-transform: capitalize; }
 .an-msg { font-size: 11px; color: var(--faint); padding: 6px 2px; }
 .an-msg--paused { color: var(--warn); }
 </style>

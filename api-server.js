@@ -1359,16 +1359,28 @@ function replayStateAtPly(game, session, ply) {
 // would see it, and looks up the requested AI's `analyze` function. Never
 // touches the real session/engine.
 //
-// Fog: analysis must only ever see what this viewer could see — the same
-// filter a real agent gets (see Session.toJSON above). It does NOT need to
-// be this player's actual turn: the belief-driven agents (ChessAgent,
-// ObscuroAgent) already reason entirely from the viewer's own fog-limited
-// information, so "what's good for my side right now" stays well-defined
-// (and leaks nothing about the opponent's hidden position) even mid-way
-// through the opponent's turn — pass `color` explicitly so the agent
-// analyzes the REQUESTING player's side rather than inferring it from
-// whoever the true state says is actually to move.
-function resolveAnalysisContext(session, { playerId, agentId, ply }) {
+// Which side gets analyzed, and hence whose fog-limited information the
+// analysis is allowed to see. Two different questions are being answered
+// depending on where the viewer is standing:
+//
+//   LIVE position (ply == null) under fog — "what should I play?". Answered for
+//   the REQUESTING player, not for whoever the true state says is to move: the
+//   belief-driven agents (ChessAgent, ObscuroAgent) reason entirely from the
+//   viewer's own fog-limited information, so the question stays well-defined
+//   (and leaks nothing) even mid-way through the opponent's turn.
+//
+//   HISTORICAL ply — "what was good HERE?". The position on screen belongs to
+//   whoever is to move in it; answering for the other side hands back moves
+//   that cannot be played from the board being shown, computed without the
+//   reply that is about to land. So the analysis follows the side to move, the
+//   way the full-information path always has.
+//
+// Under fog that means analyzing the OPPONENT's side at half the historical
+// plies, from the opponent's own view — real information the viewer does not
+// have while the game is live, so it is only served once the session is over
+// (at which point /history already reveals the whole game anyway). During play
+// those plies get a "hidden" error instead of a wrong-side answer.
+export function resolveAnalysisContext(session, { playerId, agentId, ply }) {
   if (!playerId) throw new Error('Missing playerId');
   if (!agentId)  throw new Error('Missing agentId');
 
@@ -1379,8 +1391,15 @@ function resolveAnalysisContext(session, { playerId, agentId, ply }) {
   const rawState = (ply == null) ? session.engine.state : replayStateAtPly(game, session, ply);
   if (!rawState) throw new Error('No position available yet');
 
-  const viewState = (session.fog && game.getVisibleState) ? game.getVisibleState(rawState, playerId) : rawState;
-  const color = session.fog ? playerId : (viewState.activePlayers?.[0] ?? null);
+  const toMove = rawState.activePlayers?.[0] ?? null;
+  const color = (session.fog && ply == null) ? playerId : (toMove ?? playerId);
+  if (session.fog && color !== playerId && session.status === 'active')
+    throw new Error(`${color} to move — hidden until the game ends`);
+
+  // Fog-filter for the side actually being analyzed (identical to filtering for
+  // the requester in every case except the revealed-replay one above): an agent
+  // must never be handed information its own side cannot see.
+  const viewState = (session.fog && game.getVisibleState) ? game.getVisibleState(rawState, color) : rawState;
   const legalActions = game.getLegalActions(viewState, color);
   return { game, rosterEntry, viewState, color, legalActions };
 }
@@ -1410,7 +1429,7 @@ async function handleAnalyze(req, res, id) {
     const result = await ctx.rosterEntry.analyze(ctx.viewState, ctx.legalActions, {
       game: ctx.game, color: ctx.color, maxTotalMs: 15000,
     });
-    send(res, 200, { ...result, ply: body.ply ?? null });
+    send(res, 200, { ...result, ply: body.ply ?? null, color: ctx.color });
   } catch (e) {
     err(res, 500, `Analysis failed: ${e.message}`);
   }
@@ -1452,7 +1471,10 @@ async function handleAnalyzeStream(req, res, id, url) {
   try {
     const result = await ctx.rosterEntry.analyze(ctx.viewState, ctx.legalActions, {
       game: ctx.game, color: ctx.color,
-      onProgress: (info) => emit({ ...info, ply, done: false }),
+      // `color` rides along on every frame: which side is being analyzed is not
+      // always the viewer's own (see resolveAnalysisContext), and suggestions
+      // for a side the viewer didn't ask about are misleading unless labelled.
+      onProgress: (info) => emit({ ...info, ply, color: ctx.color, done: false }),
       // Lets an agent that has more to gain from a longer look (e.g. Obscuro's
       // fog analysis, which can always sample another belief-world batch) keep
       // refining until the viewer actually stops watching this position,
@@ -1460,7 +1482,7 @@ async function handleAnalyzeStream(req, res, id, url) {
       // isCancelled-driven progressive mode in games/chess/ObscuroAgent.js.
       isCancelled: () => closed,
     });
-    emit({ ...result, ply, done: true });
+    emit({ ...result, ply, color: ctx.color, done: true });
   } catch (e) {
     emit({ error: `Analysis failed: ${e.message}`, done: true });
   }
