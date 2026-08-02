@@ -81,7 +81,11 @@ const BROWSER_ENGINE_URL = isBrowser
 // position, and SF11's numbers are not SF18's numbers — without this tag the
 // 23 MB of cached SF11 output would be served as if this engine had produced it.
 // Old rows simply stop matching and age out through the existing LRU.
-const ENGINE_TAG = 'sf18l';
+// Bumped 2026-08-02 with the MultiPV depth-mixing fix below: the cached rows are
+// keyed by (fen, multipv, depth) but their CONTENT came from the buggy parser, so
+// they have to be invalidated like an engine change. Bump this for any change
+// that alters what a given query returns, not just for a new engine.
+const ENGINE_TAG = 'sf18l-mpv2';
 
 let worker = null;
 let readyPromise = null;
@@ -418,7 +422,27 @@ export async function multiPV(fen, { multipv = 10, depth = 2, onInfo, isCancelle
   const cached = cacheGet(key);
   if (cached !== undefined) return cached;
 
-  const best = new Map(); // multipv index -> { move, cp } (kept at the deepest seen)
+  // Results are keyed BY MOVE, per depth — not by MultiPV index across depths.
+  //
+  // `go depth N` sweeps depths 1..N and re-emits all MultiPV lines at each, and
+  // the ranking REORDERS between sweeps. Keying by index and letting sweeps
+  // overwrite each other therefore mixed depths and, whenever a move changed
+  // rank, left the same move under two indices while another move disappeared
+  // entirely. The caller saw a full-length result and had no way to notice one of
+  // its moves was missing — in the Obscuro leaf evaluator that silently dropped
+  // ~10% of children onto the static evaluator (ObscuroAgent `leafStats`).
+  //
+  // So: accumulate the current sweep by move, and keep the previous complete
+  // sweep to fill any gap if the deepest one is cut short. Deeper values win;
+  // coverage never regresses.
+  let curDepth = 0;
+  let cur = new Map();   // move -> cp, current depth sweep
+  let prev = new Map();  // move -> cp, last depth sweep that finished
+  const merged = () => {
+    const out = new Map(prev);
+    for (const [m, cp] of cur) out.set(m, cp);
+    return [...out].map(([move, cp]) => ({ move, cp }));
+  };
   let lastReportedDepth = 0;
   let stopped = false;
   const cmds = [`setoption name MultiPV value ${multipv}`, 'position fen ' + fen, 'go depth ' + depth];
@@ -430,16 +454,18 @@ export async function multiPV(fen, { multipv = 10, depth = 2, onInfo, isCancelle
       const sc = line.match(/ score (cp|mate) (-?\d+)/);
       const pv = line.match(/ pv (\S+)/);
       if (mpv && sc && pv) {
+        const d = dm ? Number(dm[1]) : curDepth;
+        if (d > curDepth) { if (cur.size) prev = cur; cur = new Map(); curDepth = d; }
         const cp = sc[1] === 'cp'
           ? Number(sc[2])
           : (Number(sc[2]) > 0 ? 100000 - Number(sc[2]) : -100000 - Number(sc[2]));
-        best.set(Number(mpv[1]), { move: pv[1], cp });
+        cur.set(pv[1], cp);
       }
       if (onInfo && dm && mpv?.[1] === '1') {
         const d = Number(dm[1]);
-        if (d !== lastReportedDepth) { lastReportedDepth = d; onInfo({ depth: d, candidates: [...best.values()] }); }
+        if (d !== lastReportedDepth) { lastReportedDepth = d; onInfo({ depth: d, candidates: merged() }); }
       }
-      return line.startsWith('bestmove') ? [...best.values()] : undefined;
+      return line.startsWith('bestmove') ? merged() : undefined;
     },
     depth * 400 + 5000,
     { isCancelled, onStopped: () => { stopped = true; onStopped?.(); } },

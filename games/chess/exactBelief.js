@@ -174,12 +174,20 @@ export function setBeliefSampleAlphaForSeat(color, a) {
 // heavily-weighted world costs more). Re-run it idle. (2) The interesting variant
 // is not on/off but TEMPERED: reach ∝ w^β with β≈0.5 keeps part of the correction
 // while raising the effective sample. That is the arm worth measuring next.
-export const REACH_WEIGHTING_DEFAULT = false;
+// The value is an EXPONENT β, not a flag: reach ∝ w^β. 0 = off (flat 1/N), 1 =
+// the full posterior, and β in between tempers it — which is the variant worth
+// measuring, since the objection to β=1 is variance (a correct estimator over ~4
+// effective worlds) rather than incorrectness. `true`/`false` still work.
+export const REACH_WEIGHTING_DEFAULT = 0;
+const asBeta = (v) => (v == null ? null : v === true ? 1 : v === false ? 0 : Number(v));
 let reachWeighting = REACH_WEIGHTING_DEFAULT;
-export function setBeliefReachWeighting(on) { reachWeighting = on == null ? REACH_WEIGHTING_DEFAULT : !!on; }
+export function setBeliefReachWeighting(on) {
+  reachWeighting = asBeta(on) ?? REACH_WEIGHTING_DEFAULT;
+}
 const reachBySeat = new Map();
 export function setBeliefReachWeightingForSeat(color, on) {
-  if (on == null) reachBySeat.delete(color); else reachBySeat.set(color, !!on);
+  const b = asBeta(on);
+  if (b == null) reachBySeat.delete(color); else reachBySeat.set(color, b);
 }
 export function getBeliefReachWeighting(color) {
   return reachBySeat.get(color) ?? reachWeighting;

@@ -104,8 +104,13 @@ const ARMS = {
   // allowed to? `reach: true` weights each sampled world's root reach by its
   // importance weight; `false` is the flat 1/N the search used until 2026-08-02.
   reach: {
-    a: { label: 'posterior reach', alpha: 0, reach: true },
-    b: { label: 'uniform reach (old)', alpha: 0, reach: false },
+    a: { label: 'posterior reach β=1', alpha: 0, reach: 1 },
+    b: { label: 'uniform reach (shipped)', alpha: 0, reach: 0 },
+  },
+  // Tempered: half the correction, roughly double the effective sample.
+  temper: {
+    a: { label: 'tempered reach β=0.5', alpha: 0, reach: 0.5 },
+    b: { label: 'uniform reach (shipped)', alpha: 0, reach: 0 },
   },
   // With α=0 the prior cannot reach the world draw at all, so this arm is only
   // meaningful together with α>0 — it is here to make that point measurable
