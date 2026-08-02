@@ -49,7 +49,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ChessGame } from './ChessGame.js';
 import { ChessObscuroAgent, makeChessLeafEval, getLeafEvalStats, resetLeafEvalStats } from './ObscuroAgent.js';
-import { setBeliefSampleAlphaForSeat, setMovePriorForSeat } from './exactBelief.js';
+import {
+  setBeliefSampleAlphaForSeat, setMovePriorForSeat, setBeliefReachWeightingForSeat,
+} from './exactBelief.js';
 import { makeMovePrior, UNIFORM_PRIOR, FITTED_WEIGHTS } from './movePrior.js';
 import { quit as stockfishQuit } from './stockfish.js';
 
@@ -98,6 +100,13 @@ const ARMS = {
   alpha: { a: { label: 'α=1', alpha: 1 }, b: { label: 'α=0', alpha: 0 } },
   half: { a: { label: 'α=0.5', alpha: 0.5 }, b: { label: 'α=0', alpha: 0 } },
   null: { a: { label: 'control-A', alpha: 0 }, b: { label: 'control-B', alpha: 0 } },
+  // THE ONE THAT MATTERS: does the posterior change play at all once it is
+  // allowed to? `reach: true` weights each sampled world's root reach by its
+  // importance weight; `false` is the flat 1/N the search used until 2026-08-02.
+  reach: {
+    a: { label: 'posterior reach', alpha: 0, reach: true },
+    b: { label: 'uniform reach (old)', alpha: 0, reach: false },
+  },
   // With α=0 the prior cannot reach the world draw at all, so this arm is only
   // meaningful together with α>0 — it is here to make that point measurable
   // rather than argued.
@@ -171,12 +180,13 @@ const actionKey = a => (a.type === 'castle' ? `O-${a.side}` : `${a.from}${a.to}$
  * and a diverging game would compare two different sets of positions.
  */
 async function replayArm(sess, seat, spec, seed) {
-  const { alpha, prior, sfDepth, rounds } = spec;
+  const { alpha, prior, sfDepth, rounds, reach } = spec;
   // Fresh identity → fresh belief trackers (see protocol note 2). The α is read
   // in the ExactBelief constructor, so it must be set BEFORE the first sample.
   const players = JSON.parse(JSON.stringify(sess.params.players));
   setBeliefSampleAlphaForSeat(seat, alpha ?? 0);
   setMovePriorForSeat(seat, prior ?? null);
+  setBeliefReachWeightingForSeat(seat, reach ?? null);
   const agent = new ChessObscuroAgent({
     rng: mulberry32(seed), ...knobs,
     ...(sfDepth ? { sfDepth } : {}), ...(rounds ? { maxRounds: rounds } : {}),
@@ -206,6 +216,7 @@ async function replayArm(sess, seat, spec, seed) {
   }
   setBeliefSampleAlphaForSeat(seat, null);
   setMovePriorForSeat(seat, null);
+  setBeliefReachWeightingForSeat(seat, null);
   return { picks, searchMs };
 }
 

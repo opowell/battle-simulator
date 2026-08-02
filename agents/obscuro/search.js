@@ -128,7 +128,42 @@ export async function runObscuroSearch(hooks, worlds, cfg = {}) {
       return { node, prob: 0, clsKey: 'fresh|' + i };
     }),
   ];
-  for (const w of rootWorlds) w.prob = 1 / rootWorlds.length;
+  // Root-world reach: the measure every counterfactual value in this search is
+  // averaged under (infoset.js `cfrDescend(w.node, me, 1, w.prob)`, and the
+  // gadget's class masses in kluss.js). Uniform 1/N says "every world in my
+  // information set is equally likely" — which is what the paper assumes,
+  // because it samples uniformly and has no better model.
+  //
+  // A game that CAN do better says so by putting `beliefWeight` on the states it
+  // hands us (chess does; see ChessGame.sampleWorlds for why it is an importance
+  // weight rather than the raw posterior). Absent that, or if the weights are
+  // degenerate, this falls back to uniform — so every other game, the heuristic
+  // particle path, and any future sampler are unaffected.
+  //
+  // Carried worlds arrive from the previous tree rather than from this turn's
+  // draw and carry no weight of their own; they take the sample's mean weight,
+  // which leaves them exactly as influential as they were under uniform reach.
+  {
+    const weighted = freshStates.some(s => typeof s.beliefWeight === 'number');
+    let total = 0;
+    if (weighted) {
+      const fresh = rootWorlds.filter(w => !w.carried);
+      let fw = 0;
+      for (let i = 0; i < fresh.length; i++) fw += Math.max(0, freshStates[i].beliefWeight ?? 0);
+      const meanW = fresh.length ? fw / fresh.length : 0;
+      let k = 0;
+      for (const w of rootWorlds) {
+        w.prob = w.carried ? meanW : Math.max(0, freshStates[k++].beliefWeight ?? 0);
+        total += w.prob;
+      }
+    }
+    // total === 0 means every weight underflowed or none were supplied.
+    if (!weighted || !(total > 0)) {
+      for (const w of rootWorlds) w.prob = 1 / rootWorlds.length;
+    } else {
+      for (const w of rootWorlds) w.prob /= total;
+    }
+  }
 
   const tree = {
     me: hooks.me,

@@ -143,6 +143,48 @@ export function setBeliefSampleAlphaForSeat(color, a) {
   if (a == null) alphaBySeat.delete(color); else alphaBySeat.set(color, a);
 }
 
+// REACH WEIGHTING — the second, and until 2026-08-02 the missing, channel by
+// which the posterior can reach play.
+//
+// α decides which worlds get SAMPLED. This decides what each sampled world is
+// WORTH once the search has it: the CFR weights every world's counterfactual
+// value by its root reach (agents/obscuro/infoset.js), and that reach was a flat
+// 1/N. With α = 0 the draw is uniform too, so the two channels together meant the
+// AI evaluated under a uniform belief over P — the entire fitted posterior was
+// computed, displayed in the analysis panel, and then discarded before it could
+// affect a single move. That is also why raising α measured as nothing: it moved
+// worlds between two uniform treatments.
+//
+// SHIPPED OFF, on a measurement that leans against it. 1,420 paired positions
+// (move-quality.mjs --arm reach): mean +24.4 ± 18.9 cp and a sign test of 46.8%
+// (z = 1.30 and −1.29) — both pointing at uniform reach being BETTER, neither at
+// 2σ. Off is also the option that changes nothing, which is how the two previous
+// belief knobs (τ<60, α=1) were settled after the principled choice measured
+// worse.
+//
+// The likely reason is variance, not incorrectness: the weights inside a 16-world
+// draw are steep (effective sample size 3–11, dipping to 1.4 when one world holds
+// 82% of the mass), so weighting is a correct estimator of the right measure
+// computed from ~4 effective worlds instead of 16. The posterior's median true-
+// board rank is 9 — good, not good enough to bet a 4× smaller sample on.
+//
+// TWO THINGS BEFORE ANYONE FLIPS THIS ON. (1) That run had 21% static-eval
+// fallbacks against ~1% clean — a shared machine, so it is not quotable, and the
+// degradation plausibly penalises the weighted arm harder (a bad leaf value in a
+// heavily-weighted world costs more). Re-run it idle. (2) The interesting variant
+// is not on/off but TEMPERED: reach ∝ w^β with β≈0.5 keeps part of the correction
+// while raising the effective sample. That is the arm worth measuring next.
+export const REACH_WEIGHTING_DEFAULT = false;
+let reachWeighting = REACH_WEIGHTING_DEFAULT;
+export function setBeliefReachWeighting(on) { reachWeighting = on == null ? REACH_WEIGHTING_DEFAULT : !!on; }
+const reachBySeat = new Map();
+export function setBeliefReachWeightingForSeat(color, on) {
+  if (on == null) reachBySeat.delete(color); else reachBySeat.set(color, !!on);
+}
+export function getBeliefReachWeighting(color) {
+  return reachBySeat.get(color) ?? reachWeighting;
+}
+
 // --- encoding ---------------------------------------------------------------
 
 const PIECE_CODE = { pawn: 1, knight: 2, bishop: 3, rook: 4, queen: 5, king: 6 };
@@ -474,6 +516,14 @@ export class ExactBelief {
   }
 
   _giveUp() { this.exact = false; this.positions = null; this.weights = null; }
+
+  /**
+   * The sampling exponent this tracker resolved at construction. Public because
+   * a consumer that draws worlds has to know how much of the posterior is
+   * already in the draw before deciding how much to carry as an importance
+   * weight — see ChessGame.sampleWorlds.
+   */
+  get sampleAlpha() { return this._alpha; }
 
   // Normalize a freshly built weight array to Σ = 1. Pruning inconsistent
   // successors removed mass, so this is the conditioning step. A total of 0 can

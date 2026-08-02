@@ -4,7 +4,7 @@ import { getAllLegalMoves, getAllFogMoves } from './moves.js';
 import { ChessAgent, evaluate } from './ChessAgent.js';
 import { ObscuroAgent, analyzeObscuro } from './ObscuroAgent.js';
 import { getBelief } from './belief.js';
-import { getExactBelief } from './exactBelief.js';
+import { getExactBelief, getBeliefReachWeighting } from './exactBelief.js';
 
 // ---------------------------------------------------------------------------
 // Initial board setup
@@ -556,12 +556,30 @@ export const ChessGame = {
     // heuristic belief — a tight superset, still far better than particles.
     if (!exact.exact) exact.tryReacquire(observation, belief, turnKey);
     if (exact.exact) {
-      const picks = exact.samplePositions(n, rng);
+      // Draw indices rather than positions so the POSTERIOR WEIGHT of each pick
+      // can ride along. It has to: the search weights every world's
+      // counterfactual value by its root reach (agents/obscuro/infoset.js —
+      // `cfrDescend(w.node, me, 1, w.prob)`), and with a uniform draw that reach
+      // was 1/N for every world, i.e. the AI evaluated positions under a UNIFORM
+      // belief over P and the posterior reached play through nothing at all.
+      //
+      // The correction is importance sampling. Drawing ∝ wᵅ and weighting by
+      // w¹⁻ᵅ estimates the w-weighted mean for any α, which keeps both ends
+      // honest: at α=1 the weight is already in the draw (uniform reach, the old
+      // behaviour), and at the shipped α=0 the draw is uniform and the reach
+      // carries the whole posterior.
+      const idx = exact.sampleIndices(n, rng);
+      const picks = idx && exact.positionsAt(idx);
       if (picks && picks.length) {
+        const alpha = exact.sampleAlpha ?? 0;
+        const weighted = getBeliefReachWeighting(playerId);
         return picks.map(pos => ({
           ...observation,
           board: pos.board,
           units: boardToUnits(pos.board),
+          // The importance weight, NOT the raw posterior. runObscuroSearch
+          // normalises across the sample, so only relative values matter.
+          ...(weighted && alpha < 1 ? { beliefWeight: Math.pow(pos.w ?? 0, 1 - alpha) } : {}),
           // Position-specific rights/en-passant so in-tree move generation for
           // BOTH sides is exact per world (the heuristic path can't know these).
           gameSpecific: {
