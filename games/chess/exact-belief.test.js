@@ -271,3 +271,48 @@ test('exact belief: attaching mid-game gives up gracefully', () => {
   assert.equal(tracker.exact, false);
   assert.equal(tracker.samplePositions(4), null);
 });
+
+test('exact belief: sampled worlds carry an importance weight for the search reach', async () => {
+  // The posterior reaches play through the CFR's ROOT REACH (infoset.js:
+  // `cfrDescend(w.node, me, 1, w.prob)`), and until 2026-08-02 that reach was a
+  // flat 1/N — so the belief was computed and then discarded before it could
+  // affect a move. This pins the channel open.
+  const { setBeliefReachWeightingForSeat } = await import('./exactBelief.js');
+  let state = ChessGame.createInitialState(
+    [{ id: 'white', name: 'W' }, { id: 'black', name: 'B' }],
+    { fogOfWar: true, fog: true });
+  // Play a few plies so the belief has something to be non-uniform about.
+  for (const [pid, from, to] of [['white', 'e2', 'e4'], ['black', 'e7', 'e5'],
+    ['white', 'g1', 'f3'], ['black', 'b8', 'c6']]) {
+    const obs = ChessGame.getVisibleState(state, pid);
+    const action = ChessGame.getLegalActions({ ...state, activePlayers: [pid] }, pid)
+      .find(a => a.from === from && a.to === to);
+    ChessGame.sampleWorlds(obs, pid, 2, () => 0.5);
+    ChessGame.onActionCommitted(obs, pid, action);
+    state = ChessGame.applyActions(state, [{ playerId: pid, action }]);
+  }
+
+  // Enabled explicitly: the DEFAULT is off (measured — see REACH_WEIGHTING_DEFAULT),
+  // so this pins that the channel still works when switched on, which is what any
+  // future re-measurement depends on.
+  setBeliefReachWeightingForSeat('white', true);
+  const view = ChessGame.getVisibleState(state, 'white');
+  const worlds = ChessGame.sampleWorlds(view, 'white', 8, Math.random);
+  setBeliefReachWeightingForSeat('white', null);
+  assert.ok(worlds.length > 1, 'the fog should leave more than one world');
+  for (const w of worlds) {
+    assert.equal(typeof w.beliefWeight, 'number', 'every sampled world carries a weight');
+    assert.ok(w.beliefWeight >= 0 && Number.isFinite(w.beliefWeight), `finite weight, got ${w.beliefWeight}`);
+  }
+  assert.ok(worlds.some(w => w.beliefWeight > 0), 'and they are not all zero');
+
+  // Off — which is the shipped default — the field is absent entirely, and that
+  // absence is what makes the search fall back to uniform reach.
+  setBeliefReachWeightingForSeat('white', false);
+  const flat = ChessGame.sampleWorlds(
+    ChessGame.getVisibleState(state, 'white'), 'white', 8, Math.random);
+  setBeliefReachWeightingForSeat('white', null);
+  for (const w of flat) {
+    assert.equal(w.beliefWeight, undefined, 'reach weighting off ⇒ no weight on the world');
+  }
+});

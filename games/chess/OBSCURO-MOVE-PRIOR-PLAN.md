@@ -697,3 +697,54 @@ flat and why, so the history is still readable:
 - Per repo root [CLAUDE.md](../../CLAUDE.md): do this in its own git worktree, and
   rebase onto **local** `main` first — `EnterWorktree` branches from `origin/main`,
   which this repo does not push to, so a new worktree starts stale.
+
+## 2026-08-02 — found the reason the posterior never reached play, and measured the fix
+
+**The belief was being computed and then discarded before it could move a piece.**
+Two channels feed it into the search and both were uniform:
+
+- the DRAW — `sampleAlpha = 0`, so worlds are sampled uniformly from P;
+- the REACH — `runObscuroSearch` set every root world's `prob = 1 / N`, and that
+  `prob` is the opponent's root reach in `cfrDescend(w.node, me, 1, w.prob)`
+  ([infoset.js](../../agents/obscuro/infoset.js)), weighting every counterfactual
+  value and regret, plus the gadget's class masses in `kluss.js`.
+
+So the AI evaluated positions under a **uniform belief over P**. That also explains
+the α null result cleanly: raising α moved worlds between two uniform treatments.
+
+**It is not a small correction where it applies.** Effective sample size inside a
+16-world draw (1/Σp², 16 = flat), measured across a real game: typically 3–11,
+dipping to **1.4 when a single world holds 82% of the posterior mass**. Top-4
+worlds routinely hold 60–95%. Under flat reach, an 82% world counted the same as a
+0.1% world.
+
+**The fix, and why it ships OFF.** `sampleWorlds` now attaches an importance
+weight `w^(1−α)` — correct for any α (at α=1 the weight is already in the draw;
+at the shipped α=0 the reach carries the whole posterior) — and
+`runObscuroSearch` normalises it into `prob`, falling back to uniform whenever no
+weights are supplied, so every other game and the heuristic particle path are
+untouched. Behind `setBeliefReachWeightingForSeat`; `exact-belief.test.js` pins
+the channel open.
+
+Measured, 1,420 paired positions (`move-quality.mjs --arm reach`):
+
+| statistic | value | reading |
+|---|---|---|
+| mean paired Δ | +24.44 ± 18.85 cp (z = 1.30) | uniform reach better |
+| sign test | A better 189/404 = 46.8% (z = −1.29) | uniform reach better |
+
+Both lean the same way, neither reaches 2σ. **`REACH_WEIGHTING_DEFAULT = false`** —
+also the option that changes nothing, which is how τ<60 and α=1 were settled after
+the principled choice measured worse. Third time in this subsystem.
+
+The likely mechanism is variance, not incorrectness: it is a correct estimator of
+the right measure computed from ~4 effective worlds instead of 16, and the
+posterior's median true-board rank is 9 — good, not good enough to bet a 4× smaller
+sample on.
+
+**Two caveats that keep this open rather than closed.** (1) That run logged **21%
+static-eval fallbacks** against ~1% clean — a shared machine — so it is not
+quotable, and the degradation plausibly penalises the weighted arm harder, since a
+bad leaf value in a heavily-weighted world costs more. Re-run idle. (2) The arm
+worth measuring next is not on/off but **tempered**: reach ∝ w^β with β≈0.5 keeps
+part of the correction while raising the effective sample.
