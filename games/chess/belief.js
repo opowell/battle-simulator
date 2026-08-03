@@ -31,6 +31,53 @@ import { pseudoLegalForUnit } from './moves.js';
 const ALL_SQUARES = [];
 for (const f of FILES) for (let r = 1; r <= 8; r++) ALL_SQUARES.push(f + r);
 
+/**
+ * Squares a piece of this type/colour could legally OCCUPY, ignoring history.
+ *
+ * Only pawns are constrained, and both constraints are hard: a pawn can never
+ * stand on its own first rank (it starts on the second and only moves forward),
+ * and one that reached the far rank promoted and is no longer a pawn. Every
+ * other type can be anywhere.
+ *
+ * Exported because the same rule is the cheapest possible sanity check on any
+ * imagined board — see `impossiblePlacement`.
+ */
+export function possibleSquaresFor(type, color) {
+  if (type !== 'pawn') return ALL_SQUARES;
+  const own = color === 'white' ? '1' : '8';
+  const far = color === 'white' ? '8' : '1';
+  return ALL_SQUARES.filter(sq => sq[1] !== own && sq[1] !== far);
+}
+
+/**
+ * Is this board one that could never occur? Returns a reason, or null.
+ *
+ * Cheap enough to run behind a debug flag at every world producer, which is how
+ * the "white pawn on d1" worlds were tracked back to their source. Illegal
+ * positions are not a cosmetic problem: Stockfish answers them with zero MultiPV
+ * lines, and the leaf evaluator then quietly substitutes its static fallback.
+ */
+export function impossiblePlacement(board) {
+  const kings = { white: 0, black: 0 };
+  const pawns = { white: 0, black: 0 };
+  for (const [sq, p] of Object.entries(board)) {
+    if (!p) continue;
+    if (p.type === 'king') kings[p.ownerId]++;
+    if (p.type === 'pawn') {
+      pawns[p.ownerId]++;
+      const own = p.ownerId === 'white' ? '1' : '8';
+      const far = p.ownerId === 'white' ? '8' : '1';
+      if (sq[1] === own) return `${p.ownerId} pawn on its own first rank (${sq})`;
+      if (sq[1] === far) return `${p.ownerId} pawn on the promotion rank (${sq})`;
+    }
+  }
+  for (const c of ['white', 'black']) {
+    if (kings[c] !== 1) return `${c} has ${kings[c]} kings`;
+    if (pawns[c] > 8) return `${c} has ${pawns[c]} pawns`;
+  }
+  return null;
+}
+
 // Empty castling rights — belief reachability never castles, but the king move
 // generator dereferences castlingRights[ownerId], so supply a safe stub.
 const NO_CASTLING = { white: { kingSide: false, queenSide: false }, black: { kingSide: false, queenSide: false } };
@@ -210,8 +257,24 @@ export class Belief {
       if (!pc.alive || seen.has(pc.id)) continue;
       for (const sq of [...pc.possible]) if (visible.has(sq)) pc.possible.delete(sq);
       if (pc.possible.size === 0) {
-        // Belief contradiction (over-aggressive pruning); fall back to "somewhere hidden".
-        pc.possible = new Set(ALL_SQUARES.filter(sq => !visible.has(sq)));
+        // Belief contradiction (over-aggressive pruning); fall back to "somewhere
+        // hidden" — but only where this piece TYPE could actually stand.
+        //
+        // "Anywhere hidden" used to mean literally every square, which put enemy
+        // pawns on their own first rank. Nothing downstream noticed: the exact
+        // belief's tryReacquire trusts these sets, built worlds from them, and
+        // handed Stockfish positions like
+        //   3rkb1r/pppqpp2/6p1/8/1P1P3P/B4P2/PP1R1P2/3PKB2   (white pawn on d1)
+        // which are ILLEGAL — and an illegal FEN makes the engine return zero
+        // MultiPV lines, so every child of that node silently fell through to the
+        // static evaluator (see FOG-AI-FIX-PLAN.md, 2026-08-03).
+        //
+        // Excluding those squares keeps the set a valid SUPERSET of the truth,
+        // because the truth could never be there: a pawn cannot occupy its own
+        // first rank, and one that reached the far rank would have promoted and
+        // stopped being a pawn (which `truncated` above already flags).
+        pc.possible = new Set(possibleSquaresFor(pc.type, this.oppColor)
+          .filter(sq => !visible.has(sq)));
       }
     }
   }
@@ -359,8 +422,20 @@ export class Belief {
       const order = [...unseen].filter(pc => !forcedTaken.has(pc.id)).sort((a, b) =>
         ((threatCapable.has(a.id) ? -0.7 : 0) + rng()) - ((threatCapable.has(b.id) ? -0.7 : 0) + rng()));
       for (const pc of order) {
+        // `possible` legitimately keeps a pawn's promotion-rank squares — the
+        // piece really could have gone there — but whatever stands there is a
+        // QUEEN, not a pawn, so placing a pawn on it builds a board that could
+        // never occur. (`truncated` already flags the piece for this reason, which
+        // is what stops the exact belief re-acquiring from it; the particle
+        // sampler had no such guard.) An illegal board makes Stockfish return
+        // zero MultiPV lines and the leaf evaluator then guesses silently, so
+        // drop those squares here rather than emit one.
+        const placeable = pc.type === 'pawn'
+          ? new Set(possibleSquaresFor('pawn', this.oppColor))
+          : null;
         const cands = [...pc.possible].filter(sq =>
-          !pb[sq] && !used.has(sq) && !visible.has(sq) && !(anchors.has(sq) && sq !== pc.anchor));
+          !pb[sq] && !used.has(sq) && !visible.has(sq) && !(anchors.has(sq) && sq !== pc.anchor)
+          && (!placeable || placeable.has(sq)));
         if (cands.length === 0) continue; // leave this piece off this particle
         const anchorFree = cands.includes(pc.anchor);
         let sq;

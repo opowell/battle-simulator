@@ -89,6 +89,14 @@ const knobs = {
   cfrPerRound: 6,
   finalCfr: 50,
 };
+// WINSORISE the per-position cp loss. Raw cp loss has a median around 47 and a
+// mean around 230: a handful of blunders set the standard error, which is why a
+// 3-game run once reported z = 2.40 AGAINST a change that a 37-game run put
+// mildly in favour. Clipping bounds each position's leverage while keeping
+// magnitude — strictly more informative than the sign test, which discards it.
+// --clip 0 restores the raw mean.
+const CLIP = Number(arg('clip', '300'));
+const clipLoss = x => (CLIP > 0 ? Math.min(x, CLIP) : x);
 const seed0 = Number(arg('seed', '12345'));
 // --verbose prints per-ply cost, which is how the ms/move mystery got solved.
 const VERBOSE = argv.includes('--verbose');
@@ -364,7 +372,7 @@ for (let g = 0; g < games.length; g++) {
       if (!ref || !ka || !kb) continue;
       const sa = ref.byKey.get(ka), sb = ref.byKey.get(kb);
       if (sa === undefined || sb === undefined) continue;
-      const la = ref.best - sa, lb = ref.best - sb;
+      const la = clipLoss(ref.best - sa), lb = clipLoss(ref.best - sb);
       stats.a.push(la); stats.b.push(lb); stats.diffs.push(la - lb);
       if (la === 0) stats.aTop++;
       if (lb === 0) stats.bTop++;
@@ -389,6 +397,7 @@ const d = mean(stats.diffs), se = stderr(stats.diffs);
 const wins = stats.diffs.filter(x => x < 0).length, losses = stats.diffs.filter(x => x > 0).length;
 
 console.log(`\narm ${armName}: ${arm.a.label} (A) vs ${arm.b.label} (B)`);
+console.log(`clip ${CLIP > 0 ? CLIP + ' cp (winsorised)' : 'off (raw mean)'}`);
 console.log(`${games.length} games, seats ${seats.join('+')}, dial ${dial} (leaf depth ${Math.max(1, Math.round(2 + dial/100*5))}), worlds ${knobs.particles}, rounds ${knobs.maxRounds}, reference depth ${refDepth}, seed ${seed0}`);
 console.log(`positions: ${stats.n}   identical move chosen: ${stats.same} (${(100 * stats.same / stats.n).toFixed(1)}%)`);
 console.log(`mean cp loss   A ${mean(stats.a).toFixed(1)}   B ${mean(stats.b).toFixed(1)}`);
