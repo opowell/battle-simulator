@@ -1,3 +1,9 @@
 [submodule "vendor/obscuro"]
 	path = vendor/obscuro
 	url = https://github.com/opowell/obscuro-ai.git
+	# Editor workspace files and the like land inside the checkout and would
+	# otherwise leave vendor/obscuro permanently "dirty" in every worktree's git
+	# status. Nothing should be editing this submodule from here anyway (see
+	# CLAUDE.md), so untracked content is noise. Deliberately NOT `dirty`:
+	# a MODIFIED tracked file in here is a real mistake and must stay visible.
+	ignore = untracked
