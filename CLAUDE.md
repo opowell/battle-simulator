@@ -9,7 +9,18 @@ This project is in alpha stages:
 
 The generic Obscuro AI is a separate repository
 ([opowell/obscuro-ai](https://github.com/opowell/obscuro-ai)) vendored at
-`vendor/obscuro`. Don't edit files under it from this repo — a change to the
+`vendor/obscuro`. Each worktree needs its own checkout of it, so the repo runs
+`git submodule update --init --recursive` automatically after merge, checkout and
+rebase via the tracked hooks in `.githooks/` (wired up by `core.hooksPath`, which
+a fresh clone must set once — see README). If `vendor/obscuro` is ever an empty
+directory, that's what didn't run:
+
+```sh
+git config core.hooksPath .githooks   # once per clone
+git submodule update --init vendor/obscuro
+```
+
+Don't edit files under `vendor/obscuro` from this repo — a change to the
 search belongs upstream, in a clone of that repo, with its own tests. Then:
 
 ```sh
