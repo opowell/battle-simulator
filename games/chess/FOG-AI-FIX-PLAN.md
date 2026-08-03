@@ -376,26 +376,33 @@ construction and is exactly right for an imagined world: a king that has wandere
 has no castling rights, whatever the bookkeeping says. Measured on the same
 config: **3.36% → 2.85% static-eval fallbacks.**
 
-**2. Impossible piece placements — NOT fixed, source not yet identified.**
+**2. Impossible piece placements — FIXED 2026-08-03, TWO producers.**
 
 ```
 3rkb1r/pppqpp2/6p1/8/1P1P3P/B4P2/PP1R1P2/3PKB2 b k -
                                        ^^^^ white PAWN on d1
 ```
 
-A white pawn cannot legally stand on rank 1. Some part of the world pipeline is
-producing positions that could never occur. The prime suspect is `tryReacquire`
-(exactBelief.js), which rebuilds P from the heuristic belief's per-piece
-possible-square sets and is documented as a *superset* — if those sets are loose
-enough to include unreachable squares, the worlds built from them are impossible,
-and the engine silently refuses every one.
+A white pawn cannot legally stand on rank 1. Both sources were found by doing the
+cheap thing: `impossiblePlacement()` (belief.js) checked at every world producer
+under `OBSCURO_VALIDATE_WORLDS=1`, which names the culprit in its output.
 
-**Next step, and it is cheap:** assert world legality where worlds are produced —
-no pawn on rank 1 or 8, both kings present, ≤8 pawns per side — under a debug flag,
-and run a few games to find which producer emits them. Do that before spending
-more measurement time on belief questions: the residual ~2.8% is small, but it is
-concentrated in exactly the strange positions where the belief is doing its most
-interesting work.
+- **belief.js's contradiction fallback.** When a piece's possible-square set is
+  pruned empty, it reset to *every* hidden square — including a pawn's own first
+  rank. `tryReacquire` trusts these sets, so the exact belief then built worlds
+  from them. Now falls back to `possibleSquaresFor(type, colour)`, which excludes
+  a pawn's first and promotion ranks. Still a valid SUPERSET: the truth can never
+  be on those squares.
+- **belief.js's particle sampler.** `possible` legitimately keeps a pawn's
+  promotion-rank squares — the piece really could have gone there — but whatever
+  stands there is a QUEEN, so placing a *pawn* on it is impossible. `truncated`
+  already flagged the piece (which is what stops re-acquisition trusting it); the
+  sampler had no equivalent guard and now filters those squares out.
+
+Measured over 3 games, both seats: **zero impossible worlds**, `engine-said-nothing`
+falls from hundreds of nodes to **0**, and static-eval fallbacks drop
+**2.85% → 0.57%**. Residual is `lines-but-not-our-moves` (140 nodes) and
+`fewer-lines-than-asked` (13) — a different, much smaller phenomenon.
 
 ### Also landed
 

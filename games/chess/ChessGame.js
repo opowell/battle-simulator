@@ -3,7 +3,7 @@ import { isKingInCheck, renderBoard, getVisibleSquares, squareToXY, squareToGrid
 import { getAllLegalMoves, getAllFogMoves } from './moves.js';
 import { ChessAgent, evaluate } from './ChessAgent.js';
 import { ObscuroAgent, analyzeObscuro } from './ObscuroAgent.js';
-import { getBelief } from './belief.js';
+import { getBelief, impossiblePlacement } from './belief.js';
 import { getExactBelief, getBeliefReachWeighting } from './exactBelief.js';
 
 // ---------------------------------------------------------------------------
@@ -544,6 +544,18 @@ export const ChessGame = {
   // and the agent treats the position as the single known world.
   sampleWorlds(observation, playerId, n, rng = Math.random) {
     if (!observation.gameSpecific.fogOfWar) return [];
+    // OBSCURO_VALIDATE_WORLDS=1 reports any imagined board that could never
+    // occur, tagged with the path that produced it. Off by default (it walks
+    // every world), on when hunting the next one of these: an illegal board makes
+    // Stockfish return nothing, and the leaf evaluator silently guesses instead.
+    const validate = (worlds, source) => {
+      if (!process.env?.OBSCURO_VALIDATE_WORLDS) return worlds;
+      for (const w of worlds) {
+        const why = impossiblePlacement(w.board);
+        if (why) console.error(`[impossible world via ${source}] ${why}`);
+      }
+      return worlds;
+    };
     // turnNumber keys the updates so re-sampling within one decision (e.g. the
     // king-safety guard) can't advance either belief an extra phantom ply.
     const turnKey = observation.turnNumber ?? null;
@@ -571,9 +583,10 @@ export const ChessGame = {
       const idx = exact.sampleIndices(n, rng);
       const picks = idx && exact.positionsAt(idx);
       if (picks && picks.length) {
+        const source = exact.approx ? 'exact(reacquired)' : 'exact';
         const alpha = exact.sampleAlpha ?? 0;
         const beta = getBeliefReachWeighting(playerId);
-        return picks.map(pos => ({
+        return validate(picks.map(pos => ({
           ...observation,
           board: pos.board,
           units: boardToUnits(pos.board),
@@ -587,15 +600,15 @@ export const ChessGame = {
             castlingRights: pos.cr,
             enPassantTarget: pos.ep,
           },
-        }));
+        })), source);
       }
     }
     const boards = belief.sample(observation.board, n, rng);
-    return boards.map(board => ({
+    return validate(boards.map(board => ({
       ...observation,
       board,
       units: boardToUnits(board),
-    }));
+    })), 'heuristic-particles');
   },
 
   // --- Whole-population enumeration (drives the analysis panel's batched,

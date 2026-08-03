@@ -316,3 +316,32 @@ test('exact belief: sampled worlds carry an importance weight for the search rea
     assert.equal(w.beliefWeight, undefined, 'reach weighting off ⇒ no weight on the world');
   }
 });
+
+test('belief: a contradicted piece falls back to TYPE-LEGAL squares only', async () => {
+  // The contradiction fallback used to be "anywhere hidden", which put enemy
+  // pawns on their own first rank. tryReacquire trusts these sets, so the exact
+  // belief then built worlds that could never occur, and Stockfish answers an
+  // illegal position with zero MultiPV lines — the leaf evaluator silently
+  // substituted its static fallback for every child of that node.
+  const { possibleSquaresFor, impossiblePlacement } = await import('./belief.js');
+
+  const wp = possibleSquaresFor('pawn', 'white');
+  assert.ok(!wp.some(sq => sq[1] === '1'), 'no white pawn on rank 1 (it starts on 2 and only advances)');
+  assert.ok(!wp.some(sq => sq[1] === '8'), 'no white pawn on rank 8 (it would have promoted)');
+  const bp = possibleSquaresFor('pawn', 'black');
+  assert.ok(!bp.some(sq => sq[1] === '8') && !bp.some(sq => sq[1] === '1'), 'mirrored for black');
+  assert.equal(possibleSquaresFor('rook', 'white').length, 64, 'other types are unconstrained');
+
+  // And the validator catches the board that started this hunt.
+  const unit = (id, ownerId, type, position) => ({ id, ownerId, type, position, alive: true });
+  const bad = {
+    d1: unit('wP', 'white', 'pawn', 'd1'),
+    e1: unit('wK', 'white', 'king', 'e1'),
+    e8: unit('bK', 'black', 'king', 'e8'),
+  };
+  assert.match(impossiblePlacement(bad) ?? '', /white pawn on its own first rank/);
+  delete bad.d1;
+  assert.equal(impossiblePlacement(bad), null, 'a legal board reports nothing');
+  delete bad.e8;
+  assert.match(impossiblePlacement(bad) ?? '', /black has 0 kings/);
+});
