@@ -16,7 +16,7 @@ installLearnedEval(Civ1Game, import.meta.url);
 
 // The pruned, canonically-ordered action set the search reasons over. Wired as
 // getSearchActions because that is the hook consulted for the root AND every
-// interior node (agents/obscuro/search.js makeHooks); see searchActions.js.
+// interior node (vendor/obscuro/src/search.js makeHooks); see searchActions.js.
 Civ1Game.getSearchActions = (state, playerId) => civ1SearchActions(Civ1Game, state, playerId);
 
 // Stable identity for an action, so the search can compare moves across worlds and

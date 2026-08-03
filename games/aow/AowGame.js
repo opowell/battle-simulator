@@ -314,7 +314,7 @@ function getVisibleState(state, playerId) {
 }
 
 // Fog belief is not modelled for AoW's squad layer; the ObscuroAgent falls back to the
-// observation as its single world (see agents/obscuro). Kept for interface parity.
+// observation as its single world (see vendor/obscuro). Kept for interface parity.
 function sampleWorlds() { return []; }
 
 // ── Render (terminal) ──────────────────────────────────────────────────────────

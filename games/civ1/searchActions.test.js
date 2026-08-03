@@ -31,7 +31,7 @@ test('search actions are non-empty wherever legal actions are', () => {
 });
 
 // An infoset's action set is fixed when the set is created and re-derived per world
-// to filter it (agents/obscuro/search.js). A set that varied run to run, or that
+// to filter it (vendor/obscuro/src/search.js). A set that varied run to run, or that
 // read through the fog, would desync the tree — see searchActions.js header.
 test('search actions are deterministic', () => {
   const state = newGame();

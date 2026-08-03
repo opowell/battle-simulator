@@ -31,7 +31,7 @@
 //
 // This hook is wired in as `getSearchActions` (index.js) because that is the one
 // hook the search consults for BOTH the root action set and every interior node
-// (agents/obscuro/search.js makeHooks). It must therefore be deterministic in
+// (vendor/obscuro/src/search.js makeHooks). It must therefore be deterministic in
 // (state, player) and depend only on what `player` can actually see — an
 // infoset's action set is fixed at creation and re-derived per world to filter,
 // so an rng-dependent or fog-piercing set would desync the tree. Every candidate

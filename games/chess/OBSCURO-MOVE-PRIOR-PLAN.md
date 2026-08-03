@@ -706,7 +706,7 @@ Two channels feed it into the search and both were uniform:
 - the DRAW — `sampleAlpha = 0`, so worlds are sampled uniformly from P;
 - the REACH — `runObscuroSearch` set every root world's `prob = 1 / N`, and that
   `prob` is the opponent's root reach in `cfrDescend(w.node, me, 1, w.prob)`
-  ([infoset.js](../../agents/obscuro/infoset.js)), weighting every counterfactual
+  ([infoset.js](../../vendor/obscuro/src/infoset.js)), weighting every counterfactual
   value and regret, plus the gadget's class masses in `kluss.js`.
 
 So the AI evaluated positions under a **uniform belief over P**. That also explains

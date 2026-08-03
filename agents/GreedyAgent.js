@@ -9,7 +9,7 @@
 // it stays fast and light even on the biggest boards.
 //
 // Every game-specific judgement is borrowed from the exact same hook bundle the
-// Obscuro search uses (agents/obscuro/search.js `makeHooks`), so the greedy
+// Obscuro search uses (vendor/obscuro/src/search.js `makeHooks`), so the greedy
 // agent honours the identical conventions:
 //   • legal        — getSearchActions (continuous games) else getLegalActions
 //   • apply        — game.applyActions for one { playerId, action }
@@ -24,7 +24,7 @@
 //   • + evaluateState   → genuine greedy heuristic play.
 // ---------------------------------------------------------------------------
 
-import { makeHooks } from './obscuro/search.js';
+import { makeHooks } from '../vendor/obscuro/src/search.js';
 
 // A tiny compact projection for the AI-analysis panel — mirrors the shape the
 // ObscuroAgent publishes, so the UI can render the chosen move uniformly.
