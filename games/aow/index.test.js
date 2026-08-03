@@ -123,6 +123,28 @@ test('aow: destroying the enemy army wins', () => {
   assert.equal(r.reason, 'army-destroyed');
 });
 
+// ── evaluateState ───────────────────────────────────────────────────────────
+
+// Obscuro negates leaf values up the tree, so the eval must be exactly zero-sum.
+// It used to score +8 for BOTH sides at the start (each holding its own fort).
+test('aow: evaluateState is zero-sum', () => {
+  const s = AowGame.createInitialState(players());
+  const ev = p => AowGame.evaluateState(s, p);
+
+  assert.equal(ev('p1'), 0, 'the symmetric opening is a dead heat');
+  assert.equal(ev('p1') + ev('p2'), 0);
+
+  // Capturing p1's fort + flag, and a neutral village, flips the sign symmetrically.
+  for (const f of s.board.features) if (f.origOwner === 'p1') f.owner = 'p2';
+  s.board.features.find(f => f.type === 'village').owner = 'p1';
+  assert.ok(ev('p2') > 200, 'holding the enemy flag dominates the score');
+  assert.equal(ev('p1') + ev('p2'), 0);
+
+  // Losing men must cost the owner exactly what it gains the opponent.
+  s.squads.find(q => q.ownerId === 'p1').alive = false;
+  assert.equal(ev('p1') + ev('p2'), 0);
+});
+
 // ── toGrid ──────────────────────────────────────────────────────────────────
 
 test('aow: toGrid is continuous with wire-encoded units and detailed terrain shapes', () => {

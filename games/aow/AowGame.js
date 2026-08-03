@@ -355,16 +355,22 @@ function getActionDuration(state, action) {
 }
 
 // Leaf value: own effective strength − enemy's, plus a big bonus for holding enemy flags.
+// Every term is antisymmetric (+v to the owner, −v to the opponent) so the eval stays
+// zero-sum — Obscuro negates leaf values up the tree, so a term that pays both sides
+// (holding your own fort used to score +8 for each) miscalibrates the whole search.
 function evaluateState(state, playerId) {
+  const sign = ownerId => (ownerId == null ? 0 : ownerId === playerId ? 1 : -1);
+
   let score = 0;
   for (const s of state.squads) {
     if (!s.alive) continue;
-    score += (s.ownerId === playerId ? 1 : -1) * squadStrength(s);
+    score += sign(s.ownerId) * squadStrength(s);
   }
   for (const f of state.board.features) {
-    if (f.type === 'flag' && f.origOwner && f.origOwner !== playerId && f.owner === playerId) score += 200;
-    if (f.type === 'fort'  && f.owner === playerId) score += 8;
-    if (f.type === 'village' && f.owner === playerId) score += 4;
+    // Flags only score once captured: whoever holds someone else's flag is near winning.
+    if (f.type === 'flag') { if (f.origOwner && f.owner !== f.origOwner) score += sign(f.owner) * 200; }
+    else if (f.type === 'fort')    score += sign(f.owner) * 8;
+    else if (f.type === 'village') score += sign(f.owner) * 4;
   }
   return score;
 }
