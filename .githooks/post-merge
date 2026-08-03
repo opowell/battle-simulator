@@ -1,0 +1,11 @@
+#!/bin/sh
+# Populate any submodule the incoming commits added (vendor/obscuro).
+#
+# Every agent works in its own git worktree, and each worktree needs the
+# submodule checked out separately. Without this, the first merge of main after
+# the Obscuro extraction leaves vendor/obscuro an EMPTY DIRECTORY, and every
+# Obscuro import fails with a module-not-found that looks nothing like its cause.
+#
+# `--init` is the load-bearing flag: a plain `submodule update` skips a submodule
+# the worktree has never initialised, which is exactly the case being fixed here.
+exec git submodule update --init --recursive

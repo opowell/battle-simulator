@@ -33,9 +33,17 @@ submodule, so clone with it:
 
 ```sh
 git clone --recurse-submodules https://github.com/opowell/battle-simulator.git
+git config core.hooksPath .githooks    # keeps the submodule in sync from here on
+
 # already cloned:
+git config core.hooksPath .githooks
 git submodule update --init vendor/obscuro
 ```
+
+`core.hooksPath` points git at the tracked hooks in `.githooks/`, which re-run
+`git submodule update --init` after every merge, checkout and rebase. Without it
+the submodule silently stays empty the first time you pull a branch that adds
+one, and every Obscuro import fails with a confusing module-not-found.
 
 ### Run a demo
 
