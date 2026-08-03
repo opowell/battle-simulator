@@ -27,13 +27,36 @@ export function toFEN(board, gs, sideToMove = 'w', fullmove = 1) {
     if (empty) row += empty;
     rows.push(row);
   }
+  // Castling rights are emitted only when the BOARD can still support them —
+  // king on its home square, rook on the matching corner.
+  //
+  // This is not belt-and-braces, it is load-bearing under fog. Belief worlds and
+  // in-tree positions routinely carry rights that the placement contradicts (a
+  // king imagined on d7 while `castlingRights` still says k/q), and a FEN like
+  // that is ILLEGAL. Stockfish's answer to an illegal FEN is not an error, it is
+  // silence — zero MultiPV lines — and the leaf evaluator then falls through to
+  // the static evaluator for every child of that node without saying so. That
+  // was the single largest source of lost leaf values in the fog search:
+  //
+  //   r5p1/pp1kpppp/1bq1P1r1/... b Qkq -   ← black king on d7, still claims k/q
+  //
+  // Deriving from the board makes every emitted FEN legal by construction, and
+  // is exactly right for an imagined world: a king that has wandered has no
+  // castling rights, whatever the bookkeeping says.
   const cr = gs?.castlingRights;
+  const homeOk = (color, side) => {
+    const rank = color === 'white' ? '1' : '8';
+    const k = board['e' + rank];
+    if (!k || k.type !== 'king' || k.ownerId !== color) return false;
+    const r = board[(side === 'kingSide' ? 'h' : 'a') + rank];
+    return !!r && r.type === 'rook' && r.ownerId === color;
+  };
   let castle = '';
   if (cr) {
-    if (cr.white?.kingSide)  castle += 'K';
-    if (cr.white?.queenSide) castle += 'Q';
-    if (cr.black?.kingSide)  castle += 'k';
-    if (cr.black?.queenSide) castle += 'q';
+    if (cr.white?.kingSide  && homeOk('white', 'kingSide'))  castle += 'K';
+    if (cr.white?.queenSide && homeOk('white', 'queenSide')) castle += 'Q';
+    if (cr.black?.kingSide  && homeOk('black', 'kingSide'))  castle += 'k';
+    if (cr.black?.queenSide && homeOk('black', 'queenSide')) castle += 'q';
   }
   return `${rows.join('/')} ${sideToMove} ${castle || '-'} ${gs?.enPassantTarget || '-'} ${gs?.halfMoveClock ?? 0} ${fullmove}`;
 }
