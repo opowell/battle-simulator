@@ -24,7 +24,7 @@ plugged in through hooks that ALREADY exist — no search changes needed:
 
 - `game.evaluateLeaves(state, mover, actions, {childStates})` → batched leaf
   values (the search prefers it over per-child `evaluateState`; see
-  `agents/obscuro/search.js` makeHooks).
+  `vendor/obscuro/src/search.js` makeHooks).
 - `game.winValue` → the terminal scale. Learned nets output tanh ∈ (−1, +1),
   so `winValue = 1` reproduces the paper's u: Z → [−1,+1] exactly — cleaner
   than chess's cp-scale compromise.
@@ -192,6 +192,6 @@ Everything is re-runnable standalone: `node agents/learned/train.mjs --all`.
 - `agents/learned/mlp.js`, `encoder.js`, `leafEval.js`, `train.mjs`, tests.
 - `games/<game>/model.json` (committed weights, per shipped game).
 - One-line `installLearnedEval(Game)` in each shipped game's `index.js`.
-- Touchpoints that must NOT change: `agents/obscuro/search.js` (consumes
+- Touchpoints that must NOT change: `vendor/obscuro/src/search.js` (consumes
   `evaluateLeaves`), `agents/ObscuroAgent.js` (`_winValue` reads
   `game.winValue`).

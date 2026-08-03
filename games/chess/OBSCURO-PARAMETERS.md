@@ -1,114 +1,37 @@
-# Obscuro AI parameters
+# Obscuro chess AI parameters
 
-This is the reference for every tunable number in the Obscuro AI: the
-game-agnostic equilibrium search (`agents/ObscuroAgent.js`, `agents/obscuro/`)
-and the fog-chess specialisation that plugs Stockfish and a real belief
-tracker into it (`games/chess/ObscuroAgent.js`, `belief.js`, `exactBelief.js`,
-`movePrior.js`, `stockfish.js`).
+Every tunable number in the **fog-chess** Obscuro AI: the Stockfish leaf
+evaluator, the belief trackers, the move prior, and chess's own difficulty dial
+(`games/chess/ObscuroAgent.js`, `belief.js`, `exactBelief.js`, `movePrior.js`,
+`stockfish.js`).
 
 **Where the numbers actually live.** Two modules aggregate every default by
-re-exporting the named constant each file already declares, so this document
-and the code can't drift apart silently:
+re-exporting the named constant each file already declares, so this document and
+the code can't drift apart silently:
 
-- [`agents/obscuro/settings.js`](obscuro/settings.js) — generic search defaults
-- [`games/chess/obscuro-settings.js`](../games/chess/obscuro-settings.js) — fog-chess defaults
+- [`games/chess/obscuro-settings.js`](obscuro-settings.js) — the fog-chess
+  defaults documented below
+- [`vendor/obscuro/src/settings.js`](../../vendor/obscuro/src/settings.js) —
+  the generic search defaults (see §1)
 
 Both are read-only aggregates, not the source of truth for the *values* — each
-constant is still defined next to the code it tunes, with the comment
-explaining *why* that number and not another (several have "scar tissue"
-history: a value that looked reasonable and measurably made play worse). If
-you're changing a default, edit it at its declaration (linked below), not in
-the aggregate.
+constant is still defined next to the code it tunes, with the comment explaining
+*why* that number and not another (several have "scar tissue" history: a value
+that looked reasonable and measurably made play worse). If you're changing a
+default, edit it at its declaration (linked below), not in the aggregate.
 
 ---
 
-## 1. Generic Obscuro search (any game)
+## 1. The generic search (any game)
 
-Implements Zhang & Sandholm's *Obscuro* search: a growing extensive-form game
-tree (`agents/obscuro/infoset.js`) with shared information sets, solved by
-Predictive CFR+ played on the last iterate (`pcfr.js`), grown by one-sided
-GT-CFR (`gtcfr.js`), made safe by the KLUSS Resolve/Maxmargin gadget
-(`kluss.js`), with the move chosen by purification (`purify.js`) — all
-orchestrated by `search.js`'s `runObscuroSearch`. `ObscuroAgent.js` is the
-per-move entry point: it turns a single 0–100 **difficulty dial** (or a
-per-move **time limit**) into every knob below.
+The search itself is no longer part of this repo. It lives in
+[github.com/opowell/obscuro-ai](https://github.com/opowell/obscuro-ai),
+vendored here as a submodule at `vendor/obscuro`, and its parameters — the
+0–100 difficulty dial, the tree/solve budgets, the KLUSS and purification
+constants — are documented in
+[`vendor/obscuro/docs/PARAMETERS.md`](../../vendor/obscuro/docs/PARAMETERS.md).
 
-### 1.1 The difficulty dial (`ObscuroAgent._config`, `DIAL` in `settings.js`)
-
-There is one algorithm at every difficulty level — the dial only slides
-continuous knobs (never branches behaviour). Each knob is evaluated at a dial
-position `t ∈ [0,1]`:
-
-- **POWER mode** (`gameSpecific.difficulty`, 0–100): `t = difficulty / 100`.
-- **TIME mode** (`gameSpecific.aiTimeMs`, a per-move wall-clock limit up to
-  600000 ms): `t = min(1, aiTimeMs / 60000)`. `aiTimeMs = 0` (POWER `difficulty
-  = 0` too) means **random play** — the search is skipped entirely.
-
-Two ramp shapes plug into `t`:
-
-- **convex** (`rc(min, max, t) = round(min + (max-min) · t^1.5)`) — stays
-  cheap through the low/mid dial, reaches `max` only at the very top. Used for
-  the knobs that dominate cost.
-- **linear** (`ri(min, max, t) = round(lerp(min, max, t))`) — used for the
-  cheaper knobs.
-
-| Parameter | POWER range | TIME range | Curve | Meaning |
-|---|---|---|---|---|
-| `worlds` | 1 – 48 | 4 – 48 (floor 2) | convex / linear | belief particles sampled and searched |
-| `timeBudgetMs` | 30 – 2000 | *(= `aiTimeMs` directly)* | convex | wall-clock budget for the whole move |
-| `maxRounds` | 6 – 100 | 100000 (constant) | convex | expand+solve rounds in the main loop |
-| `maxInfosets` | 400 – 6000 | 1000 – 25000 | convex / linear | tree size cap (stops growth, not the solve) |
-| `expandPerRound` | 6 – 24 | 24 (constant) | linear | GT-CFR expansion steps per round |
-| `cfrPerRound` | 3 – 10 | 10 (constant) | linear | CFR iterations per round |
-| `finalCfr` | 15 – 100 | 200 (constant) | convex | extra CFR iterations after the round loop, so the equilibrium settles on the frozen tree |
-| `purifyMax` | 3 (constant) | 3 (constant) | — | move-selection mixed-support cap |
-| `moveRings` | 1 – 3 | 1 – 3 | linear | continuous-action resolution (rings), games with `getSearchActions` only |
-| `moveSpokes` | 4 – 12 | 6 – 12 | linear | continuous-action resolution (spokes) |
-
-All of the above (including the `1.5` convex exponent) live in
-`DIAL`/`DIAL_CONVEX_EXPONENT` in [`settings.js`](obscuro/settings.js); the
-ramp math itself (`rc`/`ri`) stays in `ObscuroAgent.js` next to `_config`. Any
-field can be overridden per-instance via the agent constructor's `opts`
-(`new ObscuroAgent(game, { particles: 32, timeBudgetMs: 500, ... })`), which
-also lets a caller bypass the dial for tests.
-
-### 1.2 `runObscuroSearch` fallback defaults (`SEARCH_DEFAULTS`, `agents/obscuro/search.js`)
-
-Used when a caller invokes the search directly instead of through
-`ObscuroAgent` (e.g. `ChessObscuroAgent.obscuroStrategy`, or a test) and
-doesn't supply every field explicitly.
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `win` | `1e6` | terminal win/loss magnitude, used when a game declares no `winValue` (fog chess overrides this — see §2.1's `SEARCH_WIN`) |
-| `expandPerRound` | 8 | |
-| `cfrPerRound` | 4 | |
-| `maxRounds` | 200 | |
-| `finalCfr` | 40 | |
-| `finalCfrDeadlineFactor` | 1.35 | the final solve may run this × the round-loop budget past it, so a large tree's equilibrium can settle |
-| `finalCfrChunkCap` | 10 | CFR iterations run per deadline check during the final solve |
-| `stableSnapshotEps` | 1e-3 | "stable since T½" purification window — an action must hold ≥ this mass in every last-iterate snapshot since half the rounds |
-| `safePmaxThreshold` | 0.05 | mixing (vs. pure top-move play) is allowed only when the KLUSS gadget's `pmax` (opponent's incentive to enter Resolve) is below this |
-| `carriedRootWidthFloor` | 16 | minimum root width kept when grafting carried worlds from the previous move's tree, even with few fresh belief worlds |
-
-### 1.3 Tree growth (`agents/obscuro/gtcfr.js`)
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `MIN_EXPANDED_ROOT_WORLDS` | 8 | `expandRoot` guarantees at least this many root worlds get expanded even past the wall-clock deadline, so a cold engine cache can't silently degrade the search to a near-single-world one |
-
-### 1.4 Safety gadget (`agents/obscuro/kluss.js`)
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `RESOLVE_PRIOR_UNIFORM_BLEND` | 0.5 | blend between the blueprint opponent distribution and uniform when building the Resolve prior `α(J)`: `α(J) = BLEND·(y/Σy) + (1-BLEND)/m` |
-
-### 1.5 Move selection / purification (`agents/obscuro/purify.js`)
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `MAX_SUPPORT` | 3 | cap on the mixed support after purification (same as `purifyMax` in the dial) |
-| `MIN_SUPPORT_PROB` | 1e-3 | a runner-up must clear this probability floor to be considered at all |
+Everything below is what chess layers *on top* of that.
 
 ---
 
@@ -259,9 +182,10 @@ this model's `floor` exists for the same reason.
    value (not just what it does) — this repo has been burned more than once by
    a plausible-looking value that measured worse in actual play (see §2.4,
    §2.5). If there's a measurement backing the number, cite it.
-2. Export it, and add it to the relevant aggregate
-   (`agents/obscuro/settings.js` or `games/chess/obscuro-settings.js`).
-3. Add a row to this document.
+2. Export it, and add it to the aggregate: `games/chess/obscuro-settings.js`
+   for a chess parameter, or `vendor/obscuro/src/settings.js` upstream for a
+   generic one (which then needs a submodule bump here).
+3. Add a row to this document — or to `vendor/obscuro/docs/PARAMETERS.md` if
+   it's a generic knob.
 4. If it affects play strength, measure before and after — `move-quality.mjs`
-   (chess) and `strength-belief.mjs` are the existing harnesses for exactly
-   this.
+   and `strength-belief.mjs` are the existing harnesses for exactly this.

@@ -3,7 +3,7 @@
 //
 // Same division of labour as the chess specialisation (see
 // games/chess/ObscuroAgent.js): the search itself is entirely generic and lives
-// in agents/obscuro/ — a growing game tree with shared information sets, solved
+// in vendor/obscuro/src/ — a growing game tree with shared information sets, solved
 // with PCFR+, grown by one-sided GT-CFR, the move chosen by purification. This
 // file adds only what is genuinely CS-specific:
 //
@@ -24,7 +24,7 @@
 // ---------------------------------------------------------------------------
 
 import { ObscuroAgent as GenericObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { makeHooks, runObscuroSearch } from '../../agents/obscuro/search.js';
+import { makeHooks, runObscuroSearch } from '../../vendor/obscuro/src/search.js';
 import { csScore, unitValue, CS_SEARCH_WIN, ROUND_WIN } from './eval.js';
 
 // EXPOSURE — the CS analogue of chess's KING_HANG.
@@ -76,7 +76,7 @@ function exposureCost(units, out, inc) {
 
 /**
  * The batched CS node heuristic. Signature matches the generic search's
- * expectation (see agents/obscuro/search.js's makeHooks): given a node `state`
+ * expectation (see vendor/obscuro/src/search.js's makeHooks): given a node `state`
  * where `mover` is to play and the `actions` leading to its children (with the
  * already-applied `childStates`), return the value TO THE MOVER of each child.
  *

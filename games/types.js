@@ -24,9 +24,14 @@
  *
  * --- Imperfect-information ("fog of war") interface -------------------------
  * These four optional hooks make fog of war a first-class part of a game and
- * let the generic ObscuroAgent (agents/ObscuroAgent.js) reason about hidden
- * state for ANY game. A game may implement none, some, or all of them; the
- * agent degrades gracefully:
+ * let the generic ObscuroAgent reason about hidden state for ANY game. That
+ * agent now lives upstream, in vendor/obscuro; its own copy of this contract
+ * (vendor/obscuro/src/types.js) is the authority on what the SEARCH reads, and
+ * vendor/obscuro/docs/GAME-INTERFACE.md is the guide to implementing it. What
+ * follows is the engine's view of the same interface.
+ *
+ * A game may implement none, some, or all of them; the agent degrades
+ * gracefully:
  *   • none                       → best-response / minimax-lite over the
  *                                  observed state (the information set is a
  *                                  single world).

@@ -254,14 +254,14 @@ pre-existing) unaffected by the identity-free keys.
 - `agents/ObscuroAgent.js` — generic agent, `_config` difficulty knobs, `_winValue` +
   `_adjustChosenAction` hooks (the latter currently unused; `.adjusted` in
   `lastAnalysis` flags an override), `lastAnalysis`.
-- `agents/obscuro/search.js` — `makeHooks` (action-set hook caveats), `runObscuroSearch`.
-- `agents/obscuro/kluss.js` — Resolve/Maxmargin gadget; engine-informed alternate
+- `vendor/obscuro/src/search.js` — `makeHooks` (action-set hook caveats), `runObscuroSearch`.
+- `vendor/obscuro/src/kluss.js` — Resolve/Maxmargin gadget; engine-informed alternate
   values; opponent reach floored at ½·prior.
-- `agents/obscuro/gtcfr.js` — tree growth; gadget-driven root sampling; shared root
+- `vendor/obscuro/src/gtcfr.js` — tree growth; gadget-driven root sampling; shared root
   infoset (`forceInfoset` / `rootWorld`); minimum-root-worlds floor.
-- `agents/obscuro/infoset.js` — CFR value propagation; `uCond` full-reach weighting;
+- `vendor/obscuro/src/infoset.js` — CFR value propagation; `uCond` full-reach weighting;
   turn-scoped `observationKey`.
-- `agents/obscuro/purify.js` — excluded mass → a*.
+- `vendor/obscuro/src/purify.js` — excluded mass → a*.
 - `games/chess/exactBelief.js` — exact position set P (+ `exact-belief.test.js`).
 - `games/chess/belief.js` — heuristic fallback: recapture inference, phantom-check
   rejection, idempotent `beginTurn`; `games/chess/ChessGame.js` prefers exact P and

@@ -28,6 +28,15 @@ A turn-based game engine for running and building strategy games in JavaScript (
 
 Requires Node.js ≥ 18. No install step — `node_modules` is committed.
 
+The Obscuro AI lives in its own repository and is vendored here as a git
+submodule, so clone with it:
+
+```sh
+git clone --recurse-submodules https://github.com/opowell/battle-simulator.git
+# already cloned:
+git submodule update --init vendor/obscuro
+```
+
 ### Run a demo
 
 Each game has an interactive demo (you vs random AI) and an `--auto` mode (random vs random):
@@ -157,6 +166,37 @@ const agent = new ApiAgent('p1');
 agent.submit(action);  // unblocks the engine
 agent.abort('reason'); // rejects pending promise
 ```
+
+### ObscuroAgent
+
+The equilibrium AI: it reasons over a sampled belief cloud, groups
+indistinguishable positions into shared information sets, and solves for a mixed
+strategy rather than best-responding to a guess. It works for any game here, at
+any information level, with perfect information as the special case.
+
+```js
+import { ObscuroAgent } from './agents/ObscuroAgent.js';
+{ id: 'p1', name: 'Player 1', agent: new ObscuroAgent(MyGame) }
+```
+
+It contains no game knowledge, so it lives in **its own repository** —
+[github.com/opowell/obscuro-ai](https://github.com/opowell/obscuro-ai) — vendored
+here as a submodule at `vendor/obscuro`. `agents/ObscuroAgent.js` is a one-line
+re-export of it.
+
+```sh
+git submodule update --remote vendor/obscuro   # pull the latest upstream
+git add vendor/obscuro && git commit           # pin the new commit
+```
+
+A game opts into stronger play by implementing the optional hooks in
+[games/types.js](games/types.js) — `evaluateState` for leaf values,
+`getVisibleState` + `sampleWorlds` for real fog reasoning. Upstream's
+[docs/GAME-INTERFACE.md](vendor/obscuro/docs/GAME-INTERFACE.md) is the guide, and
+[docs/PARAMETERS.md](vendor/obscuro/docs/PARAMETERS.md) documents every knob; the
+fog-chess specialisation on top of it (Stockfish leaf eval, the exact belief
+tracker) stays in this repo, at
+[games/chess/](games/chess/OBSCURO-PARAMETERS.md).
 
 ## HTTP API
 

@@ -1,18 +1,19 @@
 // ---------------------------------------------------------------------------
 // Fog-chess Obscuro parameter defaults — the fog-chess counterpart of
-// agents/obscuro/settings.js. Every number here TUNES fog-of-war chess
+// vendor/obscuro/src/settings.js. Every number here TUNES fog-of-war chess
 // specifically (belief sampling, the exact position-set tracker, the move
 // prior, Stockfish leaf-eval scaling, the analysis panel's search sizes) —
 // nothing here is read by the generic Obscuro search itself.
 //
-// Like agents/obscuro/settings.js, this module does not hold its own literals
-// — it re-exports the named constants each file already declares (and
+// Like vendor/obscuro/src/settings.js, this module does not hold its own
+// literals — it re-exports the named constants each file already declares (and
 // documents WHY next to the code that uses them), so there is exactly one
 // place to come and read "what does chess's Obscuro do by default", while the
 // numbers and their reasoning stay next to the logic they tune.
 //
-// See agents/OBSCURO-PARAMETERS.md for the full prose write-up of every entry
-// below.
+// See OBSCURO-PARAMETERS.md (in this directory) for the full prose write-up of
+// every entry below. The generic search's own knobs are documented upstream, in
+// vendor/obscuro/docs/PARAMETERS.md.
 // ---------------------------------------------------------------------------
 
 // games/chess/ObscuroAgent.js — the chess-specific difficulty dial (leaf-eval

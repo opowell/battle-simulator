@@ -38,7 +38,7 @@ export function lineCost(x0, y0, x1, y1, costFn, samplesPerUnit = 12) {
 // Deterministic set of continuous destination points within `range` of (ox, oy) that
 // pass isLegal(x, y) — a polar lattice of `rings` radii × `spokes` angles (no rng, so
 // repeated calls agree). The Obscuro search fixes an infoset's action set once and
-// re-derives it per belief world to filter (agents/obscuro/gtcfr.js expandNode), so the
+// re-derives it per belief world to filter (vendor/obscuro/src/gtcfr.js expandNode), so the
 // generator must be a pure function of the state; rings×spokes is the continuous action
 // resolution, scaled by AI difficulty. Alternate rings are half-step rotated so points
 // don't stack radially, and the exact origin is skipped (a zero-length move is a no-op).
@@ -72,7 +72,7 @@ export function movePointLattice(ox, oy, range, isLegal, rings = 2, spokes = 8) 
 //   isLegal(action, x, y) -> boolean            geometric legality of that point
 // Actions are grouped by their identity minus the point field, so each distinct thrower /
 // grenade / mover gets its own lattice. Deterministic (no rng): the search fixes an
-// infoset's action set once and re-derives it per world to filter (agents/obscuro/gtcfr.js).
+// infoset's action set once and re-derives it per world to filter (vendor/obscuro/src/gtcfr.js).
 export function latticeActions(baseActions, family, res = {}) {
   const matched = baseActions.filter(a => a.type === family.type);
   if (!matched.length) return baseActions;

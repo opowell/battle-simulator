@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // ChessObscuroAgent — the chess specialisation of the generic ObscuroAgent.
 //
-// The search itself is now entirely generic and lives in agents/obscuro/ (the
+// The search itself is now entirely generic and lives in vendor/obscuro/src/ (the
 // paper's real extensive-form machinery: a growing game tree, PCFR+ on the last
 // iterate, one-sided GT-CFR expansion, purification). This file adds only the
 // two things that are genuinely chess-specific, exactly matching the paper's
@@ -25,7 +25,7 @@
 // ---------------------------------------------------------------------------
 
 import { ObscuroAgent as GenericObscuroAgent, compactAction } from '../../agents/ObscuroAgent.js';
-import { makeHooks, runObscuroSearch } from '../../agents/obscuro/search.js';
+import { makeHooks, runObscuroSearch } from '../../vendor/obscuro/src/search.js';
 import { isAttackedBy } from './board.js';
 import { evaluate } from './ChessAgent.js';
 import { toFEN, uciToAction } from './fen.js';
@@ -37,7 +37,7 @@ import {
 // Difficulty-dial (0-100, t = difficulty/100) endpoints for chess's own two
 // leaf evaluators (_leafEval's power-mode ladder rung, _proportionalPick's
 // perfect-information sampling), on top of the generic search dial in
-// agents/obscuro/settings.js. Re-exported via obscuro-settings.js.
+// vendor/obscuro/src/settings.js. Re-exported via obscuro-settings.js.
 export const CHESS_DIAL = {
   // Fog-search leaf eval (power mode): fixed Stockfish depth/breadth per node.
   leafEval: {

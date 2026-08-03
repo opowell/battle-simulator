@@ -148,7 +148,7 @@ export function setBeliefSampleAlphaForSeat(color, a) {
 //
 // α decides which worlds get SAMPLED. This decides what each sampled world is
 // WORTH once the search has it: the CFR weights every world's counterfactual
-// value by its root reach (agents/obscuro/infoset.js), and that reach was a flat
+// value by its root reach (vendor/obscuro/src/infoset.js), and that reach was a flat
 // 1/N. With α = 0 the draw is uniform too, so the two channels together meant the
 // AI evaluated under a uniform belief over P — the entire fitted posterior was
 // computed, displayed in the analysis panel, and then discarded before it could

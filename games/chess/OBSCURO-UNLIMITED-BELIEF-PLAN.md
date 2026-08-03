@@ -54,7 +54,7 @@ the server, refining frames). Pieces:
   The Node server path is unchanged (still uses the worker-thread engine +
   disk cache). This was the one edit to load-bearing shared code; keep the
   guards if touching that module.
-- **`agents/obscuro/search.js` yield is cross-env** — `setImmediate` (Node)
+- **`vendor/obscuro/src/search.js` yield is cross-env** — `setImmediate` (Node)
   ↦ `setTimeout(0)` (browser) via a `yieldToLoop` helper. Same macrotask
   boundary the starvation fix needs, now in both runtimes. (Same fallback added
   to `agents/ObscuroAgent.js`.)
@@ -250,7 +250,7 @@ before the mixing column would.
 
 Today analysis is entirely server-side: `handleAnalyzeStream` runs the solve in
 the Node process and streams SSE; the event-loop starvation fix
-(`setImmediate` yields in `agents/obscuro/search.js`) exists precisely because
+(`setImmediate` yields in `vendor/obscuro/src/search.js`) exists precisely because
 that solve shares the server's event loop with unrelated move requests.
 
 Moving it into a browser Web Worker would make it genuinely non-blocking for
@@ -258,7 +258,7 @@ both the server and the UI, and the batched design above is a *good* fit for a
 worker (post a `{evaluated,total,candidates}` message per batch instead of an
 SSE frame). Porting inventory:
 
-- **Portable as-is (plain ESM, no Node deps):** `agents/obscuro/*`
+- **Portable as-is (plain ESM, no Node deps):** `vendor/obscuro/src/*`
   (search/gtcfr/kluss), `games/chess/exactBelief.js`, `belief.js`, `board.js`,
   `fen.js`, the ranking/aggregation glue. These already run in unit tests
   without a server.
@@ -316,7 +316,7 @@ attempted.
 ### Why the belief-world set is fixed within one solve
 
 The search's safety machinery is the KLUSS Resolve/Maxmargin gadget
-(`agents/obscuro/kluss.js`, implementing Zhang & Sandholm 2026 §3.1 / App.
+(`vendor/obscuro/src/kluss.js`, implementing Zhang & Sandholm 2026 §3.1 / App.
 B.2, C.1–3). `buildGadget(tree, hooks, cfg)` runs ONCE per solve, before any
 CFR iteration:
 

@@ -129,7 +129,7 @@ async function serveApp(appName, req, res) {
 // code directly instead of a bundle. Restricted to JS/WASM so it can't read
 // arbitrary source, with path-escape protection. The worker imports absolute
 // URLs like /lib/games/chess/ChessGame.js; those modules' own relative imports
-// (./board.js, ../../agents/obscuro/search.js) then resolve under /lib/ too.
+// (./board.js, ../../vendor/obscuro/src/search.js) then resolve under /lib/ too.
 async function serveLibModule(res, relPath) {
   const abs = resolve(ROOT_DIR, relPath);
   if (abs !== ROOT_DIR && !abs.startsWith(ROOT_DIR + sep)) { res.writeHead(403); return res.end('Forbidden'); }
@@ -1438,9 +1438,10 @@ async function handleAnalyze(req, res, id) {
 // Same analysis as handleAnalyze, but streamed over Server-Sent Events so the
 // client can show live search progress the way lichess does — "depth N/14"
 // ticking up for Stockfish-backed chess-ai, "round N/30" for Obscuro's CFR
-// search (see the onInfo/onRound side channels in stockfish.js / agents/obscuro
-// /search.js). GET + query params (not POST) because EventSource can only do
-// GET. Emits zero or more `data: {..., done:false}` progress frames, then
+// search (see the onInfo/onRound side channels in stockfish.js and
+// vendor/obscuro/src/search.js). GET + query params (not POST) because
+// EventSource can only do GET. Emits zero or more `data: {..., done:false}`
+// progress frames, then
 // exactly one `data: {..., done:true}` frame (the final result, or an error)
 // and closes the connection — the client doesn't need to know which agent
 // supports progress ticks vs. answers in one shot, it just renders whatever

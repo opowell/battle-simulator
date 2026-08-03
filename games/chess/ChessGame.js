@@ -570,7 +570,7 @@ export const ChessGame = {
     if (exact.exact) {
       // Draw indices rather than positions so the POSTERIOR WEIGHT of each pick
       // can ride along. It has to: the search weights every world's
-      // counterfactual value by its root reach (agents/obscuro/infoset.js —
+      // counterfactual value by its root reach (vendor/obscuro/src/infoset.js —
       // `cfrDescend(w.node, me, 1, w.prob)`), and with a uniform draw that reach
       // was 1/N for every world, i.e. the AI evaluated positions under a UNIFORM
       // belief over P and the posterior reached play through nothing at all.
