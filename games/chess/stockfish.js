@@ -85,7 +85,7 @@ const BROWSER_ENGINE_URL = isBrowser
 // keyed by (fen, multipv, depth) but their CONTENT came from the buggy parser, so
 // they have to be invalidated like an engine change. Bump this for any change
 // that alters what a given query returns, not just for a new engine.
-const ENGINE_TAG = 'sf18l-mpv2';
+const ENGINE_TAG = 'sf18l-mpv3';
 
 let worker = null;
 let readyPromise = null;

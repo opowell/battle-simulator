@@ -149,10 +149,12 @@ export const MAX_SF_DEPTH = 30;
 // after the fact instead of guessed at. Any harness reporting numbers from this
 // search should print `fallbackLeaves` alongside them; a nonzero share means the
 // run is not comparable with a clean one.
-let leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0, refusedNodes: 0 };
+let leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0, refusedNodes: 0,
+  pvNullNodes: 0, pvShortNodes: 0, unmappedNodes: 0, engineUnavailable: 0 };
 export function getLeafEvalStats() { return { ...leafStats }; }
 export function resetLeafEvalStats() {
-  leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0, refusedNodes: 0 };
+  leafStats = { calls: 0, engineLeaves: 0, fallbackLeaves: 0, truncated: 0, refusedNodes: 0,
+    pvNullNodes: 0, pvShortNodes: 0, unmappedNodes: 0, engineUnavailable: 0 };
 }
 
 // Squares one king-step apart. Two kings adjacent is a position standard chess
@@ -260,6 +262,11 @@ async function scoreChildren(state, mover, actions, childStates, { sfDepth, cols
       } catch { pv = null; }
     }
     const cpByIdx = new Map();
+    // Categorise WHY a node loses values, so the residual fallback rate can be
+    // attributed instead of guessed at: engine said nothing / said less than we
+    // asked / said plenty but not about our moves.
+    if (!pv || !pv.length) leafStats.pvNullNodes++;
+    else if (pv.length < need.length) leafStats.pvShortNodes++;
     if (pv && pv.length) {
       engineOk = !truncated;
       for (const { move, cp } of pv) {
@@ -267,7 +274,9 @@ async function scoreChildren(state, mover, actions, childStates, { sfDepth, cols
         if (a) { const i = actions.indexOf(a); if (i >= 0) cpByIdx.set(i, cp); }
       }
     }
-    if (process.env?.OBSCURO_DEBUG_FALLBACK && cpByIdx.size < need.length && leafStats.calls < 12) {
+    if (pv && pv.length && cpByIdx.size < need.length) leafStats.unmappedNodes++;
+    if (process.env?.OBSCURO_DEBUG_FALLBACK && cpByIdx.size < need.length
+        && leafStats.calls % Number(process.env.OBSCURO_DEBUG_FALLBACK || 1) === 0) {
       const side = mover === 'white' ? 'w' : 'b';
       console.error(`[fallback] actions=${actions.length} need=${need.length} pv=${pv?.length ?? 'null'} ` +
         `mapped=${cpByIdx.size} depth=${sfDepth} cols=${cols}\n  fen: ` +

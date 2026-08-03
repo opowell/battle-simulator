@@ -355,3 +355,54 @@ because it is phantom-prone.
   alone) was this, compounded with a cold cache.
 - The `ms/move` column in `move-quality.mjs --grid` is therefore **correct**; the
   environment it was first measured in was not.
+
+## 2026-08-03 — the leaf evaluator was being fed ILLEGAL positions
+
+Stockfish's answer to an illegal FEN is not an error, it is **silence**: zero
+MultiPV lines. `scoreChildren` then hands every child of that node to the static
+evaluator without saying so. Two independent causes, found by dumping the actual
+fallback sites (`OBSCURO_DEBUG_FALLBACK=<n>` samples every nth):
+
+**1. Castling rights contradicting the board — FIXED.** Belief worlds and in-tree
+positions routinely carry rights the placement cannot support:
+
+```
+r5p1/pp1kpppp/1bq1P1r1/... b Qkq -    ← black king on d7, still claims k/q
+```
+
+`toFEN` now emits a right only when the king is on its home square and the
+matching rook is on its corner. Deriving from the board makes every FEN legal by
+construction and is exactly right for an imagined world: a king that has wandered
+has no castling rights, whatever the bookkeeping says. Measured on the same
+config: **3.36% → 2.85% static-eval fallbacks.**
+
+**2. Impossible piece placements — NOT fixed, source not yet identified.**
+
+```
+3rkb1r/pppqpp2/6p1/8/1P1P3P/B4P2/PP1R1P2/3PKB2 b k -
+                                       ^^^^ white PAWN on d1
+```
+
+A white pawn cannot legally stand on rank 1. Some part of the world pipeline is
+producing positions that could never occur. The prime suspect is `tryReacquire`
+(exactBelief.js), which rebuilds P from the heuristic belief's per-piece
+possible-square sets and is documented as a *superset* — if those sets are loose
+enough to include unreachable squares, the worlds built from them are impossible,
+and the engine silently refuses every one.
+
+**Next step, and it is cheap:** assert world legality where worlds are produced —
+no pawn on rank 1 or 8, both kings present, ≤8 pawns per side — under a debug flag,
+and run a few games to find which producer emits them. Do that before spending
+more measurement time on belief questions: the residual ~2.8% is small, but it is
+concentrated in exactly the strange positions where the belief is doing its most
+interesting work.
+
+### Also landed
+
+- Leaf health is now reported **per arm** in `move-quality.mjs`. It had been
+  accumulating from a per-game-seat reset, so the "20–21% fallbacks" figure quoted
+  on 2026-08-02 was one game-seat's, not a run's. Run-wide it is ~3%, and the two
+  arms are identical (2.85% vs 2.82%) — so reach weighting does NOT degrade the
+  evaluator, which was the other live hypothesis.
+- Fallbacks are attributed by cause: `engine-said-nothing`,
+  `fewer-lines-than-asked`, `lines-but-not-our-moves`.

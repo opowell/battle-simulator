@@ -170,6 +170,9 @@ function reportLeafHealth() {
   console.log(`leaf evaluations: ${total} (${st.calls} engine calls), ` +
     `static-eval fallbacks ${st.fallbackLeaves} (${pct.toFixed(2)}%), ` +
     `engine-refused nodes ${st.refusedNodes}, truncated rungs ${st.truncated}`);
+  console.log(`  fallback causes by node: engine-said-nothing ${st.pvNullNodes}, ` +
+    `fewer-lines-than-asked ${st.pvShortNodes}, lines-but-not-our-moves ${st.unmappedNodes}` +
+    (st.engineUnavailable ? `, engine-unavailable ${st.engineUnavailable}` : ''));
   if (pct > 0.5) {
     console.log('  ^ MEASUREMENT DEGRADED. Stockfish was timing out — almost always because');
     console.log('    something else heavy was running on this machine. Re-run it alone.');
@@ -331,6 +334,9 @@ if (argv.includes('--grid')) {
 // --- run ---------------------------------------------------------------------
 
 const stats = { a: [], b: [], diffs: [], aTop: 0, bTop: 0, n: 0, same: 0 };
+const blankHealth = () => ({ engineLeaves: 0, fallbackLeaves: 0, pvNullNodes: 0, pvShortNodes: 0, unmappedNodes: 0, refusedNodes: 0 });
+const healthA = blankHealth(), healthB = blankHealth();
+const accStats = (into, st) => { for (const k of Object.keys(into)) into[k] += st[k] ?? 0; };
 const t0 = Date.now();
 
 for (let g = 0; g < games.length; g++) {
@@ -342,8 +348,15 @@ for (let g = 0; g < games.length; g++) {
     // Same seed for both arms: common random numbers, so the streams start
     // identical and only α/π can pull them apart.
     const seed = seed0 + g * 977 + (seat === 'white' ? 0 : 1);
+    // Leaf health PER ARM: a shared counter hides the case where one arm's
+    // configuration is what degrades the evaluator, which is exactly the case
+    // that would invalidate the comparison.
+    resetLeafEvalStats();
     const A = (await replayArm(sess, seat, arm.a, seed)).picks;
+    accStats(healthA, getLeafEvalStats());
+    resetLeafEvalStats();
     const B = (await replayArm(sess, seat, arm.b, seed)).picks;
+    accStats(healthB, getLeafEvalStats());
     const byPlyB = new Map(B.map(p => [p.ply, p.key]));
     for (const { ply, key: ka } of A) {
       const ref = refs.get(ply);
@@ -397,7 +410,12 @@ if (dec > 0) {
   console.log(`SIGN TEST over the ${dec} decisive positions: A better ${(100 * wins / dec).toFixed(1)}%  (z = ${z.toFixed(2)})`);
 }
 console.log(`\nOnly the ${stats.n - stats.same} positions where the arms disagreed can carry signal.`);
-reportLeafHealth();
+for (const [label, h] of [[arm.a.label, healthA], [arm.b.label, healthB]]) {
+  const tot = h.engineLeaves + h.fallbackLeaves;
+  console.log(`leaf health [${label}]: ${tot} leaves, static-eval fallbacks ` +
+    `${h.fallbackLeaves} (${tot ? (100 * h.fallbackLeaves / tot).toFixed(2) : '0'}%) — ` +
+    `nothing ${h.pvNullNodes}, short ${h.pvShortNodes}, unmapped ${h.unmappedNodes}, refused ${h.refusedNodes}`);
+}
 if (armName !== 'null') {
   console.log('Run `--arm null` before believing any of this: the control must come back ~0.');
 }
