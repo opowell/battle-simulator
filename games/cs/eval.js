@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // CS leaf evaluation — the game-specific "node heuristic" the Obscuro search
 // plugs in, exactly where chess plugs in Stockfish (see the division of labour
-// described at the top of games/chess/ObscuroAgent.js: a game-INDEPENDENT search
+// described at the top of vendor/obscuro-chess/src/ObscuroAgent.js: a game-INDEPENDENT search
 // plus a game-specific perfect-information evaluation).
 //
 // Everything here scores a CS position from one team's point of view, in a
@@ -43,7 +43,7 @@ import { seesPoint } from '../vision.js';
 // team is worth ~2100 material points, so at 6000 (≈2.9×) a round win decisively
 // outweighs any material consideration without dwarfing it by orders of
 // magnitude — the same bounding discipline as chess's SEARCH_WIN (see
-// games/chess/ObscuroAgent.js): under fog these values are AVERAGED across belief
+// vendor/obscuro-chess/src/ObscuroAgent.js): under fog these values are AVERAGED across belief
 // worlds, so an unbounded outcome lets a single phantom world (an imagined
 // last-enemy-alive, say) swamp every real consideration and send the AI lunging.
 export const ROUND_WIN = 6000;

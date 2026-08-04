@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isKingInCheck, isAttackedBy, getVisibleSquares } from './board.js';
-import { getAllLegalMoves } from './moves.js';
 import { ChessGame } from './index.js';
-import { ChessAgent } from './ChessAgent.js';
-import { Belief } from './belief.js';
+import {
+  isKingInCheck, isAttackedBy, getVisibleSquares, getAllLegalMoves,
+  ChessAgent, Belief,
+} from '../../vendor/obscuro-chess/src/index.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 

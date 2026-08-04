@@ -28,22 +28,26 @@ A turn-based game engine for running and building strategy games in JavaScript (
 
 Requires Node.js ≥ 18. No install step — `node_modules` is committed.
 
-The Obscuro AI lives in its own repository and is vendored here as a git
-submodule, so clone with it:
+The Obscuro AI lives in its own repositories and is vendored here as git
+submodules — the generic search at `vendor/obscuro`, the fog-chess AI at
+`vendor/obscuro-chess` (which carries the search as a submodule of its own) — so
+clone with them:
 
 ```sh
 git clone --recurse-submodules https://github.com/opowell/battle-simulator.git
-git config core.hooksPath .githooks    # keeps the submodule in sync from here on
+git config core.hooksPath .githooks    # keeps the submodules in sync from here on
 
 # already cloned:
 git config core.hooksPath .githooks
-git submodule update --init vendor/obscuro
+git submodule update --init --recursive
 ```
 
 `core.hooksPath` points git at the tracked hooks in `.githooks/`, which re-run
-`git submodule update --init` after every merge, checkout and rebase. Without it
-the submodule silently stays empty the first time you pull a branch that adds
-one, and every Obscuro import fails with a confusing module-not-found.
+`git submodule update --init --recursive` after every merge, checkout and rebase.
+Without it a submodule silently stays empty the first time you pull a branch that
+adds one, and every Obscuro import fails with a confusing module-not-found.
+`--recursive` matters: it is what fills in `vendor/obscuro-chess/vendor/obscuro`,
+the search the chess AI actually runs on.
 
 ### Run a demo
 
@@ -192,9 +196,20 @@ It contains no game knowledge, so it lives in **its own repository** —
 here as a submodule at `vendor/obscuro`. `agents/ObscuroAgent.js` is a one-line
 re-export of it.
 
+The **fog-chess** specialisation on top of it — the Stockfish leaf evaluator, the
+exact belief tracker, the fitted move prior, chess's own difficulty dial — is a
+second repository,
+[github.com/opowell/obscuro-chess](https://github.com/opowell/obscuro-chess),
+vendored at `vendor/obscuro-chess`. What stays here is
+[games/chess/ChessGame.js](games/chess/ChessGame.js): this engine's rules
+definition plus the renderer, fog markers and difficulty menu, handed to the
+vendored agent with `setGame`.
+
 ```sh
-git submodule update --remote vendor/obscuro   # pull the latest upstream
-git add vendor/obscuro && git commit           # pin the new commit
+git submodule update --remote vendor/obscuro         # pull the latest upstream
+git add vendor/obscuro && git commit                 # pin the new commit
+git submodule update --remote vendor/obscuro-chess   # same, for the chess AI
+git add vendor/obscuro-chess && git commit
 ```
 
 A game opts into stronger play by implementing the optional hooks in
@@ -203,8 +218,8 @@ A game opts into stronger play by implementing the optional hooks in
 [docs/GAME-INTERFACE.md](vendor/obscuro/docs/GAME-INTERFACE.md) is the guide, and
 [docs/PARAMETERS.md](vendor/obscuro/docs/PARAMETERS.md) documents every knob; the
 fog-chess specialisation on top of it (Stockfish leaf eval, the exact belief
-tracker) stays in this repo, at
-[games/chess/](games/chess/OBSCURO-PARAMETERS.md).
+tracker) has its own docs at
+[vendor/obscuro-chess/docs/PARAMETERS.md](vendor/obscuro-chess/docs/PARAMETERS.md).
 
 ## HTTP API
 

@@ -7,3 +7,14 @@
 	# CLAUDE.md), so untracked content is noise. Deliberately NOT `dirty`:
 	# a MODIFIED tracked file in here is a real mistake and must stay visible.
 	ignore = untracked
+[submodule "vendor/obscuro-chess"]
+	path = vendor/obscuro-chess
+	url = https://github.com/opowell/obscuro-chess.git
+	# Same reasoning as above. Note this one carries its OWN vendor/obscuro
+	# submodule (the generic search it builds on), which is why the hooks in
+	# .githooks/ update submodules --recursive: a non-recursive update leaves
+	# vendor/obscuro-chess/vendor/obscuro empty and nothing chess imports.
+	# Keep that inner pin and the top-level vendor/obscuro pin in step — they
+	# are two checkouts of the same repo, and only the inner one is what the
+	# chess AI actually runs against.
+	ignore = untracked

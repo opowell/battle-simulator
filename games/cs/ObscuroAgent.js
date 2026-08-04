@@ -2,7 +2,7 @@
 // CsObscuroAgent — the CS specialisation of the generic ObscuroAgent.
 //
 // Same division of labour as the chess specialisation (see
-// games/chess/ObscuroAgent.js): the search itself is entirely generic and lives
+// vendor/obscuro-chess/src/ObscuroAgent.js): the search itself is entirely generic and lives
 // in vendor/obscuro/src/ — a growing game tree with shared information sets, solved
 // with PCFR+, grown by one-sided GT-CFR, the move chosen by purification. This
 // file adds only what is genuinely CS-specific:

@@ -8,7 +8,7 @@
 //
 // Everything the imported `analyze` function needs (search, leaf evaluation,
 // etc.) is expected to run locally too — e.g. chess's analyze functions reach
-// for games/chess/stockfish.js, which itself spins up the vendored Stockfish
+// for the vendored chess AI's stockfish.js, which itself spins up Stockfish
 // WASM as a nested Worker in the browser. This worker just wires the generic
 // plumbing: fetch the (already fog-filtered) position, derive legal actions,
 // call `analyze`, forward progress/result frames back to the panel.

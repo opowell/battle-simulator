@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ChessGame } from './index.js';
-import { ObscuroAgent, obscuroStrategy } from './ObscuroAgent.js';
+import { ObscuroAgent, obscuroStrategy } from '../../vendor/obscuro-chess/src/index.js';
 import { solveMatrixGame } from './cfr.js';
-import { getAllLegalMoves } from './moves.js';
+import { getAllLegalMoves } from '../../vendor/obscuro-chess/src/index.js';
 import { quit as stockfishQuit } from './stockfish.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';

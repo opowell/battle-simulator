@@ -50,3 +50,21 @@ Standard two-player chess with full rule support.
 npm run demo:chess          # you play White vs random AI
 npm run demo:chess:auto     # random vs random
 ```
+
+## Where the AI is
+
+Only the game is in this directory. The fog-of-war AI — move generation, the
+Stockfish leaf evaluator, the exact belief tracker, the move prior — lives in
+[github.com/opowell/obscuro-chess](https://github.com/opowell/obscuro-chess),
+vendored as a submodule at
+[vendor/obscuro-chess/](../../vendor/obscuro-chess/README.md); its parameters are
+documented in
+[vendor/obscuro-chess/docs/PARAMETERS.md](../../vendor/obscuro-chess/docs/PARAMETERS.md).
+[ChessGame.js](ChessGame.js) hands that AI this engine's own definition
+(`setGame`), so the search reasons with the rules, fog markers and difficulty
+options the server will actually apply.
+
+What remains here: `ChessGame.js` (rules + renderer + fog markers), `images/`,
+`vendor/` (the Stockfish evaluation cache — derived data, kept out of the public
+package), `stockfish.js` (a shim that points the vendored engine at that cache),
+and the tests that cover this engine's side of the seam.

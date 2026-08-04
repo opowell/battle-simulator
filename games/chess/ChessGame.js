@@ -1,10 +1,36 @@
+// ---------------------------------------------------------------------------
+// Chess for this engine — the rules and the fog, plus everything the app needs
+// that an AI package has no business knowing about: the renderer, per-square fog
+// markers, the difficulty menu, sprite paths, grid coordinates.
+//
+// The AI itself is no longer here. Board/move generation, the belief trackers,
+// the Stockfish evaluator and the Obscuro chess agent live in their own repo,
+// vendored as a submodule at vendor/obscuro-chess (github.com/opowell/
+// obscuro-chess) — which also carries the generic search as ITS submodule. A
+// change to any of that goes upstream:
+//
+//   git submodule update --remote vendor/obscuro-chess   # pull latest upstream
+//   git add vendor/obscuro-chess && git commit           # pin the new commit
+//
+// The package ships its own GameDefinition (FogChess) with the same rules and
+// none of the presentation; `setGame(ChessGame)` below is what makes the search
+// use THIS definition instead, so the tree it builds is made of positions this
+// engine will actually produce. Keep the two in agreement: our own tests
+// (index.test.js, obscuro.test.js) are what notice if they drift.
+// ---------------------------------------------------------------------------
+
 import { HTML_RENDERER_OPTION } from '../renderOptions.js';
-import { isKingInCheck, renderBoard, getVisibleSquares, squareToXY, squareToGrid } from './board.js';
-import { getAllLegalMoves, getAllFogMoves } from './moves.js';
-import { ChessAgent, evaluate } from './ChessAgent.js';
-import { ObscuroAgent, analyzeObscuro } from './ObscuroAgent.js';
-import { getBelief, impossiblePlacement } from './belief.js';
-import { getExactBelief, getBeliefReachWeighting } from './exactBelief.js';
+import {
+  isKingInCheck, renderBoard, getVisibleSquares, squareToXY, squareToGrid,
+  getAllLegalMoves, getAllFogMoves,
+  ChessAgent, evaluate,
+  ObscuroAgent, analyzeObscuro, setGame,
+  getBelief, impossiblePlacement,
+  getExactBelief, getBeliefReachWeighting,
+} from '../../vendor/obscuro-chess/src/index.js';
+// Side effect only: points the vendored engine at this repo's warm evaluation
+// cache before anything can open it. See the file for why the cache stayed here.
+import './stockfish.js';
 
 // ---------------------------------------------------------------------------
 // Initial board setup
@@ -181,9 +207,9 @@ export const ChessGame = {
       // instead of over SSE: it dynamically imports `module` from /lib/ and reads
       // `export` off the result (dot-path into the namespace). See `clientGame`
       // below for the matching legal-actions resolver.
-      clientAnalyze: { module: 'games/chess/ChessAgent.js', export: 'ChessAgent.analyze' } },
+      clientAnalyze: { module: 'games/chess/index.js', export: 'ChessAgent.analyze' } },
     { id: 'obscuro',  name: 'Obscuro (CFR)', agent: ObscuroAgent, analyze: analyzeObscuro,
-      clientAnalyze: { module: 'games/chess/ObscuroAgent.js', export: 'analyzeObscuro' } },
+      clientAnalyze: { module: 'games/chess/index.js', export: 'analyzeObscuro' } },
   ],
   // Client-side analysis needs to derive legal actions itself (the server does
   // this via `game.getLegalActions` in resolveAnalysisContext); this points the
@@ -779,3 +805,10 @@ export const ChessGame = {
     return `${FILES[col]}${8 - row}`;
   },
 };
+
+// Hand the vendored AI THIS definition. Without it the agent falls back to the
+// package's own FogChess — same rules, but a different object: its applyActions
+// would drop the fog markers this engine carries in gameSpecific, and any rule
+// this file grows that FogChess hasn't would be missing from every node of the
+// search tree. One call, at module load, before any agent can be asked to move.
+setGame(ChessGame);

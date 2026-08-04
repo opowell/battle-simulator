@@ -1337,7 +1337,7 @@ async function handleSetMarker(req, res, id) {
 //
 // Deliberately builds a FRESH players array (new objects, not the session's
 // stored `params.players` reference) on every call: belief-tracking agents key
-// their per-color Belief on `state.players`' object identity (games/chess/belief.js
+// their per-color Belief on `state.players`' object identity (the vendored chess AI's belief.js
 // getBelief), and beginTurn() only advances safely when re-entered with the SAME
 // turnKey it already knows about. Reusing one shared array across repeated,
 // possibly out-of-order ply lookups would let a later analyze() call for an
@@ -1480,7 +1480,7 @@ async function handleAnalyzeStream(req, res, id, url) {
       // fog analysis, which can always sample another belief-world batch) keep
       // refining until the viewer actually stops watching this position,
       // instead of settling for one fixed-size batch — see analyzeObscuro's
-      // isCancelled-driven progressive mode in games/chess/ObscuroAgent.js.
+      // isCancelled-driven progressive mode in vendor/obscuro-chess/src/ObscuroAgent.js.
       isCancelled: () => closed,
     });
     emit({ ...result, ply, color: ctx.color, done: true });

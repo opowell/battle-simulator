@@ -1,7 +1,7 @@
 # Learned leaf evaluation for non-chess games — plan
 
 Standalone working doc. Written 2026-07-17. Safe to read cold in a new session.
-Companion to `games/chess/FOG-AI-FIX-PLAN.md` (the chess/Obscuro history); this
+Companion to `vendor/obscuro-chess/docs/FOG-AI-FIX-PLAN.md` (the chess/Obscuro history); this
 executes the paper's closing suggestion (Zhang & Sandholm 2026, §5): *"merging
 our techniques with deep reinforcement learning to learn the evaluation
 function, instead of using a perfect-information-game evaluation function."*
