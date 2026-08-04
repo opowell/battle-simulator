@@ -74,7 +74,7 @@ const otherSide = computed(() =>
   analyzedSide.value && analyzedSide.value !== props.playerId ? analyzedSide.value : null);
 // The belief population itself ({ total, exact, depth, moves, worlds }) — the
 // set of boards consistent with what the viewer can see, which the analysis
-// already reasons over internally (see games/chess/ObscuroAgent.js). Rides along
+// already reasons over internally (see vendor/obscuro-chess/src/ObscuroAgent.js). Rides along
 // on a fraction of the progress frames because it is bulky, so a frame without
 // it means "unchanged", not "gone".
 const belief = ref(null);

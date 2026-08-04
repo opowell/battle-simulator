@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue';
 // ---------------------------------------------------------------------------
 // "What does the board probably look like?" — a stepper over the analysis
-// engine's belief population (see games/chess/ObscuroAgent.js's
+// engine's belief population (see vendor/obscuro-chess/src/ObscuroAgent.js's
 // analyzeObscuroProgressive → beliefWorlds).
 //
 // Under fog the viewer sees a hole where the opponent's army is. The analysis
@@ -13,7 +13,7 @@ import { ref, computed, watch } from 'vue';
 //   • "Most likely" (no move selected) — worlds ranked by their POSTERIOR
 //     PROBABILITY: how likely each board actually is, given everything the
 //     viewer has observed and a prior over how the opponent picks moves (see
-//     games/chess/exactBelief.js's weights and movePrior.js). #1 is the belief's
+//     vendor/obscuro-chess/src/exactBelief.js's weights and movePrior.js). #1 is the belief's
 //     genuine best guess at the real board. It used to be the CONSENSUS board —
 //     the one agreeing most with the population's per-square marginals — because
 //     the posterior over the position set was flat and there was nothing better

@@ -305,7 +305,7 @@ export const ChessGame = {
   // move vanished from the world's action set and was scored as a neutral pass,
   // so a real king-hang was priced at material value. Self-check is instead
   // handled by the VALUE model: such children evaluate to −SEARCH_WIN for the
-  // mover (games/chess/ObscuroAgent.js), new infosets seed to the best child,
+  // mover (vendor/obscuro-chess/src/ObscuroAgent.js), new infosets seed to the best child,
   // and CFR then keeps suicide moves out of both players' strategies.
 
   applyActions(state, playerActions) {
