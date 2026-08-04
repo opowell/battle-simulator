@@ -296,6 +296,25 @@ function getVisibleState(state, playerId) {
   return { ...state, board: { ...state.board, territories: filtered } };
 }
 
+// Which part of a state makes two states the same information set. Only owner
+// and dice vary and only they are hidden, so everything else is noise in the
+// key: `adjacency` and each territory's `neighbors` are fixed map topology,
+// identical in every state of every game on this map, and `id` is the key it is
+// already filed under. Keying on the whole board — which is what the legacy
+// `board` field fallback did — paid for that constant topology in every infoset
+// lookup without it ever distinguishing two states.
+//
+// Territories carry no `type` or `ownerId` field, so Obscuro stringifies these
+// values whole rather than treating them as entities to strip ids from. That is
+// what we want here: `dice` is identity-bearing and must survive.
+function identityOf(state) {
+  const out = {};
+  for (const [id, t] of Object.entries(state.board.territories)) {
+    out[id] = `${t.owner ?? '?'}:${t.dice ?? '?'}`;
+  }
+  return out;
+}
+
 // Fog belief sampler for the generic ObscuroAgent: plausible full worlds with
 // hidden territories' owner/dice filled in from the stateful KDiceBelief
 // (belief.js). Returns [] when fog is off (agent uses the observation as the
@@ -413,6 +432,7 @@ export const KDiceGame = {
   renderState,
   toGrid,
   getVisibleState,
+  identityOf,
   sampleWorlds,
   getActionDuration,
 };

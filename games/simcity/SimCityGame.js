@@ -266,6 +266,28 @@ function getVisibleState(state, playerId) {
   return { ...state, board: { ...state.board, tiles: newTiles } };
 }
 
+// ── identityOf ───────────────────────────────────────────────────────────────
+//
+// Which part of a state makes two states the same information set: the tile
+// grid, and only what actually varies in it. `width`/`height` sit beside `tiles`
+// on the board and are fixed for the whole game, so the legacy `board` fallback
+// was paying for two constants in every key.
+//
+// The tiles are flattened to strings deliberately, and it is NOT cosmetic.
+// Obscuro treats a map whose values carry `ownerId` or `type` as entities and
+// keeps only those two fields, dropping the rest as synthesized-id noise. A
+// SimCity tile is `{type, zone, density}` — it has a `type`, so handing the map
+// over raw would trip that rule and silently discard `zone` and `density`,
+// keying an undeveloped residential zone the same as a dense one. Strings carry
+// no `type` field, so they are compared whole.
+function identityOf(state) {
+  const out = {};
+  for (const [k, t] of Object.entries(state.board.tiles)) {
+    out[k] = `${t.type}:${t.zone ?? '-'}:${t.density ?? 0}`;
+  }
+  return out;
+}
+
 // ── renderState ───────────────────────────────────────────────────────────────
 
 function tileChar(tile) {
@@ -342,4 +364,5 @@ export const SimCityGame = {
   renderState,
   evaluateState,
   getVisibleState,
+  identityOf,
 };

@@ -517,6 +517,21 @@ export const ChessGame = {
 
   // --- Imperfect-information interface (drives the generic ObscuroAgent) -----
 
+  // Which part of the observation above makes two positions the same information
+  // set. The rest of what getVisibleState returns must NOT key: `units` is
+  // derived from the board, `visibleSquares`/`fogMarkers`/`viewerId` are how the
+  // UI draws fog, and keying on any of them would split infosets that are one
+  // position. This is the search's long-standing behaviour — the `board` field
+  // name used to select it implicitly — now said out loud, because the field-name
+  // fallback is legacy.
+  //
+  // Squares map to {ownerId, type, id}, so Obscuro drops the piece id: a belief
+  // sampler invents ids the engine would never produce, and without that a
+  // sampled world would never dedupe against the identical carried position.
+  identityOf(state) {
+    return state.board;
+  },
+
   // Heuristic leaf value of a position to `playerId` (white/black), reusing the
   // chess agent's material + piece-square evaluation.
   evaluateState(state, playerId) {
