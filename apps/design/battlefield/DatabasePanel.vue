@@ -15,11 +15,12 @@ import DatabaseMoveList from './DatabaseMoveList.vue';
 //
 // THE LEVELS are how the answer copes with hidden information. Under fog the
 // player to move cannot see the position, so games cannot be grouped by it;
-// they are grouped by what that player could actually SEE. The server returns
-// one group per level of that grouping (chess: "same view" — own pieces plus
-// the enemy pieces in sight — and the wider "own pieces", which pools games
-// where the same army stood in the same places whatever the fog hid). The panel
-// opens on the narrowest level that matched any games and lets the viewer widen.
+// they are grouped by what that player actually KNOWS — for chess, the whole
+// trail of boards they have been shown, then two progressively wider groupings
+// that forget parts of it (see games/chess/fowDatabase.js). The server sends one
+// group per level, finest first, and the panel opens on the finest that matched
+// any games and lets the viewer widen. Nothing here knows what a level means:
+// each arrives with its own label, hint and count.
 const props = defineProps({
   enabled:   { type: Boolean, default: false },
   sessionId: { type: String, default: null },
@@ -109,14 +110,19 @@ const fmt = (n) => (n ?? 0).toLocaleString();
     </div>
 
     <template v-if="panelOn">
-      <!-- Which grouping the rows below come from. Both are things the player to
-           move could see for themselves; neither uses the hidden half of the board. -->
+      <!-- Which grouping the rows below come from, finest first. Every one of
+           them is something the player to move knows for themselves; none uses
+           the hidden half of the board. -->
       <div v-if="levels.length" class="seg db-levels">
         <button v-for="l in levels" :key="l.id" :class="{ on: l.id === (level?.id) }"
-                :title="l.hint" @click="levelId = l.id">
-          {{ l.label }} <span class="db-lvl-n">{{ fmt(l.total) }}</span>
+                :title="`${l.label} — ${l.hint}`" @click="levelId = l.id">
+          {{ l.short ?? l.label }} <span class="db-lvl-n">{{ fmt(l.total) }}</span>
         </button>
       </div>
+
+      <!-- The short button labels cannot say what a grouping actually means, so
+           the selected one says it here. -->
+      <div v-if="level" class="db-level-label" :title="level.hint">{{ level.label }}</div>
 
       <div v-if="data" class="db-meta">
         <span class="db-side">{{ data.color }} to move</span>
@@ -128,10 +134,8 @@ const fmt = (n) => (n ?? 0).toLocaleString();
       <div v-else-if="loading && !data" class="db-msg">Searching the database…</div>
       <div v-else-if="!data" class="db-msg">No data.</div>
       <div v-else-if="!moves.length" class="db-msg">
-        No recorded game reached this
-        <span :title="level?.hint">{{ (level?.label ?? '').toLowerCase() }}</span>.
-        Under fog a single seat's view turns unique within a few moves — try the wider
-        grouping, or an earlier ply.
+        No recorded game matches this grouping. Under fog what one seat knows turns
+        unique within a few moves — try a wider grouping, or an earlier ply.
       </div>
       <DatabaseMoveList v-else :moves="moves" :total="level.total" :hoveredIndex="hoveredIdx"
         @hover="onHover" @select="onSelect"/>
@@ -146,8 +150,9 @@ const fmt = (n) => (n ?? 0).toLocaleString();
 .db-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .db-onoff button { padding: 2px 8px; font-size: 10px; }
 .db-levels { display: flex; margin-bottom: 6px; }
-.db-levels button { flex: 1; padding: 3px 6px; font-size: 10px; white-space: nowrap; }
+.db-levels button { flex: 1; padding: 3px 4px; font-size: 10px; white-space: nowrap; }
 .db-lvl-n { color: var(--faint); margin-left: 3px; }
+.db-level-label { font-size: 10px; color: var(--dim); margin-bottom: 3px; }
 .db-meta { font-size: 10px; color: var(--faint); margin-bottom: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
 .db-side { text-transform: capitalize; color: var(--dim); }
 .db-msg { font-size: 11px; color: var(--faint); padding: 6px 2px; line-height: 1.45; }

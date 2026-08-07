@@ -1357,6 +1357,21 @@ function replayStateAtPly(game, session, ply) {
   return state;
 }
 
+// Every position from the start of the game up to and including `ply`, from the
+// same replay. Imperfect-information questions are asked of a HISTORY, not of a
+// position — what a fog player knows is the sequence of boards they were handed
+// (see games/chess/fowDatabase.js) — and reconstructing that with one
+// replayStateAtPly call per ply would be quadratic for no reason.
+function replayStatesToPly(game, session, ply) {
+  const players = (session.params.players ?? []).map(p => ({ id: p.id, name: p.name ?? p.id }));
+  let state = game.createInitialState(players, session.params.config ?? {});
+  const log = session.engine.log;
+  const n = Math.max(0, Math.min(ply, log.length));
+  const states = [state];
+  for (let i = 0; i < n; i++) states.push(state = game.applyActions(state, log[i].playerActions));
+  return states;
+}
+
 // Shared setup for both /analyze (single-shot) and /analyze-stream (SSE,
 // live depth/round progress): resolves the position (current or a
 // reconstructed historical ply), fog-filters it exactly like a real agent
@@ -1561,8 +1576,9 @@ async function resolveDatabaseQuery(pointer) {
 // The question is asked for whoever is TO MOVE at the ply on screen, not for
 // the viewer, so scrubbing through a game shows each side's own book in turn.
 // Under fog the game's query decides what "from here" means — for chess it is
-// the mover's view of the board, never the true position (games/chess/
-// fowDatabase.js).
+// everything the mover has watched up to this point, never the true position
+// (games/chess/fowDatabase.js), which is why the whole prefix is handed over
+// and not just one board.
 async function handleDatabase(res, id, url) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
@@ -1576,10 +1592,15 @@ async function handleDatabase(res, id, url) {
   const plyRaw = url.searchParams.get('ply');
   const ply = (plyRaw != null && plyRaw !== '') ? Number(plyRaw) : null;
 
-  let state;
+  // The whole prefix, not just the position: under fog what a player knows is
+  // the sequence of boards they have been handed, so the game's query needs the
+  // plies before this one to reconstruct that (see games/chess/fowDatabase.js's
+  // observation trail). One replay produces all of them.
+  let states;
   try {
-    state = (ply == null) ? session.engine.state : replayStateAtPly(game, session, ply);
+    states = replayStatesToPly(game, session, ply ?? session.engine.log.length);
   } catch (e) { return err(res, 400, `Could not resolve position: ${e.message}`); }
+  const state = states.pop();
   if (!state) return err(res, 400, 'No position available yet');
 
   const color = state.activePlayers?.[0] ?? null;
@@ -1591,7 +1612,7 @@ async function handleDatabase(res, id, url) {
     // determined by what they can see, so these are theirs to know, and they are
     // what lets each row in the answer be hovered and played on the board.
     const legalActions = game.getLegalActions(state, color);
-    const result = await query(state, color, { legalActions });
+    const result = await query(state, color, { legalActions, priorStates: states });
     send(res, 200, { ...result, ply, color, label: pointer.label ?? 'Database', source: pointer.source ?? null });
   } catch (e) {
     console.error(e);

@@ -5,28 +5,41 @@
 // A normal opening explorer keys on the POSITION: the board is common knowledge,
 // so two games that reach the same board are the same question. Under fog that
 // is exactly wrong. The player to move does not know the position — they know
-// their own pieces, the enemy pieces their pieces currently watch, and nothing
-// else. Grouping recorded games by the true board would answer a question the
-// player cannot ask, and would silently leak the hidden half of the board into
-// the answer (the set of games that reached board X is itself information about
-// where the enemy is). So this indexes games by the MOVER'S INFORMATION SET, not
-// by the board: see `infosetKey` below.
+// their own pieces, the enemy pieces their pieces currently watch, everything
+// they have watched EARLIER in the game, and nothing else. Grouping recorded
+// games by the true board would answer a question the player cannot ask, and
+// would silently leak the hidden half of the board into the answer (the set of
+// games that reached board X is itself information about where the enemy is). So
+// this indexes games by the MOVER'S INFORMATION SET, not by the board.
 //
-// TWO KEY LEVELS, both coarsenings of what the mover can see — never refinements:
+// WHAT THE INFORMATION SET ACTUALLY IS: the whole TRAIL of observations, not the
+// current view. A pawn of mine has been blocked on d4 since move 8, and I saw
+// what blocked it back when my bishop still watched that square: I know it is
+// their knight and not their bishop, and every plan I have from here is built on
+// that. Two games whose current views are pixel-identical but whose trails differ
+// are two different decisions, and pooling them answers the wrong question. The
+// move NUMBER is known to the player too, so it keys as well.
 //
-//   level 0 "view"  own pieces + the enemy pieces currently visible + own
-//                   castling rights + an en-passant capture if one is available.
-//                   This is precisely the board the app draws for that seat.
-//   level 1 "own"   own pieces only. Drops the sighted enemies, so games where
-//                   the mover had the same army in the same places pool together
-//                   even if they were looking at different things.
+// THREE KEY LEVELS. Level 0 is the information set itself; the other two are
+// coarsenings of it — never refinements, so no level can see anything the mover
+// cannot:
 //
-// Level 1 exists because level 0 runs out of games fast: past the first handful
-// of moves, one seat's exact view is nearly unique across a few thousand games.
-// Both keys deliberately ignore the move NUMBER and the history behind the
-// position, so transpositions pool (the mover does know both — dropping them
-// pools games the mover could tell apart, which is the safe direction; adding
-// hidden information is the unsafe one, and neither key does that).
+//   level 0 "trail"  every view this seat has had this game, in order, and the
+//                    moves they played between them. The exact information set:
+//                    it remembers sightings that the fog has since swallowed.
+//   level 1 "view"   the current view alone, at the same move number: own pieces
+//                    + the enemy pieces currently visible + own castling rights +
+//                    an en-passant capture if one is available. Precisely the
+//                    board the app draws for that seat. Forgets everything seen
+//                    earlier, so it pools games that the mover could tell apart.
+//   level 2 "own"    own pieces only, at the same move number. Drops the sighted
+//                    enemies too, so games where the same army stood in the same
+//                    places pool together whatever the fog was hiding.
+//
+// The coarser levels exist because level 0 runs out of games almost at once: an
+// exact trail is unique within a few thousand games after a handful of moves.
+// They are the honest way to have any sample at all, with the cost stated —
+// widening the grouping means answering a question somebody else was asking.
 //
 // The index is built by replaying every recorded game with THIS engine's chess
 // rules (games/chess/ChessGame.js), so the keys the panel asks with are produced
@@ -103,16 +116,22 @@ export function sanToAction(san, legal) {
 // ---------------------------------------------------------------------------
 
 /**
- * A string identifying everything `color` can see about `board` — their own
+ * A string for everything `color` can see about `board` RIGHT NOW — their own
  * pieces, the enemy pieces they currently watch, their own castling rights, and
  * an available en-passant capture. Nothing else about the position enters it.
  *
- * @param {number} level 0 = the full visible view, 1 = own pieces only.
+ * The set of squares this seat can SEE needs no encoding of its own: vision is
+ * a function of one's own pieces and of the first blocker along each ray, and a
+ * blocker is by definition either one's own piece or a piece one is looking at.
+ * So the two lists below already pin down which squares are visible, including
+ * the visibly EMPTY ones.
+ *
+ * @param {boolean} withSeen false drops the sighted enemies (the "own" level).
  */
-export function infosetKey(board, color, gameSpecific = {}, level = 0) {
+export function viewSignature(board, color, gameSpecific = {}, withSeen = true) {
   const own = [];
   const seen = [];
-  const visible = level === 0 ? getVisibleSquares(board, color) : null;
+  const visible = withSeen ? getVisibleSquares(board, color) : null;
 
   for (const sq of Object.keys(board)) {
     const piece = board[sq];
@@ -130,7 +149,71 @@ export function infosetKey(board, color, gameSpecific = {}, level = 0) {
   // the very thing the fog hides.
   const ep = epCaptureAvailable(board, color, gameSpecific) ? gameSpecific.enPassantTarget : '-';
 
-  return `${level}|${color[0]}|${castling}|${ep}|${own.join('')}|${seen.join('')}`;
+  return `${color[0]}|${castling}|${ep}|${own.join('')}|${seen.join('')}`;
+}
+
+/**
+ * How a move is written into an observation trail.
+ *
+ * Squares, not SAN: the corpus side has SAN and the live side has action
+ * objects, and the two must agree exactly or a game and the position it came
+ * from would land in different groups. From/to/promotion is what both sides
+ * hold, and it names a move uniquely.
+ */
+export function moveToken(action) {
+  if (!action) return '?';
+  if (action.type === 'castle') return `${action.from}${action.to}`;
+  return `${action.from}${action.to}${action.payload?.promote ? TYPE_LETTER[action.payload.promote] : ''}`;
+}
+
+// ── hashing ──────────────────────────────────────────────────────────────
+// Keys are long (a placement list runs to ~200 chars, a trail is the whole game)
+// and there are hundreds of thousands of them; storing them whole costs more
+// than the counts they point at. Nothing ever reads a key back — a query builds
+// its own the same way and looks it up — so only a 64-bit FNV-1a is kept.
+
+const FNV_PRIME = 0x100000001b3n;
+const FNV_MASK  = 0xffffffffffffffffn;
+
+function foldHash(h, str) {
+  for (let i = 0; i < str.length; i++) {
+    h ^= BigInt(str.charCodeAt(i));
+    h = (h * FNV_PRIME) & FNV_MASK;
+  }
+  return h;
+}
+
+const hashKey = (str) => foldHash(0xcbf29ce484222325n, str).toString(36);
+
+// ── the observation trail ────────────────────────────────────────────────
+// One seat's whole game so far, rolled into a hash: at each of their turns, what
+// they were looking at; between those turns, the move they chose. Kept as a
+// rolling fold rather than a stored transcript because nothing ever reads it
+// back — a query rebuilds its own trail the same way and looks it up.
+
+/** A fresh trail, before the game has shown this seat anything. */
+export const newTrail = () => 0xcbf29ce484222325n;
+
+/** Fold in a turn: the move number, and the view the seat had at it. */
+export function trailObserve(trail, ply, view) {
+  return foldHash(trail, `@${ply}:${view}`);
+}
+
+/** Fold in the move the seat then played. */
+export function trailMove(trail, action) {
+  return foldHash(trail, `>${moveToken(action)}`);
+}
+
+/**
+ * The three level keys for a seat about to move — see the levels at the top of
+ * this file. `trail` must already have this turn's view folded in.
+ */
+export function levelKeys(board, color, gameSpecific, ply, trail) {
+  return [
+    `T${trail.toString(36)}`,
+    `V${hashKey(`${ply}|${viewSignature(board, color, gameSpecific, true)}`)}`,
+    `O${hashKey(`${ply}|${viewSignature(board, color, gameSpecific, false)}`)}`,
+  ];
 }
 
 function epCaptureAvailable(board, color, gameSpecific) {
@@ -271,28 +354,11 @@ const MAX_EXAMPLES = 6;
 // essentially no cost in answers: measured on the 3k-game corpus in ./vendor,
 // the median number of games sharing one seat's view is ~3000 at ply 0, ~30 by
 // ply 4, and exactly 1 from ply 10 on (own-pieces-only lasts a few plies
-// longer). Past that the index is storing "one game once", which the panel can
-// only report as a single anonymous game — so the plies past the cap cost real
-// memory and answer nothing. Raise it with FOW_DB_MAX_PLY if a much larger
-// corpus ever makes deep views pool again.
+// longer, an exact trail runs out sooner). Past that the index is storing "one
+// game once", which the panel can only report as a single anonymous game — so
+// the plies past the cap cost real memory and answer nothing. Raise it with
+// FOW_DB_MAX_PLY if a much larger corpus ever makes deep views pool again.
 const MAX_PLY = Number(process.env.FOW_DB_MAX_PLY ?? 30);
-
-/**
- * 64-bit FNV-1a as a base-36 string.
- *
- * The keys themselves are long (a placement list, up to ~200 chars) and there
- * are hundreds of thousands of them; storing them whole costs more than the
- * counts they point at. Nothing ever needs to read a key back — a query hashes
- * its own key the same way and looks it up — so only the hash is kept.
- */
-function hashKey(str) {
-  let h = 0xcbf29ce484222325n;
-  for (let i = 0; i < str.length; i++) {
-    h ^= BigInt(str.charCodeAt(i));
-    h = (h * 0x100000001b3n) & 0xffffffffffffffffn;
-  }
-  return h.toString(36);
-}
 
 // One example game reference packed into a single number: which game, and at
 // which ply it was looking at this. The seat is the ply's parity (white moves
@@ -310,15 +376,25 @@ function indexGame(index, game) {
     result: game.result, playedAt: game.playedAt, timeControl: game.timeControl,
   });
 
+  // One trail per seat, advanced only at that seat's own turns — a player
+  // observes the board when it is handed to them, not while the other side is
+  // thinking.
+  const trails = { white: newTrail(), black: newTrail() };
+
   const plies = replayGame(game.moves, ({ state, seat, action, ply, san }) => {
+    trails[seat] = trailObserve(trails[seat], ply, viewSignature(state.board, seat, state.gameSpecific));
+    const trail = trails[seat];
+    // The move is folded in AFTER the keys are taken: the trail a decision is
+    // filed under is everything known BEFORE making it.
+    trails[seat] = trailMove(trail, action);
     if (ply >= maxPly) return;
+
     const rating = seat === 'white' ? game.whiteRating : game.blackRating;
     // Result from the MOVER's seat: this database answers "how did it go for
     // the player who was looking at this", so black's losses are black's.
     const outcome = score == null ? null : (seat === 'white' ? score : -score);
 
-    for (const level of [0, 1]) {
-      const key = hashKey(infosetKey(state.board, seat, state.gameSpecific, level));
+    for (const key of levelKeys(state.board, seat, state.gameSpecific, ply, trail)) {
       let moves = byKey.get(key);
       if (!moves) byKey.set(key, moves = new Map());
       let row = moves.get(san);
@@ -397,9 +473,16 @@ export function getIndexAsync({ dir } = {}) {
 /** Drop the cached index (tests). */
 export function clearIndex() { cached = null; building = null; }
 
+// `short` is the button; `label` and `hint` describe the grouping in full once
+// it is selected. Ordered finest first — the panel opens on the first one with
+// any games in it.
 const LEVELS = [
-  { level: 0, id: 'view', label: 'Same view', hint: 'your pieces and the enemy pieces you can see' },
-  { level: 1, id: 'own',  label: 'Own pieces', hint: 'your pieces only, whatever you could see' },
+  { level: 0, id: 'trail', short: 'Game', label: 'Same game so far',
+    hint: 'every board you have been shown this game, in order, and the moves you played between them — so a piece you saw ten moves ago and can no longer see still counts' },
+  { level: 1, id: 'view', short: 'View', label: 'Same view now',
+    hint: 'the board in front of you at this move number — your pieces and the enemy pieces you can see — forgetting everything you saw earlier' },
+  { level: 2, id: 'own', short: 'Pieces', label: 'Same own pieces',
+    hint: 'your pieces at this move number, whatever you could or could not see' },
 ];
 
 function summarize(moves, games, level, byMove) {
@@ -408,12 +491,12 @@ function summarize(moves, games, level, byMove) {
     games: r.games, win: r.win, draw: r.draw, loss: r.loss,
     avgRating: r.ratingN ? Math.round(r.ratingSum / r.ratingN) : null,
     // The action to play/draw for this row, when the viewer has it available.
-    // At level 0 every row is available by construction — same view means the
-    // same legal moves, which is the fog invariant the whole search rests on.
-    // Level 1 pools games whose hidden half differed, so some of its rows are
-    // captures of pieces that are not there in this game; the viewer can already
-    // tell (their own legal moves are common knowledge to them), so those rows
-    // are marked rather than hidden.
+    // At the trail and view levels every row is available by construction — the
+    // same view means the same legal moves, which is the fog invariant the whole
+    // search rests on. The "own pieces" level pools games whose hidden half
+    // differed, so some of its rows are captures of pieces that are not there in
+    // this game; the viewer can already tell (their own legal moves are common
+    // knowledge to them), so those rows are marked rather than hidden.
     move: byMove.get(`${r.from}${r.to}`) ?? null,
     examples: r.examples.map((packed) => {
       const ply = packed % 128;
@@ -434,23 +517,52 @@ function summarize(moves, games, level, byMove) {
   };
 }
 
-function answer(index, state, color, legalActions) {
-  // Keyed off the TRUE board, which is the only place the mover's view can be
+/**
+ * Rebuild `color`'s observation trail from the positions they have been handed
+ * so far — the same fold the index does while replaying a recorded game.
+ *
+ * `priorStates[p]` is the position at ply p, so the seat's own turns are the
+ * ones where they are to move, and the move they played at ply p is the one
+ * that produced ply p+1 (`lastActions` on the next state; `current` supplies
+ * the last step). A missing or partial history just yields a shorter trail —
+ * which will simply match nothing, never the wrong thing.
+ */
+function trailFor(color, priorStates, current) {
+  let trail = newTrail();
+  for (const [ply, s] of (priorStates ?? []).entries()) {
+    if ((s.activePlayers?.[0] ?? null) !== color) continue;
+    trail = trailObserve(trail, ply, viewSignature(s.board, color, s.gameSpecific ?? {}));
+    const next = priorStates[ply + 1] ?? current;
+    const played = next?.lastActions?.find(pa => pa.playerId === color)?.action ?? null;
+    trail = trailMove(trail, played);
+  }
+  return trail;
+}
+
+function answer(index, state, color, { legalActions, priorStates }) {
+  // Keyed off the TRUE boards, which is the only place a seat's view can be
   // derived from: a board already stripped of hidden pieces cannot say which
   // squares are seen (a hidden pawn blocking a push reads as "empty and
-  // visible"). `infosetKey` does the stripping itself, and nothing but the key
-  // leaves this function — the answer is corpus statistics, never this game's
-  // hidden half.
+  // visible"). `viewSignature` does the stripping itself, and nothing but the
+  // key leaves this function — the answer is corpus statistics, never this
+  // game's hidden half.
+  const ply = (priorStates ?? []).length;
+  const trail = trailObserve(
+    trailFor(color, priorStates, state), ply,
+    viewSignature(state.board, color, state.gameSpecific ?? {}),
+  );
+
   const byMove = new Map((legalActions ?? []).map(a => [`${a.from}${a.to}`, a]));
-  const levels = LEVELS.map((lv) => {
-    const key = hashKey(infosetKey(state.board, color, state.gameSpecific ?? {}, lv.level));
-    return summarize(index.byKey.get(key) ?? new Map(), index.games, lv, byMove);
-  });
+  const keys = levelKeys(state.board, color, state.gameSpecific ?? {}, ply, trail);
+  const levels = LEVELS.map((lv, i) =>
+    summarize(index.byKey.get(keys[i]) ?? new Map(), index.games, lv, byMove));
+
   return {
     levels,
     best: (levels.find(l => l.total > 0) ?? levels[0]).id,
     corpusSize: index.corpusSize,
     maxPly: index.maxPly,
+    ply,
     color,
   };
 }
@@ -458,23 +570,28 @@ function answer(index, state, color, legalActions) {
 /**
  * What recorded players did from the position `color` is looking at.
  *
- * Answers at BOTH key levels in one call — the caller shows the finest one that
+ * Answers at EVERY key level in one call — the caller shows the finest one that
  * has games and lets the viewer widen — so the client never has to know what a
- * level means. `legalActions` (the mover's own, which under fog they always
- * know in full) is what lets each row carry a playable action.
+ * level means.
  *
+ * @param {object[]} opts.priorStates The positions at plies 0..ply-1, in order.
+ *   Required for the trail level: a seat's information set is the whole game
+ *   they have watched, not the board in front of them. Omit it and the trail
+ *   level simply matches nothing.
+ * @param {object[]} opts.legalActions The mover's own legal actions (which under
+ *   fog they always know in full) — what lets each row carry a playable move.
  * @returns {Promise<{levels: object[], best: string, corpusSize: number, maxPly: number}>}
  */
-export async function queryDatabase(state, color, { dir, legalActions } = {}) {
-  return answer(await getIndexAsync({ dir }), state, color, legalActions);
+export async function queryDatabase(state, color, opts = {}) {
+  return answer(await getIndexAsync({ dir: opts.dir }), state, color, opts);
 }
 
 /** `queryDatabase`, for callers that can afford to block (tests, CLI). */
-export function queryDatabaseSync(state, color, { dir, legalActions } = {}) {
-  return answer(getIndex({ dir }), state, color, legalActions);
+export function queryDatabaseSync(state, color, opts = {}) {
+  return answer(getIndex({ dir: opts.dir }), state, color, opts);
 }
 
 /** The same question against an index you built yourself (see `buildIndex`). */
-export function queryIndex(index, state, color, { legalActions } = {}) {
-  return answer(index, state, color, legalActions);
+export function queryIndex(index, state, color, opts = {}) {
+  return answer(index, state, color, opts);
 }
