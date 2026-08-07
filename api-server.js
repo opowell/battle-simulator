@@ -1036,6 +1036,10 @@ async function handleGames(res) {
     // is the matching pointer for deriving legal actions client-side.
     agents: dedupeAgents([...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n, analyze, clientAnalyze }) => ({ id, name: n, analyzable: !!analyze, clientAnalyze: clientAnalyze ?? null }))]),
     clientGame: game.clientGame ?? null,
+    // Whether this game has a database of recorded human games to look positions
+    // up in, and what to call it. The query function itself is server-only (it
+    // reads a corpus off disk) — the client only needs to know the panel exists.
+    database: game.database ? { label: game.database.label ?? 'Database', source: game.database.source ?? null } : null,
   })));
 }
 
@@ -1530,6 +1534,71 @@ async function handleForkMove(req, res, id) {
   });
 }
 
+// Cached `game.database` query functions, keyed by module pointer — the module
+// is imported the first time somebody opens the panel, not at startup, because
+// a game database can be tens of megabytes of corpus that most sessions never
+// touch.
+const databaseQueries = new Map();
+async function resolveDatabaseQuery(pointer) {
+  const cacheKey = `${pointer.module}#${pointer.export}`;
+  if (!databaseQueries.has(cacheKey)) {
+    const mod = await import(new URL(pointer.module, import.meta.url).href);
+    const fn = pointer.export.split('.').reduce((o, k) => o?.[k], mod);
+    if (typeof fn !== 'function') throw new Error(`${cacheKey} is not a function`);
+    databaseQueries.set(cacheKey, fn);
+  }
+  return databaseQueries.get(cacheKey);
+}
+
+// GET /sessions/:id/database?ply= — "what did recorded human players do from
+// here?", for games that declare a `database` (see games/chess/ChessGame.js).
+//
+// REPLAY ONLY, and that is a rule about the feature, not a technicality: an
+// opening book consulted mid-game is an outside engine playing for you. It is
+// served once the session is finished, which is also when /history stops
+// hiding anything.
+//
+// The question is asked for whoever is TO MOVE at the ply on screen, not for
+// the viewer, so scrubbing through a game shows each side's own book in turn.
+// Under fog the game's query decides what "from here" means — for chess it is
+// the mover's view of the board, never the true position (games/chess/
+// fowDatabase.js).
+async function handleDatabase(res, id, url) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+
+  const { game } = GAMES[session.gameName];
+  const pointer = game.database;
+  if (!pointer) return err(res, 400, `${session.gameName} has no game database`);
+  if (session.status === 'active')
+    return err(res, 403, 'The game database is only available in replay, not during a live game');
+
+  const plyRaw = url.searchParams.get('ply');
+  const ply = (plyRaw != null && plyRaw !== '') ? Number(plyRaw) : null;
+
+  let state;
+  try {
+    state = (ply == null) ? session.engine.state : replayStateAtPly(game, session, ply);
+  } catch (e) { return err(res, 400, `Could not resolve position: ${e.message}`); }
+  if (!state) return err(res, 400, 'No position available yet');
+
+  const color = state.activePlayers?.[0] ?? null;
+  if (!color) return err(res, 400, 'No side to move at this ply');
+
+  try {
+    const query = await resolveDatabaseQuery(pointer);
+    // The mover's own legal actions — under fog a player's action set is fully
+    // determined by what they can see, so these are theirs to know, and they are
+    // what lets each row in the answer be hovered and played on the board.
+    const legalActions = game.getLegalActions(state, color);
+    const result = await query(state, color, { legalActions });
+    send(res, 200, { ...result, ply, color, label: pointer.label ?? 'Database', source: pointer.source ?? null });
+  } catch (e) {
+    console.error(e);
+    err(res, 500, `Database lookup failed: ${e.message}`);
+  }
+}
+
 async function handleGetLog(res, id) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
@@ -1712,6 +1781,11 @@ async function handleRequest(req, res) {
     // POST /sessions/:id/analyze
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze')
       return await handleAnalyze(req, res, parts[1]);
+
+    // GET /sessions/:id/database?ply= — recorded human games from this position
+    // (replay only; see handleDatabase)
+    if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'database')
+      return await handleDatabase(res, parts[1], url);
 
     // GET /sessions/:id/analyze-stream?playerId=&agentId=&ply= (SSE, live progress)
     if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze-stream')

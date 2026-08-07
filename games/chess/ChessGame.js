@@ -215,6 +215,18 @@ export const ChessGame = {
   // this via `game.getLegalActions` in resolveAnalysisContext); this points the
   // generic browser worker at the same function.
   clientGame: { module: 'games/chess/ChessGame.js', export: 'ChessGame' },
+  // A database of recorded human games to look the position up in (see
+  // api-server.js's handleDatabase, and games/chess/fowDatabase.js for what
+  // "the position" means when nobody can see the whole board).
+  //
+  // A MODULE POINTER, not an import, for the same reason `clientAnalyze` is one:
+  // this file is loaded in the BROWSER too (the analysis worker imports it from
+  // /lib), and fowDatabase.js reads a corpus off disk with node:fs. The server
+  // imports it lazily when someone actually opens the panel.
+  database: {
+    module: 'games/chess/fowDatabase.js', export: 'queryDatabase',
+    label: 'Fog of War games', source: 'Chess.com Fog of War archives',
+  },
   gameOptions: [
     HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },

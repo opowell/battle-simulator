@@ -13,6 +13,7 @@ import UnitsLostPanel    from './battlefield/UnitsLostPanel.vue';
 import GameLog           from './battlefield/GameLog.vue';
 import AiAnalysisPanel   from './battlefield/AiAnalysisPanel.vue';
 import AnalysisPanel     from './battlefield/AnalysisPanel.vue';
+import DatabasePanel     from './battlefield/DatabasePanel.vue';
 import BottomBar         from './battlefield/BottomBar.vue';
 import Minimap           from './battlefield/Minimap.vue';
 import MenuOverlay       from './battlefield/MenuOverlay.vue';
@@ -282,6 +283,13 @@ const analysisEnabled = computed(() => props.liveState?.params?.config?.showAnal
 const analysisPly = computed(() => (forking.value || atLatest.value) ? null : histPos.value);
 const analysisCandidates = ref([]);
 const hoveredSuggestion   = ref(null);
+// The recorded-games database (DatabasePanel.vue) answers for the position on
+// screen exactly like the analysis panel does, so it takes the same ply — but
+// only ONCE THE GAME IS OVER. An opening book open beside a live game is an
+// outside engine playing for you, and under fog it would also be a channel for
+// what the other side is doing; the server refuses a live session outright, and
+// the panel is not mounted for one either.
+const databaseHover = ref(null);
 // One member of the analysis engine's belief population — the board the panel's
 // stepper currently has selected (see AnalysisPanel.vue / BeliefWorldStepper.vue).
 // Null whenever nothing is selected or the panel is off. Its `hidden` list is
@@ -308,11 +316,17 @@ const plyToMoveTeam = computed(() => {
 // action (gridFrom/gridTo) — the same numeric coordinates HtmlLayer's own
 // px()/py() geometry expects, not algebraic square notation.
 const suggestionArrows = computed(() => {
-  if (!analysisEnabled.value || forking.value) return [];
-  return analysisCandidates.value.slice(0, 3).map((c, i) => ({
+  if (forking.value) return [];
+  const arrows = !analysisEnabled.value ? [] : analysisCandidates.value.slice(0, 3).map((c, i) => ({
     from: c.move?.gridFrom, to: c.move?.gridTo,
     rank: i + 1, hovered: hoveredSuggestion.value === c.move,
-  })).filter(a => a.from && a.to);
+  }));
+  // The database row the pointer is currently on (DatabasePanel.vue), drawn like
+  // a top suggestion: it is a move somebody actually played, not a hypothesis
+  // about the hidden board, so it belongs in the same visual language.
+  if (databaseHover.value)
+    arrows.push({ from: databaseHover.value.gridFrom, to: databaseHover.value.gridTo, rank: 1, hovered: true });
+  return arrows.filter(a => a.from && a.to);
 });
 
 // Any move played while browsing replay, or already inside a fork, branches
@@ -1533,6 +1547,12 @@ onUnmounted(() => {
           @candidates="analysisCandidates = $event"
           @hover-move="hoveredSuggestion = $event"
           @belief-world="beliefWorld = $event"
+          @select-move="forkPlayMove"/>
+
+        <DatabasePanel v-if="isLive && isDone"
+          :enabled="!forking" :sessionId="liveState.id" :gameName="liveState.game"
+          :ply="analysisPly"
+          @hover-move="databaseHover = $event"
           @select-move="forkPlayMove"/>
 
         <RosterPanel v-if="ui.showRoster !== false"

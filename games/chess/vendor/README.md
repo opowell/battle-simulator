@@ -1,3 +1,25 @@
+Two collections of data that are too big, too specific to this repo, or both, to
+live inside the public AI package: the **Stockfish evaluation cache** and the
+**corpus of recorded fog games**.
+
+# Recorded fog games
+
+`fow-*.json` — crawls of real Fog of War games, as move lists with the players'
+usernames and ratings:
+
+```json
+{ "games": [ { "gameId": "…", "white": "…", "black": "…", "result": "1-0",
+               "moves": ["d4", "c5", …],
+               "players": [{ "username": "…", "rating": 2289 }, …] } ] }
+```
+
+Every file matching that name is read, de-duplicated by `gameId` (a crawl that
+walks several archives meets the same game from both sides), and replayed to
+build the game-database index behind the review panel — see
+[`../fowDatabase.js`](../fowDatabase.js) and the chess README. Drop another crawl
+in here and it joins the corpus; no rebuild step, the index is derived at
+runtime.
+
 # Stockfish evaluation cache
 
 The engine itself is no longer here — Stockfish 18 lite is vendored with the

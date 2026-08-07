@@ -51,6 +51,39 @@ npm run demo:chess          # you play White vs random AI
 npm run demo:chess:auto     # random vs random
 ```
 
+## The game database (fog opening explorer)
+
+[`fowDatabase.js`](fowDatabase.js) answers "what did recorded human players do
+from here?" for the position on screen, out of a corpus of real Fog of War games
+in [`vendor/`](vendor/README.md). It backs the **Fog of War games** panel, which
+appears **only when reviewing a finished game** — an opening book open beside a
+live game is an outside engine playing for you (the server refuses a live session
+outright: `GET /sessions/:id/database?ply=`).
+
+The interesting part is what "from here" can mean when nobody can see the board.
+Grouping recorded games by the true position would answer a question the player
+to move cannot ask, and the set of games reaching a given position is itself
+information about where the enemy is. So games are indexed by the **mover's
+information set** at two levels, both strictly coarser than what that player
+could see:
+
+| Level | Groups games by |
+|---|---|
+| `view` | own pieces + the enemy pieces currently in sight + own castling rights + an available en-passant capture — exactly the board the app draws for that seat |
+| `own` | own pieces alone, whatever the fog was hiding |
+
+Both ignore move number and history, so transpositions pool. Results are reported
+from the **mover's** seat, not White's. `own` can list a move that is not legal
+here (a capture of a piece that is not there in this game); those rows are marked
+unplayable rather than hidden, because a fog player always knows their own legal
+moves.
+
+The index is built by replaying every corpus game with these same rules, on first
+use, in chunks so the server keeps answering (~10 s, ~65 MB for 3k games). It
+stores the first `FOW_DB_MAX_PLY` plies (default 30): measured on that corpus the
+median number of games sharing one seat's view is ~3000 at ply 0, ~30 by ply 4
+and exactly 1 from ply 10 on, so deeper plies cost memory and answer nothing.
+
 ## Where the AI is
 
 Only the game is in this directory. The fog-of-war AI — move generation, the
@@ -65,6 +98,8 @@ documented in
 options the server will actually apply.
 
 What remains here: `ChessGame.js` (rules + renderer + fog markers), `images/`,
-`vendor/` (the Stockfish evaluation cache — derived data, kept out of the public
-package), `stockfish.js` (a shim that points the vendored engine at that cache),
-and the tests that cover this engine's side of the seam.
+`vendor/` (the Stockfish evaluation cache and the recorded-games corpus — both
+derived/collected data, kept out of the public package), `stockfish.js` (a shim
+that points the vendored engine at that cache), `fowDatabase.js` (the game
+database above, which is a feature of this app rather than of the AI), and the
+tests that cover this engine's side of the seam.

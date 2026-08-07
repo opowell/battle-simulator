@@ -64,6 +64,11 @@ window.api = {
   // Read-only "what's good here" analysis for a live or replayed (ply) position.
   analyze:  (id, { playerId, agentId, ply }) =>
     _req('/sessions/' + id + '/analyze', { method: 'POST', body: JSON.stringify({ playerId, agentId, ply }) }),
+  // What recorded human players did from the position at `ply` — for games that
+  // declare a database (see the `database` field on GET /games). Replay only:
+  // the server refuses while the session is still active.
+  database: (id, { ply } = {}) =>
+    _req('/sessions/' + id + '/database' + (ply != null ? '?ply=' + encodeURIComponent(ply) : '')),
   // Play a move into a throwaway sandbox branched off a live/historical position.
   // Pass `ply` to start a new fork from history, or `forkState` (the `state` a
   // prior forkMove call returned) to continue moving within the same fork.
