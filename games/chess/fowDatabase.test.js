@@ -1,10 +1,11 @@
 // Tests for the fog-chess game database (games/chess/fowDatabase.js).
 //
 // The property that matters most here is not "the counts add up" — it is that
-// the grouping key is a function of WHAT THE MOVER CAN SEE and nothing else. A
-// key that quietly depended on the hidden half of the board would still produce
-// plausible-looking statistics, and would be answering a question the player
-// cannot ask.
+// games are grouped by exactly what the mover KNOWS: everything that seat has
+// been shown so far and the moves it played, no more and no less. A grouping
+// that quietly leaked the hidden half of the board would still produce
+// plausible-looking statistics while answering a question the player cannot ask;
+// one that forgot a sighting would pool games the player can tell apart.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -45,8 +46,6 @@ function ask(index, states, color, legalActions = []) {
   const priorStates = states.slice(0, -1);
   return queryIndex(index, states.at(-1), color, { legalActions, priorStates });
 }
-
-const levelOf = (res, id) => res.levels.find(l => l.id === id);
 
 const crawl = (games) => ({ games });
 const game = (id, moves, result, extra = {}) => ({
@@ -89,11 +88,10 @@ test('normalizeMoveList drops trailing termination glyphs but not real moves', (
 });
 
 // ---------------------------------------------------------------------------
-// The view signature knows what the mover can see, and only that
+// The per-turn view signature: what the mover can see, and only that
 // ---------------------------------------------------------------------------
 
-const sig = (state, color, withSeen = true) =>
-  viewSignature(state.board, color, state.gameSpecific, withSeen);
+const sig = (state, color) => viewSignature(state.board, color, state.gameSpecific);
 
 test('a hidden enemy move does not change the view; a visible one does', () => {
   // White plays d4 either way. Black's reply is a queenside knight move white
@@ -109,13 +107,21 @@ test('a hidden enemy move does not change the view; a visible one does', () => {
   assert.notEqual(sig(a, 'white'), sig(seen, 'white'));
 });
 
-test('the wider level ignores even the enemy pieces in sight', () => {
-  const hidden = play(['d4', 'Na6']);
-  const seen   = play(['d4', 'c5']);
-  assert.equal(sig(hidden, 'white', false), sig(seen, 'white', false));
-  // Own pieces still count, of course.
-  const other = play(['e4', 'c5']);
-  assert.notEqual(sig(seen, 'white', false), sig(other, 'white', false));
+test('a blocked pawn is not the same as an open one, though both show no piece', () => {
+  // A pawn cannot see through whatever stands in front of it, so a hidden
+  // blocker shows up as NO piece and NO visible square — while an empty square
+  // in front shows up as no piece but a visible square. The mover can tell:
+  // in the first, the push is missing from their legal moves. The signature has
+  // to encode the squares, not only the pieces, or those two pool.
+  const blocked = play(['d4', 'Nf6', 'a3', 'Nd5']);  // knight parks in front of the pawn
+  const open    = play(['d4', 'Nf6', 'a3', 'Ne4']);  // ...or somewhere white cannot see
+  assert.equal(blocked.board.d5?.type, 'knight');
+  assert.equal(open.board.d5, undefined);
+  // Neither white sees an enemy piece anywhere: the blocker is invisible exactly
+  // because it blocks. The one on the left has no d4-d5 push, and knows it.
+  assert.ok(!ChessGame.getLegalActions(blocked, 'white').some(a => a.from === 'd4' && a.to === 'd5'));
+  assert.ok(ChessGame.getLegalActions(open, 'white').some(a => a.from === 'd4' && a.to === 'd5'));
+  assert.notEqual(sig(blocked, 'white'), sig(open, 'white'));
 });
 
 test('own castling rights key, and en passant only when it is ours to take', () => {
@@ -123,7 +129,7 @@ test('own castling rights key, and en passant only when it is ours to take', () 
   const lost = play(['e4', 'a6', 'Ke2', 'b6', 'Ke1', 'c6']);
   // Same white pieces on the same squares in both lines, but the king has been
   // out and back in the second, so white can no longer castle.
-  assert.notEqual(sig(kept, 'white', false), sig(lost, 'white', false));
+  assert.notEqual(sig(kept, 'white'), sig(lost, 'white'));
 
   // A double push next to our pawn is capturable en passant, and the mover knows
   // it — it belongs in the key. The same board reached without the double push
@@ -139,7 +145,7 @@ test('own castling rights key, and en passant only when it is ours to take', () 
 // The trail: what the mover has seen EARLIER is part of the question
 // ---------------------------------------------------------------------------
 
-// The whole point of the trail level: white's knight on f3 watches h4, and
+// The whole point of the grouping: white's knight on f3 watches h4, and
 // something black arrives there in plain view. Then the knight goes home and the
 // square goes dark. Both games leave white looking at an identical board — but
 // one white knows a QUEEN is sitting on h4 and the other knows it is a PAWN,
@@ -150,23 +156,17 @@ const SIGHTED_PAWN  = ['Nf3', 'h5', 'a3', 'h4',  'Ng1', 'a6'];
 test('a sighting the fog has since swallowed still separates two games', () => {
   const queen = line(SIGHTED_QUEEN);
   const pawn  = line(SIGHTED_PAWN);
-  // It really was in plain view at ply 4, and really is gone from view at ply 6.
+  // It really was in plain view at ply 4, and really is gone from view at ply 6:
+  // by then the two boards are identical as far as white can see.
   assert.notEqual(sig(queen[4], 'white'), sig(pawn[4], 'white'));
   assert.equal(sig(queen[6], 'white'), sig(pawn[6], 'white'), 'views end up identical');
 
   const index = buildIndex(corpusOf(game('1', [...SIGHTED_QUEEN, 'h3'], '1-0')));
-  const hits = (states, id) => levelOf(ask(index, states, 'white'), id).total;
-
-  // The recorded game is the queen one, so only that trail matches...
-  assert.equal(hits(queen, 'trail'), 1);
-  assert.equal(hits(pawn, 'trail'), 0, 'same view, but a different game was watched');
-  // ...while the view level, which forgets, cannot tell them apart. That is
-  // exactly what it trades away for a sample.
-  assert.equal(hits(queen, 'view'), 1);
-  assert.equal(hits(pawn, 'view'), 1);
+  assert.equal(ask(index, queen, 'white').total, 1);
+  assert.equal(ask(index, pawn, 'white').total, 0, 'a different game was watched');
 });
 
-test("the trail is the seat's own moves too, not just what it saw", () => {
+test("the grouping is the seat's own moves too, not just what it saw", () => {
   const index = buildIndex(corpusOf(game('1', ['Nf3', 'a6', 'Ng1', 'b6', 'd4', 'c6', 'h3'], '1-0')));
   // Same white pieces on the same squares at the same move number, reached in a
   // different order: knight out and back before d4, or d4 first.
@@ -174,37 +174,34 @@ test("the trail is the seat's own moves too, not just what it saw", () => {
   const reversed = line(['d4', 'a6', 'Nf3', 'b6', 'Ng1', 'c6']);
   assert.equal(sig(recorded.at(-1), 'white'), sig(reversed.at(-1), 'white'));
 
-  assert.equal(levelOf(ask(index, recorded, 'white'), 'trail').total, 1);
-  assert.equal(levelOf(ask(index, reversed, 'white'), 'trail').total, 0);
-  // The view level pools the transposition, which is the point of having it.
-  assert.equal(levelOf(ask(index, reversed, 'white'), 'view').total, 1);
+  assert.equal(ask(index, recorded, 'white').total, 1);
+  assert.equal(ask(index, reversed, 'white').total, 0, 'a transposition is a different game watched');
 });
 
-test('the move number keys: the same view at a different ply is a different question', () => {
-  const index = buildIndex(corpusOf(game('1', ['d4', 'a6', 'Nf3', 'b6'], '1-0')));
+test('the move number is part of it: the same view at a different ply is a different question', () => {
+  const index = buildIndex(corpusOf(game('1', ['d4', 'a6', 'Nf3', 'b6', 'h3'], '1-0')));
+  const early = line(['d4', 'a6', 'Nf3', 'b6']);
   // The identical white view, four plies later, after a knight went out, home,
   // and out again. The mover knows what move it is, so this must not pool.
   const later = line(['Nf3', 'a6', 'Ng1', 'b6', 'd4', 'c6', 'Nf3', 'd6']);
-  assert.equal(sig(later[8], 'white'), sig(line(['d4', 'a6', 'Nf3', 'b6'])[4], 'white'));
-  assert.equal(levelOf(ask(index, later, 'white'), 'view').total, 0);
-  assert.equal(levelOf(ask(index, later, 'white'), 'own').total, 0);
+  assert.equal(sig(early[4], 'white'), sig(later[8], 'white'));
+  assert.equal(ask(index, early, 'white').total, 1);
+  assert.equal(ask(index, later, 'white').total, 0);
 });
 
-test('a query with no history still answers at the levels that need none', () => {
+test('a query without the history behind it answers empty, not wrong', () => {
   const index = buildIndex(corpusOf(game('1', [...SIGHTED_QUEEN, 'h3'], '1-0')));
   const states = line(SIGHTED_QUEEN);
-  // Same position, asked without the plies behind it: the trail cannot be
-  // rebuilt, so that level matches nothing rather than matching the wrong thing.
   const blind = queryIndex(index, states.at(-1), 'white', { legalActions: [] });
-  assert.equal(levelOf(blind, 'trail').total, 0);
-  assert.equal(levelOf(ask(index, states, 'white'), 'trail').total, 1);
+  assert.equal(blind.total, 0);
+  assert.equal(ask(index, states, 'white').total, 1);
 });
 
 // ---------------------------------------------------------------------------
 // Index + query
 // ---------------------------------------------------------------------------
 
-test('the index pools games by what the mover saw, with results from their seat', () => {
+test('games pool by what the mover knew, with results from their seat', () => {
   // Three games. White opens d4 in all of them; black's first reply is hidden
   // from white in two of them (knight moves) and visible in the third (c5).
   const index = buildIndex(corpusOf(
@@ -217,53 +214,41 @@ test('the index pools games by what the mover saw, with results from their seat'
   const legal = ChessGame.getLegalActions(states.at(-1), 'white');
   const res = ask(index, states, 'white', legal);
 
-  const view = levelOf(res, 'view');
-  assert.equal(view.total, 2, 'only the two games where white saw nothing');
-  assert.deepEqual(view.moves.map(m => m.san), ['Nf3']);
-  assert.equal(view.moves[0].games, 2);
-  assert.equal(view.moves[0].win, 1);   // game 1, from white's seat
-  assert.equal(view.moves[0].loss, 1);  // game 2, likewise
-
-  const own = levelOf(res, 'own');
-  assert.equal(own.total, 3, 'the c5 game pools in once the sighting is dropped');
-  assert.deepEqual(own.moves.map(m => m.san).sort(), ['Nf3', 'd5']);
-
-  // The trail level matches the same two games, and that is not a bug: black's
-  // reply differed in all three, but white never SAW the difference in these
-  // two, so nothing in white's history distinguishes them. An information set
-  // is what the player knows, not what happened.
-  assert.equal(levelOf(res, 'trail').total, 2);
-  assert.equal(res.best, 'trail');
+  // Two of the three pool, and that black played something different in each is
+  // beside the point: white never SAW the difference, so nothing in white's
+  // history separates them. An information set is what the player knows, not
+  // what happened. The c5 game is out because white did see that pawn.
+  assert.equal(res.total, 2);
+  assert.deepEqual(res.moves.map(m => m.san), ['Nf3']);
+  assert.equal(res.moves[0].games, 2);
+  assert.equal(res.moves[0].win, 1);   // game 1, from white's seat
+  assert.equal(res.moves[0].loss, 1);  // game 2, likewise
+  assert.equal(res.moves[0].avgRating, 2000);
 });
 
-test('rows carry a playable action, and rows that are not playable say so', () => {
-  // In the recorded game white captured on c5. In OUR game black went elsewhere,
-  // so dxc5 is not available — but "same own pieces" still pools that game.
-  const index = buildIndex(corpusOf(game('1', ['d4', 'c5', 'dxc5'], '1-0')));
-  const states = line(['d4', 'Na6']);
+test('rows carry a playable action', () => {
+  const index = buildIndex(corpusOf(game('1', ['d4', 'Na6', 'Nf3'], '1-0')));
+  const states = line(['d4', 'Nc6']);  // black's reply differs, but unseen
   const legal = ChessGame.getLegalActions(states.at(-1), 'white');
   const res = ask(index, states, 'white', legal);
 
-  const own = levelOf(res, 'own');
-  const row = own.moves.find(m => m.san === 'dxc5');
-  assert.ok(row, 'the recorded capture is listed');
-  assert.equal(row.move, null, 'but it is not offered as a move here');
+  // The action comes back whole, grid coordinates and all, so the board can draw
+  // an arrow for it and play it into the fork sandbox.
+  const row = res.moves.find(m => m.san === 'Nf3');
+  assert.equal(row.move.from, 'g1');
+  assert.equal(row.move.to, 'f3');
+  assert.ok(Array.isArray(row.move.gridFrom));
 
-  // A row that IS available comes with the real action, grid coordinates and all,
-  // so the board can draw and play it.
-  const index2 = buildIndex(corpusOf(game('2', ['d4', 'Na6', 'Nf3'], '1-0')));
-  const res2 = ask(index2, states, 'white', legal);
-  const playable = levelOf(res2, 'trail').moves.find(m => m.san === 'Nf3');
-  assert.equal(playable.move.from, 'g1');
-  assert.equal(playable.move.to, 'f3');
-  assert.ok(Array.isArray(playable.move.gridFrom));
+  // Asked without the legal actions, the row is still listed but unplayable —
+  // the panel marks those rather than dropping them.
+  assert.equal(ask(index, states, 'white').moves[0].move, null);
 });
 
-test('a position no recorded game reached answers empty, not wrong', () => {
+test('a game nobody in the corpus was ever in answers empty, not wrong', () => {
   const index = buildIndex(corpusOf(game('1', ['d4', 'Na6', 'Nf3'], '1-0')));
   const res = ask(index, line(['h4', 'Na6']), 'white');
-  assert.deepEqual(res.levels.map(l => l.total), [0, 0, 0]);
-  assert.equal(res.best, 'trail');
+  assert.equal(res.total, 0);
+  assert.deepEqual(res.moves, []);
   assert.equal(res.corpusSize, 1);
 });
 
@@ -282,7 +267,7 @@ test('the index caps how deep it stores, and says so', () => {
   const index = buildIndex(corpusOf(game('1', moves, '1-0')), { maxPly: 2 });
   assert.equal(index.maxPly, 2);
 
-  const hits = (states, color) => levelOf(ask(index, states, color), 'trail').total;
+  const hits = (states, color) => ask(index, states, color).total;
   assert.equal(hits([fresh()], 'white'), 1, 'ply 0 is stored');
   assert.equal(hits(line(['d4']), 'black'), 1, 'ply 1 is stored');
   assert.equal(hits(line(['d4', 'd5']), 'white'), 0, 'ply 2 is past the cap');

@@ -1613,7 +1613,9 @@ async function handleDatabase(res, id, url) {
     // what lets each row in the answer be hovered and played on the board.
     const legalActions = game.getLegalActions(state, color);
     const result = await query(state, color, { legalActions, priorStates: states });
-    send(res, 200, { ...result, ply, color, label: pointer.label ?? 'Database', source: pointer.source ?? null });
+    // The answer describes its own grouping (`label`/`hint`) and must not be
+    // overwritten with the panel's title — that one rides on GET /games.
+    send(res, 200, { ...result, ply, color });
   } catch (e) {
     console.error(e);
     err(res, 500, `Database lookup failed: ${e.message}`);

@@ -64,35 +64,38 @@ The interesting part is what "from here" can mean when nobody can see the board.
 Grouping recorded games by the true position would answer a question the player
 to move cannot ask, and the set of games reaching a given position is itself
 information about where the enemy is. So games are indexed by the **mover's
-information set** — which is the whole game they have watched, not the board in
-front of them. A pawn of mine has been blocked on d4 since move 8 and I saw what
+information set** — which is the whole game that seat has watched, not the board
+in front of it. A pawn of mine has been blocked on d4 since move 8 and I saw what
 blocked it while my bishop still watched that square: I know it is their knight
-and not their bishop, and every plan I have from here rests on that. The move
-number is known to the player too, so it keys as well.
+and not their bishop, and every plan I have from here rests on that.
 
-Three levels, finest first. Level 0 is the information set itself; the other two
-are coarsenings of it, never refinements, so no level can see anything the mover
-cannot:
+One grouping, the **trail**: at each of that seat's turns, in order,
 
-| Level | Groups games by |
-|---|---|
-| `trail` | every view this seat has had this game, in order, and the moves they played between them — remembering sightings the fog has since swallowed |
-| `view` | the current view alone, at the same move number: own pieces + the enemy pieces in sight + own castling rights + an available en-passant capture — exactly the board the app draws for that seat |
-| `own` | own pieces alone, at the same move number, whatever the fog was hiding |
+- the move number,
+- **which squares were visible** and what stood on the occupied ones, plus own
+  castling rights and an en-passant capture if one is available,
+- then the move that seat played, as from/to squares.
 
-The coarser levels exist because an exact trail runs out of games fast; widening
-is the honest way to have a sample at all, with the cost visible in the panel.
-Results are reported from the **mover's** seat, not White's. `own` can list a
-move that is not legal here (a capture of a piece that is not there in this
-game); those rows are marked unplayable rather than hidden, because a fog player
-always knows their own legal moves.
+The visible *squares* matter separately from the visible *pieces*, and a blocked
+pawn is why: a pawn cannot see through what stands in front of it, so a hidden
+blocker and an empty square both show "no piece" — but only one of them leaves
+you a push. Encoding pieces alone would pool two positions their owner can tell
+apart at a glance.
+
+Wider groupings (current view only; own pieces only) were tried and dropped: they
+buy a bigger sample of somebody else's question, from players who knew different
+things, and a plausible number computed from the wrong games is worse than no
+number. An exact trail turns unique within a handful of moves on a corpus this
+size, and the panel says so rather than papering over it.
+
+Results are reported from the **mover's** seat, not White's, and each row carries
+the real action, so rows hover as board arrows and click into the fork sandbox.
 
 The index is built by replaying every corpus game with these same rules, on first
-use, in chunks so the server keeps answering (~10 s, ~155 MB for 3k games). It
+use, in chunks so the server keeps answering (~9 s, ~40 MB for 3k games). It
 stores the first `FOW_DB_MAX_PLY` plies (default 30): measured on that corpus the
-median number of games sharing one seat's trail is ~3000 at ply 0, ~28 by ply 4
-and exactly 1 from ply 8 on (the view level runs a ply or two longer, own pieces
-a few more), so deeper plies cost memory and answer nothing.
+median number of games sharing one seat's trail is ~3000 at ply 0, 17 by ply 4
+and 1 from ply 8 on, so deeper plies cost memory and answer nothing.
 
 Because the trail is a history, a query needs the plies behind the position, not
 just the position: `GET /sessions/:id/database?ply=` replays the prefix once and
