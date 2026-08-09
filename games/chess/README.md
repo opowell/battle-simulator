@@ -56,9 +56,9 @@ npm run demo:chess:auto     # random vs random
 [`fowDatabase.js`](fowDatabase.js) answers "what did recorded human players do
 from here?" for the position on screen, out of a corpus of real Fog of War games
 in [`vendor/`](vendor/README.md). It backs the **Fog of War games** panel, which
-appears **only when reviewing a finished game** — an opening book open beside a
-live game is an outside engine playing for you (the server refuses a live session
-outright: `GET /sessions/:id/database?ply=`).
+appears when **reviewing a finished game** and on an **analysis board** — never
+beside a live match, where an opening book is an outside engine playing for you.
+The server enforces that itself, so no client can ask.
 
 The interesting part is what "from here" can mean when nobody can see the board.
 Grouping recorded games by the true position would answer a question the player
@@ -100,6 +100,22 @@ and 1 from ply 8 on, so deeper plies cost memory and answer nothing.
 Because the trail is a history, a query needs the plies behind the position, not
 just the position: `GET /sessions/:id/database?ply=` replays the prefix once and
 hands the game's query `{ legalActions, priorStates }`.
+
+### Two ways to use it
+
+**Reviewing a game.** Open a finished game, scrub to any ply, and the panel
+answers for whoever was to move there. Pick a piece up and play something that
+never happened and the board branches into a "what if" line — the panel follows
+it, because `POST /sessions/:id/database { ply, line }` replays those invented
+moves too. An invented move changes what the player would *know*, not just where
+the pieces are, so the answer genuinely changes down the line.
+
+**An analysis board** (engine option `analysisBoard`, or the lobby's *Analysis*
+button). A study session with no opponent: you move both sides, the whole board
+can be revealed while you work, and the database and analysis panels stay open —
+none of which is a hole in the live-match rule, because the server only honours
+the flag when **no seat is played by an AI**. Fog stays on: the question the
+database answers only means something under fog.
 
 ## Where the AI is
 

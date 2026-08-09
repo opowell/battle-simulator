@@ -21,7 +21,17 @@ const props = defineProps({
   enabled:   { type: Boolean, default: false },
   sessionId: { type: String, default: null },
   gameName:  { type: String, default: null },
-  ply:       { type: Number, default: null },  // null = the final position
+  ply:       { type: Number, default: null },  // null = the position the game is at
+  // Moves played from `ply` that never happened — a line being explored off the
+  // real game. The answer is for the end of that line, and (under fog) is
+  // computed from the line as a HISTORY, so an invented move changes what the
+  // player would know, not just where the pieces are.
+  line:      { type: Array, default: () => [] },
+  // Bumps whenever the live position moves on, so an analysis board that is
+  // still being played re-asks after every move. `ply` alone cannot do it: at
+  // the live position it stays null from one move to the next, and under fog a
+  // hidden reply does not change the log this client can see either.
+  revision:  { type: [String, Number], default: 0 },
 });
 const emit = defineEmits(['hover-move', 'select-move']);
 
@@ -54,7 +64,7 @@ async function load() {
   loading.value = true;
   errorMsg.value = '';
   try {
-    const res = await api.database(props.sessionId, { ply: props.ply });
+    const res = await api.database(props.sessionId, { ply: props.ply, line: props.line });
     if (mine !== seq) return; // a newer ply is already in flight
     data.value = res;
   } catch (e) {
@@ -66,7 +76,7 @@ async function load() {
   }
 }
 
-watch(() => [available.value, props.sessionId, props.ply, panelOn.value], () => {
+watch(() => [available.value, props.sessionId, props.ply, props.line.length, props.revision, panelOn.value], () => {
   // The position changed: drop the old rows immediately rather than leaving
   // another position's statistics on screen under the new board.
   seq++;
@@ -104,6 +114,10 @@ const fmt = (n) => (n ?? 0).toLocaleString();
 
       <div v-if="data" class="db-meta">
         <span class="db-side">{{ data.color }} to move</span>
+        <!-- Down a line that never happened, the answer is about that line — worth
+             saying, since the numbers otherwise read as being about the real game. -->
+        <span v-if="line.length" class="db-fork"
+              :title="`${line.length} invented ${line.length === 1 ? 'move' : 'moves'} from the game`">· in your line</span>
         <span v-if="data.total">· {{ fmt(data.total) }} {{ data.total === 1 ? 'game' : 'games' }}</span>
         <span v-if="data.avgRating">· avg {{ data.avgRating }}</span>
         <span>· {{ fmt(data.corpusSize) }} indexed</span>
@@ -132,6 +146,7 @@ const fmt = (n) => (n ?? 0).toLocaleString();
 .db-grouping { font-size: 10px; color: var(--dim); margin-bottom: 3px; }
 .db-meta { font-size: 10px; color: var(--faint); margin-bottom: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
 .db-side { text-transform: capitalize; color: var(--dim); }
+.db-fork { color: var(--warn); }
 .db-msg { font-size: 11px; color: var(--faint); padding: 6px 2px; line-height: 1.45; }
 .db-src { font-size: 9px; color: var(--faint); margin-top: 6px; opacity: .7; }
 </style>

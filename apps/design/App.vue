@@ -868,7 +868,10 @@ async function loadHistory(id, state) {
 }
 
 // The /history endpoint returns full unfiltered grids; in fog mode we only fetch it once
-// the game is done (revealing earlier would expose hidden pieces mid-game).
+// the game is done (revealing earlier would expose hidden pieces mid-game) — or on an
+// analysis board, where every seat is the viewer's own and there is nobody to expose
+// them to. That one is still being played, so its reveal history has to keep up with
+// the moves rather than being fetched once.
 async function loadReveal(id, state) {
   try {
     const [grids, log] = await Promise.all([api.history(id), api.log(id)]);
@@ -881,12 +884,16 @@ async function loadReveal(id, state) {
   }
 }
 
-watch(() => (liveState.value?.fog && liveState.value?.status !== 'active') ? liveState.value.id : null,
-  (id) => {
-    revealFields.value = [];
-    revealLog.value    = [];
-    if (id) loadReveal(id, liveState.value);
-  });
+watch(() => {
+  const s = liveState.value;
+  if (!s?.fog) return null;
+  if (s.status !== 'active') return `${s.id}:done`;
+  return s.analysisBoard ? `${s.id}:${s.log?.length ?? 0}` : null;
+}, (key) => {
+  revealFields.value = [];
+  revealLog.value    = [];
+  if (key) loadReveal(liveState.value.id, liveState.value);
+});
 
 async function enterSession(id, { push = true } = {}) {
   historyFields.value = [];
@@ -999,7 +1006,17 @@ async function doForkMove({ forkState: fs, ply, playerId, action }) {
   try {
     const resp = await api.forkMove(liveState.value.id, { forkState: fs, ply, playerId, action });
     const field = buildField(resp.grid, liveState.value);
-    forkState.value = { field, state: resp.state, legalActions: resp.legalActions, activePlayers: resp.activePlayers };
+    // Remember the LINE, not just the position it reached: which ply this fork
+    // branched off and every invented move since. A fork is a position to the
+    // board, but to anything that reasons about what a player knows it is a
+    // history — the game database re-derives its whole answer from one (see
+    // DatabasePanel.vue and api-server.js's POST /sessions/:id/database).
+    const basePly = fs ? (forkState.value?.basePly ?? null) : ply;
+    const line = fs ? [...(forkState.value?.line ?? []), action] : [action];
+    forkState.value = {
+      field, state: resp.state, legalActions: resp.legalActions,
+      activePlayers: resp.activePlayers, basePly, line,
+    };
     forkError.value = '';
   } catch (e) { forkError.value = e.message; }
 }

@@ -5,7 +5,7 @@ import GameThumb from './GameThumb.vue';
 const props = defineProps({
   game: { type: Object, default: null }, // null = closed
 });
-const emit = defineEmits(['close', 'quick-start', 'configure']);
+const emit = defineEmits(['close', 'quick-start', 'analysis-board', 'configure']);
 
 // Only two curated images exist per game today (see api-server.js serveGameImage);
 // the swiper is built to grow on its own if more preview_* assets show up later.
@@ -74,6 +74,12 @@ const playersLabel = computed(() => {
           <div class="gdm-actions">
             <button class="btn gdm-action" @click="$emit('configure', game)">
               <BsIcon name="sliders" :size="14" color="var(--dim)"/> Start…
+            </button>
+            <!-- A board with no opponent: you move every side, nothing is hidden
+                 from you, and (where the game has one) the database is open. -->
+            <button class="btn gdm-action" @click="$emit('analysis-board', game)"
+                    title="Study board: play every side yourself, reveal the whole board, keep the database open">
+              <BsIcon name="search" :size="14" color="var(--dim)"/> Analysis
             </button>
             <button class="btn btn-primary gdm-action" @click="$emit('quick-start', game)">
               <BsIcon name="play" :size="14" color="#04222b" :stroke="2"/> Quick start

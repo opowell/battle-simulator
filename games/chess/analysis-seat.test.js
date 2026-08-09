@@ -14,7 +14,7 @@ import { resolveAnalysisContext } from '../../api-server.js';
 // A stand-in for api-server.js's Session, carrying only what the resolver
 // touches: the params/log a historical ply is replayed from, plus the live
 // state, fog flag and status that pick the seat.
-function fakeSession({ fog = true, status = 'active', plies = 2 } = {}) {
+function fakeSession({ fog = true, status = 'active', plies = 2, analysisBoard = false } = {}) {
   const players = [{ id: 'white', name: 'You' }, { id: 'black', name: 'CPU' }];
   const config = { fog, fogOfWar: fog };
   let state = ChessGame.createInitialState(players, config);
@@ -26,7 +26,7 @@ function fakeSession({ fog = true, status = 'active', plies = 2 } = {}) {
     log.push({ turnNumber: state.turnNumber, phase: 'action', playerActions });
     state = ChessGame.applyActions(state, playerActions);
   }
-  return { gameName: 'chess', fog, status, params: { players, config }, engine: { state, log } };
+  return { gameName: 'chess', fog, status, analysisBoard, params: { players, config }, engine: { state, log } };
 }
 
 const args = (over) => ({ playerId: 'white', agentId: 'chess-ai', ...over });
@@ -53,6 +53,15 @@ test('historical ply under LIVE fog: the opponent\'s turn is refused, not mis-an
   // Analyzing black here would mean reading black's own view of a game still in
   // progress — real hidden information, not a mere labelling problem.
   assert.throws(() => resolveAnalysisContext(session, args({ ply: 1 })), /black to move/);
+});
+
+test('analysis board: both sides are analyzable while it is still being played', () => {
+  // Same live fog session as above, but a study board — every seat belongs to the
+  // one person asking, so black's view is not being taken from anybody.
+  const session = fakeSession({ fog: true, status: 'active', analysisBoard: true });
+  const ctx = resolveAnalysisContext(session, args({ ply: 1 }));
+  assert.equal(ctx.color, 'black');
+  assert.ok(ctx.legalActions.every(a => ownerOf(ctx, a) === 'black'));
 });
 
 test('historical ply, no fog: the side to move is analyzed whoever asks', () => {

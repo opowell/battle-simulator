@@ -65,10 +65,20 @@ window.api = {
   analyze:  (id, { playerId, agentId, ply }) =>
     _req('/sessions/' + id + '/analyze', { method: 'POST', body: JSON.stringify({ playerId, agentId, ply }) }),
   // What recorded human players did from the position at `ply` — for games that
-  // declare a database (see the `database` field on GET /games). Replay only:
-  // the server refuses while the session is still active.
-  database: (id, { ply } = {}) =>
-    _req('/sessions/' + id + '/database' + (ply != null ? '?ply=' + encodeURIComponent(ply) : '')),
+  // declare a database (see the `database` field on GET /games). Replay or
+  // analysis board only: the server refuses during a live match.
+  //
+  // `line` continues that position with moves that never happened (a fork being
+  // explored), which needs a body — hence POST once there is one.
+  database: (id, { ply, line } = {}) =>
+    (line?.length
+      ? _req('/sessions/' + id + '/database', { method: 'POST', body: JSON.stringify({ ply, line }) })
+      : _req('/sessions/' + id + '/database' + (ply != null ? '?ply=' + encodeURIComponent(ply) : ''))),
+  // What the side to move at `ply` may play — so a position being reviewed can be
+  // picked up and moved by hand, not just clicked at through a panel. Replay or
+  // analysis board only (the server refuses during a live match).
+  legalActionsAt: (id, ply) =>
+    _req('/sessions/' + id + '/legal-actions' + (ply != null ? '?ply=' + encodeURIComponent(ply) : '')),
   // Play a move into a throwaway sandbox branched off a live/historical position.
   // Pass `ply` to start a new fork from history, or `forkState` (the `state` a
   // prior forkMove call returned) to continue moving within the same fork.

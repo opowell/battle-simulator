@@ -311,6 +311,17 @@ class Session {
     // Full set of parameters the session was created with (game, players, config) —
     // persisted with the recording so a run can be reproduced/inspected later.
     this.params = params;
+    // An ANALYSIS BOARD is a study session, not a match: every seat belongs to
+    // the one person at the keyboard, so there is nobody to keep information
+    // from. That is what lets the game database stay open here while a real game
+    // may not have it (see handleDatabase) — a book is only cheating when the
+    // other side of the board does not have one.
+    //
+    // Only honoured when NO seat is played by an AI, which is what makes that
+    // argument true rather than merely asserted: the flag cannot be flipped on a
+    // game against an opponent to open the book mid-match.
+    const seats = params.players?.length ?? 0;
+    this.analysisBoard = !!params.config?.analysisBoard && seats > 0 && apiAgents.size === seats;
     // Observer support: clients may connect read-only (?observer=1) and see the
     // full game state, bypassing fog. `observerDelay` holds their view back by N ms.
     this.allowObservers = params.config?.allowObservers ?? false;
@@ -800,6 +811,10 @@ class Session {
       game: this.gameName,
       params: this.params,
       fog: this.fog,
+      // A study board rather than a match — every seat is the viewer's own. Drives
+      // the client's reveal control and its database panel, both of which are
+      // otherwise held back until a game is over.
+      analysisBoard: this.analysisBoard,
       // This snapshot is an observer's full-information view (fog bypassed).
       observer,
       allowObservers: this.allowObservers,
@@ -989,6 +1004,13 @@ const ENGINE_OPTIONS = [
     id: 'simultaneousTurns',
     label: 'Simultaneous turns',
     description: 'All players give orders at the same time; once everyone has ended their turn, the orders resolve together and play back.',
+    type: 'boolean',
+    default: false,
+  },
+  {
+    id: 'analysisBoard',
+    label: 'Analysis board',
+    description: 'A study board rather than a match: every seat is yours to move, the whole board can be revealed, and the game database stays open while you work. Ignored if any seat is played by an AI.',
     type: 'boolean',
     default: false,
   },
@@ -1412,7 +1434,10 @@ export function resolveAnalysisContext(session, { playerId, agentId, ply }) {
 
   const toMove = rawState.activePlayers?.[0] ?? null;
   const color = (session.fog && ply == null) ? playerId : (toMove ?? playerId);
-  if (session.fog && color !== playerId && session.status === 'active')
+  // Analysing the OTHER side's position mid-match would hand over their view, so
+  // it waits for the game to end — unless this is an analysis board, where both
+  // sides are the same person and there is nothing to withhold.
+  if (session.fog && color !== playerId && session.status === 'active' && !session.analysisBoard)
     throw new Error(`${color} to move — hidden until the game ends`);
 
   // Fog-filter for the side actually being analyzed (identical to filtering for
@@ -1565,32 +1590,49 @@ async function resolveDatabaseQuery(pointer) {
   return databaseQueries.get(cacheKey);
 }
 
-// GET /sessions/:id/database?ply= — "what did recorded human players do from
-// here?", for games that declare a `database` (see games/chess/ChessGame.js).
+// GET  /sessions/:id/database?ply=
+// POST /sessions/:id/database  { ply, line: [action, …] }
 //
-// REPLAY ONLY, and that is a rule about the feature, not a technicality: an
-// opening book consulted mid-game is an outside engine playing for you. It is
-// served once the session is finished, which is also when /history stops
-// hiding anything.
+// "What did recorded human players do from here?", for games that declare a
+// `database` (see games/chess/ChessGame.js).
 //
-// The question is asked for whoever is TO MOVE at the ply on screen, not for
-// the viewer, so scrubbing through a game shows each side's own book in turn.
-// Under fog the game's query decides what "from here" means — for chess it is
+// NOT DURING A LIVE MATCH, and that is a rule about the feature, not a
+// technicality: an opening book consulted mid-game is an outside engine playing
+// for you. So it is served in replay — once the session is finished, which is
+// also when /history stops hiding anything — and on an ANALYSIS BOARD, where
+// every seat belongs to the person asking and there is no opponent to hide it
+// from (see the Session constructor for why that flag cannot be set on a real
+// game).
+//
+// `line` is a fictional continuation: moves played from `ply` that never
+// happened, so a viewer can branch off a real game (or off an analysis board's
+// current position) and keep asking the same question down the new line. They
+// are replayed on a throwaway copy; the recorded session is never touched.
+//
+// The question is asked for whoever is TO MOVE at the end of that, not for the
+// viewer, so scrubbing through a game shows each side's own book in turn. Under
+// fog the game's query decides what "from here" means — for chess it is
 // everything the mover has watched up to this point, never the true position
 // (games/chess/fowDatabase.js), which is why the whole prefix is handed over
 // and not just one board.
-async function handleDatabase(res, id, url) {
+async function handleDatabase(req, res, id, url) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
 
   const { game } = GAMES[session.gameName];
   const pointer = game.database;
   if (!pointer) return err(res, 400, `${session.gameName} has no game database`);
-  if (session.status === 'active')
-    return err(res, 403, 'The game database is only available in replay, not during a live game');
+  if (session.status === 'active' && !session.analysisBoard)
+    return err(res, 403, 'The game database is only available in replay or on an analysis board, not during a live game');
 
+  let body = {};
+  if (req.method === 'POST') {
+    try { body = await readBody(req); }
+    catch { return err(res, 400, 'Invalid JSON'); }
+  }
   const plyRaw = url.searchParams.get('ply');
-  const ply = (plyRaw != null && plyRaw !== '') ? Number(plyRaw) : null;
+  const ply = body.ply ?? ((plyRaw != null && plyRaw !== '') ? Number(plyRaw) : null);
+  const line = Array.isArray(body.line) ? body.line : [];
 
   // The whole prefix, not just the position: under fog what a player knows is
   // the sequence of boards they have been handed, so the game's query needs the
@@ -1600,6 +1642,20 @@ async function handleDatabase(res, id, url) {
   try {
     states = replayStatesToPly(game, session, ply ?? session.engine.log.length);
   } catch (e) { return err(res, 400, `Could not resolve position: ${e.message}`); }
+
+  // ...then the invented moves on top, each checked against the position it is
+  // played into. A line that does not hold up is a client bug, not a position to
+  // answer about, so it fails loudly rather than silently answering for a
+  // truncated line.
+  for (const action of line) {
+    const from = states[states.length - 1];
+    const mover = from.activePlayers?.[0] ?? null;
+    if (!mover) return err(res, 400, 'The line runs past the end of the game');
+    try { validateAction(action, game.getLegalActions(from, mover), game, from, mover); }
+    catch (e) { return err(res, 400, `Line move rejected: ${e.message}`); }
+    states.push(game.applyActions(from, [{ playerId: mover, action }]));
+  }
+
   const state = states.pop();
   if (!state) return err(res, 400, 'No position available yet');
 
@@ -1620,6 +1676,40 @@ async function handleDatabase(res, id, url) {
     console.error(e);
     err(res, 500, `Database lookup failed: ${e.message}`);
   }
+}
+
+// GET /sessions/:id/legal-actions?ply= — what the side to move at `ply` may play.
+//
+// This is what lets a viewer pick a piece up and try a move that never happened,
+// rather than only clicking moves a panel handed them: the board needs the
+// action set of the position being LOOKED at, and while browsing replay that is
+// not the live game's pending player.
+//
+// Same rule as the database (and for the same reason, doubled): under fog a
+// player's legal moves are exactly a restatement of what they can see, so
+// serving them for an arbitrary ply of a live match would hand out the opponent's
+// view. Replay and analysis boards only.
+async function handleLegalActions(res, id, url) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+  if (session.status === 'active' && !session.analysisBoard)
+    return err(res, 403, 'Past positions are only explorable in replay or on an analysis board');
+
+  const { game } = GAMES[session.gameName];
+  const plyRaw = url.searchParams.get('ply');
+  const ply = (plyRaw != null && plyRaw !== '') ? Number(plyRaw) : null;
+
+  let state;
+  try {
+    state = (ply == null) ? session.engine.state : replayStateAtPly(game, session, ply);
+  } catch (e) { return err(res, 400, `Could not resolve position: ${e.message}`); }
+  if (!state) return err(res, 400, 'No position available yet');
+
+  const playerId = state.activePlayers?.[0] ?? null;
+  send(res, 200, {
+    ply, playerId,
+    legalActions: playerId ? game.getLegalActions(state, playerId) : [],
+  });
 }
 
 async function handleGetLog(res, id) {
@@ -1805,10 +1895,17 @@ async function handleRequest(req, res) {
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze')
       return await handleAnalyze(req, res, parts[1]);
 
-    // GET /sessions/:id/database?ply= — recorded human games from this position
-    // (replay only; see handleDatabase)
-    if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'database')
-      return await handleDatabase(res, parts[1], url);
+    // GET /sessions/:id/legal-actions?ply= — the moves available at a past ply, so
+    // one can be played into the "what if" sandbox (replay/analysis board only)
+    if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'legal-actions')
+      return await handleLegalActions(res, parts[1], url);
+
+    // GET  /sessions/:id/database?ply=            — recorded games from this position
+    // POST /sessions/:id/database { ply, line }   — ...or from a fictional line off it
+    // (replay or analysis board only; see handleDatabase)
+    if ((method === 'GET' || method === 'POST')
+        && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'database')
+      return await handleDatabase(req, res, parts[1], url);
 
     // GET /sessions/:id/analyze-stream?playerId=&agentId=&ply= (SSE, live progress)
     if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze-stream')

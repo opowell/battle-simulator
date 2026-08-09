@@ -267,8 +267,30 @@ Submit an action for a human player.
 
 Returns the updated session. If the action advances to the opponent's turn, `pendingPlayer` and `legalActions` will reflect the next prompt.
 
+#### `GET /sessions/:id/legal-actions?ply=`
+What the side to move at `ply` may play — so a position being reviewed can be
+picked up and moved by hand into a "what if" line, rather than only replaying
+what happened. Refused during a live match (under fog, one side's legal moves
+are a restatement of what that side can see); available in replay and on an
+analysis board.
+
+#### `GET /sessions/:id/database?ply=` · `POST /sessions/:id/database`
+For games that declare one (chess: recorded Fog of War games), what human players
+who knew what this seat knows went on to play from here. `POST` takes
+`{ ply, line: [action, …] }`, where `line` is a fictional continuation off that
+ply, so an explored variation can be looked up too. Same availability rule as
+above: replay or analysis board, never a live match.
+
 #### `DELETE /sessions/:id`
 Close and remove a session.
+
+### Analysis boards
+
+Create a session with every seat `"human"` and `config.analysisBoard: true` and it
+becomes a study board rather than a match: you move all sides, the full board can
+be revealed while you play, and the analysis/database panels stay open. The flag
+is only honoured when no seat is played by an AI, so it cannot be used to open the
+book against an opponent. In the UI: a game's **Analysis** button in the lobby.
 
 ### Example: play a chess game via curl
 

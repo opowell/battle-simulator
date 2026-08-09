@@ -37,6 +37,26 @@ function quickStart(g) {
   detailGame.value = null;
 }
 
+// An ANALYSIS BOARD: a study session with no opponent. Every seat is human (the
+// one person at the keyboard moves both sides), which is the condition the
+// server puts on the flag, and which is what lets the whole board be revealed
+// and the game database stay open while the session is still being played.
+//
+// Fog goes ON for a game that has one to offer: an analysis board with the fog
+// lifted is just a board, and the database's whole question — what did players
+// who could see what you can see go on to play — needs the fog to mean anything.
+function analysisBoard(g) {
+  const fogged = (g.gameOptions ?? []).some(o => o.id === 'fogOfWar');
+  emit('create', {
+    game:     g.name,
+    name:     `${g.name} — analysis`,
+    gameOpts: { ...gameDefaults.initGameOpts(g), analysisBoard: true, ...(fogged ? { fogOfWar: true } : {}) },
+    maxTurns: 500,
+    players:  gameDefaults.makeSlots(g).map(p => ({ ...p, agent: 'human' })),
+  });
+  detailGame.value = null;
+}
+
 function handleCreate(payload) {
   emit('create', payload);
   configureGame.value = null;
@@ -140,6 +160,7 @@ function sessionStatusColor(s) {
     <GameDetailModal :game="detailGame"
                       @close="closeDetail"
                       @quick-start="quickStart"
+                      @analysis-board="analysisBoard"
                       @configure="openConfigure"/>
     <GameConfigureModal :game="configureGame" :disabled="!!serverErr"
                          @close="closeConfigure"

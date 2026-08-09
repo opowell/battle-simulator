@@ -190,8 +190,19 @@ const dismissedResult = ref(false);
 // When on, the full (unfiltered) board is shown so every piece's true position
 // is visible; fog is still drawn, but from the perspective of whoever is to move
 // at the displayed ply (it flips as you step through the game).
+// A study board rather than a match: the session's `analysisBoard` flag, which
+// the server only honours when no seat is played by an AI (see api-server.js's
+// Session). Every seat belongs to the person at the keyboard, which is what lets
+// the reveal control and the database panel work on a session that is still
+// "active" — there is no opponent to keep anything from.
+const analysisBoard = computed(() => !!props.liveState?.analysisBoard);
+
 const revealAll = ref(false);
-const canReveal = computed(() => props.fog && isDone.value && props.revealFields.length > 0);
+// Revealing mid-game would expose hidden pieces to a player who has an opponent —
+// so it waits for the game to be over, EXCEPT on an analysis board, where every
+// seat is the viewer's own and there is nobody to hide anything from.
+const canReveal = computed(() =>
+  props.fog && (isDone.value || analysisBoard.value) && props.revealFields.length > 0);
 
 // ── action history (back/forward replay) ──────────────────────
 const fieldHistory = ref([]);
@@ -284,12 +295,28 @@ const analysisPly = computed(() => (forking.value || atLatest.value) ? null : hi
 const analysisCandidates = ref([]);
 const hoveredSuggestion   = ref(null);
 // The recorded-games database (DatabasePanel.vue) answers for the position on
-// screen exactly like the analysis panel does, so it takes the same ply — but
-// only ONCE THE GAME IS OVER. An opening book open beside a live game is an
+// screen exactly like the analysis panel does — but only once the game is OVER,
+// or on an analysis board. An opening book open beside a live match is an
 // outside engine playing for you, and under fog it would also be a channel for
-// what the other side is doing; the server refuses a live session outright, and
+// what the other side is doing; the server refuses such a session outright, and
 // the panel is not mounted for one either.
 const databaseHover = ref(null);
+const databaseShown = computed(() => isLive.value && (isDone.value || analysisBoard.value));
+// Whether a move played away from the live position branches into the "what if"
+// sandbox instead of being refused. Either panel is reason enough: both of them
+// hand the board moves to try (a database row is clicked to play it), and a
+// suggestion you cannot play is a poor suggestion.
+const canExplore = computed(() => analysisEnabled.value || databaseShown.value);
+// Which position to ask about. Inside a fork that is "ply P of the real game,
+// then these moves that never happened" — the database rebuilds the line itself,
+// because what a fog player knows is a history and an invented line has one too.
+const databasePly  = computed(() => (forking.value ? props.forkState.basePly : analysisPly.value));
+const databaseLine = computed(() => (forking.value ? props.forkState.line : []));
+// On an analysis board the live position keeps moving while the panel is open,
+// and `ply` cannot see that: it stays null from one move to the next. Whose turn
+// it is and how long the log has grown both do change, so they drive the re-ask.
+const databaseRevision = computed(() =>
+  `${props.liveState?.turn ?? 0}:${props.liveState?.pendingPlayer ?? ''}:${props.liveState?.log?.length ?? 0}`);
 // One member of the analysis engine's belief population — the board the panel's
 // stepper currently has selected (see AnalysisPanel.vue / BeliefWorldStepper.vue).
 // Null whenever nothing is selected or the panel is off. Its `hidden` list is
@@ -316,8 +343,10 @@ const plyToMoveTeam = computed(() => {
 // action (gridFrom/gridTo) — the same numeric coordinates HtmlLayer's own
 // px()/py() geometry expects, not algebraic square notation.
 const suggestionArrows = computed(() => {
-  if (forking.value) return [];
-  const arrows = !analysisEnabled.value ? [] : analysisCandidates.value.slice(0, 3).map((c, i) => ({
+  // The analysis panel does not follow a fork (it answers about a ply of the real
+  // game), so its arrows are stale the moment one is opened. The database panel
+  // does follow — see databaseLine — so its arrow stays.
+  const arrows = (!analysisEnabled.value || forking.value) ? [] : analysisCandidates.value.slice(0, 3).map((c, i) => ({
     from: c.move?.gridFrom, to: c.move?.gridTo,
     rank: i + 1, hovered: hoveredSuggestion.value === c.move,
   }));
@@ -765,15 +794,38 @@ const isLive          = computed(() => !!props.liveState);
 const isPending       = computed(() => isLive.value && props.liveState.pendingPlayer &&
                                       props.liveState.humanPlayers?.includes(props.liveState.pendingPlayer));
 const isDone          = computed(() => isLive.value && props.liveState.status !== 'active');
-// While forking, the board interacts against the sandbox's own legal moves
-// (from the last /fork-move response), not the live game's.
-const legalActions    = computed(() => forking.value ? (props.forkState?.legalActions ?? []) : (props.liveState?.legalActions ?? []));
+// Which action set the board interacts against. Three different positions can be
+// on screen and each has its own:
+//   • a fork — the sandbox's own moves, from the last /fork-move response;
+//   • a past ply being reviewed — that ply's mover's moves, fetched below, so a
+//     piece can be picked up and a line tried by hand;
+//   • otherwise the live game's pending player.
+const plyActions = ref({ ply: null, actions: [] });
+const legalActions = computed(() => {
+  if (forking.value) return props.forkState?.legalActions ?? [];
+  if (!atLatest.value && plyActions.value.ply === histPos.value) return plyActions.value.actions;
+  if (!atLatest.value) return [];   // still fetching: better nothing than the wrong side's
+  return props.liveState?.legalActions ?? [];
+});
+
+// Fetch the reviewed ply's moves whenever the playhead lands somewhere the viewer
+// is allowed to explore from. The server refuses this for a live match, so a
+// failure just leaves the board unmovable, which is the correct outcome there.
+watch(() => [props.liveState?.id, histPos.value, atLatest.value, forking.value, canExplore.value], async () => {
+  if (!isLive.value || atLatest.value || forking.value || !canExplore.value) return;
+  const id = props.liveState.id, ply = histPos.value;
+  try {
+    const res = await api.legalActionsAt(id, ply);
+    if (props.liveState?.id === id && histPos.value === ply)
+      plyActions.value = { ply, actions: res.legalActions ?? [] };
+  } catch { plyActions.value = { ply: null, actions: [] }; }
+}, { immediate: true });
 const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
 // Board interaction (destination highlights, click-to-move) is live for the
 // real game's pending player as usual, or — while browsing replay/forking —
 // for whichever side forkPlayMove would move next, so a suggested/forked line
 // can be played out on the board the same way a live turn is.
-const canMove = computed(() => isPending.value || (analysisEnabled.value && (forking.value || !atLatest.value)));
+const canMove = computed(() => isPending.value || (canExplore.value && (forking.value || !atLatest.value)));
 
 // Chime when control passes to a human — i.e. isPending flips false→true (an AI or the
 // other player just finished). The watcher isn't `immediate`, so opening a game that's
@@ -1337,7 +1389,7 @@ function submitAction(action) {
   if (ui.value.clearSelectedAtEndOfTurn) selectedId.value = null;
   // Moving while browsing replay (or already inside a fork) explores a sandbox
   // instead of playing a real move — see forkPlayMove above.
-  if (analysisEnabled.value && (forking.value || !atLatest.value)) { forkPlayMove(action); return; }
+  if (canExplore.value && (forking.value || !atLatest.value)) { forkPlayMove(action); return; }
   // Lichess/chess.com-style move sound, right as the piece is released onto its new
   // square (this is the same drag-release / click-to-move path that produced `action`
   // above — see handleSqClick). Chess-only: window.playChessMoveSound (chess-sound.js).
@@ -1549,9 +1601,9 @@ onUnmounted(() => {
           @belief-world="beliefWorld = $event"
           @select-move="forkPlayMove"/>
 
-        <DatabasePanel v-if="isLive && isDone"
-          :enabled="!forking" :sessionId="liveState.id" :gameName="liveState.game"
-          :ply="analysisPly"
+        <DatabasePanel v-if="databaseShown"
+          :enabled="true" :sessionId="liveState.id" :gameName="liveState.game"
+          :ply="databasePly" :line="databaseLine" :revision="databaseRevision"
           @hover-move="databaseHover = $event"
           @select-move="forkPlayMove"/>
 
