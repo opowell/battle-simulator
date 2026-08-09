@@ -95,6 +95,9 @@ function onSelect(i) {
   if (move) emit('select-move', move);
 }
 
+// The row the pointer is on, if any — its numbers take over the meta line.
+const hovered = computed(() => (hoveredIdx.value >= 0 ? moves.value[hoveredIdx.value] : null) ?? null);
+
 const fmt = (n) => (n ?? 0).toLocaleString();
 </script>
 
@@ -112,14 +115,24 @@ const fmt = (n) => (n ?? 0).toLocaleString();
       <!-- What question the rows answer, in the answer's own words. -->
       <div v-if="data" class="db-grouping" :title="data.hint">{{ data.label }}</div>
 
-      <div v-if="data" class="db-meta">
+      <!-- Hovering a move swaps this line for that move's own numbers: how strong
+           the players who chose it were, and how strong the opposition was. Both,
+           separately — a move that scores well for 2100s against 1600s is not the
+           same recommendation as one that scores well between equals. -->
+      <div v-if="hovered" class="db-meta db-meta--hover">
+        <span class="db-hover-san mono">{{ hovered.san }}</span>
+        <span>· {{ fmt(hovered.games) }} {{ hovered.games === 1 ? 'game' : 'games' }}</span>
+        <span v-if="hovered.avgRating">· played by {{ hovered.avgRating }}</span>
+        <span v-if="hovered.avgOppRating">· against {{ hovered.avgOppRating }}</span>
+      </div>
+      <div v-else-if="data" class="db-meta">
         <span class="db-side">{{ data.color }} to move</span>
         <!-- Down a line that never happened, the answer is about that line — worth
              saying, since the numbers otherwise read as being about the real game. -->
         <span v-if="line.length" class="db-fork"
               :title="`${line.length} invented ${line.length === 1 ? 'move' : 'moves'} from the game`">· in your line</span>
         <span v-if="data.total">· {{ fmt(data.total) }} {{ data.total === 1 ? 'game' : 'games' }}</span>
-        <span v-if="data.avgRating">· avg {{ data.avgRating }}</span>
+        <span v-if="data.avgRating">· {{ data.avgRating }} vs {{ data.avgOppRating ?? '?' }}</span>
         <span>· {{ fmt(data.corpusSize) }} indexed</span>
       </div>
 
@@ -147,6 +160,8 @@ const fmt = (n) => (n ?? 0).toLocaleString();
 .db-meta { font-size: 10px; color: var(--faint); margin-bottom: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
 .db-side { text-transform: capitalize; color: var(--dim); }
 .db-fork { color: var(--warn); }
+.db-meta--hover { color: var(--dim); }
+.db-hover-san { color: var(--fg, #ddd); }
 .db-msg { font-size: 11px; color: var(--faint); padding: 6px 2px; line-height: 1.45; }
 .db-src { font-size: 9px; color: var(--faint); margin-top: 6px; opacity: .7; }
 </style>

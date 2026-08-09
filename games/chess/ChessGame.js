@@ -256,6 +256,7 @@ export const ChessGame = {
     dragToMove: true,
     highlightSelectedSquare: true, // selection shown as a square tint, not a ring around the piece
     hideGridLines: true,   // the light/dark checkerboard already delineates squares; extra per-cell borders look busy
+    hideTurnTimeline: true, // a turn here is one move each way — the ply counter says it all, without the track
     ownTileColors: true,   // tiles are coloured as the checkerboard already — skip the synthetic square overlay
   },
 

@@ -369,7 +369,13 @@ function indexGame(index, game) {
     trails[seat] = trailMove(trail, action);
     if (ply >= maxPly) return;
 
-    const rating = seat === 'white' ? game.whiteRating : game.blackRating;
+    // BOTH ratings, kept apart: how strong the player who chose this move was,
+    // and how strong the player they were choosing it against was. A move that
+    // scores well for 2100s facing 1600s is not the same recommendation as one
+    // that scores well between equals, and one averaged number cannot say which
+    // of the two this is.
+    const own = seat === 'white' ? game.whiteRating : game.blackRating;
+    const opp = seat === 'white' ? game.blackRating : game.whiteRating;
     // Result from the MOVER's seat: this database answers "how did it go for
     // the player who was looking at this", so black's losses are black's.
     const outcome = score == null ? null : (seat === 'white' ? score : -score);
@@ -381,14 +387,16 @@ function indexGame(index, game) {
     if (!row) {
       moves.set(san, row = {
         san, from: action.from, to: action.to,
-        games: 0, win: 0, draw: 0, loss: 0, ratingSum: 0, ratingN: 0, examples: [],
+        games: 0, win: 0, draw: 0, loss: 0,
+        ownSum: 0, ownN: 0, oppSum: 0, oppN: 0, examples: [],
       });
     }
     row.games++;
     if (outcome === 1) row.win++;
     else if (outcome === -1) row.loss++;
     else if (outcome === 0) row.draw++;
-    if (rating != null) { row.ratingSum += rating; row.ratingN++; }
+    if (own != null) { row.ownSum += own; row.ownN++; }
+    if (opp != null) { row.oppSum += opp; row.oppN++; }
     if (row.examples.length < MAX_EXAMPLES) row.examples.push(packExample(gi, ply));
   });
   games[gi].plies = plies;
@@ -460,11 +468,16 @@ const GROUPING = {
   hint: 'games grouped by everything this seat had been shown at this point — which squares were visible each turn, what stood on them, and the moves played between — so a piece seen ten moves ago and long since swallowed by the fog still counts',
 };
 
+const mean = (sum, n) => (n ? Math.round(sum / n) : null);
+
 function summarize(moves, games, byMove) {
   const rows = [...moves.values()].map(r => ({
     san: r.san, from: r.from, to: r.to,
     games: r.games, win: r.win, draw: r.draw, loss: r.loss,
-    avgRating: r.ratingN ? Math.round(r.ratingSum / r.ratingN) : null,
+    // Whose strength these numbers came from: the players who chose this move,
+    // and the players they faced.
+    avgRating: mean(r.ownSum, r.ownN),
+    avgOppRating: mean(r.oppSum, r.oppN),
     // The action to play and to draw on the board for this row. Every row should
     // have one: the recorded player's information set is ours, and under fog an
     // information set fixes the legal move set exactly. A row without an action
@@ -477,15 +490,20 @@ function summarize(moves, games, byMove) {
     }),
   }));
   rows.sort((a, b) => b.games - a.games || a.san.localeCompare(b.san));
-  const ratingRows = rows.filter(r => r.avgRating != null);
+
+  // The whole group's averages, weighted by how many games each row speaks for
+  // (a row played 300 times should not count the same as one played once).
+  const weighted = (pick) => {
+    let sum = 0, n = 0;
+    for (const r of rows) { const v = pick(r); if (v != null) { sum += v * r.games; n += r.games; } }
+    return mean(sum, n);
+  };
   return {
     ...GROUPING,
     total: rows.reduce((n, r) => n + r.games, 0),
     moves: rows,
-    avgRating: ratingRows.length
-      ? Math.round(ratingRows.reduce((s, r) => s + r.avgRating * r.games, 0)
-                   / ratingRows.reduce((s, r) => s + r.games, 0))
-      : null,
+    avgRating: weighted(r => r.avgRating),
+    avgOppRating: weighted(r => r.avgOppRating),
   };
 }
 

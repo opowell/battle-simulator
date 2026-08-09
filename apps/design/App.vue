@@ -1013,32 +1013,53 @@ async function setMarker({ playerId, col, row, type }) {
 }
 
 // ── analysis-panel replay forking ───────────────────────────────
-// A "what if" sandbox branched off a live/historical position (Battlefield.vue's
+// A "what if" line branched off a live/historical position (Battlefield.vue's
 // fork-move emit, AnalysisPanel.vue's select-move — see api-server.js's
-// POST /sessions/:id/fork-move). Never touches liveState/the real session; holds
-// its own display field (built the same way activeField is, from the fork's raw
-// grid) plus the raw session-shape bits (state/legalActions/activePlayers)
-// Battlefield needs to keep chaining further moves within the same fork.
+// POST /sessions/:id/fork-move). Never touches liveState/the real session.
+//
+// A LINE, not a position. It keeps every step it has taken — the invented moves
+// and the frame each produced — so it can be stepped back through like the game
+// itself, and so a different move can be tried from partway down it. Two things
+// need that: the history controls (which otherwise appear to do nothing inside a
+// fork, since the board would stay pinned to the tip) and the game database,
+// which under fog re-derives its whole answer from the line as a HISTORY.
+//
+//   basePly  the real game's ply this branched off
+//   line     the invented moves, in order
+//   frames   what each one produced: { field, state, legalActions, activePlayers }
+//            — frames[i] is the position after line[i], so the branch point
+//            itself is not in here; that one is the real game's own board, which
+//            Battlefield already has.
 const forkState = ref(null);
 const forkError = ref('');
 
 function exitFork() { forkState.value = null; forkError.value = ''; }
 
-async function doForkMove({ forkState: fs, ply, playerId, action }) {
+// `cursor` says where in the line the move is played from: 0 is the branch point
+// (so the line starts over), 1 is after the first invented move, and so on.
+// Anything past the cursor is a line the viewer has just walked away from.
+async function doForkMove({ ply, cursor = null, playerId, action }) {
   if (!liveState.value) return;
+  const cur = forkState.value;
+  const at = cursor ?? (cur?.line?.length ?? 0);
+  const from = (cur && at > 0) ? cur.frames[at - 1] : null;
+  const basePly = cur?.basePly ?? ply;
   try {
-    const resp = await api.forkMove(liveState.value.id, { forkState: fs, ply, playerId, action });
-    const field = buildField(resp.grid, liveState.value);
-    // Remember the LINE, not just the position it reached: which ply this fork
-    // branched off and every invented move since. A fork is a position to the
-    // board, but to anything that reasons about what a player knows it is a
-    // history — the game database re-derives its whole answer from one (see
-    // DatabasePanel.vue and api-server.js's POST /sessions/:id/database).
-    const basePly = fs ? (forkState.value?.basePly ?? null) : ply;
-    const line = fs ? [...(forkState.value?.line ?? []), action] : [action];
+    const resp = await api.forkMove(liveState.value.id, {
+      // Continuing the line means handing back the state that frame reached;
+      // starting it (or restarting it from the branch point) goes by ply.
+      forkState: from?.state ?? null,
+      ply: from ? null : basePly,
+      playerId, action,
+    });
+    const frame = {
+      field: buildField(resp.grid, liveState.value),
+      state: resp.state, legalActions: resp.legalActions, activePlayers: resp.activePlayers,
+    };
     forkState.value = {
-      field, state: resp.state, legalActions: resp.legalActions,
-      activePlayers: resp.activePlayers, basePly, line,
+      basePly,
+      line:   [...(cur?.line ?? []).slice(0, at), action],
+      frames: [...(cur?.frames ?? []).slice(0, at), frame],
     };
     forkError.value = '';
   } catch (e) { forkError.value = e.message; }

@@ -207,7 +207,10 @@ const canReveal = computed(() =>
 // ── action history (back/forward replay) ──────────────────────
 const fieldHistory = ref([]);
 const histPos      = ref(0);
-const histLength   = computed(() => revealAll.value ? props.revealFields.length : fieldHistory.value.length);
+// Inside a "what if" line the controls walk that line instead of the game (see
+// forkLength below); otherwise it is the recorded history, revealed or not.
+const histLength   = computed(() => forking.value ? forkLength.value
+  : revealAll.value ? props.revealFields.length : fieldHistory.value.length);
 const atLatest     = computed(() => histPos.value >= histLength.value - 1);
 
 // The board to record into history: the resolved server grid (never a replay/hop
@@ -327,7 +330,9 @@ const canExplore = computed(() => analysisEnabled.value || databaseShown.value);
 // then these moves that never happened" — the database rebuilds the line itself,
 // because what a fog player knows is a history and an invented line has one too.
 const databasePly  = computed(() => (forking.value ? props.forkState.basePly : analysisPly.value));
-const databaseLine = computed(() => (forking.value ? props.forkState.line : []));
+// Only as far as the cursor: stepping back through a line asks the database about
+// the position you are looking at, not about the end of a line you have left.
+const databaseLine = computed(() => (forking.value ? props.forkState.line.slice(0, forkCursor.value) : []));
 // On an analysis board the live position keeps moving while the panel is open,
 // and `ply` cannot see that: it stays null from one move to the next. Whose turn
 // it is and how long the log has grown both do change, so they drive the re-ask.
@@ -350,7 +355,10 @@ const beliefMarkers = computed(() =>
 // for fog-reveal perspective.
 const plyToMoveTeam = computed(() => {
   const teams = props.field.teams;
-  return teams[histPos.value % 2]?.id ?? teams[0]?.id ?? null;
+  // Inside a line the playhead counts invented moves, not plies of the real game,
+  // so parity has to be taken at the ply it branched from.
+  const ply = forking.value ? (props.forkState.basePly ?? 0) : histPos.value;
+  return teams[ply % 2]?.id ?? teams[0]?.id ?? null;
 });
 
 // Top few ranked suggestions as board arrows, chess.com-style; the hovered
@@ -381,16 +389,55 @@ const suggestionArrows = computed(() => {
 // actual fetch (doForkMove) and hands the result back via the forkState prop.
 function forkPlayMove(action) {
   if (!action || !props.liveState?.id) return;
-  const playerId = forking.value ? (props.forkState.activePlayers?.[0] ?? null) : plyToMoveTeam.value;
+  // Inside a line, the mover is whoever the frame under the cursor says is next;
+  // at its branch point (cursor 0) it is the real game's ply parity, same as
+  // starting a fresh fork from a reviewed ply.
+  const frame = forkFrame.value;
+  const playerId = frame ? (frame.activePlayers?.[0] ?? null) : plyToMoveTeam.value;
   if (!playerId) return;
-  const body = forking.value
-    ? { forkState: props.forkState.state, playerId, action }
-    : { ply: histPos.value, playerId, action };
-  emit('fork-move', body);
+  emit('fork-move', {
+    ply: forking.value ? props.forkState.basePly : histPos.value,
+    cursor: forking.value ? forkCursor.value : null,
+    playerId, action,
+  });
 }
 
+// ── the fork's own timeline ───────────────────────────────────
+// While a line is open the history controls walk IT, not the real game: cursor 0
+// is the branch point (the real board at basePly, which this component already
+// has) and cursor i is the position after the line's i-th invented move. Without
+// this the board stayed pinned to the tip of the line and stepping back looked
+// broken — the counter moved and nothing else did.
+const forkCursor = computed(() => (forking.value ? Math.min(histPos.value, forkLength.value - 1) : 0));
+const forkLength = computed(() => (forking.value ? props.forkState.line.length + 1 : 0));
+// The frame under the cursor, or null at the branch point.
+const forkFrame = computed(() =>
+  (forking.value && forkCursor.value > 0) ? props.forkState.frames[forkCursor.value - 1] : null);
+// The real game's board at the branch point, drawn from whichever source the
+// viewer is on (revealed history or their own fog snapshots).
+const forkBaseField = computed(() => {
+  const p = props.forkState?.basePly ?? 0;
+  const source = (revealAll.value && props.revealFields.length) ? props.revealFields : fieldHistory.value;
+  return source[Math.min(p, source.length - 1)] ?? props.field;
+});
+
+// The playhead follows the line: opening one or playing into it lands on the new
+// tip, and closing it puts the playhead back at the ply the line branched from
+// (rather than wherever in the line the cursor happened to be, which is not a
+// position the real game ever had).
+let leftFromPly = null;
+watch(() => (props.forkState ? props.forkState.line.length : -1), (len) => {
+  if (len >= 0) {
+    leftFromPly = props.forkState.basePly;
+    histPos.value = len;
+  } else if (leftFromPly != null) {
+    histPos.value = Math.min(leftFromPly, Math.max(0, histLength.value - 1));
+    leftFromPly = null;
+  }
+});
+
 const displayField = computed(() => {
-  if (forking.value) return props.forkState.field;
+  if (forking.value) return forkFrame.value?.field ?? forkBaseField.value;
   if (revealAll.value && props.revealFields.length)
     return props.revealFields[Math.min(histPos.value, props.revealFields.length - 1)];
   // At the latest ply, follow the live reactive field rather than the frozen history
@@ -515,6 +562,10 @@ const plyTurns = computed(() => {
 // spans. Null before any move is recorded, when there's no turn to show progress
 // through and BottomBar leaves the track out.
 const currentTurnRange = computed(() => {
+  // Games where a "turn" is a couple of single moves (chess: one each) get nothing
+  // from a progress track — the back/forward counter beside it already says the
+  // same thing, in less space. They opt out with ui.hideTurnTimeline.
+  if (ui.value.hideTurnTimeline) return null;
   const turns = plyTurns.value;
   const p = Math.min(histPos.value, turns.length - 1);
   if (p < 0 || !turns.length) return null;
@@ -862,7 +913,13 @@ const isDone          = computed(() => isLive.value && props.liveState.status !=
 //   • otherwise the live game's pending player.
 const plyActions = ref({ ply: null, actions: [] });
 const legalActions = computed(() => {
-  if (forking.value) return props.forkState?.legalActions ?? [];
+  // At a line's branch point the moves are the reviewed ply's, same as if the
+  // line had not been started yet — which is what makes "step back to the start
+  // of the line and try something else" work.
+  if (forking.value) {
+    if (forkFrame.value) return forkFrame.value.legalActions ?? [];
+    return plyActions.value.ply === props.forkState.basePly ? plyActions.value.actions : [];
+  }
   if (!atLatest.value && plyActions.value.ply === histPos.value) return plyActions.value.actions;
   if (!atLatest.value) return [];   // still fetching: better nothing than the wrong side's
   return props.liveState?.legalActions ?? [];
@@ -872,12 +929,16 @@ const legalActions = computed(() => {
 // is allowed to explore from. The server refuses this for a live match, so a
 // failure just leaves the board unmovable, which is the correct outcome there.
 watch(() => [props.liveState?.id, histPos.value, atLatest.value, forking.value, canExplore.value], async () => {
-  if (!isLive.value || atLatest.value || forking.value || !canExplore.value) return;
-  const id = props.liveState.id, ply = histPos.value;
+  if (!isLive.value || !canExplore.value) return;
+  // Inside a line it is the BRANCH ply that needs its moves — that is the one
+  // position in the line the fork responses do not describe, and the one a viewer
+  // steps back to in order to try something else from the start.
+  const ply = forking.value ? props.forkState.basePly : (atLatest.value ? null : histPos.value);
+  if (ply == null) return;
+  const id = props.liveState.id;
   try {
     const res = await api.legalActionsAt(id, ply);
-    if (props.liveState?.id === id && histPos.value === ply)
-      plyActions.value = { ply, actions: res.legalActions ?? [] };
+    if (props.liveState?.id === id) plyActions.value = { ply, actions: res.legalActions ?? [] };
   } catch { plyActions.value = { ply: null, actions: [] }; }
 }, { immediate: true });
 const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);

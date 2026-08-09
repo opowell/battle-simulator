@@ -223,7 +223,24 @@ test('games pool by what the mover knew, with results from their seat', () => {
   assert.equal(res.moves[0].games, 2);
   assert.equal(res.moves[0].win, 1);   // game 1, from white's seat
   assert.equal(res.moves[0].loss, 1);  // game 2, likewise
+  // Both strengths, kept apart: who played the move, and who they played it
+  // against. The corpus helper seats 2000 as white and 1800 as black, and white
+  // is the mover here.
   assert.equal(res.moves[0].avgRating, 2000);
+  assert.equal(res.moves[0].avgOppRating, 1800);
+  assert.equal(res.avgRating, 2000);
+  assert.equal(res.avgOppRating, 1800);
+});
+
+test('the two ratings follow the seat, not the colour', () => {
+  // Same corpus, asked for BLACK: now 1800 is the one playing and 2000 the
+  // opposition. A single averaged number could not tell those apart.
+  const index = buildIndex(corpusOf(game('1', ['d4', 'Na6', 'Nf3'], '1-0')));
+  const res = ask(index, line(['d4']), 'black');
+  assert.equal(res.total, 1);
+  assert.equal(res.moves[0].san, 'Na6');
+  assert.equal(res.moves[0].avgRating, 1800);
+  assert.equal(res.moves[0].avgOppRating, 2000);
 });
 
 test('rows carry a playable action', () => {
