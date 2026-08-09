@@ -54,6 +54,11 @@ window.api = {
   log:      (id)                    => _req('/sessions/' + id + '/log'),
   create:   (body)                  => _req('/sessions', { method: 'POST', body: JSON.stringify(body) }),
   action:   (id, playerId, action)  => _req('/sessions/' + id + '/action', { method: 'POST', body: JSON.stringify({ playerId, action }) }),
+  // Take moves back on an analysis board: `toPly` keeps that many, `plies`
+  // (default 1) drops that many from the end. Unlike a fork this rewrites the
+  // game — the moves are gone. Refused on anything but an analysis board.
+  undo:     (id, { toPly, plies } = {}) =>
+    _req('/sessions/' + id + '/undo', { method: 'POST', body: JSON.stringify({ toPly, plies }) }),
   // Generic surrender — ends the match immediately as a loss for `playerId`,
   // regardless of whose turn it is or which game this session is running.
   resign:   (id, playerId)          => _req('/sessions/' + id + '/resign', { method: 'POST', body: JSON.stringify({ playerId }) }),

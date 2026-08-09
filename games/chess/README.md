@@ -112,10 +112,16 @@ the pieces are, so the answer genuinely changes down the line.
 
 **An analysis board** (engine option `analysisBoard`, or the lobby's *Analysis*
 button). A study session with no opponent: you move both sides, the whole board
-can be revealed while you work, and the database and analysis panels stay open —
-none of which is a hole in the live-match rule, because the server only honours
-the flag when **no seat is played by an AI**. Fog stays on: the question the
-database answers only means something under fog.
+can be revealed while you work, moves can be taken back with **Undo**, and the
+database and analysis panels stay open — none of which is a hole in the live-match
+rule, because the server only honours the flag when **no seat is played by an
+AI**. Fog stays on: the question the database answers only means something under
+fog.
+
+Undo is not the same as stepping back or forking. Stepping back changes what is
+on screen; forking explores a line beside the game; Undo drops the move from the
+game, so play continues from before it — which under fog also takes back what the
+players had *seen* by then, and so changes what the database is asked.
 
 ## Where the AI is
 

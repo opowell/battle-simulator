@@ -281,6 +281,12 @@ who knew what this seat knows went on to play from here. `POST` takes
 ply, so an explored variation can be looked up too. Same availability rule as
 above: replay or analysis board, never a live match.
 
+#### `POST /sessions/:id/undo`
+Take moves back: `{ toPly }` keeps exactly that many, `{ plies }` (default 1)
+drops that many from the end. The moves are gone from the record — unlike a fork,
+which leaves the game alone and explores beside it — and everything they produced
+goes with them (result, captured pieces, recorded frames). Analysis boards only.
+
 #### `DELETE /sessions/:id`
 Close and remove a session.
 
@@ -288,9 +294,18 @@ Close and remove a session.
 
 Create a session with every seat `"human"` and `config.analysisBoard: true` and it
 becomes a study board rather than a match: you move all sides, the full board can
-be revealed while you play, and the analysis/database panels stay open. The flag
-is only honoured when no seat is played by an AI, so it cannot be used to open the
-book against an opponent. In the UI: a game's **Analysis** button in the lobby.
+be revealed while you play, moves can be taken back, and the analysis/database
+panels stay open. The flag is only honoured when no seat is played by an AI, so it
+cannot be used to open the book — or rewrite the moves — against an opponent. In
+the UI: a game's **Analysis** button in the lobby.
+
+Three ways to go back, which do different things:
+
+| | what it does |
+|---|---|
+| the ◀ ▶ history controls | change what is on screen; the game is untouched |
+| playing a move from a past ply | branches a "what if" line beside the game (a fork) |
+| **Undo** | drops the move from the game, and play continues from before it |
 
 ### Example: play a chess game via curl
 

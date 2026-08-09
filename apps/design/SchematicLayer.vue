@@ -51,11 +51,14 @@ const props = defineProps({
 const emit = defineEmits(['select', 'sq-click', 'set-marker']);
 const imgSrc = window.api.imgSrc;
 
-// Team whose pieces project vision. Normally the human (teams[0]); in reveal mode it
-// follows whoever is to move at the displayed ply, so fog flips as you step through.
+// Team whose pieces project vision, and whose side of the board the view is from.
+// In reveal mode it follows whoever is to move at the displayed ply, so fog flips
+// as you step through; otherwise it is the seat the server fog-filtered this
+// snapshot for (Battlefield.vue's viewerTeam), which is not always teams[0] —
+// hotseat and analysis boards hand the view back and forth every move.
 const viewerId = computed(() => props.revealAll
   ? props.viewerTeam
-  : (props.viewerOverride ?? props.field.teams?.[0]?.id ?? null));
+  : (props.viewerOverride ?? props.viewerTeam ?? props.field.teams?.[0]?.id ?? null));
 const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.id);
 
 // Which unit should blink when `ui.blinkActiveUnit` is set. In free-selection games

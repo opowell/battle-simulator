@@ -155,9 +155,13 @@ const blinkTargetId   = computed(() => props.field.ui?.freeSelection ? props.sel
 
 // Team whose pieces project vision — the human (teams[0]); in reveal mode whoever is to
 // move at the displayed ply, so fog flips as you step through. Mirrors SchematicLayer.
+// `viewerTeam` carries the seat this view belongs to in BOTH modes now (see
+// Battlefield.vue): the ply's mover while revealing, otherwise whoever the server
+// fog-filtered for. teams[0] remains the fallback for callers that pass neither —
+// it is only correct when the viewer happens to be the first seat.
 const viewerId = computed(() => props.revealAll
   ? props.viewerTeam
-  : (props.viewerOverride ?? props.field.teams?.[0]?.id ?? null));
+  : (props.viewerOverride ?? props.viewerTeam ?? props.field.teams?.[0]?.id ?? null));
 const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.id);
 
 // ── fog of war ────────────────────────────────────────────────────────────────

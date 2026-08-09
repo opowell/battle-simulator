@@ -57,7 +57,7 @@ const props = defineProps({
   // non-live field playback) — App.vue owns it, the footer's speed control sets it.
   playbackSpeed:      { type: Number, default: 1 },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'resign', 'set-marker', 'new-game', 'fork-move', 'exit-fork', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'resign', 'set-marker', 'new-game', 'fork-move', 'exit-fork', 'undo', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -226,7 +226,13 @@ const snapshotField = () => props.resolvedField ?? props.field;
 // literal each time would look "changed" on every single tick and wipe the history
 // constantly — chess's frequent live-state churn made this the common case, not an
 // edge case.
-watch([() => props.liveState?.id, () => props.liveState?.viewerId], () => {
+//
+// An ANALYSIS BOARD is the exception: there the seat changes on every single move
+// (one person plays both sides), so honouring that rule would leave a timeline one
+// frame long and nothing to step back through. Mixing the seats is what is wanted
+// there — it is the same thing replay does, showing each ply as the side to move
+// saw it.
+watch([() => props.liveState?.id, () => (analysisBoard.value ? null : props.liveState?.viewerId)], () => {
   stopHistoryPlay();
   fieldHistory.value = snapshotField() ? [snapshotField()] : [];
   histPos.value = 0;
@@ -247,6 +253,16 @@ watch(() => props.historyFields, (h) => {
 
 watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
   if (oldLen === undefined || !snapshotField()) return;
+  // A SHORTER log means moves were taken back (analysis boards — see undoMoves).
+  // The frames those moves produced describe positions that no longer exist, so
+  // they go; index 0 is the pre-move snapshot, hence the +1.
+  if (newLen < oldLen) {
+    const kept = fieldHistory.value.slice(0, newLen + 1);
+    fieldHistory.value = kept.length ? kept : [snapshotField()];
+    histPos.value = Math.min(histPos.value, fieldHistory.value.length - 1);
+    clearExactFrame();
+    return;
+  }
   fieldHistory.value = [...fieldHistory.value, snapshotField()];
   if (histPos.value >= fieldHistory.value.length - 2) histPos.value = fieldHistory.value.length - 1;
   clearExactFrame(); // a new turn replaces the playback model any pending frame was for
@@ -414,10 +430,21 @@ const exploredTileSet = computed(() => {
   return acc;
 });
 
-// Fog perspective in reveal mode: white is to move at even plies (ply 0 = initial
-// position), black at odd plies — so the viewer flips as you step through the game.
+// Whose eyes the board is drawn through — which the render layers need for more
+// than fog itself: it decides which way pawns move and which colour a guessed
+// piece is drawn in (an unseen enemy is drawn in the OTHER side's colours).
+//
+// In reveal mode that flips with the playhead: white is to move at even plies
+// (ply 0 = the initial position), black at odd ones, so stepping through the game
+// shows each position through the eyes of whoever was deciding.
+//
+// Otherwise it is the seat the server fog-filtered this snapshot FOR. Layers used
+// to assume teams[0] here, which is right for an ordinary one-human game and
+// wrong the moment the viewer is the other seat — a hotseat or analysis board,
+// where the view changes hands every move, drew black's hidden enemies (white
+// pieces) in black's own colours.
 const viewerTeam = computed(() => {
-  if (!revealAll.value) return null;
+  if (!revealAll.value) return props.liveState?.viewerId ?? null;
   const teams = props.field.teams;
   return teams[histPos.value % 2]?.id ?? teams[0]?.id ?? null;
 });
@@ -437,6 +464,39 @@ function toggleReveal() {
   inspectTerrain.value = false;
   histPos.value = Math.max(0, histLength.value - 1);
 }
+
+// ── taking moves back (analysis boards) ───────────────────────
+// Stepping back only changes what is on screen; this drops the moves from the
+// game itself, so play continues from the earlier position (App.vue does the
+// call — see api-server.js's POST /sessions/:id/undo). Offered only where the
+// server would allow it anyway, and only once something has been played.
+const playedPlies = computed(() => props.liveState?.log?.length ?? 0);
+const canUndo = computed(() => analysisBoard.value && playedPlies.value > 0 && !forking.value);
+// Where the playhead is aims it: stepping back to a ply and taking the game back
+// to that ply is one gesture, not two. At the latest ply there is nothing aimed
+// at, so it means "the last move".
+const undoToPly = computed(() => (atLatest.value ? playedPlies.value - 1 : histPos.value));
+const undoTitle = computed(() => {
+  const n = playedPlies.value - undoToPly.value;
+  return atLatest.value
+    ? 'Take the last move back'
+    : `Take back ${n} ${n === 1 ? 'move' : 'moves'} — play on from the position you are looking at`;
+});
+function undoMoves() {
+  if (!canUndo.value) return;
+  stopHistoryPlay();
+  // Reveal stays as the viewer set it: the frames behind it are rebuilt (App.vue
+  // re-fetches them because the log got shorter) but that is no reason to put the
+  // fog back over a board somebody deliberately uncovered. `histPos` is clamped
+  // by the watcher below once the shorter timeline arrives.
+  emit('undo', { toPly: undoToPly.value });
+}
+
+// Whatever shortens the timeline — an undo, or a reveal source that came back
+// smaller — must not leave the playhead pointing past its end.
+watch(histLength, (len) => {
+  if (histPos.value > len - 1) histPos.value = Math.max(0, len - 1);
+});
 
 // ── turn timeline ─────────────────────────────────────────────
 // Which turn each recorded ply belongs to. fieldHistory carries a snapshot of the
@@ -1630,6 +1690,7 @@ onUnmounted(() => {
       :histPos="histPos" :histLength="histLength" :atLatest="atLatest"
       :isDone="isDone"
       :canReveal="canReveal" :revealAll="revealAll"
+      :canUndo="canUndo" :undoTitle="undoTitle"
       :showZoom="zoomEnabled" :canZoomIn="canZoomIn" :canZoomOut="canZoomOut"
       :paused="liveState?.paused ?? false" :aiDelay="liveState?.aiDelay ?? 0"
       :observerPaced="liveState?.observerPaced ?? false"
@@ -1641,7 +1702,7 @@ onUnmounted(() => {
       @step-back="stepBack" @step-fwd="stepFwd" @toggle-play="togglePlay"
       @scrub="scrub" @go-back="goBack" @go-forward="goForward"
       @seek-ply="seekTo" @seek-time="seekTime"
-      @toggle-reveal="toggleReveal"
+      @toggle-reveal="toggleReveal" @undo="undoMoves"
       @toggle-pause="toggleLivePause" @set-ai-delay="setAiDelay"
       @set-pause-after-playback="$emit('set-pause-after-playback', $event)"
       @step-forward="$emit('step-forward')"

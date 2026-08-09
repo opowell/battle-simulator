@@ -21,6 +21,7 @@ const ICON_PATHS = {
   check:'M5 12l5 5 9-11',
   sliders:'M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M11 15v6',
   search:'M11 4a7 7 0 100 14 7 7 0 000-14zM16 16l4 4',
+  undo:'M4 9h11a5 5 0 010 10h-6M4 9l4-4M4 9l4 4',
   zoomin:'M11 4a7 7 0 100 14 7 7 0 000-14zM16 16l4 4M11 8v6M8 11h6',
   zoomout:'M11 4a7 7 0 100 14 7 7 0 000-14zM16 16l4 4M8 11h6',
 };

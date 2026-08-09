@@ -15,6 +15,11 @@ defineProps({
   isDone:          Boolean,
   canReveal:       Boolean,
   revealAll:       Boolean,
+  // Taking moves back (analysis boards): whether it is offered at all, and what
+  // this click would do — worth spelling out, since "back to the ply you are
+  // looking at" and "back one move" are the same button.
+  canUndo:         Boolean,
+  undoTitle:       { type: String, default: 'Take the last move back' },
   showZoom:        Boolean,
   canZoomIn:       { type: Boolean, default: true },
   canZoomOut:      { type: Boolean, default: true },
@@ -40,7 +45,7 @@ defineProps({
   playbackSpeed:   { type: Number, default: 1 },
 });
 defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-forward',
-             'toggle-reveal', 'zoom-in', 'zoom-out',
+             'toggle-reveal', 'undo', 'zoom-in', 'zoom-out',
              'toggle-pause', 'set-ai-delay', 'toggle-history-play', 'seek-ply',
              'set-pause-after-playback', 'step-forward', 'seek-time', 'set-playback-speed']);
 </script>
@@ -89,6 +94,15 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
         </button>
         <span class="mono bb-sep">·</span>
       </template>
+      <!-- Take the move back for real (analysis boards only — see Session.rewindTo).
+           Not the same as stepping back, which only changes what is on screen:
+           this drops the move from the game so play continues from before it.
+           Stepping back first aims it: it takes the game back to the ply you are
+           looking at. -->
+      <button v-if="canUndo" class="btn btn-sm bb-undo" @click="$emit('undo')" :title="undoTitle">
+        <BsIcon name="undo" :size="13" color="var(--dim)"/>
+        Undo
+      </button>
       <button v-if="canReveal" class="btn btn-sm bb-reveal"
               :class="{ 'bb-reveal--on': revealAll }"
               @click="$emit('toggle-reveal')"
@@ -145,6 +159,7 @@ defineEmits(['step-back', 'step-fwd', 'toggle-play', 'scrub', 'go-back', 'go-for
 .bb-count--latest { color: var(--faint); }
 .bb-flip { transform: scaleX(-1); }
 .bb-sep { font-size: 11px; color: var(--faint); }
+.bb-undo { gap: 5px; }
 .bb-reveal { gap: 5px; }
 .bb-reveal--on { border-color: var(--accent); color: var(--accent); }
 .bb-spacer { flex: 1; }

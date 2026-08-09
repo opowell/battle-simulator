@@ -101,6 +101,48 @@ export class GameEngine {
     this._state = freeze(updater(this._state));
   }
 
+  /**
+   * Take moves back: drop everything after `ply` and put the game where it stood
+   * then, ready to be played on from there.
+   *
+   * Done by REPLAYING the kept log from the initial state rather than by trying to
+   * invert the moves. A game definition knows how to advance a position and
+   * nothing more — captures, promotions, spent resources and rolled dice are not
+   * generally recoverable from the position they produced — so the only honest
+   * "before" is the one the same moves reproduce. That also means the result and
+   * the clock come back as they were, not as something patched up.
+   *
+   * Nothing about turn order or legality is bypassed: the kept moves were legal
+   * when they were played, and they are replayed through the same applyActions.
+   * Callers decide WHO may do this — the engine only offers the mechanism (see
+   * api-server.js, which allows it on analysis boards and nowhere else).
+   *
+   * CAVEAT for games with randomness: an unseeded `config.rng` cannot be rewound,
+   * so re-resolving the kept moves re-rolls anything they rolled. The history is
+   * the same moves, but a dice game's outcomes along it may differ from what was
+   * first played. Deterministic games (chess, the one that has a use for this so
+   * far) come back exactly.
+   *
+   * @param {number} ply how many logged turns to keep.
+   * @returns {number} how many were dropped.
+   */
+  rewindTo(ply) {
+    const keep = Math.max(0, Math.min(Math.floor(ply), this._log.length));
+    const dropped = this._log.length - keep;
+    if (dropped <= 0) return 0;
+
+    const kept = this._log.slice(0, keep);
+    this._init();
+    for (const entry of kept) {
+      this._state = freeze(this.game.applyActions(this._state, entry.playerActions, this._rng));
+      this._log.push(entry);
+    }
+    // A game that had ended may be un-ended by this (taking back the mate), and a
+    // game that had not may now be over if the rewind target was itself terminal.
+    this._result = this.game.getResult?.(this._state) ?? null;
+    return dropped;
+  }
+
   _playerById(id) {
     return this.players.find(p => p.id === id);
   }

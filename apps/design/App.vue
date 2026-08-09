@@ -889,10 +889,15 @@ watch(() => {
   if (!s?.fog) return null;
   if (s.status !== 'active') return `${s.id}:done`;
   return s.analysisBoard ? `${s.id}:${s.log?.length ?? 0}` : null;
-}, (key) => {
-  revealFields.value = [];
-  revealLog.value    = [];
-  if (key) loadReveal(liveState.value.id, liveState.value);
+}, (key, prev) => {
+  if (!key) { revealFields.value = []; revealLog.value = []; return; }
+  // Same session, one move later (an analysis board being played): keep the frames
+  // already on screen until the new ones land. Blanking them first would take the
+  // reveal control away mid-move — the board would drop out of "Reveal all" and
+  // back into fog with every move, which is exactly what someone studying a
+  // position does not want.
+  if (key.split(':')[0] !== prev?.split(':')[0]) { revealFields.value = []; revealLog.value = []; }
+  loadReveal(liveState.value.id, liveState.value);
 });
 
 async function enterSession(id, { push = true } = {}) {
@@ -962,6 +967,24 @@ async function resign(playerId) {
     const state = await api.resign(liveState.value.id, playerId);
     liveState.value = state;
     stopPoll();
+  } catch (e) { serverErr.value = e.message; }
+}
+
+// Take moves back on an analysis board (Battlefield's Undo). The server rewinds
+// the session itself (Session.rewindTo), so anything hanging off the moves that
+// just vanished goes with them: a fork branched off a position that may no longer
+// exist, and the revealed history, which the fog watcher above re-fetches on its
+// own because the log length changed. The shorter log is also what tells
+// Battlefield to drop the timeline frames those moves produced — deliberately not
+// a /history fetch, which in fog mode would hand over every hidden piece.
+async function undoMoves({ toPly, plies } = {}) {
+  if (!liveState.value) return;
+  const id = liveState.value.id;
+  try {
+    forkState.value = null;
+    forkError.value = '';
+    liveState.value = await api.undo(id, { toPly, plies });
+    maybeStartPoll(liveState.value);
   } catch (e) { serverErr.value = e.message; }
 }
 
@@ -1145,6 +1168,7 @@ async function restartGame() {
                    @stop-replay="stopReplay"
                    @fork-move="doForkMove"
                    @exit-fork="exitFork"
+                   @undo="undoMoves"
                    @set-playback-speed="setPlaybackSpeed"/>
       <div v-else class="app-loading">
         Loading…

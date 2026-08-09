@@ -106,6 +106,46 @@ test('log records each step', async () => {
   assert.ok(log[0].playerActions[0].action.type === 'pass');
 });
 
+test('rewindTo takes moves back, log and position together', async () => {
+  const engine = new GameEngine(MockGame, makePlayers(['a', 'b']));
+  await engine.step();
+  await engine.step();
+  await engine.step();
+  assert.equal(engine.log.length, 3);
+  assert.equal(engine.state.gameSpecific.passCount, 3);
+  assert.equal(engine.state.activePlayers[0], 'b');
+
+  assert.equal(engine.rewindTo(1), 2, 'two turns dropped');
+  assert.equal(engine.log.length, 1);
+  // The position is the one those moves led to, not a patched-up guess: the
+  // game's own counter agrees with the shortened log.
+  assert.equal(engine.state.gameSpecific.passCount, 1);
+  assert.equal(engine.state.activePlayers[0], 'b');
+
+  // ...and play continues from there, into a different future.
+  await engine.step();
+  assert.equal(engine.log.length, 2);
+  assert.equal(engine.state.gameSpecific.passCount, 2);
+});
+
+test('rewindTo un-ends a finished game, and refuses to invent history', async () => {
+  const engine = new GameEngine(MockGame, makePlayers(['a', 'b']));
+  await engine.run();
+  assert.ok(engine.result, 'the mock game ends itself after 3 turns');
+
+  const played = engine.log.length;
+  engine.rewindTo(played - 1);
+  assert.equal(engine.result, null, 'taking the last move back takes the ending back too');
+
+  assert.equal(engine.rewindTo(played + 5), 0, 'nothing to drop past the end');
+  assert.equal(engine.log.length, played - 1, 'and nothing invented either');
+
+  const remaining = engine.log.length;
+  assert.equal(engine.rewindTo(-3), remaining, 'a negative target means the start');
+  assert.equal(engine.log.length, 0);
+  assert.equal(engine.state.gameSpecific.passCount, 0);
+});
+
 test('illegal action injection throws', async () => {
   const BadAgent = {
     id: 'bad',

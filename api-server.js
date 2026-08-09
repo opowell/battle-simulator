@@ -524,12 +524,11 @@ class Session {
     }
   }
 
-  _captureGrid() {
+  _captureGrid(state = this.engine.state) {
     try {
       const { game } = GAMES[this.gameName];
-      const rawState = this.engine.state;
-      if (!rawState || !game.toGrid) return null;
-      return applyAxisLabels(game, game.toGrid(rawState));
+      if (!state || !game.toGrid) return null;
+      return applyAxisLabels(game, game.toGrid(state));
     } catch { return null; }
   }
 
@@ -645,17 +644,33 @@ class Session {
     }
   }
 
-  async _run() {
+  // `init: false` resumes a session that already has a position — used after
+  // moves are taken back, where re-initialising would throw the game away.
+  async _run({ init = true } = {}) {
+    this._looping = true;
     try {
-      this.engine._init();
-      this._pushGridHistory(this._captureGrid());
-      this._broadcast();
+      if (init) {
+        this.engine._init();
+        this._pushGridHistory(this._captureGrid());
+        this._broadcast();
+      }
       while (this.status === 'active') {
         await this._waitWhilePaused();
         if (this.status !== 'active') break;
         this._sawHumanPending = false;
         const preState = this.engine.state; // pre-step state, for sim-time timing below
-        const { done } = await this.engine.step();
+        let done;
+        try {
+          ({ done } = await this.engine.step());
+        } catch (err) {
+          // Moves were taken back while this step was waiting on the human whose
+          // turn no longer exists (rewindTo aborts the pending agent to get here).
+          // The step never happened, so nothing below it should run — just ask
+          // again, now from the position the rewind left behind.
+          if (!this._rewinding) throw err;
+          this._rewinding = false;
+          continue;
+        }
         this._seq++;
         // How much game-time this step represents, so an observer can play it back
         // at real sim-speed (e.g. csmini's 5-second turn takes 5 seconds on screen)
@@ -696,7 +711,75 @@ class Session {
         this.error = err.message;
         this._broadcast();
       }
+    } finally {
+      this._looping = false;
     }
+  }
+
+  /**
+   * Take moves back on an ANALYSIS BOARD: drop everything after `ply` and stand
+   * the session where it was then, ready to play on. The move you take back is
+   * gone from the record, not branched off it — that is the difference between
+   * this and the fork sandbox, which leaves the game alone.
+   *
+   * Analysis boards only, and for the same reason they may open the database:
+   * every seat belongs to the person asking, so there is no opponent whose game
+   * is being rewritten under them.
+   *
+   * Everything the dropped moves produced goes with them — the result, the
+   * captured-piece list, the recorded grids, the AI's stale decision records —
+   * because each is derived from the log, and a half-rewound session would show
+   * a piece as captured that is standing back on the board.
+   */
+  rewindTo(ply) {
+    if (!this.analysisBoard) throw new Error('Moves can only be taken back on an analysis board');
+    if (this.status === 'closed') throw new Error('Session is closed');
+
+    const dropped = this.engine.rewindTo(ply);
+    if (!dropped) return { dropped: 0, plies: this.engine.log.length };
+
+    this.result = this.engine.result ?? null;
+    this.status = this.result ? 'done' : 'active';
+
+    // Anything that is alive again was never captured in this line.
+    const alive = new Set((this.engine.state?.units ?? [])
+      .filter(u => u.alive !== false).map(u => u.id));
+    this.casualties = this.casualties.filter(c => !alive.has(c.id));
+
+    // Re-render the timeline from the log that survived, through the same
+    // sampling/thinning as live play (see _pushGridHistory).
+    const { game } = GAMES[this.gameName];
+    this.gridHistory = [];
+    this._gridStepCount = 0;
+    this._gridStride = 1;
+    for (const state of replayStatesToPly(game, this, this.engine.log.length))
+      this._pushGridHistory(this._captureGrid(state));
+
+    this.aiAnalysis = {};
+    this._stepSimTime = 0;
+    this._awaitingAdvance = false;
+
+    // Belief trackers (what the analysis panel reasons with under fog) only ever
+    // move FORWARD: they advance a turn at a time and filter against what has been
+    // seen since. After a rewind they are ahead of the board, and being handed an
+    // earlier turn makes them answer nonsense — or throw. They key on the state's
+    // `players` array by object IDENTITY, so handing the rewound state a fresh one
+    // makes them attach here from scratch, which is what a position nobody has
+    // observed yet should get. (replayStateAtPly leans on the same property, for
+    // the same reason.)
+    this.engine.patchState(s => ({ ...s, players: (s.players ?? []).map(p => ({ ...p })) }));
+
+    // The loop is parked inside the taken-back turn's chooseAction (or has exited
+    // altogether, if the moves being undone had ended the game). Abort the wait so
+    // it re-asks from the new position, and restart it if it is gone. `_rewinding`
+    // is how the loop tells that abort apart from a real failure.
+    this._rewinding = true;
+    for (const agent of this.apiAgents.values()) agent.abort('Moves taken back');
+    if (this.status === 'active' && !this._looping) this._run({ init: false });
+
+    this._persist();
+    this._broadcast();
+    return { dropped, plies: this.engine.log.length };
   }
 
   /**
@@ -1308,6 +1391,38 @@ async function handleResign(req, res, id) {
   send(res, 200, session.toJSON(playerId));
 }
 
+// POST /sessions/:id/undo { plies?, toPly? } — take moves back on an analysis
+// board. `toPly` keeps exactly that many; `plies` (default 1) drops that many
+// from the end. The moves are gone from the record, unlike a fork, which leaves
+// the game where it was and explores beside it.
+async function handleUndo(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+
+  let body = {};
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+
+  const played = session.engine.log.length;
+  const toPly = body.toPly != null ? Number(body.toPly)
+    : played - (body.plies != null ? Number(body.plies) : 1);
+  if (!Number.isFinite(toPly)) return err(res, 400, 'Invalid ply');
+
+  let outcome;
+  try { outcome = session.rewindTo(toPly); }
+  catch (e) { return err(res, 400, e.message); }
+
+  // The run loop re-asks the rewound position asynchronously, so `pendingPlayer`
+  // is a moment behind right here. Wait for it rather than answering with a
+  // momentarily seatless session that the client would render as "no actions"
+  // until the socket caught up.
+  const seat = session.engine.state?.activePlayers?.[0] ?? null;
+  for (let i = 0; i < 20 && session.status === 'active' && !session.pendingFor(seat); i++) {
+    await new Promise(r => setImmediate(r));
+  }
+  send(res, 200, { ...outcome, ...session.toJSON(seat) });
+}
+
 // Live playback controls: pause/resume the run loop and set the AI pacing delay.
 // Not a game move — it doesn't touch the authoritative state or consume a turn; it
 // just changes how fast (and whether) the engine auto-advances. The change is
@@ -1878,6 +1993,10 @@ async function handleRequest(req, res) {
     // POST /sessions/:id/action
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'action')
       return await handleSubmitAction(req, res, parts[1]);
+
+    // POST /sessions/:id/undo — take moves back (analysis boards only)
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'undo')
+      return await handleUndo(req, res, parts[1]);
 
     // POST /sessions/:id/resign — generic surrender, any game, any turn
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'resign')
