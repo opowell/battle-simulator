@@ -223,7 +223,10 @@ function fmtAction(action) {
 <style scoped>
 .ap { padding: 12px 14px; border-top: 1px solid var(--line); }
 .ap-title { margin-bottom: 8px; }
+/* The global `.action-btn + .action-btn` margin is for stacked lists; in this
+   grid it would only skip the first cell, so the row heights come out uneven. */
 .ap-empire { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
+.ap-empire .action-btn { margin-top: 0; }
 .ap-btn--sm { justify-content: center; padding: 5px 0; }
 .ap-phase { font-weight: 400; color: var(--faint); }
 .ap-done { font-size: 12px; color: var(--ok); }
