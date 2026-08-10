@@ -232,14 +232,14 @@ onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId); });
 </template>
 
 <style scoped>
-/* Docked at the foot of the left sidebar. `margin-top: auto` takes up the slack
-   when the panels above are short; `position: sticky` keeps it on screen once
-   they're tall enough to scroll the column — together, "always at the bottom"
-   in both states. flex-shrink guards against a short viewport squashing it. */
+/* The left sidebar's footer: it sits below the column's scrolling region (see
+   Battlefield's .bf-col-body), so it's always at the bottom without floating
+   over the panels above — nothing ever scrolls under it. flex-shrink guards
+   against a short viewport squashing it. */
 .mm {
-  margin: auto auto 0; position: sticky; bottom: 0; z-index: 4; flex-shrink: 0;
+  margin: 10px auto; flex-shrink: 0;
   border: 1px solid var(--line); border-radius: var(--r);
-  background: var(--bg1); box-shadow: 0 -2px 10px -4px rgba(0,0,0,.5);
+  background: var(--bg1);
   overflow: hidden;
 }
 /* touch-action: a touch drag must pan the map, not scroll/zoom the page under it. */

@@ -1600,41 +1600,43 @@ onUnmounted(() => {
 
     <div class="bf-main">
 
-      <!-- Left panel -->
+      <!-- Left panel: the panels scroll in their own region so the minimap below
+           them is a real footer — it never overlaps the actions it used to sit on. -->
       <div class="bf-col bf-col--left">
-        <GameHeader
-          :field="field" :liveState="liveState" :isLive="isLive"
-          :isDone="isDone" :isPending="isPending" :pendingPlayerId="pendingPlayerId"
-          :statusPlayerId="analysisPlayerId"
-          :showMenu="showMenu" :ui="ui"
-          @toggle-menu="showMenu = !showMenu"
-          @show-help="showHelp = true"/>
+        <div class="bf-col-body">
+          <GameHeader
+            :field="field" :liveState="liveState" :isLive="isLive"
+            :isDone="isDone" :isPending="isPending" :pendingPlayerId="pendingPlayerId"
+            :statusPlayerId="analysisPlayerId"
+            :showMenu="showMenu" :ui="ui"
+            @toggle-menu="showMenu = !showMenu"
+            @show-help="showHelp = true"/>
 
-        <SelectedUnitDetail v-if="selectedUnit && !selectedCity"
-          :unit="selectedUnit" :field="field" :rdr="rdr" :showHpBars="showHpBars"
-          @open-info="openInfo"
-          @open-ability-info="openAbilityInfo"/>
-        <SelectedSquareDetail v-else-if="selectedTerrain" :terrain="selectedTerrain"/>
-        <div v-else-if="!selectedCity" class="bf-empty">
-          Select a unit{{ (field.shapes?.length || field.hasTerrain) ? ', or "Inspect terrain…" then a tile,' : '' }} to view details.
+          <SelectedUnitDetail v-if="selectedUnit && !selectedCity"
+            :unit="selectedUnit" :field="field" :rdr="rdr" :showHpBars="showHpBars"
+            @open-info="openInfo"
+            @open-ability-info="openAbilityInfo"/>
+          <SelectedSquareDetail v-else-if="selectedTerrain" :terrain="selectedTerrain"/>
+          <div v-else-if="!selectedCity" class="bf-empty">
+            Select a unit{{ (field.shapes?.length || field.hasTerrain) ? ', or "Inspect terrain…" then a tile,' : '' }} to view details.
+          </div>
+          <button v-if="field.shapes?.length || field.hasTerrain"
+            class="action-btn bf-inspect-btn" :class="{ 'bf-inspect-btn--on': inspectTerrain }"
+            @click="toggleInspectTerrain">
+            {{ inspectTerrain ? 'Cancel inspect' : 'Inspect terrain…' }}
+          </button>
+
+          <ActionsPanel v-if="isLive"
+            :isDone="isDone" :atLatest="atLatest" :isPending="isPending"
+            :selectedId="selectedId" :activeUnitId="activeUnitId" :ui="ui"
+            :unitMoves="unitMoves" :queuingMoves="queuingMoves" :displayedActions="displayedActions"
+            :pendingPlayerId="pendingPlayerId" :liveState="liveState" :units="displayUnits"
+            :aiming="aiming" :civ="field.civ" :cities="field.cities" :military="field.military"
+            @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"/>
         </div>
-        <button v-if="field.shapes?.length || field.hasTerrain"
-          class="action-btn bf-inspect-btn" :class="{ 'bf-inspect-btn--on': inspectTerrain }"
-          @click="toggleInspectTerrain">
-          {{ inspectTerrain ? 'Cancel inspect' : 'Inspect terrain…' }}
-        </button>
-
-        <ActionsPanel v-if="isLive"
-          :isDone="isDone" :atLatest="atLatest" :isPending="isPending"
-          :selectedId="selectedId" :activeUnitId="activeUnitId" :ui="ui"
-          :unitMoves="unitMoves" :queuingMoves="queuingMoves" :displayedActions="displayedActions"
-          :pendingPlayerId="pendingPlayerId" :liveState="liveState" :units="displayUnits"
-          :aiming="aiming" :civ="field.civ" :cities="field.cities" :military="field.military"
-          @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"/>
 
         <!-- Overview map + jump-to control, for the same games that get zoom/pan.
-             Pinned to the foot of this column (see .mm), so it stays put as the
-             panels above it change height or scroll. -->
+             The column's own footer, below the scrolling panels (see .mm). -->
         <Minimap v-if="zoomEnabled"
           :field="displayField" :units="renderUnits" :rdr="rdr"
           :center="viewCenter" :tilePx="tilePx" :stageW="stageW" :stageH="stageH"
@@ -1811,7 +1813,10 @@ onUnmounted(() => {
 .bf-root { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .bf-main { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .bf-col { width: 240px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--bg1); }
-.bf-col--left { border-right: 1px solid var(--line); }
+/* The left column scrolls in .bf-col-body, not as a whole, so whatever sits after
+   the body (the minimap) is a footer the scrolling content can never run under. */
+.bf-col--left { border-right: 1px solid var(--line); overflow: hidden; }
+.bf-col-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .bf-col--right { border-left: 1px solid var(--line); }
 .bf-stage-area { flex: 1; position: relative; overflow: hidden; }
 .bf-empty { padding: 12px 14px; font-size: 11px; color: var(--faint); }
