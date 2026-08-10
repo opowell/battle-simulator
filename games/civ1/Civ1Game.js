@@ -1,4 +1,3 @@
-import { HTML_RENDERER_OPTION, MAP_ZOOM_OPTION } from '../renderOptions.js';
 import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
@@ -918,15 +917,16 @@ export const Civ1Game = {
   // `kinematics.speed` (a unit's `moves`).
   spacetime: CIV1_SPACETIME,
   kinematics,
-  // defaultTileSize: the map runs to 100x60 tiles, far more than fits legibly on the stage
-  // at once — start at the original game's rough tile scale and let the player pan/zoom.
+  // mapZoom/defaultTileSize: the map runs to 100x60 tiles, far more than fits legibly on
+  // the stage at once, so the zoom & pan controls are always on here (not a configurable
+  // option) and the view starts at the original game's rough tile scale.
   // moveQueue: the goto-queue mechanic (games/moveQueue.js) — on by default for every game,
   // stated here explicitly since civ1 is the one that actually wires it up (queue-move/
   // queue-pop, see getLegalActions/applyActions above).
   ui: {
     hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
     blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
-    defaultTileSize: 40, moveQueue: true,
+    mapZoom: true, defaultTileSize: 40, moveQueue: true,
     // Once the selected unit runs out of orders (moves used up, or it's been given a
     // standing fortify/sentry order — see toGrid's `needsOrders`), jump selection to
     // another of the player's units that still wants orders (see Battlefield.vue).
@@ -966,8 +966,6 @@ export const Civ1Game = {
   // every land colour here is that same green; ocean matches the real water tile.
   colors: { ocean: '#5046a0', coast: '#5046a0', plains: '#719230', grassland: '#719230', forest: '#719230', hills: '#719230', mountains: '#719230', desert: '#719230', tundra: '#719230', arctic: '#719230', jungle: '#719230', swamp: '#719230' },
   gameOptions: [
-    HTML_RENDERER_OPTION,
-    MAP_ZOOM_OPTION,
     // Difficulty is a preset applied equally to BOTH civilizations (it never buffs the
     // AI — the AI only gets stronger or weaker from how much it is allowed to think).
     // Higher levels leave fewer citizens content, so cities fall into disorder sooner.

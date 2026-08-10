@@ -19,6 +19,9 @@ export const HTML_RENDERER_OPTION = {
 // Show zoom in/out buttons on the bottom bar and let a click on the map recentre the view
 // (see Battlefield.vue's zoom state). Worth adding for games whose map is bigger than the
 // stage can usefully show at once; small fixed boards (chess) should leave it out entirely.
+// A game whose map is ALWAYS too big to show at once shouldn't offer the choice at all:
+// set `ui.mapZoom: true` and skip this option (civ1). That flag forces zoom on and beats
+// any stale config value — see Battlefield.vue's zoomEnabled.
 // The starting zoom comes from the game's `ui.defaultTileSize` (px per tile); without one
 // the view starts fitted to the stage as before.
 //
