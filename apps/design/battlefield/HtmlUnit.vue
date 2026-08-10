@@ -66,14 +66,16 @@ function hpColor(frac, raw) {
        @click="$emit('click', $event)"
        @mousedown="$emit('mousedown', $event)">
     <!-- Body: team sprite, else a shape marker carrying the unit's initial. The rings are
-         outlines on this box (active wins over selected wins over roster-hover). A badged
+         outlines on this box (active wins over selected wins over roster-hover), except
+         that a blinking token gets no selected ring — the blink is already the "this one
+         is yours to move" signal, and SchematicLayer skips it for the same reason. A badged
          token (civ1 cities — see Civ1Game.js's `badge` field) always gets an owner-colour
          backdrop: its sprite (map/city.png) is a small transparent-background icon that
          otherwise vanishes into the terrain under it. -->
     <div class="hl-body"
          :class="[
            unit.imagePath ? 'hl-body--sprite' : 'hl-marker hl-marker--' + shape,
-           active ? 'hl-ring-active' : selected ? 'hl-ring-selected' : hovered ? 'hl-ring-hover' : '',
+           active ? 'hl-ring-active' : (selected && !blink) ? 'hl-ring-selected' : hovered ? 'hl-ring-hover' : '',
          ]"
          :style="{
            width: r*2+'px', height: r*2+'px',
