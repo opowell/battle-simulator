@@ -1,4 +1,3 @@
-import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { getWarodDotsBelief } from './belief.js';
 import { forEachCell } from '../terrainShapes.js';
 
@@ -505,10 +504,6 @@ function evaluateState(state, playerId) {
 export const WarodDotsGame = {
   name: 'War of Dots',
   evaluateState,
-
-  gameOptions: [
-    HTML_RENDERER_OPTION,
-  ],
 
   ui: {
     help: {

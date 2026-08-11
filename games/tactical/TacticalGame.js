@@ -1,4 +1,3 @@
-import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { chebyshev, reachableSquares } from './grid.js';
 import { UNIT_STATS, calculateDamage } from './combat.js';
 import { getTacticalBelief } from './belief.js';
@@ -117,7 +116,6 @@ export const TacticalGame = {
   colors: { plains: '#c8b87a', water: '#4a8fd4', forest: '#3a7a3a' },
 
   gameOptions: [
-    HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
   ],
 

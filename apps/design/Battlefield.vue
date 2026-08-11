@@ -824,12 +824,10 @@ const MIN_TILE_PX = 4, MAX_TILE_PX = 240, ZOOM_STEP = 1.25;
 const zoomPx = ref(null);
 const center = ref(null);
 
-// A game that declares `ui.mapZoom` has zoom & pan unconditionally (civ1: the map is far
-// bigger than the stage, so there is nothing to choose) and offers no option to switch it
-// off — the `ui` flag wins over any config value a session saved back when it was one.
-// Everyone else gets it from the per-session MAP_ZOOM_OPTION, or not at all.
+// A game whose map never fits the stage declares `ui.mapZoom` and offers no option;
+// everyone else gets it per-session from MAP_ZOOM_OPTION, or not at all.
 const zoomEnabled = computed(() =>
-  ui.value.mapZoom || (props.liveState?.params?.config?.mapZoom ?? false));
+  props.liveState?.params?.config?.mapZoom ?? ui.value.mapZoom ?? false);
 
 // Each game starts at its own default tile size (or fitted), centred on the board.
 watch(() => props.liveState?.id, () => {

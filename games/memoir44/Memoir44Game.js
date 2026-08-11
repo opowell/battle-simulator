@@ -1,4 +1,4 @@
-import { HTML_RENDERER_OPTION, MAP_ZOOM_OPTION } from '../renderOptions.js';
+import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 import {
   BOARD_COLS, BOARD_ROWS, key, neighbors, distance, sectionsOf, SECTIONS,
   retreatNeighbors, toAxial, hexesBetween,
@@ -213,7 +213,7 @@ export const Memoir44Game = {
 
   colors: Object.fromEntries(Object.entries(TERRAIN).map(([k, v]) => [k, v.color])),
 
-  gameOptions: [HTML_RENDERER_OPTION, MAP_ZOOM_OPTION],
+  gameOptions: [MAP_ZOOM_OPTION],
 
   ui: { showFacing: false, showHpBars: true, showRoster: true },
 

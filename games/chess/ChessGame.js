@@ -19,7 +19,6 @@
 // (index.test.js, obscuro.test.js) are what notice if they drift.
 // ---------------------------------------------------------------------------
 
-import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import {
   isKingInCheck, renderBoard, getVisibleSquares, squareToXY, squareToGrid,
   getAllLegalMoves, getAllFogMoves,
@@ -228,7 +227,6 @@ export const ChessGame = {
     label: 'Fog of War games', source: 'Chess.com Fog of War archives',
   },
   gameOptions: [
-    HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
     { id: 'debugAI',  label: 'Debug AI',   description: 'Show all AI-controlled pieces even through Fog of War', type: 'boolean', default: false },
     { id: 'initialMarkers', label: 'Initial piece markers', description: "Start with fog markers on every hidden enemy piece's opening square (Fog of War only)", type: 'boolean', default: false },

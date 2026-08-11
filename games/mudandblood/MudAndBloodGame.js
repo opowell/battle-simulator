@@ -1,4 +1,3 @@
-import { HTML_RENDERER_OPTION } from '../renderOptions.js';
 import { unitStrengthEval } from '../evalHelpers.js';
 import { createMap, renderMap } from './map.js';
 import { getReachable, manhattan } from './grid.js';
@@ -123,7 +122,6 @@ export const MudAndBloodGame = {
   },
   name: 'Mud and Blood 2',
   gameOptions: [
-    HTML_RENDERER_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within range', type: 'boolean', default: false },
   ],
 
