@@ -851,11 +851,21 @@ function centerOn(x, y) {
   center.value = { x, y };
 }
 
+// The board token standing on a square, identified the way App.vue's buildField ids
+// them: a real unit's own id if one is there, else the synthetic position id that a
+// glyph-only cell (civ1's city sprite) gets. Needed because a garrisoned city's token
+// carries the GARRISON's id — so "select the city at x,y" can't just build the
+// synthetic id and hope.
+function tokenIdAt(x, y) {
+  const token = displayUnits.value.find(u => !u.dead && Math.floor(u.x) === x && Math.floor(u.y) === y);
+  return token?.id ?? `u_${x}_${y}`;
+}
+
 // A row in an empire-overview overlay (e.g. ActionsPanel's Cities list) was clicked —
 // jump the view there and select it, the same as clicking that square on the board.
 function handleGoto({ x, y, unitId }) {
   centerOn(x + 0.5, y + 0.5);
-  if (unitId) selectUnit(unitId);
+  if (unitId) selectUnit(tokenIdAt(x, y));
 }
 
 // The minimap sends one event for all three of its gestures (click = pan, double-click =
@@ -1423,10 +1433,15 @@ const selectedUnit = computed(() => displayUnits.value.find(u => u.id === select
 // sentry order — see Civ1Game.js's toGrid `needsOrders`). Opt-in via ui.autoAdvanceUnit
 // since most games have no such per-unit "still needs orders" concept at all — a plain
 // mp-hits-zero check would be wrong for them (see queuingMoves above on why `mp` alone
-// isn't a safe cross-game signal). Only fires on a true→not-true transition, so it
-// never fights a selection the player just made themselves by clicking elsewhere.
-watch(() => selectedUnit.value?.needsOrders, (needsOrders, prev) => {
-  if (!ui.value.autoAdvanceUnit || !isPending.value || prev !== true || needsOrders === true) return;
+// isn't a safe cross-game signal). Fires only when the SAME unit's flag goes true→not-
+// true, so it never fights a selection the player just made themselves: selecting
+// anything without orders to give — another unit, or a city (whose token has no
+// needsOrders at all) — is a selection change, not a unit finishing its turn, and used
+// to have its selection yanked straight back to the nearest unit still wanting orders.
+watch(() => [selectedId.value, selectedUnit.value?.needsOrders],
+      ([id, needsOrders], [prevId, prev] = []) => {
+  if (!ui.value.autoAdvanceUnit || !isPending.value || id !== prevId
+      || prev !== true || needsOrders === true) return;
   const myTeam = pendingPlayerId.value;
   const next = displayUnits.value.find(u => u.team === myTeam && u.needsOrders && u.id !== selectedId.value);
   if (next) { selectUnit(next.id); centerOn(next.x, next.y); }
@@ -1560,15 +1575,160 @@ function scrub(e) {
   tFloat.value = parseFloat(e.target.value);
 }
 
+// ── keyboard play ─────────────────────────────────────────────
+// Games that want to be playable without a mouse declare their own bindings in
+// ui.keys; keyBindings.js turns a keydown into one of the intents handled below and
+// knows no game (see its header for the declaration format, and civ1's ui.keys for
+// the real one). Everything here goes through the same submitAction/selectUnit/
+// centerOn paths the mouse uses, so a key can never do something a click can't.
+const PAN_TILES = 5;   // how far one shift+direction press scrolls the map
+
+// The named overview overlay on screen (ActionsPanel owns the components; its own
+// toolbar buttons set this too). Held here so a `panel` binding can open one.
+const openPanel = ref(null);
+
+// Anything covering the board swallows the board's keys, so 'b' while reading the
+// city screen can't found a city underneath it. Escape is handled ahead of this and
+// always gets through; panel keys stay live while a panel is up, so the advisor keys
+// switch between advisors the way the original's F-keys do.
+const overlayOpen = computed(() => !!(showMenu.value || showHelp.value || infoUnit.value
+  || infoAbility.value || openPanel.value || selectedCity.value));
+
+// Submit the first available action among `types` (a binding may name several, e.g.
+// civ1's I = irrigate here, clear the forest there) for the selected unit, or the
+// player-level ones like end-turn. getLegalActions stays the only authority: a key
+// whose action isn't legal right now simply does nothing.
+function keyAction(types) {
+  if (!canMove.value) return false;
+  for (const t of types) {
+    const action = legalActions.value.find(a => a.type === t &&
+      (a.unitId === selectedId.value || a.unitId === '__player__'));
+    if (action) { submitAction(action); return true; }
+  }
+  return false;
+}
+
+// One square in a direction with the selected unit: the same resolution clicking that
+// square gets (see handleSqClick), plus "move into an enemy to attack it" — the
+// mouse equivalent of that is the Attack button in the action list, which is fine
+// with a mouse and unreachable as a direction key.
+function keyMove(dx, dy) {
+  const u = selectedUnit.value;
+  if (!u || !canMove.value) return false;
+  const w = props.field.world;
+  const row = Math.floor(u.y) + dy;
+  let col = Math.floor(u.x) + dx;
+  if (w.wrap) col = ((col % w.w) + w.w) % w.w;   // civ1's east/west cylinder
+  if (col < 0 || col >= w.w || row < 0 || row >= w.h) return false;
+  const move = legalActions.value.find(a => {
+    if (a.unitId !== u.id) return false;
+    const coords = actionGridCoord(a, 'to');
+    return coords && coords[0] === col && coords[1] === row;
+  });
+  if (move) {
+    submitAction(move);
+    selectedSquare.value = null; selectedShape.value = null;
+    return true;
+  }
+  // `badge` marks a city token rather than a real unit (see selectedCity) — attack
+  // actions only ever target units, so a city sharing the square is skipped here.
+  const enemy = displayUnits.value.find(un => !un.dead && un.badge == null
+    && un.team !== u.team && Math.floor(un.x) === col && Math.floor(un.y) === row);
+  const attack = enemy && legalActions.value.find(a =>
+    a.type === 'attack' && a.unitId === u.id && a.targetId === enemy.id);
+  if (attack) { submitAction(attack); return true; }
+  return false;
+}
+
+function panBy(dx, dy) {
+  if (!zoomEnabled.value) return false;
+  const c = center.value ?? { x: props.field.world.w / 2, y: props.field.world.h / 2 };
+  centerOn(c.x + dx * PAN_TILES, c.y + dy * PAN_TILES);
+  return true;
+}
+
+// Picking a unit without a mouse: step to the next one that still wants orders,
+// wrapping around, and take the view with it — the same jump the auto-advance
+// watcher makes when a unit finishes. `needsOrders` is only meaningful for games
+// that stamp it (see civ1's toGrid); elsewhere every unit counts. Once nothing wants
+// orders it cycles the player's units anyway, so the key always gets somewhere.
+function selectNextUnit() {
+  const mine = displayUnits.value.filter(u => !u.dead && u.badge == null && u.team === pendingPlayerId.value);
+  const wanting = mine.filter(u => u.needsOrders !== false);
+  const pool = wanting.length ? wanting : mine;
+  if (!pool.length) return false;
+  const at = pool.findIndex(u => u.id === selectedId.value);
+  const next = pool[(at + 1) % pool.length];
+  selectUnit(next.id);
+  centerOn(next.x, next.y);
+  return true;
+}
+
+// Selecting a city opens the city screen (see selectedCity), so stepping through the
+// player's cities is how a keyboard gets at production without clicking each one on
+// the map. Same jump CitiesOverlay's rows make.
+function selectNextCity() {
+  const mine = (props.field.cities ?? []).filter(c => c.owner === pendingPlayerId.value);
+  if (!mine.length) return false;
+  const at = mine.findIndex(c => c.id === selectedCity.value?.id);
+  const next = mine[(at + 1) % mine.length];
+  centerOn(next.x + 0.5, next.y + 0.5);
+  selectUnit(tokenIdAt(next.x, next.y));
+  return true;
+}
+
+function keyCommand(command) {
+  if (command === 'center') {
+    const u = selectedUnit.value;
+    if (!u) return false;
+    centerOn(u.x, u.y);
+    return true;
+  }
+  if (command === 'next-unit') return canMove.value && selectNextUnit();
+  if (command === 'next-city') return selectNextCity();
+  if (command === 'help') { showHelp.value = true; return true; }
+  return false;
+}
+
 function onKeyDown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Escape') {
-    if (aiming.value)           aiming.value = null;
-    else if (infoAbility.value) infoAbility.value = null;
-    else if (infoUnit.value)    infoUnit.value = null;
-    else if (showHelp.value)    showHelp.value = false;
+    if (aiming.value)            aiming.value = null;
+    else if (infoAbility.value)  infoAbility.value = null;
+    else if (infoUnit.value)     infoUnit.value = null;
+    else if (openPanel.value)    openPanel.value = null;
+    else if (selectedCity.value) selectedId.value = null;   // leave the city screen
+    else if (showHelp.value)     showHelp.value = false;
     else showMenu.value = !showMenu.value;
-  } else if (e.key === 'ArrowLeft')  goBack();
+    return;
+  }
+  const intent = KEYS.resolve(e, ui.value.keys);
+  // What still gets through while something covers the board: nothing at all under the
+  // menu or the key list; an advisor key while an advisor is up, so those keys switch
+  // between advisors the way the original's F-keys do; on the city screen, commands and
+  // advisor keys (step to the next city, leave for an advisor) but no unit orders or
+  // movement — there is no unit selected there, only the city.
+  const cityScreenOnly = selectedCity.value && !openPanel.value && !showMenu.value
+    && !showHelp.value && !infoUnit.value && !infoAbility.value;
+  const allowed = !overlayOpen.value
+    || (openPanel.value && intent?.kind === 'panel')
+    || (cityScreenOnly && (intent?.kind === 'command' || intent?.kind === 'panel'));
+  if (intent && allowed) {
+    const handled =
+        intent.kind === 'action'  ? keyAction(intent.types)
+      : intent.kind === 'command' ? keyCommand(intent.command)
+      : intent.kind === 'panel'   ? ((openPanel.value = intent.panel), true)
+      : intent.kind === 'pan'     ? panBy(intent.dx, intent.dy)
+      : intent.kind === 'move'    ? keyMove(intent.dx, intent.dy)
+      : false;
+    // A bound key never falls through to the defaults below even when its action
+    // wasn't available: F on a unit that cannot fortify should do nothing, not step
+    // the replay. An unusable DIRECTION key is the one exception — with no unit
+    // selected the arrows still browse history, as they always have.
+    e.preventDefault();
+    if (handled || intent.kind !== 'move') return;
+  }
+  if (e.key === 'ArrowLeft')  goBack();
   else if (e.key === 'ArrowRight') goForward();
   else if (e.key === 'Backspace') {
     // Undoes the most recently queued move for the selected unit (the generic
@@ -1634,7 +1794,9 @@ onUnmounted(() => {
             :unitMoves="unitMoves" :queuingMoves="queuingMoves" :displayedActions="displayedActions"
             :pendingPlayerId="pendingPlayerId" :liveState="liveState" :units="displayUnits"
             :aiming="aiming" :civ="field.civ" :cities="field.cities" :military="field.military"
-            @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"/>
+            :panel="openPanel"
+            @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"
+            @update:panel="openPanel = $event"/>
         </div>
 
         <!-- Overview map + jump-to control, for the same games that get zoom/pan.

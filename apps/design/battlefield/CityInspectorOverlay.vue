@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 // The civ1 "city screen" — like the original game, clicking a city pops this instead
 // of the thin generic unit sidebar (see Battlefield.vue's selectedCity). `city` is one
 // entry from Civ1Game.toGrid's `cities` field, already carrying the full per-turn
@@ -22,6 +22,40 @@ function pick(item) {
   showProdPicker.value = false;
 }
 const prodLocked = computed(() => !props.productionActions.length);
+
+// ── keyboard ──────────────────────────────────────────────────
+// A screen this deep in the game has to be usable without a mouse (the original's own
+// city display had its own keys — C to change production, a number to choose). Its keys
+// are handled here rather than in Battlefield.vue's binding table because they only
+// exist while this screen is up, and they must beat the board's own keys: hence the
+// capture-phase listener plus stopPropagation, the same trick image-slot.js uses for
+// its modal. Escape is only taken while the picker is open — closing the screen itself
+// stays Battlefield's Escape, so one press always steps out of exactly one thing.
+function onKeyDown(e) {
+  if (!props.show || e.ctrlKey || e.altKey || e.metaKey) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  const consume = () => { e.preventDefault(); e.stopPropagation(); };
+  if (e.key === 'Escape' && showProdPicker.value) { showProdPicker.value = false; consume(); return; }
+  if (e.key.toLowerCase() === 'c' && !prodLocked.value) {
+    showProdPicker.value = !showProdPicker.value;
+    consume();
+    return;
+  }
+  // The picker's options are numbered on screen while it is open, so the number keys
+  // pick one directly — no highlight to walk through first.
+  if (showProdPicker.value && /^[1-9]$/.test(e.key)) {
+    const action = props.productionActions[Number(e.key) - 1];
+    if (action) pick(action.item);
+    consume();
+  }
+}
+
+// Never leave the picker open behind a closed screen, or across a switch to another
+// city (Battlefield's next-city key steps straight from one to the next).
+watch(() => [props.show, props.city?.id], () => { showProdPicker.value = false; });
+
+onMounted(() => window.addEventListener('keydown', onKeyDown, true));
+onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
 
 // The 21-square "fat cross" (see Civ1Game.toGrid's `radius` field, itself mirroring
 // city.js's FAT_CROSS) minus the 4 excluded corners — a plain 5x5 CSS grid with those
@@ -138,11 +172,12 @@ function capacityIcons(filled, total) {
                  :src="imgSrc(`${ICON}/production`)" class="ci-icon" :class="{ 'ci-icon--dim': !lit }"/>
           </div>
           <button class="btn btn-ghost ci-change" :disabled="prodLocked" @click="showProdPicker = !showProdPicker">
-            {{prodLocked ? 'Production set this turn' : 'Change production…'}}
+            {{prodLocked ? 'Production set this turn' : 'Change production… (C)'}}
           </button>
+          <!-- Numbered because the number keys pick straight off this list (see onKeyDown). -->
           <div v-if="showProdPicker && !prodLocked" class="ci-picker">
-            <button v-for="a in productionActions" :key="a.item" class="action-btn ci-picker-btn" @click="pick(a.item)">
-              {{a.item}}
+            <button v-for="(a, i) in productionActions" :key="a.item" class="action-btn ci-picker-btn" @click="pick(a.item)">
+              <span class="mono ci-picker-key">{{i + 1}}</span>{{a.item}}
             </button>
           </div>
         </div>
@@ -206,6 +241,7 @@ function capacityIcons(filled, total) {
 .ci-change { width: 100%; justify-content: center; margin-top: 6px; font-size: 10px; }
 .ci-picker { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; max-height: 160px; overflow-y: auto; }
 .ci-picker-btn { font-size: 10px; font-family: var(--mono); }
+.ci-picker-key { color: var(--accent); margin-right: 7px; }
 .ci-trade { display: flex; flex-direction: column; gap: 3px; }
 .ci-trade-row { display: flex; flex-wrap: wrap; gap: 2px; min-height: 12px; background: var(--bg3); border-radius: 3px; padding: 2px 3px; }
 .ci-chips { display: flex; flex-wrap: wrap; gap: 4px; }

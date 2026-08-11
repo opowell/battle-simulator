@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import RatesOverlay    from './RatesOverlay.vue';
 import CitiesOverlay   from './CitiesOverlay.vue';
 import MilitaryOverlay from './MilitaryOverlay.vue';
@@ -29,8 +29,13 @@ const props = defineProps({
   // `cities`/`military` fields). Drive the Cities/Military overlays.
   cities:           { type: Array, default: () => [] },
   military:         { type: Object, default: null },
+  // Which overview overlay is open ('cities'|'military'|'rates'|'science'|null).
+  // Owned by Battlefield.vue rather than a local ref, because a keyboard binding can
+  // open one too (ui.keys' `panel` effect — see keyBindings.js); the toolbar buttons
+  // below just ask for the same change through update:panel.
+  panel:            { type: String, default: null },
 });
-defineEmits(['submit', 'aim', 'cancel-aim', 'goto']);
+defineEmits(['submit', 'aim', 'cancel-aim', 'goto', 'update:panel']);
 
 // Action types listed in field.ui.aimedActionTypes resolve their target by clicking
 // the map (see SchematicLayer.vue's aiming overlay) instead of one button per legal
@@ -79,14 +84,10 @@ const activeMoney = computed(() => {
 // always-visible toolbar buttons instead (see ap-empire below), not tucked inside
 // the turn-gated action list, so these action types are filtered out of it entirely
 // rather than collapsed into a placeholder there.
-const showRates    = ref(false);
-const showCities   = ref(false);
-const showMilitary = ref(false);
-const showScience  = ref(false);
 const taxActions      = computed(() => props.displayedActions.filter(a => a.type === 'set-tax'));
 const luxActions      = computed(() => props.displayedActions.filter(a => a.type === 'set-luxury'));
 const researchActions = computed(() => props.displayedActions.filter(a => a.type === 'set-research'));
-const myCiv        = computed(() => props.civ?.[props.pendingPlayerId] ?? null);
+const myCiv           = computed(() => props.civ?.[props.pendingPlayerId] ?? null);
 
 // set-production also moves out: with more than one city its flat label ("Build
 // militia") doesn't even say which city, and the City Inspector overlay (opened by
@@ -158,10 +159,10 @@ function fmtAction(action) {
       </span>
     </div>
     <div v-if="civ" class="ap-empire">
-      <button class="action-btn ap-btn ap-btn--sm" @click="showCities = true">Cities</button>
-      <button class="action-btn ap-btn ap-btn--sm" @click="showMilitary = true">Military</button>
-      <button class="action-btn ap-btn ap-btn--sm" @click="showRates = true">Rates</button>
-      <button class="action-btn ap-btn ap-btn--sm" @click="showScience = true">Science</button>
+      <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'cities')">Cities</button>
+      <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'military')">Military</button>
+      <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'rates')">Rates</button>
+      <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'science')">Science</button>
     </div>
     <div v-if="isDone" class="ap-done">
       {{liveState.result?.winner
@@ -209,14 +210,14 @@ function fmtAction(action) {
       </div>
     </template>
     <div v-else class="ap-waiting">Waiting for AI…</div>
-    <RatesOverlay :show="showRates" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
-                  @close="showRates = false" @submit="a => $emit('submit', a)"/>
-    <ScienceOverlay :show="showScience" :civ="myCiv" :researchActions="researchActions"
-                  @close="showScience = false" @submit="a => $emit('submit', a)"/>
-    <CitiesOverlay :show="showCities" :cities="cities" :playerId="pendingPlayerId"
-                  @close="showCities = false" @goto="g => $emit('goto', g)"/>
-    <MilitaryOverlay :show="showMilitary" :military="military" :playerId="pendingPlayerId"
-                  @close="showMilitary = false"/>
+    <RatesOverlay :show="panel === 'rates'" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
+                  @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
+    <ScienceOverlay :show="panel === 'science'" :civ="myCiv" :researchActions="researchActions"
+                  @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
+    <CitiesOverlay :show="panel === 'cities'" :cities="cities" :playerId="pendingPlayerId"
+                  @close="$emit('update:panel', null)" @goto="g => $emit('goto', g)"/>
+    <MilitaryOverlay :show="panel === 'military'" :military="military" :playerId="pendingPlayerId"
+                  @close="$emit('update:panel', null)"/>
   </div>
 </template>
 

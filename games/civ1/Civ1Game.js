@@ -952,6 +952,60 @@ export const Civ1Game = {
     // getVisibleState). See Battlefield.vue's exploredTileSet / SchematicLayer &
     // HtmlLayer's terrainFogged for the client-side terrain memory this enables.
     persistentFog: true,
+    // Keyboard play, taken from the original game's own control bindings
+    // (civilization.fandom.com/wiki/Control_bindings_(Civ1)). The UI executes these
+    // generically — a key is a legal action's type, a named UI command, or an overview
+    // overlay to open, and getLegalActions still decides whether anything happens (see
+    // apps/design/keyBindings.js for the format, Battlefield.vue for the handlers).
+    // Only bindings this engine has something to do are listed: the original's H (home
+    // city), U (unload), P/Shift+P (pollution, pillage), Shift+D (disband) and G (goto,
+    // which here is the click-driven move queue) have no action to fire, so they are
+    // deliberately absent rather than bound to nothing. Enter for end-turn is the one
+    // key the original never needed — it ended the turn once nothing wanted orders.
+    keys: {
+      directionMove: true,
+      directionPan: true,
+      bindings: [
+        { key: 'b', action: 'found-city',                  label: 'Found new city',                     group: 'Unit orders' },
+        { key: 'r', action: 'build-road',                  label: 'Build road',                         group: 'Unit orders' },
+        // I is the original's one "agricultural improvement" key: irrigate where that's
+        // possible, otherwise clear the forest/jungle/swamp standing on the square.
+        { key: 'i', action: ['irrigate', 'clear-terrain'], label: 'Irrigate, or clear forest / swamp',  group: 'Unit orders' },
+        { key: 'm', action: 'build-mine',                  label: 'Build mine',                         group: 'Unit orders' },
+        { key: 'f', action: 'fortify',                     label: 'Fortify',                            group: 'Unit orders' },
+        { key: 's', action: 'sentry',                      label: 'Sentry (wake when an enemy shows)',  group: 'Unit orders' },
+        { key: ' ', action: 'skip-unit',                   label: 'No orders — this unit is done',      group: 'Unit orders' },
+        { key: 'w', command: 'next-unit',                  label: 'Wait — go to the next unit',         group: 'Unit orders' },
+        { key: 'Backspace', action: 'queue-pop',           label: 'Undo the last queued move',          group: 'Unit orders' },
+        { key: 'Enter', action: 'end-turn',                label: 'End turn',                           group: 'Unit orders' },
+        { key: 'c', command: 'center',                     label: 'Centre the map on the active unit',  group: 'Map & view' },
+        // The original reached the city screen by clicking the city; with no cursor to
+        // click with, stepping through your own cities is the keyboard's way in. N is
+        // this engine's own key — the original has none, and Tab (its keyboard-only
+        // map-cursor toggle) is left alone so it still moves browser focus.
+        { key: 'n', command: 'next-city',                  label: 'Step through your cities',           group: 'Cities' },
+        { key: '?', command: 'help',                       label: 'This key list',                      group: 'Map & view' },
+        { key: 'F1', panel: 'cities',                      label: 'City status',                        group: 'Advisors' },
+        { key: 'F2', panel: 'military',                    label: 'Military advisor',                   group: 'Advisors' },
+        // The original's Trade advisor screen is where tax and luxury are set, which is
+        // exactly what the Rates overlay holds — so its F-key and both rate keys open it.
+        { key: 'F5', panel: 'rates',                       label: 'Trade advisor — tax / luxury rates', group: 'Advisors' },
+        { key: '=', panel: 'rates',                        label: 'Trade advisor — tax / luxury rates', group: 'Advisors' },
+        { key: '-', panel: 'rates',                        label: 'Trade advisor — tax / luxury rates', group: 'Advisors' },
+        { key: 'F6', panel: 'science',                     label: 'Science advisor',                    group: 'Advisors' },
+      ],
+      // Documentation-only rows for behaviour that isn't one key (the direction keys
+      // and Escape, handled by the board itself).
+      notes: [
+        { keys: '↑ ↓ ← → / 1–9', label: 'Move the selected unit one square — into an enemy to attack it', group: 'Unit orders' },
+        { keys: 'Shift + ↑ ↓ ← →', label: 'Scroll the map', group: 'Map & view' },
+        { keys: 'Esc', label: 'Leave the current screen, or open the menu', group: 'Map & view' },
+        // The city screen's own keys, handled there (CityInspectorOverlay.vue) because
+        // they only exist while it is open.
+        { keys: 'C', label: 'On the city screen: change production', group: 'Cities' },
+        { keys: '1–9', label: 'On the city screen: pick what to build', group: 'Cities' },
+      ],
+    },
   },
   scenarios: [
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
