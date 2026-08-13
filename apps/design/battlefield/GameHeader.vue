@@ -15,6 +15,10 @@ const props = defineProps({
   statusPlayerId:  { type: String, default: null },
   showMenu:        Boolean,
   ui:              Object,
+  // Observer lock-step: the turn on screen has finished playing and the game is
+  // parked until Next is clicked. Nothing is computing, so say so rather than
+  // leaving the "AI thinking…" chip up — that reads as a hung game.
+  awaitingStep:    { type: Boolean, default: false },
 });
 defineEmits(['toggle-menu', 'show-help']);
 const myChips = computed(() => props.field?.statusChips?.[props.statusPlayerId] ?? []);
@@ -44,6 +48,9 @@ const myChips = computed(() => props.field?.statusChips?.[props.statusPlayerId] 
       </span>
       <span v-else-if="isPending" class="mono gh-chip gh-chip--ok">
         ● Your turn · {{pendingPlayerId}}
+      </span>
+      <span v-else-if="awaitingStep" class="mono gh-chip">
+        ‖ Paused · Next plays turn {{liveState?.turn ?? 0}}
       </span>
       <span v-else class="mono gh-chip gh-chip--warn">
         ○ AI thinking…

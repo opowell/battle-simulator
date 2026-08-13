@@ -1770,7 +1770,7 @@ onUnmounted(() => {
             :field="field" :liveState="liveState" :isLive="isLive"
             :isDone="isDone" :isPending="isPending" :pendingPlayerId="pendingPlayerId"
             :statusPlayerId="analysisPlayerId"
-            :showMenu="showMenu" :ui="ui"
+            :showMenu="showMenu" :ui="ui" :awaitingStep="awaitingStep"
             @toggle-menu="showMenu = !showMenu"
             @show-help="showHelp = true"/>
 
@@ -1793,6 +1793,7 @@ onUnmounted(() => {
             :selectedId="selectedId" :activeUnitId="activeUnitId" :ui="ui"
             :unitMoves="unitMoves" :queuingMoves="queuingMoves" :displayedActions="displayedActions"
             :pendingPlayerId="pendingPlayerId" :liveState="liveState" :units="displayUnits"
+            :awaitingStep="awaitingStep"
             :aiming="aiming" :civ="field.civ" :cities="field.cities" :military="field.military"
             :panel="openPanel"
             @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"

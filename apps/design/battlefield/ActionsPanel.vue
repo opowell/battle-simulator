@@ -17,6 +17,9 @@ const props = defineProps({
   queuingMoves:     { type: Boolean, default: false },
   displayedActions: { type: Array, default: () => [] },
   pendingPlayerId:  { type: String, default: null },
+  // Observer lock-step: the turn on screen has finished and the game is parked
+  // until Next (see App.vue's awaitingStep) — nothing is being computed.
+  awaitingStep:     { type: Boolean, default: false },
   liveState:        Object,
   units:            { type: Array, default: () => [] },
   // Set while the player is aiming a "button → pick a spot on the map" action (see
@@ -209,7 +212,7 @@ function fmtAction(action) {
         Click the <b class="ap-accent">{{ui.freeSelection ? 'a piece' : 'active unit'}}</b> on the board to see actions.
       </div>
     </template>
-    <div v-else class="ap-waiting">Waiting for AI…</div>
+    <div v-else class="ap-waiting">{{ awaitingStep ? 'Paused — press Next to play the turn.' : 'Waiting for AI…' }}</div>
     <RatesOverlay :show="panel === 'rates'" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
                   @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
     <ScienceOverlay :show="panel === 'science'" :civ="myCiv" :researchActions="researchActions"

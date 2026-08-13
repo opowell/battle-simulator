@@ -163,9 +163,17 @@ function stopReplay() {
 // turn's playback and waits for the observer to step forward manually, instead of
 // auto-advancing. `awaitingStep` is true while so parked (enables the Next button);
 // `manualStep` is the one-shot the Next button sets to release exactly one step.
+// The park is per TURN, not per engine step: a civ1 turn is one step per unit
+// action, so parking after every step would ask for a Next press half a dozen
+// times a turn — and leave a game that is running normally looking hung. Steps
+// inside the turn already on screen ack themselves; the park happens on the step
+// that first shows a new turn number (`parkedTurn` is the turn we last parked at).
+// Games whose every step is its own turn — and games that expose no turn number —
+// park every step, exactly as before.
 const pauseAfterPlayback = ref(true);
 const awaitingStep = ref(false);
 let manualStep = false;
+let parkedTurn = null, parkedSeq = -1;
 
 let ackedSeq = -1, shownSeq = -1, shownAt = 0, ackTimer = null;
 const animating = () => !!hopAnim.value || fxBusy.value || !!replayAnim.value || animQueue.value.length > 0;
@@ -176,8 +184,12 @@ function maybeAckAdvance() {
   if (animating()) return;        // still playing the shown step — wait for it
   // Hold the step on screen for its full game-time (stepSimTime) at real speed, so
   // a turn plays at its natural pace even when the animation itself is brief (a
-  // one-cell hop is ~0.2s but a csmini action is a whole in-game second).
-  const targetMs = (s.stepSimTime ?? 0) * MS_PER_SIM_SECOND;
+  // one-cell hop is ~0.2s but a csmini action is a whole in-game second). The
+  // footer's speed multiplier scales this hold like every other playback it
+  // drives: it is the only thing pacing a watched civ1 game (one second per unit
+  // action, ~8,300 of them in a 300-turn game), so without it the control leaves
+  // the game running at 1× however fast the observer asks for.
+  const targetMs = (s.stepSimTime ?? 0) * MS_PER_SIM_SECOND / playbackSpeed.value;
   const elapsed = performance.now() - shownAt;
   if (elapsed < targetMs) {
     clearTimeout(ackTimer);
@@ -185,8 +197,22 @@ function maybeAckAdvance() {
     return;
   }
   // Playback finished. In "pause after playback" mode, stop here until the observer
-  // clicks Next (which sets manualStep); otherwise advance automatically.
-  if (pauseAfterPlayback.value && !manualStep) { awaitingStep.value = true; return; }
+  // clicks Next (which sets manualStep) — but only at a turn boundary, so one Next
+  // plays one whole turn (see parkedTurn); otherwise advance automatically.
+  // `parkedSeq` keeps the park sticky per step: this runs more than once for the
+  // same step (an animation-completion path can reach it before the watcher below
+  // has even stamped the step, and that watcher then clears `awaitingStep` and
+  // calls in again), and without it the later call would see the new turn already
+  // recorded in parkedTurn, take the step for a mid-turn one, and ack the park
+  // away — which is exactly what made a watched civ1 game run on unattended.
+  const turn = s.turn ?? null;
+  if (pauseAfterPlayback.value && !manualStep
+      && (parkedSeq === s.seq || turn == null || turn !== parkedTurn)) {
+    parkedTurn = turn;
+    parkedSeq = s.seq;
+    awaitingStep.value = true;
+    return;
+  }
   manualStep = false;
   awaitingStep.value = false;
   ackedSeq = s.seq;
