@@ -111,6 +111,36 @@ test('civ1: getResult win when p2 has no cities or units', () => {
 });
 
 // ---------------------------------------------------------------------------
+// toGrid — how a square is drawn
+// ---------------------------------------------------------------------------
+
+// A city with a unit standing in it is drawn as the CITY, the way the original game
+// draws it: before this, the garrison's sprite covered the city entirely, so every city
+// with a defender in it (i.e. nearly every city) was invisible on the map.
+test('civ1: a garrisoned city square is drawn as the city, not as its garrison', () => {
+  const state = Civ1Game.createInitialState(players());
+  const unit = state.units.find(u => u.ownerId === 'p1');
+  const withCity = {
+    ...state,
+    cities: [...(state.cities ?? []), {
+      id: 'city-test', name: 'Testopolis', ownerId: 'p1',
+      position: { ...unit.position }, size: 7, shields: 0, food: 0,
+      production: 'militia', buildings: [],
+    }],
+  };
+  const cell = Civ1Game.toGrid(withCity).cells
+    .find(c => c.x === unit.position.x && c.y === unit.position.y);
+
+  assert.match(cell.imagePath, /map\/city$/, 'the square draws the city sprite');
+  assert.equal(cell.badge, 7, 'the badge is the city size');
+  assert.equal(cell.badgeLabel, 'Testopolis', 'the plaque is labelled with the city');
+  // …while the square still commands the garrison, and the panels still describe it.
+  assert.equal(cell.unitId, unit.id);
+  assert.equal(cell.unitName, unit.type);
+  assert.match(cell.portraitPath, /units\//, 'the roster/side panel keep the unit sprite');
+});
+
+// ---------------------------------------------------------------------------
 // Self-play
 // ---------------------------------------------------------------------------
 

@@ -1127,14 +1127,26 @@ export const Civ1Game = {
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
           unitId: u?.id ?? null,
           // City tiles ride the same glyph→pseudo-unit pipeline as real units (see
-          // App.vue's buildField): a real sprite (map/city.png) plus the size as a
-          // corner badge, rather than the bare star glyph this used to fall back to.
+          // App.vue's buildField): a real sprite (map/city.png) plus the size as the
+          // token's badge, which the HTML renderer draws as an owner-coloured plaque
+          // carrying that size and the badgeLabel below it (HtmlBadgeToken.vue) — the
+          // original game's city square.
+          // The city wins the square over anything garrisoned in it, exactly as in the
+          // original: a city with a militia inside is drawn as a CITY, not as the
+          // militia. The unit is still what the square selects (unitId above) and what
+          // the side panel, roster and HP/MP fields describe — only the art is the
+          // city's, so unitName stays the unit's and the city's name rides badgeLabel.
           // For real units, `glyph` alone is ambiguous (militia/musketeers/mech-inf/
           // marines all start with 'm') — unitName carries the real type so the side
           // panel and roster show e.g. "militia" instead of a bare "M".
           unitName: u ? u.type : city ? city.name : undefined,
-          imagePath: u ? (UNIT_IMAGES[u.type] ?? null) : (city ? `${BASE}/map/city` : null),
+          imagePath: city ? `${BASE}/map/city` : (u ? (UNIT_IMAGES[u.type] ?? null) : null),
+          // …but the panels that describe the *unit* (roster, selected-unit detail) keep
+          // showing the unit: portraitPath wins over imagePath there, so a militia sitting
+          // in a city is still a militia everywhere except on the map square itself.
+          portraitPath: (city && u) ? (UNIT_IMAGES[u.type] ?? null) : undefined,
           badge: city ? city.size : null,
+          badgeLabel: city ? city.name : undefined,
           // Ocean draws no terrain sprite — coastSprite (below) supplies the real
           // ocean tile. Land draws its authentic tile, blended with like neighbours.
           bgImage: tile.terrain === 'ocean' ? null : (tile.terrain ? terrainSprite(x, y, tile.terrain) : null),

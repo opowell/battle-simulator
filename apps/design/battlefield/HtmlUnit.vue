@@ -9,7 +9,10 @@
 // element of its own. z-index lifts the token above sibling cells' backgrounds so that
 // spill isn't painted over.
 
-defineProps({
+import { computed } from 'vue';
+import HtmlBadgeToken from './HtmlBadgeToken.vue';
+
+const props = defineProps({
   unit:     Object,
   r:        Number,   // token radius in px (half its body box)
   rdr:      Object,
@@ -52,6 +55,16 @@ function unitLabel(unit) {
 function hpColor(frac, raw) {
   return frac > 0.5 ? raw : frac > 0.25 ? '#f2b441' : '#ff5f56';
 }
+
+// Which state ring this token wears (active beats selected beats roster-hover). A
+// blinking token gets no selected ring — the blink already says "this one is yours to
+// move", and SchematicLayer skips it for the same reason. Each body draws the state in
+// its own idiom, so the state travels as a name and the class is just this body's.
+const ringState = computed(() =>
+  props.active ? 'active'
+    : (props.selected && !props.blink) ? 'selected'
+      : props.hovered ? 'hover' : '');
+const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value : '');
 </script>
 
 <template>
@@ -61,28 +74,25 @@ function hpColor(frac, raw) {
   </div>
 
   <div v-else class="hl-unit"
-       :class="{ 'hl-blink': blink, 'hl-unit--grab': grab, 'hl-unit--dim': dim }"
+       :class="{ 'hl-blink': blink, 'hl-unit--grab': grab, 'hl-unit--dim': dim,
+                 'hl-unit--badged': unit.badge != null }"
        :style="tweenStyle(tween)"
        @click="$emit('click', $event)"
        @mousedown="$emit('mousedown', $event)">
-    <!-- Body: team sprite, else a shape marker carrying the unit's initial. The rings are
-         outlines on this box (active wins over selected wins over roster-hover), except
-         that a blinking token gets no selected ring — the blink is already the "this one
-         is yours to move" signal, and SchematicLayer skips it for the same reason. A badged
-         token (civ1 cities — see Civ1Game.js's `badge` field) always gets an owner-colour
-         backdrop: its sprite (map/city.png) is a small transparent-background icon that
-         otherwise vanishes into the terrain under it. -->
-    <div class="hl-body"
+    <!-- A badged token is a settlement, not a piece: it draws as a cell-filling plaque
+         with its count and name (see HtmlBadgeToken), not as a small marker. -->
+    <HtmlBadgeToken v-if="unit.badge != null"
+                    :unit="unit" :size="r*2" :rdr="rdr" :state="ringState"/>
+
+    <!-- Body: team sprite, else a shape marker carrying the unit's initial. -->
+    <div v-else class="hl-body"
          :class="[
            unit.imagePath ? 'hl-body--sprite' : 'hl-marker hl-marker--' + shape,
-           active ? 'hl-ring-active' : (selected && !blink) ? 'hl-ring-selected' : hovered ? 'hl-ring-hover' : '',
+           ringClass,
          ]"
          :style="{
            width: r*2+'px', height: r*2+'px',
-           ...(unit.badge != null ? {
-             background: unit.teamObj.raw + (active ? '' : 'cc'),
-             borderColor: active ? 'white' : unit.teamObj.raw, borderWidth: '1.5px', borderStyle: 'solid', borderRadius: '3px',
-           } : unit.imagePath ? {} : {
+           ...(unit.imagePath ? {} : {
              background: shape === 'triangle' ? 'transparent' : (active ? unit.teamObj.raw : rdr.unitFill),
              borderColor: active ? 'white' : unit.teamObj.raw,
              color: active ? 'white' : unit.teamObj.raw,
@@ -92,14 +102,6 @@ function hpColor(frac, raw) {
            :src="teamSpriteHref(unit.imagePath, unit.teamObj?.raw, recolor)"/>
       <span v-else-if="showLetter" class="hl-letter"
             :style="{ fontFamily: rdr.font, fontSize: r+'px' }">{{ unitLabel(unit) }}</span>
-      <span v-if="unit.badge != null" class="hl-badge"
-            :style="{ background: unit.teamObj.raw, fontFamily: rdr.font }">{{ unit.badge }}</span>
-    </div>
-
-    <!-- Name label, stacked under the body — cities (badged tokens) only; regular units
-         are identified well enough by their sprite + the roster/side panels. -->
-    <div v-if="unit.badge != null" class="hl-name" :style="{ color: unit.teamObj.raw, fontFamily: rdr.font }">
-      {{unit.name}}
     </div>
 
     <!-- HP bar, stacked under the body by the flex column -->
@@ -115,10 +117,11 @@ function hpColor(frac, raw) {
 /* Centred in the parent cell's single grid track (see HtmlLayer's .hl-cell) */
 .hl-unit { place-self: center; z-index: 1; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .hl-unit--grab { cursor: grab; }
+/* A badged token's name overhangs the squares either side, so it outranks neighbouring
+   tokens — a map label reads over the map, not under the next piece along. */
+.hl-unit--badged { z-index: 2; }
 .hl-unit--dim { opacity: 0.25; }
 .hl-body { position: relative; display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex: none; }
-.hl-badge { position: absolute; right: -3px; bottom: -3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 7px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; line-height: 1; color: #fff; border: 1px solid rgba(0,0,0,.5); pointer-events: none; }
-.hl-name { font-size: 10px; font-weight: 700; line-height: 1; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 4px rgba(0,0,0,.7); }
 .hl-dead { font-weight: 700; opacity: 0.4; }
 .hl-sprite { width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; }
 .hl-letter { font-weight: 800; line-height: 1; }

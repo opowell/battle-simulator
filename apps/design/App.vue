@@ -593,9 +593,14 @@ function buildField(g, s) {
       description:   c.description,
       job:           c.job,
       moveRange:     c.moveRange,
-      // Small corner badge (e.g. civ1 city size) — a game's toGrid may set this on a
-      // glyph cell; absent for games with nothing to badge.
+      // A count that IS the token (e.g. civ1 city size) — a game's toGrid may set this
+      // on a glyph cell, and the HTML renderer then draws the token as a badged plaque
+      // (see battlefield/HtmlBadgeToken.vue) rather than a marker. badgeLabel names the
+      // badged thing where that differs from the unit standing on the square (a garrisoned
+      // city is drawn as the city but selects the garrison). Absent for games with
+      // nothing to badge.
       badge:         c.badge,
+      badgeLabel:    c.badgeLabel,
       // Per-unit money (CS buy phase) — a game's toGrid may set it; drives the buy
       // panel's affordability display. Absent for games with no economy.
       money:         c.money,

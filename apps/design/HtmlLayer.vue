@@ -273,6 +273,9 @@ function isVisible(u) {
 }
 
 function unitR(u) {
+  // A badged token is a settlement plaque, not a marker standing on the square: it IS
+  // the square (see HtmlBadgeToken), minus a hairline so neighbours stay distinct.
+  if (u?.badge != null) return Math.max(6, 0.47 * cellPx.value);
   const mult = W.value <= 10 ? 0.36 : 0.42;
   // Bare sprites have no stroke eating into them, so let them fill more of the cell.
   return Math.max(5, (u?.imagePath ? mult * 1.25 : mult) * cellPx.value);
