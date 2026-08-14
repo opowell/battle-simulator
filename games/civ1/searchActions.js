@@ -323,6 +323,12 @@ function unitActions(legal, obs, playerId, unit) {
  * Pruned, canonically-ordered search action set for `playerId` at `state`.
  * Derived entirely from getVisibleState(state, playerId) — see the module header.
  *
+ * Because the set is fog-limited it can contain a move onto a square the player
+ * cannot see is occupied. That is not a bug to fix here — narrowing the set with
+ * knowledge the player doesn't have is exactly what would break the infoset
+ * invariant above. The game accepts such a move and resolves it as a bump into
+ * what was hiding there; see Civ1Game's isActionLegal and its 'move' handler.
+ *
  * @param {object} game  the Civ1Game definition (for getVisibleState/getLegalActions)
  */
 export function civ1SearchActions(game, state, playerId) {
