@@ -1,53 +1,16 @@
 <script setup>
-import { ref } from 'vue';
 import GameCard from './GameCard.vue';
 import GameThumb from './GameThumb.vue';
-import GameStartModal from './GameStartModal.vue';
 
-const props = defineProps({
+// Picking a game leaves the lobby for that game's own page, where the session
+// is set up and started (see GamePage.vue).
+defineProps({
   sessions:  { type: Array,  default: () => [] },
   apiGames:  { type: Array,  default: () => [] },
   serverErr: { type: String, default: '' },
 });
 
-const emit = defineEmits(['open-session', 'create', 'delete-session', 'refresh']);
-
-// Clicking a card opens one modal: what the game is, and how to set the session
-// up. Its buttons both start a session from the form as it stands — untouched,
-// that form is the game's own defaults, which is the old one-click quick start.
-const startGame = ref(null);
-
-function openStart(g)  { startGame.value = g; }
-function closeStart()  { startGame.value = null; }
-
-function handleCreate(payload) {
-  emit('create', payload);
-  startGame.value = null;
-}
-
-// An ANALYSIS BOARD: a study session with no opponent. Every seat is human (the
-// one person at the keyboard moves both sides), which is the condition the
-// server puts on the flag, and which is what lets the whole board be revealed
-// and the game database stay open while the session is still being played.
-//
-// Fog goes ON for a game that has one to offer: an analysis board with the fog
-// lifted is just a board, and the database's whole question — what did players
-// who could see what you can see go on to play — needs the fog to mean anything.
-// Everything else — scenario, options, turn limit — is taken from the form.
-function analysisBoard(payload) {
-  if (!payload) return;
-  const g = startGame.value;
-  const fogged = (g.gameOptions ?? []).some(o => o.id === 'fogOfWar');
-  emit('create', {
-    ...payload,
-    // …including the session name, if one was typed (the form leaves it as the
-    // bare game name when it wasn't).
-    name:     payload.name === g.name ? `${g.name} — analysis` : payload.name,
-    gameOpts: { ...payload.gameOpts, analysisBoard: true, ...(fogged ? { fogOfWar: true } : {}) },
-    players:  payload.players.map(p => ({ ...p, agent: 'human' })),
-  });
-  startGame.value = null;
-}
+defineEmits(['open-session', 'open-game', 'delete-session', 'refresh']);
 
 function sessionStatusLabel(s) {
   if (s.status === 'done')   return 'Finished';
@@ -78,7 +41,7 @@ function sessionStatusColor(s) {
         <div class="gamegrid">
           <GameCard v-for="g in apiGames" :key="g.name"
                     :game="g"
-                    @click="openStart(g)"/>
+                    @click="$emit('open-game', g)"/>
         </div>
       </div>
     </div>
@@ -143,11 +106,6 @@ function sessionStatusColor(s) {
         </div>
       </div>
     </div>
-
-    <GameStartModal :game="startGame" :disabled="!!serverErr"
-                    @close="closeStart"
-                    @create="handleCreate"
-                    @analysis-board="analysisBoard"/>
   </div>
 </template>
 

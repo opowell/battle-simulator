@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import Lobby       from './Lobby.vue';
+import GamePage    from './GamePage.vue';
 import Battlefield from './Battlefield.vue';
 
 const router = useRouter();
@@ -26,6 +27,10 @@ const liveState   = ref(null);   // raw API session JSON
 const observerView = ref(null);
 const sessions    = ref([]);     // lobby list from GET /sessions
 const apiGames    = ref([]);     // from GET /games
+// The game whose page is open (/game/:name). Resolved out of apiGames, so a page
+// opened by URL before the list has loaded fills itself in once it arrives.
+const gameName    = ref('');
+const pageGame    = computed(() => apiGames.value.find(g => g.name === gameName.value) ?? null);
 const serverErr   = ref('');
 const apiLabel    = 'api · ' + window.location.host + window.api.basePath;
 
@@ -879,19 +884,20 @@ async function refresh() {
 }
 
 // Sync view when navigating via browser back/forward
-watch(() => route.params.id, async (id, prevId) => {
-  if (id && liveState.value?.id !== id) {
-    await enterSession(id, { push: false });
-  } else if (!id && prevId) {
-    stopPoll();
-    liveState.value = null;
-    view.value = 'lobby';
+watch(() => [route.params.id, route.params.name], async ([id, name], [prevId] = []) => {
+  if (id) {
+    if (liveState.value?.id !== id) await enterSession(id, { push: false });
+    return;
   }
+  if (prevId) { stopPoll(); liveState.value = null; }
+  gameName.value = name ?? '';
+  view.value = name ? 'game' : 'lobby';
 });
 
 onMounted(async () => {
   await refresh();
   if (route.params.id) await enterSession(route.params.id, { push: false });
+  else if (route.params.name) { gameName.value = route.params.name; view.value = 'game'; }
 });
 
 onUnmounted(() => { stopPoll(); stopReplay(); });
@@ -984,6 +990,49 @@ async function createSession(cfg) {
     await enterSession(created.id);
     refresh();
   } catch (e) { serverErr.value = e.message; }
+}
+
+// ── game page ────────────────────────────────────────────────
+function openGame(g) {
+  gameName.value = g.name;
+  view.value = 'game';
+  router.push('/game/' + encodeURIComponent(g.name));
+}
+
+function leaveGamePage() {
+  view.value = 'lobby';
+  gameName.value = '';
+  router.push('/');
+}
+
+// A /game/:name URL for a game the server doesn't serve (renamed, removed, or a
+// typo) has no page to show — send it back to the lobby once the list is in.
+watch([apiGames, gameName], () => {
+  if (view.value === 'game' && gameName.value && apiGames.value.length && !pageGame.value) leaveGamePage();
+});
+
+// An ANALYSIS BOARD: a study session with no opponent. Every seat is human (the
+// one person at the keyboard moves both sides), which is the condition the
+// server puts on the flag, and which is what lets the whole board be revealed
+// and the game database stay open while the session is still being played.
+//
+// Fog goes ON for a game that has one to offer: an analysis board with the fog
+// lifted is just a board, and the database's whole question — what did players
+// who could see what you can see go on to play — needs the fog to mean anything.
+// Everything else — scenario, options, turn limit — is taken from the page's form.
+function createAnalysisBoard(cfg) {
+  const g = pageGame.value;
+  if (!cfg || !g) return;
+  const fogged = (g.gameOptions ?? []).some(o => o.id === 'fogOfWar');
+  createSession({
+    ...cfg,
+    // …including the session name, if one was typed (the form leaves it as the
+    // bare game name when it wasn't). Only the label differs — createSession
+    // doesn't send a name to the server, which has no field for one.
+    name:     cfg.name === g.name ? `${g.name} — analysis` : cfg.name,
+    gameOpts: { ...cfg.gameOpts, analysisBoard: true, ...(fogged ? { fogOfWar: true } : {}) },
+    players:  cfg.players.map(p => ({ ...p, agent: 'human' })),
+  });
 }
 
 async function submitAction({ playerId, action }) {
@@ -1193,9 +1242,15 @@ async function restartGame() {
              :api-games="apiGames"
              :server-err="serverErr"
              @open-session="openSession"
-             @create="createSession"
+             @open-game="openGame"
              @delete-session="deleteSession"
              @refresh="refresh"/>
+      <GamePage v-else-if="view === 'game'"
+                :game="pageGame"
+                :disabled="!!serverErr"
+                @back="leaveGamePage"
+                @create="createSession"
+                @analysis-board="createAnalysisBoard"/>
       <Battlefield v-else-if="activeField"
                    :live-state="liveState"
                    :resolved-field="resolvedField"
