@@ -1,4 +1,10 @@
 <script setup>
+// The perspective switcher lives here as well as in the right sidebar, so that a
+// game which hides that sidebar entirely (ui.showRightSidebar) still leaves an
+// observer a way to watch through one player's fog. Both copies are never usable
+// at once — this menu is modal over the sidebar.
+import ObserverPerspective from './ObserverPerspective.vue';
+
 defineProps({
   show:       Boolean,
   serverErr:  { type: String, default: '' },
@@ -6,8 +12,12 @@ defineProps({
   showRuler:  Boolean,
   showHpBars: { type: Boolean, default: true },
   canSurrender: Boolean,
+  // Observer-only; omitted (empty) for a seated player, which hides the section.
+  observerPlayers: { type: Array, default: () => [] },
+  teams:           { type: Array, default: () => [] },
+  observerView:    { type: String, default: null },
 });
-defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars', 'surrender']);
+defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars', 'surrender', 'set-observer-view']);
 const apiLabel = 'api · ' + window.location.host + window.api.basePath;
 </script>
 
@@ -31,6 +41,9 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
           </div>
           <span class="mono menu-games">{{gamesCount}} games</span>
         </div>
+        <ObserverPerspective v-if="observerPlayers.length"
+          :players="observerPlayers" :teams="teams" :value="observerView"
+          @change="$emit('set-observer-view', $event)"/>
         <div class="menu-actions">
           <button class="btn btn-ghost menu-btn"
                   @click="$emit('close'); $emit('exit')">

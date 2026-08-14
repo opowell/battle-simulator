@@ -1874,8 +1874,13 @@ onUnmounted(() => {
           @set-marker="handleSetMarker"/>
       </div>
 
-      <!-- Right sidebar -->
-      <div class="bf-col bf-col--right">
+      <!-- Right sidebar. Games whose map wants the width, and which say what the
+           panels here would say somewhere else, drop the whole column with
+           ui.showRightSidebar: false — every panel below goes with it, including
+           the ones that appear on their own schedule (the database at game over).
+           The one control with no other home, the observer's perspective switcher,
+           is in MenuOverlay too, so hiding this column never strands an observer. -->
+      <div v-if="ui.showRightSidebar !== false" class="bf-col bf-col--right">
         <ObserverPerspective v-if="isObserver"
           :players="observerPlayers" :teams="field.teams" :value="observerView"
           @change="v => $emit('set-observer-view', v)"/>
@@ -1943,8 +1948,11 @@ onUnmounted(() => {
     :show="showMenu" :serverErr="serverErr" :gamesCount="gamesCount"
     :showRuler="showRuler" :showHpBars="showHpBars"
     :canSurrender="!!analysisPlayerId && liveState?.status === 'active'"
+    :observerPlayers="isObserver ? observerPlayers : []"
+    :teams="field?.teams ?? []" :observerView="observerView"
     @close="showMenu = false"
     @exit="$emit('exit')"
+    @set-observer-view="v => $emit('set-observer-view', v)"
     @open-settings="$emit('open-settings')"
     @toggle-ruler="showRuler = !showRuler"
     @toggle-hp-bars="showHpBars = !showHpBars"

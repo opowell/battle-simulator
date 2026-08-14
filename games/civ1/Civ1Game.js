@@ -934,6 +934,12 @@ export const Civ1Game = {
     // Health bars read as clutter on a strategy map at this zoom — off by default,
     // toggleable from the menu's settings overlay (see games/civ1/gameOptions).
     showHpBars: false,
+    // No right-hand column at all. A per-unit roster card is the wrong shape for an
+    // empire of dozens of units — the Military advisor (F2) counts them by type, and
+    // the map is where you find any one of them. The move log goes with it (the
+    // original game has no such log, and the map wants the width); an observer's
+    // perspective switcher is still in the menu overlay, which is where it moved to.
+    showRightSidebar: false,
     // Matches the server's UNIT_VISION (see getVisibleState) — without this the
     // client's default sight radius is 30% of the board's larger side, which both
     // misrepresents what's actually fogged and, when a unit is selected, paints a
