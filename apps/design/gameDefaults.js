@@ -1,5 +1,5 @@
 // gameDefaults.js — shared helpers for building default session config from a
-// game definition (used both by Lobby's "Quick start" and GameConfigureModal).
+// game definition (used to seed the session form in GameSetupFields).
 
 const TEAM_COLORS = ['var(--teamA)', 'var(--teamB)', 'var(--teamC)', 'var(--teamD)', '#b48cff', '#ff9e64'];
 

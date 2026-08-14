@@ -2,8 +2,7 @@
 import { ref } from 'vue';
 import GameCard from './GameCard.vue';
 import GameThumb from './GameThumb.vue';
-import GameDetailModal from './GameDetailModal.vue';
-import GameConfigureModal from './GameConfigureModal.vue';
+import GameStartModal from './GameStartModal.vue';
 
 const props = defineProps({
   sessions:  { type: Array,  default: () => [] },
@@ -13,28 +12,17 @@ const props = defineProps({
 
 const emit = defineEmits(['open-session', 'create', 'delete-session', 'refresh']);
 
-// Clicking a card opens the gallery/info modal; its "Start…" button hands off
-// to the configure modal, its "Quick start" button fires 'create' immediately.
-const detailGame    = ref(null);
-const configureGame = ref(null);
+// Clicking a card opens one modal: what the game is, and how to set the session
+// up. Its buttons both start a session from the form as it stands — untouched,
+// that form is the game's own defaults, which is the old one-click quick start.
+const startGame = ref(null);
 
-function openDetail(g)   { detailGame.value = g; }
-function closeDetail()    { detailGame.value = null; }
-function openConfigure(g) { configureGame.value = g; detailGame.value = null; }
-function closeConfigure() { configureGame.value = null; }
+function openStart(g)  { startGame.value = g; }
+function closeStart()  { startGame.value = null; }
 
-function quickStart(g) {
-  const sc = g.scenarios?.[0];
-  const ov = gameDefaults.scenarioOverrides(sc);
-  emit('create', {
-    game:     g.name,
-    name:     g.name,
-    gameOpts: { ...gameDefaults.initGameOpts(g), ...(ov.fogOfWar != null ? { fogOfWar: ov.fogOfWar } : {}) },
-    maxTurns: ov.maxTurns ?? 300,
-    scenario: sc?.id,
-    players:  gameDefaults.makeSlots(g),
-  });
-  detailGame.value = null;
+function handleCreate(payload) {
+  emit('create', payload);
+  startGame.value = null;
 }
 
 // An ANALYSIS BOARD: a study session with no opponent. Every seat is human (the
@@ -45,21 +33,20 @@ function quickStart(g) {
 // Fog goes ON for a game that has one to offer: an analysis board with the fog
 // lifted is just a board, and the database's whole question — what did players
 // who could see what you can see go on to play — needs the fog to mean anything.
-function analysisBoard(g) {
+// Everything else — scenario, options, turn limit — is taken from the form.
+function analysisBoard(payload) {
+  if (!payload) return;
+  const g = startGame.value;
   const fogged = (g.gameOptions ?? []).some(o => o.id === 'fogOfWar');
   emit('create', {
-    game:     g.name,
-    name:     `${g.name} — analysis`,
-    gameOpts: { ...gameDefaults.initGameOpts(g), analysisBoard: true, ...(fogged ? { fogOfWar: true } : {}) },
-    maxTurns: 500,
-    players:  gameDefaults.makeSlots(g).map(p => ({ ...p, agent: 'human' })),
+    ...payload,
+    // …including the session name, if one was typed (the form leaves it as the
+    // bare game name when it wasn't).
+    name:     payload.name === g.name ? `${g.name} — analysis` : payload.name,
+    gameOpts: { ...payload.gameOpts, analysisBoard: true, ...(fogged ? { fogOfWar: true } : {}) },
+    players:  payload.players.map(p => ({ ...p, agent: 'human' })),
   });
-  detailGame.value = null;
-}
-
-function handleCreate(payload) {
-  emit('create', payload);
-  configureGame.value = null;
+  startGame.value = null;
 }
 
 function sessionStatusLabel(s) {
@@ -91,7 +78,7 @@ function sessionStatusColor(s) {
         <div class="gamegrid">
           <GameCard v-for="g in apiGames" :key="g.name"
                     :game="g"
-                    @click="openDetail(g)"/>
+                    @click="openStart(g)"/>
         </div>
       </div>
     </div>
@@ -157,14 +144,10 @@ function sessionStatusColor(s) {
       </div>
     </div>
 
-    <GameDetailModal :game="detailGame"
-                      @close="closeDetail"
-                      @quick-start="quickStart"
-                      @analysis-board="analysisBoard"
-                      @configure="openConfigure"/>
-    <GameConfigureModal :game="configureGame" :disabled="!!serverErr"
-                         @close="closeConfigure"
-                         @create="handleCreate"/>
+    <GameStartModal :game="startGame" :disabled="!!serverErr"
+                    @close="closeStart"
+                    @create="handleCreate"
+                    @analysis-board="analysisBoard"/>
   </div>
 </template>
 
