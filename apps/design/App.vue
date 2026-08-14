@@ -1026,10 +1026,6 @@ function createAnalysisBoard(cfg) {
   const fogged = (g.gameOptions ?? []).some(o => o.id === 'fogOfWar');
   createSession({
     ...cfg,
-    // …including the session name, if one was typed (the form leaves it as the
-    // bare game name when it wasn't). Only the label differs — createSession
-    // doesn't send a name to the server, which has no field for one.
-    name:     cfg.name === g.name ? `${g.name} — analysis` : cfg.name,
     gameOpts: { ...cfg.gameOpts, analysisBoard: true, ...(fogged ? { fogOfWar: true } : {}) },
     players:  cfg.players.map(p => ({ ...p, agent: 'human' })),
   });

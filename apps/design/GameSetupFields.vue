@@ -12,7 +12,6 @@ const props = defineProps({
 // what to do with it (start a session, open an analysis board, …).
 const emit = defineEmits(['update:config']);
 
-const name     = ref('');
 const maxTurns = ref(300);
 const gameOpts = ref({});
 const slots    = ref([]);
@@ -27,7 +26,6 @@ function applyScenario(sc) {
 // Re-seed the whole form whenever a different game — or scenario — is chosen.
 watch(() => props.game, (g) => {
   if (!g) return;
-  name.value = '';
   gameOpts.value = gameDefaults.initGameOpts(g);
   slots.value = gameDefaults.makeSlots(g);
   maxTurns.value = 300;
@@ -39,11 +37,10 @@ watch(() => props.scenario, () => {
   applyScenario(props.game.scenarios?.find(s => s.id === props.scenario));
 });
 
-watch([name, maxTurns, gameOpts, slots, () => props.scenario], () => {
+watch([maxTurns, gameOpts, slots, () => props.scenario], () => {
   if (!props.game) return;
   emit('update:config', {
     game:     props.game.name,
-    name:     name.value || props.game.name,
     gameOpts: { ...gameOpts.value },
     maxTurns: maxTurns.value,
     scenario: props.scenario || undefined,
@@ -83,11 +80,6 @@ function cycleColor(i) {
 
 <template>
   <div v-if="game" class="gsf">
-    <div class="field gsf-name-field">
-      <label>Session name</label>
-      <input v-model="name" :placeholder="(game.name ?? 'game') + ' — ' + new Date().toISOString().slice(5,16).replace('T',' ')"/>
-    </div>
-
     <!-- Player slots -->
     <div class="gsf-players-head">
       <label class="gsf-section-label">Players</label>
@@ -154,7 +146,6 @@ function cycleColor(i) {
 
 <style scoped>
 .gsf-section-label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
-.gsf-name-field{margin-bottom:14px}
 .gsf-players-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .gsf-players-head .gsf-section-label{margin-bottom:0}
 .gsf-color-btn{border:none;background:none;padding:0;cursor:pointer;line-height:0}
