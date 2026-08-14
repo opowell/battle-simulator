@@ -3,6 +3,14 @@
 
 const TEAM_COLORS = ['var(--teamA)', 'var(--teamB)', 'var(--teamC)', 'var(--teamD)', '#b48cff', '#ff9e64'];
 
+// A game may bring its own player palette (ui.teamColors, a list of raw colors) when
+// the generic one would misread — e.g. a game where a particular color already means
+// something other than "a player". Everything else falls back to TEAM_COLORS.
+function teamPalette(g) {
+  const own = g?.ui?.teamColors;
+  return Array.isArray(own) && own.length ? own : TEAM_COLORS;
+}
+
 function defaultCpuAgent(g) {
   const ids = (g?.agents ?? []).map(a => a.id);
   return ids.includes('obscuro') ? 'obscuro' : (ids[0] ?? 'random');
@@ -13,11 +21,12 @@ function makeSlots(g, n) {
   // A game may prefer specific per-slot agents (g.uiDefaults.players) — e.g. csmini
   // defaults to two AIs watched by an observer, rather than "you vs one CPU".
   const pref = g?.uiDefaults?.players;
+  const palette = teamPalette(g);
   return Array.from({ length: count }, (_, i) => ({
     id:    'slot' + i,
     name:  pref?.[i]?.name ?? (i === 0 ? 'You' : `CPU ${i}`),
     agent: pref?.[i]?.agent ?? (i === 0 ? 'human' : defaultCpuAgent(g)),
-    color: TEAM_COLORS[i % TEAM_COLORS.length],
+    color: palette[i % palette.length],
   }));
 }
 
@@ -50,4 +59,4 @@ function scenarioOverrides(sc) {
   };
 }
 
-window.gameDefaults = { TEAM_COLORS, defaultCpuAgent, makeSlots, initGameOpts, scenarioOverrides };
+window.gameDefaults = { TEAM_COLORS, teamPalette, defaultCpuAgent, makeSlots, initGameOpts, scenarioOverrides };

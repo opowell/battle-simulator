@@ -927,6 +927,11 @@ export const Civ1Game = {
     hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
     blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
     mapZoom: true, defaultTileSize: 40, moveQueue: true,
+    // Player colors, taken from the original game's civ palette. RED IS RESERVED FOR
+    // THE BARBARIANS in Civ1 and never belongs to a civ, so it's absent here — a red
+    // unit or city on this map means barbarians, whoever else is playing. The generic
+    // engine palette (apps/design/gameDefaults.js) hands seat 2 red, hence this override.
+    teamColors: ['#4058c8', '#d8c038', '#38a038', '#9058b8', '#48b8b8', '#d87830', '#e8e8e8'],
     // Once the selected unit runs out of orders (moves used up, or it's been given a
     // standing fortify/sentry order — see toGrid's `needsOrders`), jump selection to
     // another of the player's units that still wants orders (see Battlefield.vue).

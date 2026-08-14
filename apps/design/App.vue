@@ -483,6 +483,17 @@ watch(liveState, (s) => {
 });
 
 // ── field for the battlefield ────────────────────────────────
+// Seat i's colors: the theme's team vars, unless the game brought its own palette
+// (ui.teamColors — raw colors, used both as the CSS color and as the sprite tint).
+function teamColor(apiGame, i) {
+  const own = apiGame?.ui?.teamColors;
+  if (Array.isArray(own) && own.length) {
+    const c = own[i % own.length];
+    return { color: c, raw: c };
+  }
+  return { color: TEAM_VARS[i] ?? 'var(--teamA)', raw: TEAM_RAWS[i] ?? '#8a96a1' };
+}
+
 function buildField(g, s) {
   if (!g || !s) return null;
 
@@ -495,8 +506,7 @@ function buildField(g, s) {
     return {
       id:    d.id,
       name:  c?.name ?? d.name,
-      color: TEAM_VARS[i] ?? 'var(--teamA)',
-      raw:   TEAM_RAWS[i] ?? '#8a96a1',
+      ...teamColor(apiGame, i),
     };
   });
 
@@ -505,8 +515,7 @@ function buildField(g, s) {
     const owners = [...new Set(g.cells.filter(c => c.owner).map(c => c.owner))].sort();
     owners.forEach((o, i) => teams.push({
       id: 'p' + o, name: 'Player ' + o,
-      color: TEAM_VARS[i] ?? 'var(--teamA)',
-      raw:   TEAM_RAWS[i] ?? '#8a96a1',
+      ...teamColor(apiGame, i),
     }));
   }
 

@@ -38,6 +38,9 @@ function chooseScenario(sc) {
   applyScenario(sc);
 }
 
+// The palette a new/cycled slot draws from — the game's own when it has one.
+const palette = computed(() => gameDefaults.teamPalette(props.game));
+
 function addSlot() {
   const max = props.game?.maxPlayers ?? 8;
   if (slots.value.length >= max) return;
@@ -45,7 +48,7 @@ function addSlot() {
     id:    'slot' + slots.value.length,
     name:  'CPU ' + slots.value.length,
     agent: gameDefaults.defaultCpuAgent(props.game),
-    color: gameDefaults.TEAM_COLORS[slots.value.length % gameDefaults.TEAM_COLORS.length],
+    color: palette.value[slots.value.length % palette.value.length],
   }];
 }
 
@@ -60,8 +63,8 @@ function setSlot(i, patch) {
 }
 
 function cycleColor(i) {
-  const idx = gameDefaults.TEAM_COLORS.indexOf(slots.value[i].color);
-  setSlot(i, { color: gameDefaults.TEAM_COLORS[(idx + 1) % gameDefaults.TEAM_COLORS.length] });
+  const idx = palette.value.indexOf(slots.value[i].color);
+  setSlot(i, { color: palette.value[(idx + 1) % palette.value.length] });
 }
 
 function handleCreate() {
