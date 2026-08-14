@@ -441,6 +441,10 @@ function hasMoveIntent(u) {
 // than poking out past its point; the head is a CSS border-triangle rotated
 // around its own tip (transform-origin 100% 50%) so that tip lands exactly
 // on the destination cell centre regardless of angle.
+// The shaft deliberately runs a little PAST the head's base (the 0.7 factor)
+// so no antialiasing seam opens up at the joint; the two pieces are drawn
+// opaque inside a translucent group (.hl-arrow-group) so that buried overlap
+// can't blend twice and print a darker notch across the head.
 const suggestionArrowGeom = computed(() => props.suggestionArrows.map(a => {
   const fx = a.from[0] + 0.5, fy = a.from[1] + 0.5;
   const tx = a.to[0] + 0.5, ty = a.to[1] + 0.5;
@@ -793,25 +797,27 @@ function handleUnitClick(e, u) {
     <!-- Analysis suggestion arrows (AnalysisPanel.vue): ranked candidate moves,
          rank 1 drawn thicker/brighter, the hovered candidate emphasised. Shaft
          + triangular head, lichess-style (see suggestionArrowGeom above). -->
-    <template v-for="a in suggestionArrowGeom" :key="'sg'+a.key">
-      <div class="hl-noevents hl-suggest" :class="{ 'hl-suggest--top': a.rank === 1, 'hl-suggest--hovered': a.hovered }"
+    <div v-for="a in suggestionArrowGeom" :key="'sg'+a.key"
+         class="hl-noevents hl-arrow-group hl-suggest-group"
+         :class="{ 'hl-suggest--top': a.rank === 1, 'hl-suggest--hovered': a.hovered }">
+      <div class="hl-noevents hl-suggest"
            :style="{
              position:'absolute', left: a.shaftLeft+'px', top: a.shaftTop+'px',
              width: a.shaftLen+'px', height: a.thick+'px', marginTop: (-a.thick/2)+'px',
              transform: `rotate(${a.rotDeg}deg)`, transformOrigin: '0 50%',
            }"/>
-      <div class="hl-noevents hl-suggest-head" :class="{ 'hl-suggest--top': a.rank === 1, 'hl-suggest--hovered': a.hovered }"
+      <div class="hl-noevents hl-suggest-head"
            :style="{
              position:'absolute', left: (a.tipX - a.headLen)+'px', top: (a.tipY - a.headHalf)+'px',
              borderWidth: a.headHalf+'px '+0+' '+a.headHalf+'px '+a.headLen+'px',
              transform: `rotate(${a.rotDeg}deg)`, transformOrigin: (a.headLen)+'px '+a.headHalf+'px',
            }"/>
-    </template>
+    </div>
 
     <!-- User-drawn annotations (right-click circle / right-click-drag arrow): local-only
          board markup, plus a live preview of the arrow currently being dragged out —
          see the script's "right-click annotations" section. -->
-    <template v-for="a in annoArrowGeom" :key="'anno'+a.key">
+    <div v-for="a in annoArrowGeom" :key="'anno'+a.key" class="hl-noevents hl-arrow-group hl-anno-group">
       <div class="hl-noevents hl-anno-arrow"
            :style="{
              position:'absolute', left: a.shaftLeft+'px', top: a.shaftTop+'px',
@@ -824,21 +830,21 @@ function handleUnitClick(e, u) {
              borderWidth: a.headHalf+'px '+0+' '+a.headHalf+'px '+a.headLen+'px',
              transform: `rotate(${a.rotDeg}deg)`, transformOrigin: (a.headLen)+'px '+a.headHalf+'px',
            }"/>
-    </template>
-    <template v-if="annoPreview">
-      <div class="hl-noevents hl-anno-arrow hl-anno-arrow--preview"
+    </div>
+    <div v-if="annoPreview" class="hl-noevents hl-arrow-group hl-anno-group hl-anno-group--preview">
+      <div class="hl-noevents hl-anno-arrow"
            :style="{
              position:'absolute', left: annoPreview.shaftLeft+'px', top: annoPreview.shaftTop+'px',
              width: annoPreview.shaftLen+'px', height: annoPreview.thick+'px', marginTop: (-annoPreview.thick/2)+'px',
              transform: `rotate(${annoPreview.rotDeg}deg)`, transformOrigin: '0 50%',
            }"/>
-      <div class="hl-noevents hl-anno-arrow-head hl-anno-arrow--preview"
+      <div class="hl-noevents hl-anno-arrow-head"
            :style="{
              position:'absolute', left: (annoPreview.tipX - annoPreview.headLen)+'px', top: (annoPreview.tipY - annoPreview.headHalf)+'px',
              borderWidth: annoPreview.headHalf+'px '+0+' '+annoPreview.headHalf+'px '+annoPreview.headLen+'px',
              transform: `rotate(${annoPreview.rotDeg}deg)`, transformOrigin: (annoPreview.headLen)+'px '+annoPreview.headHalf+'px',
            }"/>
-    </template>
+    </div>
 
     <!-- Queued move waypoints (civ1 goto orders): dashed hop + numbered stop, per unit -->
     <template v-for="seg in queueSegments" :key="'q'+seg.key">
@@ -922,27 +928,38 @@ img.hl-fill { display: block; width: 100%; height: 100%; }
 .hl-zone { border-radius: 2px; }
 .hl-zone-label { position: absolute; left: 4px; top: 1px; font-size: 10px; letter-spacing: 0.5px; }
 .hl-intent { height: 0; }
+/* Every shaft+head arrow (suggestions and annotations alike) is wrapped in one of
+   these groups: a zero-cost overlay spanning the board, so the two pieces keep
+   positioning against exactly the same origin as before, and — the point of it —
+   all the transparency lives HERE. The shaft runs slightly past the head's base
+   to avoid a seam; drawn as two separately-translucent elements that buried
+   overlap would blend twice and show through the head as a darker notch. Opaque
+   pieces inside a translucent group composite once, so the arrow reads as one
+   solid shape at whatever opacity the variant below asks for. */
+.hl-arrow-group { position: absolute; inset: 0; }
+
 /* Lichess-style suggestion arrow: a thick coloured shaft (a solid block, its
    height set inline per-arrow) plus a CSS border-triangle head (see
-   suggestionArrowGeom's comment in the script for the geometry). Both pieces
-   share one colour/opacity via border-color/background so rank/hover
-   styling only needs to be set in one place per variant below. */
-.hl-suggest { background: rgba(66,198,230,0.55); border-radius: 2px; opacity: 0.85; }
-.hl-suggest-head { width: 0; height: 0; border-style: solid; border-color: transparent transparent transparent rgba(66,198,230,0.55); opacity: 0.85; }
-.hl-suggest--top { background: rgba(66,198,230,0.85); opacity: 1; }
-.hl-suggest-head.hl-suggest--top { border-left-color: rgba(66,198,230,0.85); background: none; opacity: 1; }
-.hl-suggest--hovered { background: rgba(242,180,65,0.95); opacity: 1; }
-.hl-suggest-head.hl-suggest--hovered { border-left-color: rgba(242,180,65,0.95); background: none; opacity: 1; }
+   suggestionArrowGeom's comment in the script for the geometry). Rank/hover
+   styling is set on the group, in one place per variant below. */
+.hl-suggest-group { opacity: 0.47; }
+.hl-suggest-group.hl-suggest--top { opacity: 0.85; }
+.hl-suggest-group.hl-suggest--hovered { opacity: 0.95; }
+.hl-suggest { background: rgb(66,198,230); border-radius: 2px; }
+.hl-suggest-head { width: 0; height: 0; border-style: solid; border-color: transparent transparent transparent rgb(66,198,230); }
+.hl-suggest--hovered .hl-suggest { background: rgb(242,180,65); }
+.hl-suggest--hovered .hl-suggest-head { border-left-color: rgb(242,180,65); }
 /* User-drawn annotations (right-click circle / right-click-drag arrow): a distinct
    yellow so they never get mistaken for a game-state highlight (legal-move cyan,
    last-move/suggestion amber, selection white). */
 .hl-anno-circle { place-self: center; width: 86%; height: 86%; border-radius: 50%;
   border-style: solid; border-color: rgba(255, 221, 0, 0.85); box-sizing: border-box;
   pointer-events: none; }
-.hl-anno-arrow { background: rgba(255, 221, 0, 0.85); border-radius: 2px; }
+.hl-anno-group { opacity: 0.85; }
+.hl-anno-group--preview { opacity: 0.5; }
+.hl-anno-arrow { background: rgb(255, 221, 0); border-radius: 2px; }
 .hl-anno-arrow-head { width: 0; height: 0; border-style: solid;
-  border-color: transparent transparent transparent rgba(255, 221, 0, 0.85); }
-.hl-anno-arrow--preview { opacity: 0.6; }
+  border-color: transparent transparent transparent rgb(255, 221, 0); }
 .hl-queue-line { height: 0; opacity: 0.85; }
 .hl-queue-dot {
   position: absolute; transform: translate(-50%, -50%);
