@@ -48,8 +48,9 @@ watch([maxTurns, gameOpts, slots, () => props.scenario], () => {
   });
 }, { deep: true, immediate: true });
 
-// The palette a new/cycled slot draws from — the game's own when it has one.
-const palette = computed(() => gameDefaults.teamPalette(props.game));
+// The colours a slot can be cycled through: one per seat this game can seat, so
+// the choice never runs out before the seats do (teamPalette generates them).
+const palette = computed(() => teamPalette.seatColors(props.game, props.game?.maxPlayers ?? 8));
 
 function addSlot() {
   const max = props.game?.maxPlayers ?? 8;
@@ -58,7 +59,7 @@ function addSlot() {
     id:    'slot' + slots.value.length,
     name:  'CPU ' + slots.value.length,
     agent: gameDefaults.defaultCpuAgent(props.game),
-    color: palette.value[slots.value.length % palette.value.length],
+    color: palette.value[slots.value.length],
   }];
 }
 

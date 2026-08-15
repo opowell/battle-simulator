@@ -36,17 +36,17 @@ test('risk: each player has at least one territory', () => {
   }
 });
 
-// World Domination seats a full table — you plus six AI rivals (api-server's
-// defaultPlayers) — so every seat needs a starting-army count (INITIAL_ARMIES
-// only went up to 6) and the 42 territories have to split evenly, 6 each.
-test('risk: a 7-player table splits the board evenly and places every army', () => {
-  const seven = Array.from({ length: 7 }, (_, i) => ({ id: 'p' + (i + 1), name: 'P' + (i + 1), agent: RandomAgent }));
-  const state = RiskGame.createInitialState(seven);
+// World Domination seats the full table — you plus five AI rivals (api-server's
+// defaultPlayers) — the largest game the starting-army table covers, and the one
+// where the 42 territories are stretched thinnest: 7 apiece, 20 armies each.
+test('risk: a 6-player table splits the board evenly and places every army', () => {
+  const six = Array.from({ length: 6 }, (_, i) => ({ id: 'p' + (i + 1), name: 'P' + (i + 1), agent: RandomAgent }));
+  const state = RiskGame.createInitialState(six);
   const territories = Object.values(state.board.territories);
-  for (const p of seven) {
+  for (const p of six) {
     const owned = territories.filter(t => t.owner === p.id);
-    assert.equal(owned.length, TERRITORY_IDS.length / 7);
-    assert.equal(owned.reduce((s, t) => s + t.armies, 0), 15);
+    assert.equal(owned.length, TERRITORY_IDS.length / 6);
+    assert.equal(owned.reduce((s, t) => s + t.armies, 0), 20);
   }
 });
 

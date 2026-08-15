@@ -14,9 +14,6 @@ const THEMES = [
   { id: 'retro',    label: 'Retro',    accent: '#39ff88', teams: ['#46c6ff', '#ff5f6e'] },
 ];
 
-const TEAM_VARS = ['var(--teamA)', 'var(--teamB)', 'var(--teamC)', 'var(--teamD)'];
-const TEAM_RAWS = ['#4f9dff', '#ff5f56', '#46d39a', '#f2b441'];
-
 const theme       = ref(localStorage.getItem('bs_theme') ?? 'military');
 const view        = ref('lobby');
 const prevView    = ref('lobby');
@@ -488,22 +485,16 @@ watch(liveState, (s) => {
 });
 
 // ── field for the battlefield ────────────────────────────────
-// Seat i's colors: the theme's team vars, unless the game brought its own palette
-// (ui.teamColors — raw colors, used both as the CSS color and as the sprite tint).
-function teamColor(apiGame, i) {
-  const own = apiGame?.ui?.teamColors;
-  if (Array.isArray(own) && own.length) {
-    const c = own[i % own.length];
-    return { color: c, raw: c };
-  }
-  return { color: TEAM_VARS[i] ?? 'var(--teamA)', raw: TEAM_RAWS[i] ?? '#8a96a1' };
-}
-
 function buildField(g, s) {
   if (!g || !s) return null;
 
   const apiGame = apiGames.value.find(x => x.name === s.game);
-  const defs    = apiGame?.defaultPlayers ?? [];
+  // The seats this session actually has (params.players, in server seat order) —
+  // NOT the game's defaultPlayers, which is only the starting shape of the setup
+  // form. A session seated past that length (extra slots added on the Configure
+  // screen) would otherwise leave its last seats out of `teams` entirely, and the
+  // board would paint them with SchematicLayer's no-team grey.
+  const defs    = s.params?.players ?? apiGame?.defaultPlayers ?? [];
   const cached  = sessionMeta.value[s.id] ?? [];
 
   const teams = defs.map((d, i) => {
@@ -511,7 +502,7 @@ function buildField(g, s) {
     return {
       id:    d.id,
       name:  c?.name ?? d.name,
-      ...teamColor(apiGame, i),
+      ...teamPalette.seatColorFor(apiGame, i),
     };
   });
 
@@ -520,7 +511,7 @@ function buildField(g, s) {
     const owners = [...new Set(g.cells.filter(c => c.owner).map(c => c.owner))].sort();
     owners.forEach((o, i) => teams.push({
       id: 'p' + o, name: 'Player ' + o,
-      ...teamColor(apiGame, i),
+      ...teamPalette.seatColorFor(apiGame, i),
     }));
   }
 

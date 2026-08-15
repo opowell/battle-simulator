@@ -60,10 +60,7 @@ function shuffle(arr, rng) {
   return a;
 }
 
-// The board game's table (2–6 players) drops 5 armies per extra player; the
-// default World Domination seating here is 7 (you + six AI), so the ramp is
-// carried one step further to 15.
-const INITIAL_ARMIES = { 2: 40, 3: 35, 4: 30, 5: 25, 6: 20, 7: 15 };
+const INITIAL_ARMIES = { 2: 40, 3: 35, 4: 30, 5: 25, 6: 20 };
 
 function calcReinforcements(playerId, territories) {
   const owned = Object.values(territories).filter(t => t.owner === playerId);
@@ -494,12 +491,9 @@ export const RiskGame = {
   evaluateState: (state, playerId) =>
     sidesEval(Object.values(state.board.territories), playerId, t => 10 + (t.armies ?? 0), t => t.owner),
   name: 'Risk',
-  // Seven seats need seven colours: the generic palette only names four (App.vue's
-  // TEAM_VARS) and greys out everything past it, which would make four of the six
-  // AI rivals indistinguishable. These are the board game's army colours.
-  ui: { showUnitInfo: false, teamColors: ['#4f9dff', '#ff5f56', '#46d39a', '#f2b441', '#b48cff', '#ff9e64', '#d8d8d8'] },
+  ui: { showUnitInfo: false },
   scenarios: [
-    { id: 'world-domination', name: 'World Domination', description: 'Classic 42-territory world map — conquer all to win: you against six AI rivals', config: {} },
+    { id: 'world-domination', name: 'World Domination', description: 'Classic 42-territory world map — conquer all to win: you against five AI rivals', config: {} },
   ],
   createInitialState,
   getLegalActions,
