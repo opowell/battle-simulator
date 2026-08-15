@@ -7,7 +7,7 @@ import { generateMap, findAdjacentFree, getReachableTiles, renderMap, isPassable
 import { getSc1Belief } from './belief.js';
 import { lineCost, isClearOfUnits } from '../continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
-import { scSpriteLayers } from '../starcraftSprite.js';
+import { scSpriteLayers, scBuildingSpriteLayers, scBuildingSize } from '../starcraftSprite.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 // Unit types with a sprite in images/units/. Each PNG stores its player-color
@@ -801,7 +801,11 @@ export const Sc1Game = {
   // sprite layer, so the many similarly-shaped unit types stay distinguishable without
   // sourced art. SC1 has no tracked unit heading, so showFacing is off for the same
   // reason chess/civ1/xcom disable it: a decorative, meaningless arrow isn't worth it.
-  ui: { recolorTeamSprites: true, hideGridLines: true, showFacing: false },
+  // No right-hand column: an RTS army of dozens of units and buildings doesn't fit a
+  // per-unit roster card, and the map wants every pixel of a 48x40 board. What's there
+  // is elsewhere already — a clicked unit's detail is the left panel, and an observer's
+  // perspective switcher is in the menu overlay (see Battlefield.vue's right sidebar).
+  ui: { recolorTeamSprites: true, hideGridLines: true, showFacing: false, showRightSidebar: false },
   scenarios: [
     { id: 'tvz', name: 'Terran vs Zerg',    description: 'Biomech forces vs the Swarm',          config: { race1: 'terran',   race2: 'zerg' } },
     { id: 'pvt', name: 'Protoss vs Terran', description: 'Psionic warriors vs human marines',    config: { race1: 'protoss',  race2: 'terran' } },
@@ -874,7 +878,9 @@ export const Sc1Game = {
 
     // Buildings don't move, so they render as stationary tokens pinned to their
     // tile centre — the same spot they occupied as a grid cell before this game
-    // went continuous.
+    // went continuous. They draw as plated structures, several times the size of a
+    // unit (see games/starcraftSprite.js) — a command center is a landmark on the
+    // map, not another disc the same size as the worker standing next to it.
     const buildingList = buildings.filter(b => b.alive).map(b => ({
       id: b.id, x: String(b.position.x + 0.5), y: String(b.position.y + 0.5),
       glyph:    b.type[0].toUpperCase(),
@@ -882,9 +888,14 @@ export const Sc1Game = {
       owner:    pidIdx[b.ownerId] ?? 0,
       hp:       b.hp,
       maxHp:    b.maxHp,
+      spriteLayers: scBuildingSpriteLayers(b.type, BUILDINGS[b.type] ?? {}),
+      sizeFrac:     scBuildingSize(BUILDINGS[b.type] ?? {}),
     }));
 
-    return { width, height, locationType: 'continuous', cells, units: [...unitList, ...buildingList],
+    // Buildings first: a structure token is wide enough to sit under the units around
+    // it, and the renderer draws this list in order, so the workers and army at a base
+    // stay visible (and clickable) on top of it rather than behind it.
+    return { width, height, locationType: 'continuous', cells, units: [...buildingList, ...unitList],
              shapes: board.shapes ?? [] };
   },
 };

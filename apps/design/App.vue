@@ -604,6 +604,13 @@ function buildField(g, s) {
       // each independently offset+rotated) — see apps/design/SchematicLayer.vue's
       // generic renderer and e.g. games/surviv/SurvivGame.js's spriteLayers().
       spriteLayers:  c.spriteLayers,
+      // Token size multiplier (default 1 = the standard piece size both renderers pick
+      // for the board). A game's toGrid may set it where one token stands for a bigger
+      // thing than another — e.g. an SC1 command center vs a marine.
+      sizeFrac:      c.sizeFrac,
+      // Widens the clickable hit area past the body radius for sprites that draw
+      // outside it (see CsGame.js's armor ring and SchematicLayer's u.hitRFrac).
+      hitRFrac:      c.hitRFrac,
       description:   c.description,
       job:           c.job,
       moveRange:     c.moveRange,

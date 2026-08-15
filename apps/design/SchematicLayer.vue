@@ -313,7 +313,11 @@ function unitR(u) {
     : 2.4;
   // Bare sprite images have no stroke/padding eating into them, so let them fill more of the cell.
   const boosted = u?.imagePath ? mult * 1.25 : mult;
-  return Math.max(5, props.fit.len(boosted));
+  // u.sizeFrac (default 1) lets a game draw some tokens bigger than the standard piece
+  // when the thing itself is bigger — an RTS structure next to a footsoldier (see
+  // Sc1Game.js's toGrid). Everything about the token is measured off this radius (rings,
+  // sprite layers, HP bar), so the whole token scales as one.
+  return Math.max(5, props.fit.len(boosted) * (u?.sizeFrac ?? 1));
 }
 
 // Grid-based fog of war: compute per-square visibility from friendly pieces.

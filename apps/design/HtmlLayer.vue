@@ -278,7 +278,9 @@ function unitR(u) {
   if (u?.badge != null) return Math.max(6, 0.47 * cellPx.value);
   const mult = W.value <= 10 ? 0.36 : 0.42;
   // Bare sprites have no stroke eating into them, so let them fill more of the cell.
-  return Math.max(5, (u?.imagePath ? mult * 1.25 : mult) * cellPx.value);
+  // u.sizeFrac (default 1) is a game's own "this token is a bigger thing" multiplier —
+  // same field and meaning as in SchematicLayer's unitR.
+  return Math.max(5, (u?.imagePath ? mult * 1.25 : mult) * cellPx.value * (u?.sizeFrac ?? 1));
 }
 // Continuous-space games default to a circle marker (matching SchematicLayer's SVG
 // renderer); grid games keep the classic square unless the game overrides it per type.
