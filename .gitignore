@@ -8,3 +8,4 @@ apps/*/node_modules/.vite/
 # engine. It is tens of MB, and every run rewrites it, so committing it cost
 # ~420 MB of history before this line covered the sqlite too.
 games/chess/vendor/sf-cache.*
+/dist

@@ -7,3 +7,11 @@ node_modules/@esbuild/*/esbuild.exe binary
 node_modules/@rollup/**/*.node      binary
 node_modules/esbuild/bin/esbuild    binary
 node_modules/fsevents/**/*.node     binary
+
+# Kept out of the release archives, which are built with `git archive`
+# (see scripts/build-release.mjs).
+.claude                     export-ignore
+.githooks                   export-ignore
+.gitattributes              export-ignore
+scripts                     export-ignore
+battle-simulator.code-workspace export-ignore
