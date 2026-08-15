@@ -450,7 +450,6 @@ node scripts/build-release.mjs --flavours standalone       # a subset
 node scripts/build-release.mjs --deps with                 # only the batteries-included half
 node scripts/build-release.mjs --format tar.gz             # default is zip
 node scripts/build-release.mjs --ref v0.2.0                # build from a tag
-node scripts/build-release.mjs --with-chess-cache          # include the warm Stockfish cache
 node scripts/build-release.mjs --out /tmp/bs-dist          # write elsewhere
 ```
 
@@ -470,6 +469,7 @@ archive cannot know about them:
   do differ: JAS commits its dependencies on purpose, and this repo still tracks
   a stray `node_modules/.package-lock.json`.
 
-The Stockfish evaluation cache under `games/chess/vendor/` is derived data and
-is no longer committed, so it is absent by default; `--with-chess-cache` copies
-whatever this checkout has warmed (tens of MB) into the archives.
+The Stockfish evaluation cache under `games/chess/vendor/` never ships, in any
+flavour. It is not committed, so a `git archive` does not supply it — and the
+build deletes `sf-cache.*` from the staged tree anyway, so re-committing it one
+day cannot quietly put tens of MB of derived data into a release.

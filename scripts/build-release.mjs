@@ -13,7 +13,8 @@
 // Contents come from `git archive`, so an archive holds exactly what is
 // committed at the chosen ref — plus the vendored submodules (the Obscuro
 // search and the fog-chess AI), which git archive does not descend into and
-// which are unpacked at their pinned commits afterwards.
+// which are unpacked at their pinned commits afterwards. Never the Stockfish
+// evaluation cache: it does not ship, in any flavour.
 
 import { execFileSync } from 'child_process'
 import fs from 'fs'
@@ -42,7 +43,6 @@ const parseArgs = (argv) => {
     out: 'dist',
     ref: 'HEAD',
     format: 'zip',
-    chessCache: false,
   }
   for (let i = 0; i < argv.length; i++) {
     const [flag, inlineValue] = argv[i].split(/=(.*)/s)
@@ -52,7 +52,6 @@ const parseArgs = (argv) => {
     else if (flag === '--out') args.out = value()
     else if (flag === '--ref') args.ref = value()
     else if (flag === '--format') args.format = value()
-    else if (flag === '--with-chess-cache') args.chessCache = true
     else throw new Error('unknown argument: ' + argv[i])
   }
   const unknownFlavour = args.flavours.filter(f => !FLAVOURS.includes(f))
@@ -143,22 +142,16 @@ const stageFromGit = (repoDir, ref, stageDir) => {
   fs.rmSync(tarball, { force: true })
 }
 
-// The Stockfish evaluation cache is derived data and no longer committed, so it
-// never arrives via git archive. It is a large but real speed-up for the chess
-// AI, so --with-chess-cache copies whatever this checkout has warmed.
-const copyChessCache = (appDir) => {
-  const from = path.join(projectRoot, 'games', 'chess', 'vendor')
-  const to = path.join(appDir, 'games', 'chess', 'vendor')
-  if (!fs.existsSync(to)) return
-  // -shm/-wal are sqlite's transient sidecars, meaningless once copied away
-  // from the live connection that owns them.
-  const files = fs.readdirSync(from).filter(f => /^sf-cache\.(ndjson|sqlite)$/.test(f))
-  if (!files.length) {
-    console.log('  note: --with-chess-cache, but no warm cache in games/chess/vendor')
-    return
+// Releases never carry the Stockfish evaluation cache. It is derived data, it
+// is tens of MB, and it is ours — see games/chess/stockfish.js. It is not
+// committed, so git archive does not supply it either; this is the belt to that
+// braces, so re-committing the cache one day cannot quietly put it in a release.
+const stripChessCache = (appDir) => {
+  const dir = path.join(appDir, 'games', 'chess', 'vendor')
+  if (!fs.existsSync(dir)) return
+  for (const file of fs.readdirSync(dir)) {
+    if (file.startsWith('sf-cache.')) fs.rmSync(path.join(dir, file), { force: true })
   }
-  for (const file of files) fs.copyFileSync(path.join(from, file), path.join(to, file))
-  console.log('  copied warm chess cache (' + files.join(', ') + ')')
 }
 
 const installDeps = (dir) => {
@@ -296,7 +289,7 @@ const main = async () => {
   stageFromGit(projectRoot, args.ref, pristine)
   extractSubmodules(projectRoot, args.ref, pristine)
   stripNodeModules(pristine)
-  if (args.chessCache) copyChessCache(pristine)
+  stripChessCache(pristine)
 
   let jasPristine = null
   if (needsJas) {
