@@ -36,6 +36,11 @@ package's `src/stockfish.js`), so evaluations from an older engine can never be
 served as though this one had produced them — they simply age out through the
 LRU.
 
+Both files are gitignored. They were tracked until they had cost ~420 MB of
+history between them — a 23 MB sqlite that every run rewrites does not delta,
+and it was committed sixteen times. Nothing is lost by that: the cache is
+derived, and a missing entry is recomputed by the engine to the same value.
+
 It stayed behind when the AI was extracted because it is ours and it is large:
 tens of thousands of positions from games played here, ~50 MB, and derived data
 by definition. Shipping that inside a public package would put it in front of

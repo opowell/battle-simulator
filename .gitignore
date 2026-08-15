@@ -4,4 +4,7 @@ apps/*/node_modules/.vite/
 .claude/settings.local.json
 /node_modules
 /apps/android
-games/chess/vendor/sf-cache.ndjson
+# Stockfish evaluation cache — derived data, regenerated on demand by the
+# engine. It is tens of MB, and every run rewrites it, so committing it cost
+# ~420 MB of history before this line covered the sqlite too.
+games/chess/vendor/sf-cache.*
