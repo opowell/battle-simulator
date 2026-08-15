@@ -36,6 +36,20 @@ test('risk: each player has at least one territory', () => {
   }
 });
 
+// World Domination seats a full table — you plus six AI rivals (api-server's
+// defaultPlayers) — so every seat needs a starting-army count (INITIAL_ARMIES
+// only went up to 6) and the 42 territories have to split evenly, 6 each.
+test('risk: a 7-player table splits the board evenly and places every army', () => {
+  const seven = Array.from({ length: 7 }, (_, i) => ({ id: 'p' + (i + 1), name: 'P' + (i + 1), agent: RandomAgent }));
+  const state = RiskGame.createInitialState(seven);
+  const territories = Object.values(state.board.territories);
+  for (const p of seven) {
+    const owned = territories.filter(t => t.owner === p.id);
+    assert.equal(owned.length, TERRITORY_IDS.length / 7);
+    assert.equal(owned.reduce((s, t) => s + t.armies, 0), 15);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // getLegalActions
 // ---------------------------------------------------------------------------

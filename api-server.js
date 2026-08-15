@@ -253,7 +253,9 @@ const GAMES = {
   cardbattle:    { game: CardBattleGame,    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   civ1:          { game: Civ1Game,          minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   civ2:          { game: Civ2Game,          minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  risk:          { game: RiskGame,          minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  // World Domination is a full table: you plus six AI rivals (the web UI seats the
+  // first slot as the human and the rest as CPUs — see gameDefaults.makeSlots).
+  risk:          { game: RiskGame,          minPlayers: 2, maxPlayers: 7,  defaultPlayers: Array.from({ length: 7 }, (_, i) => ({ id: 'p' + (i + 1), name: 'Player ' + (i + 1) })) },
   axisallies:    { game: AxisAlliesGame,    minPlayers: 2, maxPlayers: 5,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
   combatmission: { game: CombatMissionGame, minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   xcom:          { game: XComGame,          minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }] },
