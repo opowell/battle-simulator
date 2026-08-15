@@ -423,3 +423,53 @@ node --test test/*.test.js
 ```
 
 Runs all game test suites.
+
+## Releases
+
+```sh
+npm run build-release
+```
+
+Six archives land in `dist/`, one per combination of two independent choices:
+
+| flavour | how it runs |
+| --- | --- |
+| `standalone` | `node api-server.js` — the app serves itself |
+| `jas` | bundles the [JAS](../..) server; `./jas.sh`, then pick it from the Launchpad |
+| `source` | no server at all: `api-server.js` and `settings.json` are removed. The engine, games, agents and UI sources, for use as a library or via `demo/*.js` |
+
+| dependencies | |
+| --- | --- |
+| `-with-deps` | `node_modules` installed from the lockfile — unpack and run, no network |
+| `-no-deps` | no `node_modules`; the recipient runs `npm install` |
+
+Useful flags:
+
+```sh
+node scripts/build-release.mjs --flavours standalone       # a subset
+node scripts/build-release.mjs --deps with                 # only the batteries-included half
+node scripts/build-release.mjs --format tar.gz             # default is zip
+node scripts/build-release.mjs --ref v0.2.0                # build from a tag
+node scripts/build-release.mjs --with-chess-cache          # include the warm Stockfish cache
+node scripts/build-release.mjs --out /tmp/bs-dist          # write elsewhere
+```
+
+Contents come from `git archive`, so an archive holds exactly what is committed
+at that ref, minus the paths marked `export-ignore` in
+[.gitattributes](.gitattributes). Two things are then added back, because git
+archive cannot know about them:
+
+- **The submodules.** `git archive` treats a submodule as a single tree entry
+  and leaves the directory empty, so `vendor/obscuro` and `vendor/obscuro-chess`
+  (and the checkout of the search nested inside the latter) are archived from
+  their own repositories at their pinned commits and unpacked into place. A
+  build fails loudly if a submodule is missing or is not at its pin — run
+  `git submodule update --init --recursive`.
+- **`node_modules`**, from `package-lock.json`, for the `-with-deps` half. The
+  build strips whatever a git archive supplied first, so the two halves really
+  do differ: JAS commits its dependencies on purpose, and this repo still tracks
+  a stray `node_modules/.package-lock.json`.
+
+The Stockfish evaluation cache under `games/chess/vendor/` is derived data and
+is no longer committed, so it is absent by default; `--with-chess-cache` copies
+whatever this checkout has warmed (tens of MB) into the archives.

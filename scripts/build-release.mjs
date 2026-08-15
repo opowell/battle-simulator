@@ -165,6 +165,14 @@ const installDeps = (dir) => {
   run(npm, ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: dir })
 }
 
+// The with/without-deps split only means anything if the build owns
+// node_modules outright, and a git archive can hand one over: JAS commits its
+// dependencies deliberately, and this repo still tracks a stray
+// node_modules/.package-lock.json. Clear it, then install if asked.
+const stripNodeModules = (dir) => {
+  fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true })
+}
+
 // --- the jas flavour -------------------------------------------------------
 
 // This app normally lives at <jas>/apps/battle-simulator, so the JAS checkout
@@ -193,6 +201,14 @@ const readme = (flavour, version, withDeps) => {
     ? 'Dependencies are included — there is nothing to install.'
     : 'Dependencies are not included. Run `npm install` first (needs network access).'
 
+  // The JAS launcher installs its own dependencies when node_modules is
+  // missing, but only its own: the app's are a separate tree it never sees.
+  const jasInstall = withDeps
+    ? 'Dependencies are included — there is nothing to install.'
+    : 'Dependencies are not included. The launcher installs its own on first\n' +
+      'run; the app\'s are a separate tree, so install those yourself:\n\n' +
+      `    cd apps/${APP_ID} && npm install && cd ../..`
+
   const body = {
     standalone: `# Battle Simulator ${version} — standalone
 
@@ -210,13 +226,14 @@ Stockfish evaluation cache, which makes the fog-chess AI noticeably faster.
 
 This archive is the JAS app server with Battle Simulator installed as an app.
 
-${install}
+${jasInstall}
 
     ./jas.sh          # macOS, Linux
     jas.cmd           REM Windows
 
 Open the URL it prints and pick Battle Simulator from the Launchpad, or go
-straight to http://localhost:4500/${APP_ID}.
+straight to http://localhost:4500/${APP_ID}. The port lives in
+\`server/settings.json\`.
 
 Requires Node.js 20 or newer on PATH. To run without installing Node, drop a
 Node runtime into \`server/node/\` — see the JAS release archives, which bundle
@@ -278,6 +295,7 @@ const main = async () => {
   console.log('staging the app tree')
   stageFromGit(projectRoot, args.ref, pristine)
   extractSubmodules(projectRoot, args.ref, pristine)
+  stripNodeModules(pristine)
   if (args.chessCache) copyChessCache(pristine)
 
   let jasPristine = null
@@ -286,6 +304,7 @@ const main = async () => {
     jasPristine = path.join(workDir, 'pristine-jas')
     stageFromGit(jasRoot, 'HEAD', jasPristine)
     extractSubmodules(jasRoot, 'HEAD', jasPristine)
+    stripNodeModules(jasPristine)
   }
 
   for (const flavour of args.flavours) {
