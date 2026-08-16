@@ -493,7 +493,12 @@ export const RiskGame = {
   name: 'Risk',
   ui: { showUnitInfo: false },
   scenarios: [
-    { id: 'world-domination', name: 'World Domination', description: 'Classic 42-territory world map — conquer all to win: you against five AI rivals', config: {} },
+    { 
+      id: 'world-domination',
+      name: 'World Domination',
+      description: 'Classic 42-territory world map — conquer all to win: you against five AI rivals',
+      config: {}
+    },
   ],
   createInitialState,
   getLegalActions,
