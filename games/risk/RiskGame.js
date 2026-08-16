@@ -2,6 +2,8 @@ import { sidesEval } from '../evalHelpers.js';
 import { TERRITORY_IDS, TERRITORY_NAMES, ADJACENCY, CONTINENTS, getConnectedOwned } from './RiskMap.js';
 import { resolveCombat } from './RiskCombat.js';
 import { getRiskBelief } from './belief.js';
+import { LAYOUT, SEA_ROUTES, HEX_SIZE } from './RiskLayout.js';
+import { hexLayoutBounds, territoryBorders } from '../mapTypes/hexagon.js';
 
 // ── Cards ─────────────────────────────────────────────────────────────────────
 
@@ -194,8 +196,11 @@ function getLegalActions(state, playerId) {
       for (const adjId of ADJACENCY[t.id] ?? []) {
         const adj = territories[adjId];
         if (adj && adj.owner !== playerId) {
+          // Strongest attack first: clicking a target on the map submits the first
+          // matching attack action (see Battlefield's territory-click flow), and
+          // rolling every die you're entitled to is what a player means by "attack".
           const maxDice = Math.min(3, t.armies - 1);
-          for (let dice = 1; dice <= maxDice; dice++) {
+          for (let dice = maxDice; dice >= 1; dice--) {
             actions.push({ type: 'attack', from: t.id, to: adjId, attackerDice: dice });
           }
         }
@@ -478,6 +483,90 @@ function sampleWorlds(observation, playerId, n, rng = Math.random) {
   });
 }
 
+// The world map: each territory is a blob of hexes in its real-world place (see
+// RiskLayout.js), painted in its owner's seat colour, with its army count on one
+// "capital" hex. Everything about the drawing lives in RiskLayout — this only
+// colours it in for the current state.
+function toGrid(state) {
+  const { hexIdsByTerritory, capitalHexByTerritory, hexCells, territoryOfHex } = LAYOUT;
+  const territories = state.board.territories;
+
+  const pidIdx = {};
+  state.players.forEach((p, i) => { pidIdx[p.id] = i + 1; });
+
+  const allHexIds = Object.keys(hexCells);
+  const { pixels, minX, minY, width, height } = hexLayoutBounds(allHexIds, hexCells, HEX_SIZE);
+  const pad = HEX_SIZE * 2;
+  const at = (hexId) => [pixels[hexId].x - minX + pad, pixels[hexId].y - minY + pad];
+
+  const cells = [];
+  for (const [tid, hexes] of Object.entries(hexIdsByTerritory)) {
+    const t = territories[tid];
+    // A territory with no owner is one fog is hiding (getVisibleState) — draw it as
+    // a neutral blob rather than a token reading "null".
+    const hidden = !t || t.owner == null;
+    const capital = capitalHexByTerritory[tid];
+    for (const hexId of hexes) {
+      const [x, y] = at(hexId);
+      const isCapital = hexId === capital;
+      cells.push({
+        x, y,
+        color: hidden ? '#2b2f38' : 'team',
+        owner: hidden ? 0 : (pidIdx[t.owner] ?? 0),
+        territoryId: tid,
+        // The token is the army count, not a piece: `label` is what gets drawn on it,
+        // while the name behind it stays the territory's, so the action panel and the
+        // log can talk about "Ontario" rather than about "4".
+        glyph: isCapital && !hidden ? String(t.armies) : '',
+        label: isCapital && !hidden ? String(t.armies) : '',
+        unitId: isCapital ? tid : undefined,
+        unitName: isCapital && !hidden ? TERRITORY_NAMES[tid] : '',
+      });
+    }
+  }
+
+  const ownerIdx = (tid) => {
+    const t = territories[tid];
+    return !t || t.owner == null ? 0 : (pidIdx[t.owner] ?? 0);
+  };
+  const shift = ([x, y]) => [x - minX + pad, y - minY + pad];
+  const borders = territoryBorders(allHexIds, territoryOfHex, hexCells, HEX_SIZE)
+    .map(seg => ({
+      p1: shift(seg.p1), p2: shift(seg.p2),
+      aId: seg.a, aOwner: ownerIdx(seg.a),
+      bId: seg.b, bOwner: ownerIdx(seg.b),
+    }));
+
+  // The board's connection lines: pairs that can attack each other across water,
+  // so the crossing is visible even though the blobs don't touch. A route between
+  // opposite edges of the map (Alaska–Kamchatka, around the back of the globe) is
+  // drawn as two stubs running off either side rather than one line dragged across
+  // every other continent — the same thing the printed board does. Both stubs carry
+  // the same pair of ids, so selecting either end lights up both.
+  const w = width + pad * 2;
+  const links = [];
+  for (const [a, b] of SEA_ROUTES) {
+    const p1 = at(capitalHexByTerritory[a]);
+    const p2 = at(capitalHexByTerritory[b]);
+    const ends = { a, b, aOwner: ownerIdx(a), bOwner: ownerIdx(b) };
+    if (Math.abs(p2[0] - p1[0]) > w / 2) {
+      const [west, east] = p1[0] < p2[0] ? [p1, p2] : [p2, p1];
+      links.push({ ...ends, p1: west, p2: [0, west[1]] });
+      links.push({ ...ends, p1: east, p2: [w, east[1]] });
+    } else {
+      links.push({ ...ends, p1, p2 });
+    }
+  }
+
+  return {
+    width: width + pad * 2, height: height + pad * 2,
+    grid: 'hexagon', hexSize: HEX_SIZE,
+    cells,
+    territoryBorders: borders,
+    links,
+  };
+}
+
 function getActionDuration(_state, action) {
   // Abstract game — all phases take time proportional to their complexity
   if (action.type === 'attack')   return 0.5;
@@ -491,7 +580,19 @@ export const RiskGame = {
   evaluateState: (state, playerId) =>
     sidesEval(Object.values(state.board.territories), playerId, t => 10 + (t.armies ?? 0), t => t.owner),
   name: 'Risk',
-  ui: { showUnitInfo: false },
+  // A territory map, like KDice: the "units" are the territories themselves, showing
+  // their army count as the marker label, so there's no facing arrow, roster or HP bar
+  // to draw. The map is driven by clicks — pick one of your territories, then click a
+  // neighbour to attack it (or, in the fortify phase, to move armies there); a click on
+  // a single territory places one reinforcement. Card sets and ending a phase stay in
+  // the action panel, since they aren't about any one territory.
+  ui: {
+    showUnitInfo: false, showFacing: false, showRoster: false, showHpBars: false,
+    showRuler: false, hideGridLines: true, territoryClick: true, clearSelectedAtEndOfTurn: true,
+    territoryPairTypes: ['attack', 'fortify'],
+    territoryTapType: 'place-armies',
+    combatFx: true,
+  },
   scenarios: [
     { id: 'world-domination', name: 'World Domination', description: 'Classic 42-territory world map — conquer all to win: you against five AI rivals', config: {} },
   ],
@@ -500,6 +601,7 @@ export const RiskGame = {
   applyActions,
   getResult,
   renderState,
+  toGrid,
   getVisibleState,
   sampleWorlds,
   getActionDuration,

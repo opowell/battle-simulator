@@ -63,6 +63,28 @@ The deck has 42 territory cards (one per territory, type cycling through infantr
 
 **Elimination** — when a player is eliminated, their entire card hand transfers to the attacker.
 
+## The board
+
+`RiskLayout.js` draws the world map: every territory is a small blob of hexes in
+roughly its real place, authored as ASCII art (one 3-letter code per hex) and
+parsed into the hex cells `toGrid` colours in. `RiskMap.ADJACENCY` remains the
+only authority on who can attack whom — the map just has to agree with it, and
+`layout.test.js` checks both directions:
+
+- two blobs may only share a border if those territories really are adjacent, and
+- the adjacent pairs that *don't* touch are exactly `SEA_ROUTES` — the water
+  crossings (Alaska↔Kamchatka and friends, plus the Mediterranean), drawn as
+  dashed connection lines the way the printed board draws them. Alaska↔Kamchatka
+  goes around the back of the globe, so it renders as a stub off each edge.
+
+To move a territory, edit the ASCII map and run the tests; a border you opened or
+closed by accident fails there rather than silently changing the game.
+
+Playing it is all clicks: tap one of your territories to place a reinforcement,
+or select it and click a neighbour to attack (fortify works the same way in the
+fortify phase). Card sets, "place all N here" and ending a phase stay as buttons
+in the action panel, since they aren't about a single territory.
+
 ## Win conditions
 
 | Outcome | Reason |

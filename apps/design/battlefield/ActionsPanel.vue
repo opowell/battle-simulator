@@ -149,6 +149,14 @@ function fmtAction(action) {
     }
     return name;
   }
+  // Territory-map actions (see Battlefield's territory-click flow): several buttons of
+  // the same type differ only in which territory they act on, so name it — and the size
+  // of the action where it carries one ("place-armies 3 → Ontario").
+  if (action.territoryId != null) {
+    const unit = props.units.find(u => u.id === action.territoryId);
+    const where = unit?.name ?? action.territoryId;
+    return action.count != null ? `${t} ${action.count} → ${where}` : `${t} → ${where}`;
+  }
   return t + (action.unitId ? ' ' + action.unitId : '');
 }
 </script>

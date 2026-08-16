@@ -1317,13 +1317,28 @@ function nearestTerritoryUnitId(x, y) {
   return best?.territoryId ?? null;
 }
 
+// A click on a territory map means one of three things, in order: finish a pair
+// (something is selected and the pair is a legal from→to action — attack, or Risk's
+// fortify), act on the territory alone (a legal action naming just it — Risk's
+// place-armies), or change the selection. Which action types count as which is the
+// game's call via ui.territoryPairTypes / ui.territoryTapType, so this stays a rule
+// about clicks rather than about any particular game; several actions of the same
+// type may match, and the game orders its legal actions so the first is the one a
+// click should mean.
 function handleTerritoryClick(x, y) {
   const clickedId = nearestTerritoryUnitId(x, y);
   if (!clickedId) { selectedId.value = null; return; }
+  const pairTypes = ui.value.territoryPairTypes ?? ['attack'];
+  const tapType = ui.value.territoryTapType;
+
   if (isPending.value && selectedId.value && selectedId.value !== clickedId) {
     const action = legalActions.value.find(a =>
-      a.type === 'attack' && a.from === selectedId.value && a.to === clickedId);
+      pairTypes.includes(a.type) && a.from === selectedId.value && a.to === clickedId);
     if (action) { submitAction(action); selectedId.value = null; return; }
+  }
+  if (isPending.value && tapType) {
+    const action = legalActions.value.find(a => a.type === tapType && a.territoryId === clickedId);
+    if (action) { submitAction(action); selectedId.value = clickedId; return; }
   }
   selectedId.value = selectedId.value === clickedId ? null : clickedId;
 }
@@ -1499,10 +1514,26 @@ const lostUnitsTeams = computed(() => {
 });
 
 const displayedActions = computed(() => {
-  // Territory-click games (kdice): attacks are issued entirely by clicking the
-  // map (select a territory, then click its target — see handleTerritoryClick),
-  // so the action panel only needs whatever's left (end-turn).
-  if (ui.value.territoryClick) return legalActions.value.filter(a => a.type !== 'attack');
+  // Territory-click games (kdice, risk): from→to actions are issued entirely by
+  // clicking the map (select a territory, then click its target — see
+  // handleTerritoryClick), so the panel drops them and keeps what a click can't
+  // express (end-turn, card sets). Single-territory tap actions are only dropped
+  // where a tap really would submit that exact action — the first match per
+  // territory — so bulk variants of the same type (Risk's "place all N here",
+  // behind the same click that places one) stay reachable as buttons.
+  if (ui.value.territoryClick) {
+    const pairTypes = ui.value.territoryPairTypes ?? ['attack'];
+    const tapType = ui.value.territoryTapType;
+    const tapped = new Set();
+    return legalActions.value.filter(a => {
+      if (pairTypes.includes(a.type)) return false;
+      if (tapType && a.type === tapType && !tapped.has(a.territoryId)) {
+        tapped.add(a.territoryId);
+        return false;
+      }
+      return true;
+    });
+  }
   if (ui.value.freeSelection) {
     return legalActions.value.filter(a =>
       a.unitId === '__player__' || (a.unitId === selectedId.value && !actionGridCoord(a, 'to')));
