@@ -4,6 +4,7 @@ import SchematicLayer    from './SchematicLayer.vue';
 import HtmlLayer         from './HtmlLayer.vue';
 import IsoLayer          from './IsoLayer.vue';
 import HtmlIsoLayer      from './HtmlIsoLayer.vue';
+import HtmlHexLayer      from './HtmlHexLayer.vue';
 import GameHeader        from './battlefield/GameHeader.vue';
 import SelectedUnitDetail from './battlefield/SelectedUnitDetail.vue';
 import SelectedSquareDetail from './battlefield/SelectedSquareDetail.vue';
@@ -808,11 +809,20 @@ const isGridBoard = computed(() =>
 // extrudes cliffs per tile height — SVG-only, so those games get no switch.
 const isIsoSpriteBoard = computed(() =>
   !!ui.value.isometric && ui.value.isoTileMode === 'sprite');
+// A hex TERRITORY map (kdice, risk): blobs of hexes, one outline per blob, one count
+// token per territory. HtmlHexLayer draws all of that in HTML — each hex is a div cut to
+// shape with clip-path — so the board is made of the same elements as the rest of the
+// app and a hex fields its own clicks. A hex board of per-hex terrain and pieces
+// (memoir44) has no HTML renderer yet and stays on SchematicLayer.
+const isHexTerritoryBoard = computed(() =>
+  displayField.value?.grid === 'hexagon'
+  && (displayField.value?.tiles ?? []).some(t => t.territoryId != null));
 // The HTML renderer is used whenever it can FULLY draw the board: a grid of square
-// cells with cell-placeable units, or an isometric sprite board. Everything HTML has no
-// equivalent for — positioned units, vision cones, shape terrain, hex grids, textured
-// iso — falls to SVG (SchematicLayer / IsoLayer). No user-facing SVG/HTML toggle: where
-// HTML works it is used; where it doesn't, SVG is the only option.
+// cells with cell-placeable units, a hex territory map, or an isometric sprite board.
+// Everything HTML has no equivalent for — positioned units, vision cones, shape terrain,
+// hex boards with terrain and pieces, textured iso — falls to SVG (SchematicLayer /
+// IsoLayer). No user-facing SVG/HTML toggle: where HTML works it is used; where it
+// doesn't, SVG is the only option.
 const useHtmlRenderer = computed(() =>
   isGridBoard.value || isIsoSpriteBoard.value);
 
@@ -1301,11 +1311,17 @@ watch([displayUnits, zoomEnabled], () => {
   centerOn(mine.x, mine.y);
 }, { immediate: true });
 
-// Territory-click games (kdice): every hex belongs to some territory, but only
-// one hex (the "capital") carries a unit token — clicking anywhere in a
-// territory's blob must resolve to that territory, so find whichever tile's
-// center is nearest the click point and use its territoryId as the "unit" to
-// select/attack (see KDiceGame.toGrid and SchematicLayer's hexagon click path).
+// Territory-click games (kdice, risk): every hex belongs to some territory, but only
+// one hex (the "capital") carries a unit token — clicking anywhere in a territory's
+// blob must resolve to that territory, so find whichever tile's center is nearest the
+// click point and use its territoryId as the "unit" to select/attack (see
+// KDiceGame.toGrid and HtmlHexLayer's clicks).
+// A click on a hex arrives carrying that hex's own center — the hex is an element and
+// fields its own click — so the search is exact for those; what it resolves is
+// everything else, including the gaps between blobs on a map that isn't a full lattice
+// (Risk's oceans). Those are off the map rather than a near miss, so a point farther
+// than a hex from every center is no territory at all: clicking open water clears the
+// selection instead of acting on whichever blob happened to be closest.
 function nearestTerritoryUnitId(x, y) {
   const tiles = displayField.value?.tiles ?? [];
   let best = null, bestD = Infinity;
@@ -1314,6 +1330,8 @@ function nearestTerritoryUnitId(x, y) {
     const d = (t.x - x) ** 2 + (t.y - y) ** 2;
     if (d < bestD) { bestD = d; best = t; }
   }
+  const reach = displayField.value?.hexSize;
+  if (reach != null && bestD > reach ** 2) return null;
   return best?.territoryId ?? null;
 }
 
@@ -1514,25 +1532,16 @@ const lostUnitsTeams = computed(() => {
 });
 
 const displayedActions = computed(() => {
-  // Territory-click games (kdice, risk): from→to actions are issued entirely by
-  // clicking the map (select a territory, then click its target — see
-  // handleTerritoryClick), so the panel drops them and keeps what a click can't
-  // express (end-turn, card sets). Single-territory tap actions are only dropped
-  // where a tap really would submit that exact action — the first match per
-  // territory — so bulk variants of the same type (Risk's "place all N here",
-  // behind the same click that places one) stay reachable as buttons.
+  // Territory-click games (kdice, risk): anything about a territory is issued on the
+  // map — select a territory and click its target for a from→to action, or tap one
+  // territory for a single-territory action (see handleTerritoryClick) — so the panel
+  // drops every action of those types, bulk variants included (Risk's "place all N
+  // here" is the same job as N taps), and keeps only what a click can't express:
+  // ending a phase, turning in card sets.
   if (ui.value.territoryClick) {
     const pairTypes = ui.value.territoryPairTypes ?? ['attack'];
     const tapType = ui.value.territoryTapType;
-    const tapped = new Set();
-    return legalActions.value.filter(a => {
-      if (pairTypes.includes(a.type)) return false;
-      if (tapType && a.type === tapType && !tapped.has(a.territoryId)) {
-        tapped.add(a.territoryId);
-        return false;
-      }
-      return true;
-    });
+    return legalActions.value.filter(a => !pairTypes.includes(a.type) && a.type !== tapType);
   }
   if (ui.value.freeSelection) {
     return legalActions.value.filter(a =>
@@ -1552,6 +1561,16 @@ const displayedActions = computed(() => {
   if (unitMoves.value.length > 0)
     return legalActions.value.filter(a => a.type !== 'move');
   return legalActions.value;
+});
+
+// A selection means one thing inside a phase (the territory you are placing armies on)
+// and something else in the next (the one you are attacking FROM), so it does not carry
+// across the boundary — least of all when the game crosses it by itself, as Risk does
+// when the last army goes down. Without this the first click of the new phase is spent
+// deselecting whatever the old phase left behind, and reads as a click that did nothing.
+// Same opt-in as the end-of-turn clear.
+watch(() => props.liveState?.phase, (phase, prev) => {
+  if (prev != null && phase !== prev && ui.value.clearSelectedAtEndOfTurn) selectedId.value = null;
 });
 
 function submitAction(action) {
@@ -1848,7 +1867,13 @@ onUnmounted(() => {
           <span v-if="forkError" class="bf-fork-err">{{ forkError }}</span>
           <button class="action-btn bf-fork-back" @click="exitFork">← Back to game</button>
         </div>
-        <HtmlIsoLayer v-if="ui.isometric && useHtmlRenderer"
+        <HtmlHexLayer v-if="isHexTerritoryBoard"
+          :field="displayField" :fit="fit" :units="renderUnits"
+          :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId"
+          :rdr="rdr"
+          :territoryFx="(atLatest && !revealAll) ? territoryFx : {}"
+          @sq-click="handleSqClick"/>
+        <HtmlIsoLayer v-else-if="ui.isometric && useHtmlRenderer"
           :field="displayField" :units="renderUnits"
           :selectedId="selectedId" :activeUnitId="activeUnitId" :fog="fog"
           :rdr="rdr"

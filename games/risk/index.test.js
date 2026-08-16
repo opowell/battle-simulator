@@ -105,6 +105,43 @@ test('risk: place-armies decrements reinforcementsLeft', () => {
   assert.equal(next.gameSpecific.reinforcementsLeft, before - 1);
 });
 
+test('risk: placing the last army ends the reinforce phase by itself', () => {
+  const state = RiskGame.createInitialState(players());
+  const p1Terr = Object.values(state.board.territories).find(t => t.owner === 'p1');
+  const oneLeft = { ...state, gameSpecific: { ...state.gameSpecific, reinforcementsLeft: 1 } };
+  const next = RiskGame.applyActions(oneLeft, [{
+    playerId: 'p1',
+    action: { type: 'place-armies', territoryId: p1Terr.id, count: 1 },
+  }]);
+  assert.equal(next.gameSpecific.reinforcementsLeft, 0);
+  assert.equal(next.currentPhase, 'attack');
+});
+
+test('risk: the last army does NOT end the phase while a card set could still be turned in', () => {
+  const state = RiskGame.createInitialState(players());
+  const p1Terr = Object.values(state.board.territories).find(t => t.owner === 'p1');
+  const withSet = {
+    ...state,
+    gameSpecific: {
+      ...state.gameSpecific,
+      reinforcementsLeft: 1,
+      cards: { ...state.gameSpecific.cards, p1: [
+        { type: 'infantry', territory: 'alaska' },
+        { type: 'infantry', territory: 'peru' },
+        { type: 'infantry', territory: 'egypt' },
+      ] },
+    },
+  };
+  const next = RiskGame.applyActions(withSet, [{
+    playerId: 'p1',
+    action: { type: 'place-armies', territoryId: p1Terr.id, count: 1 },
+  }]);
+  assert.equal(next.currentPhase, 'reinforce');
+  const actions = RiskGame.getLegalActions(next, 'p1');
+  assert.ok(actions.some(a => a.type === 'turn-in-cards'));
+  assert.ok(actions.some(a => a.type === 'end-reinforce'));
+});
+
 test('risk: end-reinforce transitions to attack phase', () => {
   const state = RiskGame.createInitialState(players());
   const noReinf = { ...state, gameSpecific: { ...state.gameSpecific, reinforcementsLeft: 0 } };

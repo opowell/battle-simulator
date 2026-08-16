@@ -44,12 +44,22 @@ function tweenStyle(t) {
   return t ? { transform: `translate(${t.dx}px, ${t.dy}px)`, willChange: 'transform' } : null;
 }
 
-// Games that draw a numbered sprite composite (see e.g. CsMiniGame.js's spriteLayers —
-// SchematicLayer's SVG renderer draws that text layer directly) carry the intended glyph
-// there; fall back to the unit's own initial for the classic shape+letter marker games.
+// What a token says: the game's own label if it gave one (a quantity, like Risk's army
+// count — a token reading "10" must not come out as "1"), else the glyph from a numbered
+// sprite composite (see e.g. CsMiniGame.js's spriteLayers — SchematicLayer's SVG renderer
+// draws that text layer directly), else the initial of the unit's name, so a piece reads
+// as "K" and not "King". Same order as SchematicLayer's tokenText.
 function unitLabel(unit) {
+  if (unit.label != null) return unit.label;
   const textLayer = unit.spriteLayers?.find(l => l.shape === 'text');
   return textLayer ? textLayer.text : unit.name[0].toUpperCase();
+}
+
+// A multi-character label shrinks so it stays inside the token (same rule as
+// SchematicLayer's tokenFontSize).
+function labelFontSize(unit) {
+  const len = String(unitLabel(unit)).length;
+  return props.r * (len > 1 ? 1.6 / (len + 0.6) : 1);
 }
 
 function hpColor(frac, raw) {
@@ -101,7 +111,7 @@ const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value 
       <img v-if="unit.imagePath" class="hl-sprite" draggable="false"
            :src="teamSpriteHref(unit.imagePath, unit.teamObj?.raw, recolor)"/>
       <span v-else-if="showLetter" class="hl-letter"
-            :style="{ fontFamily: rdr.font, fontSize: r+'px' }">{{ unitLabel(unit) }}</span>
+            :style="{ fontFamily: rdr.font, fontSize: labelFontSize(unit)+'px' }">{{ unitLabel(unit) }}</span>
     </div>
 
     <!-- HP bar, stacked under the body by the flex column -->

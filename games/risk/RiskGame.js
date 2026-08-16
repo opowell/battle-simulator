@@ -184,6 +184,10 @@ function getLegalActions(state, playerId) {
         }
       }
     } else {
+      // Reinforcements all placed and cards still in hand: the phase only stays open so
+      // a set can be turned in (which would hand out more armies to place), and
+      // end-reinforce is how you decline. With nothing left to decide, applyActions has
+      // already moved the game to the attack phase — see the auto-advance there.
       actions.push({ type: 'end-reinforce' });
     }
 
@@ -255,6 +259,16 @@ function applyActions(state, playerActions, rng = Math.random) {
     const t = territories[action.territoryId];
     territories[action.territoryId] = { ...t, armies: t.armies + action.count };
     gs.reinforcementsLeft = Math.max(0, gs.reinforcementsLeft - action.count);
+    // The last army placed ends the phase by itself: with no armies left and no card
+    // set to turn in, "end reinforce" would be the only legal action, and a button
+    // whose every press is forced is just a step between the player and the attack
+    // phase. A player still holding a valid set keeps the choice (and the button):
+    // turning it in there yields more armies to place.
+    if (gs.reinforcementsLeft === 0 && validSetsInHand(gs.cards[playerId] ?? []).length === 0) {
+      newState.currentPhase = 'attack';
+      gs.conqueredThisTurn = false;
+      gs.lastCombat = null;
+    }
   }
 
   else if (action.type === 'end-reinforce') {
@@ -592,6 +606,42 @@ export const RiskGame = {
     territoryPairTypes: ['attack', 'fortify'],
     territoryTapType: 'place-armies',
     combatFx: true,
+    // Three phases inside one turn, and which one you're in decides what a click does —
+    // so the header names the phase (ui.phases, in order) and the action panel explains
+    // it (ui.phaseHints). The attack hint carries the one rule a player can't read off
+    // the board: how many armies occupy a territory they take.
+    phases: ['reinforce', 'attack', 'fortify'],
+    // The "?" beside the game's name in the header opens this.
+    help: {
+      title: 'Risk',
+      sections: [
+        {
+          heading: 'Objective',
+          text: 'Conquer the world: hold every territory, or be the last player left.',
+        },
+        {
+          heading: 'A turn, in three phases',
+          text: 'REINFORCE: you get one army per three territories you hold (never fewer than 3), plus a bonus for every continent you hold whole. Tap your territories to place them, one army per tap; the phase ends itself when the last one is down. ATTACK: click one of your territories, then an adjacent enemy one. FORTIFY: move armies once along a chain of your own territories, then end your turn.',
+        },
+        {
+          heading: 'Combat',
+          text: 'The attacker rolls up to 3 dice (never more than armies − 1), the defender up to 2. The highest die of each side is compared, then the next; the defender wins ties. Each comparison costs the loser one army.',
+        },
+        {
+          heading: 'Taking a territory',
+          text: 'When the last defender falls you occupy the territory with exactly as many armies as you rolled dice — the rest stay behind. Clicking a neighbour always attacks with the most dice you are entitled to, so a capture normally moves 3 armies in; attacking from a territory holding only 2 or 3 armies rolls (and so moves) fewer.',
+        },
+        {
+          heading: 'Cards',
+          text: 'Capture at least one territory in a turn and you draw a card. Three cards of one type, or one of each, or any set with a wild, can be turned in during your reinforce phase for a growing army bonus (4, 6, 8, 10, 12, 15, then +5 each time). Holding 5 cards with a valid set forces you to turn one in. A card showing a territory you own is worth 2 extra armies there.',
+        },
+      ],
+    },
+    phaseHints: {
+      reinforce: 'Tap your territories to place armies — one per tap. The phase ends itself once the last one is down.',
+      attack: 'Click one of your territories, then a neighbour to attack it. Take it and you occupy it with the number of dice you rolled (3 whenever you have the armies for it), leaving the rest behind.',
+      fortify: 'Click one of your territories, then a connected one to move armies there — one move per turn. Or end your turn.',
+    },
   },
   scenarios: [
     { 

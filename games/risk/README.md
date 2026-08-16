@@ -33,6 +33,17 @@ Each turn cycles through three phases in order:
 2. **attack** — attack adjacent enemy territories (optional; end with `end-attack`)
 3. **fortify** — move armies along one connected path of owned territories (one move per turn)
 
+Reinforce ends **itself** once the last army is placed: with no armies left and no card
+set in hand, `end-reinforce` would have been the only legal action, and a button whose
+every press is forced is just a step between the player and the attack phase. A player
+still holding a valid set keeps both the choice and the button, since turning it in
+there yields more armies to place.
+
+Which phase is in play decides what a click does, so the UI says so: the header carries
+the phase (`ui.phases`) and the action panel the sentence explaining it
+(`ui.phaseHints`), with the full rules behind the "?" beside the game's name
+(`ui.help`).
+
 ## Actions
 
 | Type | Phase | Notes |
@@ -48,6 +59,15 @@ Each turn cycles through three phases in order:
 ## Combat
 
 Attacker rolls up to 3 dice (max `attackers`), defender rolls 1 or 2. Highest die of each side compared in descending order; defender wins ties. Losing side removes one army per comparison. Attacker needs at least 2 armies in the source territory to attack.
+
+**Occupying what you take** — when the last defender falls, the attacker moves in
+exactly `attackerDice` armies and the rest stay home. There is no separate "how many
+move in?" decision: the dice you commit are the armies you commit, which is why
+`getLegalActions` offers an `attack` per dice count and lists the biggest first — a
+click on the map takes that one, so a capture normally moves 3 in (fewer when the
+attacking territory can't spare them). If a player should be able to choose the
+occupying force independently of the dice, that needs a new post-capture action; today
+the choice is the dice.
 
 ## Reinforcements
 
@@ -80,10 +100,16 @@ only authority on who can attack whom — the map just has to agree with it, and
 To move a territory, edit the ASCII map and run the tests; a border you opened or
 closed by accident fails there rather than silently changing the game.
 
-Playing it is all clicks: tap one of your territories to place a reinforcement,
-or select it and click a neighbour to attack (fortify works the same way in the
-fortify phase). Card sets, "place all N here" and ending a phase stay as buttons
-in the action panel, since they aren't about a single territory.
+Playing it is all clicks: tap one of your territories to place a reinforcement —
+one army per tap, and the territory blinks once so a tap that only moves a number
+by one still visibly lands — or select it and click a neighbour to attack (fortify
+works the same way in the fortify phase). Every hex is an HTML element that fields
+its own clicks (apps/design/HtmlHexLayer.vue draws the whole board in divs, no SVG),
+so a click acts on the hex it actually landed on and the open sea between two blobs
+is a miss that clears the selection rather than a tap on the nearest territory.
+Only what a click can't say stays in the action panel: card sets and ending a phase.
+`place-armies` with a count above 1 remains a legal action for the AI to use, but
+the panel doesn't offer it — placing is what tapping is for.
 
 ## Win conditions
 

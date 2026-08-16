@@ -98,6 +98,24 @@ const territoryFxTimers = new Map();
 const TERRITORY_BLINK_MS = 300;
 const TERRITORY_PAUSE_MS = 1000;
 
+// A colour hold (an entry with blinks: 0 — see the bundleHold pre-population) exists
+// only to keep a territory looking un-conquered until the attack beat that flips it
+// plays. Once the queue is idle there is no beat left to play, so any hold still
+// standing is stale — and unlike a real flash it carries no removal timer of its own.
+// Sweeping them here is what stops a captured territory from sitting in its old
+// owner's colour indefinitely when no flash claimed it.
+function clearColourHolds() {
+  const stale = Object.keys(territoryFx.value).filter(tid => !(territoryFx.value[tid].blinks > 0));
+  if (!stale.length) return;
+  const next = { ...territoryFx.value };
+  for (const tid of stale) {
+    delete next[tid];
+    clearTimeout(territoryFxTimers.get(tid));
+    territoryFxTimers.delete(tid);
+  }
+  territoryFx.value = next;
+}
+
 function triggerTerritoryFx(territoryId, blinks, holdOwner) {
   if (!territoryId) return;
   territoryFxKey += 1;
@@ -247,7 +265,10 @@ function playNext() {
   if (hopAnim.value || fxBusy.value || animQueue.value.length === 0) {
     // Idle (queue drained, nothing mid-flight) — the shown step has fully
     // animated, so ack it in observer lock-step mode.
-    if (!hopAnim.value && !fxBusy.value && animQueue.value.length === 0) maybeAckAdvance();
+    if (!hopAnim.value && !fxBusy.value && animQueue.value.length === 0) {
+      clearColourHolds();
+      maybeAckAdvance();
+    }
     return;
   }
   const beat = animQueue.value[0];
@@ -360,6 +381,10 @@ watch(liveState, (newState, oldState) => {
     if (c.territoryId != null && !oldOwnerByTerritory.has(c.territoryId)) oldOwnerByTerritory.set(c.territoryId, c.owner);
   }
   const oldOwnerOf = (territoryId) => oldOwnerByTerritory.get(territoryId) ?? null;
+  // Every territory id on this board. An action counts as a territory attack when it
+  // names two of them — whichever field it uses for the attacker (kdice puts it in
+  // unitId, risk in from) — so the flash follows the ids, not one game's action shape.
+  const territoryIds = new Set(newState.grid.cells.map(c => c.territoryId).filter(t => t != null));
 
   // playerId → board index (see KDiceGame.toGrid's pidIdx). The raw session JSON
   // has no top-level `players` array — field.teams (built by buildField from
@@ -385,26 +410,30 @@ watch(liveState, (newState, oldState) => {
   // the human) rebuilds `field` from the FINAL post-bundle state right away, so
   // every territory that changes hands anywhere in the bundle would otherwise show
   // its end color immediately — before any of that bundle's attacks have animated.
-  // Pre-populate territoryFx for all of them (blinks: 0 — no blink, just a colour
-  // hold; see SchematicLayer's flashingHexes, which only draws the white overlay
-  // for blinks > 0) so they keep their pre-bundle colour until the specific attack
-  // beat that changes them plays and overwrites this entry with a real flash.
+  // Prepare a territoryFx entry for all of them (blinks: 0 — no blink, just a colour
+  // hold; see the renderers' flashingHexes, which only draws the white overlay for
+  // blinks > 0) so they keep their pre-bundle colour until the specific attack beat
+  // that changes them plays and overwrites this entry with a real flash.
+  // These are only APPLIED below, once we know this update actually has beats to
+  // animate: a hold has no timer of its own and is lifted by the animation that
+  // follows it, so a hold applied to an update that animates nothing would pin a
+  // captured territory to its old owner's colour for good.
+  const bundleHold = {};
   if (fxOn) {
     const newOwnerByTerritory = new Map();
     for (const c of newState.grid.cells) {
       if (c.territoryId != null && !newOwnerByTerritory.has(c.territoryId)) newOwnerByTerritory.set(c.territoryId, c.owner);
     }
-    const bundleHold = {};
     for (const [tid, newOwner] of newOwnerByTerritory) {
       const old = oldOwnerByTerritory.get(tid);
       if (old != null && old !== newOwner) bundleHold[tid] = { key: 0, blinks: 0, holdOwner: old };
     }
-    if (Object.keys(bundleHold).length) territoryFx.value = { ...territoryFx.value, ...bundleHold };
   }
 
   // Build beats in log order: the mover's hop, then this turn's flashes, then any
   // knockback slide of a struck unit — so a bundled reply plays step by step.
   const beats = [];
+  const tapFlashes = [];   // territories to blink right away, outside the beat queue
   const claimed = new Set();
   const pushHop = (unitId) => {
     const { from, to } = moved.get(unitId);
@@ -418,19 +447,23 @@ watch(liveState, (newState, oldState) => {
     if (fxOn) {
       const flashes = [];
       const territoryFlashes = [];
-      if (action?.unitId && FX_ACTION_TYPES.has(action.type)) {
-        // Territory-attack games (e.g. kdice) target a second cell via action.to rather
-        // than an events list — flash the whole attacker + defender territory instead
-        // of the generic single-unit circle (see SchematicLayer's territoryFx). An
-        // attack hard-blinks 3x; a single reinforcement (below) blinks once.
-        if (action.to && action.to !== action.unitId) {
-          territoryFlashes.push(
-            { territoryId: action.unitId, blinks: 3, holdOwner: oldOwnerOf(action.unitId) },
-            { territoryId: action.to, blinks: 3, holdOwner: oldOwnerOf(action.to) },
-          );
-        } else {
-          flashes.push({ unitId: action.unitId, fx: { type: 'action', ...fxSquare(action.unitId) } });
-        }
+      // Territory-attack games target a second territory via action.to rather than an
+      // events list — flash the whole attacker + defender territory instead of the
+      // generic single-unit circle (see the renderers' territoryFx). An attack
+      // hard-blinks 3x; a single reinforcement (below) blinks once. The attacker is
+      // named by unitId (kdice) or by from (risk); requiring BOTH ends to be real
+      // territory ids is what keeps a unit game's attack — whose `to` is a square, not
+      // a territory — on the single-unit flash below.
+      const attackerTid = FX_ACTION_TYPES.has(action?.type)
+        ? [action.unitId, action.from].find(v => territoryIds.has(v)) ?? null
+        : null;
+      if (attackerTid && territoryIds.has(action.to) && action.to !== attackerTid) {
+        territoryFlashes.push(
+          { territoryId: attackerTid, blinks: 3, holdOwner: oldOwnerOf(attackerTid) },
+          { territoryId: action.to, blinks: 3, holdOwner: oldOwnerOf(action.to) },
+        );
+      } else if (action?.unitId && FX_ACTION_TYPES.has(action.type)) {
+        flashes.push({ unitId: action.unitId, fx: { type: 'action', ...fxSquare(action.unitId) } });
       }
       // Reinforcements placed (kdice end-turn) — see KDiceGame.applyActions, which
       // stamps action.result.reinforced (used only to detect that a reinforcement
@@ -442,6 +475,14 @@ watch(liveState, (newState, oldState) => {
         const playerId = entry.playerActions?.[0]?.playerId;
         for (const tid of territoriesOwnedBy(playerId)) territoryFlashes.push({ territoryId: tid, blinks: 1 });
       }
+      // An action naming one territory and nothing else (Risk's place-armies — the
+      // click that puts a single army down): blink it once. Everything such an action
+      // changes is one digit on one token, which is easy to miss and easy to mistake
+      // for a click that didn't land at all. Collected for an IMMEDIATE blink rather
+      // than a queued beat: it acknowledges one click and sequences with nothing, and
+      // a queued beat would hold up every animation behind it — a capture's flash, and
+      // with it the moment the board flips to the new owner's colour.
+      if (action?.territoryId && !action.to) tapFlashes.push(action.territoryId);
       for (const ev of entry.events ?? []) {
         if (ev.type === 'damage')    flashes.push({ unitId: ev.targetId, fx: { type: 'damage', amount: ev.amount, died: ev.died, ...fxSquare(ev.targetId) } });
         else if (ev.type === 'heal') flashes.push({ unitId: ev.targetId, fx: { type: 'heal',   amount: ev.amount, ...fxSquare(ev.targetId) } });
@@ -463,9 +504,16 @@ watch(liveState, (newState, oldState) => {
   // Any remaining moved units (e.g. fx off, or moves the log didn't attribute) hop last.
   if (hopsOn) for (const unitId of moved.keys()) if (!claimed.has(unitId)) pushHop(unitId);
 
+  for (const tid of new Set(tapFlashes)) triggerTerritoryFx(tid, 1, null);
+
   if (beats.length) {
+    if (Object.keys(bundleHold).length) territoryFx.value = { ...territoryFx.value, ...bundleHold };
     animQueue.value = [...animQueue.value, ...beats];
     playNext();
+  } else {
+    // Nothing to animate for this update — so nothing to hold a colour for, and any
+    // hold left from an earlier one has missed its chance to be played out.
+    clearColourHolds();
   }
 });
 

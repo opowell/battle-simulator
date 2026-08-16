@@ -99,6 +99,21 @@ const myCiv           = computed(() => props.civ?.[props.pendingPlayerId] ?? nul
 const OVERLAY_HANDLED = new Set(['set-tax', 'set-luxury', 'set-research', 'set-production']);
 const listActions = computed(() => aimedActions.value.filter(a => !OVERLAY_HANDLED.has(a.type)));
 
+// Territory games (ui.territoryClick — kdice, risk) issue every territory action on the
+// map, so the panel can be empty while there is plenty to do. Say what the map does
+// instead: the game's own sentence for the phase in play (ui.phaseHints) if it wrote
+// one — that is where a game explains what its current phase means, rules included —
+// otherwise the generic shape of the clicks, where a tap acts on one territory only if
+// the game named a tap action (ui.territoryTapType).
+const territoryHint = computed(() => {
+  const perPhase = props.ui?.phaseHints?.[props.liveState?.phase];
+  if (perPhase) return perPhase;
+  if (!props.ui?.territoryClick) return null;
+  return props.ui.territoryTapType
+    ? 'Tap a territory to act on it, or select one and click a neighbour.'
+    : 'Select a territory, then click a neighbour.';
+});
+
 function fmtAction(action) {
   const t = action.type ?? '';
   if (t === 'move') {
@@ -185,7 +200,7 @@ function fmtAction(action) {
     <div v-else-if="!atLatest" class="ap-past">
       Viewing past state — advance to latest to issue orders.
     </div>
-    <template v-else-if="isPending && (ui.freeSelection || (selectedId && selectedId === activeUnitId) || (!selectedId && displayedActions.length))">
+    <template v-else-if="isPending && (ui.freeSelection || ui.territoryClick || (selectedId && selectedId === activeUnitId) || (!selectedId && displayedActions.length))">
       <div class="ap-prompt">
         Choose action for <b class="ap-accent">{{pendingPlayerId}}</b>:
         <span v-if="activeMoney != null" class="mono ap-money">
@@ -204,6 +219,7 @@ function fmtAction(action) {
         <div v-if="unitMoves.length && !ui?.aimedActionTypes?.includes('move')" class="mono ap-hint">
           {{queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
         </div>
+        <div v-else-if="territoryHint" class="mono ap-hint">{{territoryHint}}</div>
         <div class="ap-list">
           <button v-for="(action, i) in listActions" :key="i"
                   class="action-btn ap-btn ap-btn--icon"
@@ -211,7 +227,9 @@ function fmtAction(action) {
             <img v-if="action.icon" :src="imgSrc(action.icon)" alt="" class="ap-icon"/>
             {{fmtAction(action)}}
           </button>
-          <div v-if="!listActions.length" class="ap-empty">No actions.</div>
+          <!-- On a territory map an empty list is normal: the hint above already says
+               where the actions are. -->
+          <div v-if="!listActions.length && !territoryHint" class="ap-empty">No actions.</div>
         </div>
       </template>
     </template>
