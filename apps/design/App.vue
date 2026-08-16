@@ -559,6 +559,10 @@ function buildField(g, s) {
       team:      ownerTeam[c.owner] ?? (teams[0]?.id ?? 'p1'),
       type:      c.glyph.toLowerCase(),
       name:      c.unitName ?? c.glyph,
+      // Explicit token text, when a token stands for a quantity rather than a piece
+      // (Risk paints a territory's army count on it). Without one the renderer falls
+      // back to the initial of the unit's name, which is what a piece wants.
+      label:     c.label ?? null,
       hp:        c.maxHp ?? c.hp ?? 1,
       currentHp: c.hp,
       path:      [[x, y]],
@@ -651,6 +655,10 @@ function buildField(g, s) {
     // outline instead of a full hex lattice (see KDiceGame.toGrid and
     // games/mapTypes/hexagon.js's territoryBorders).
     hexBorders: g.territoryBorders ?? [],
+    // Connections between territories that don't share a border — drawn as dashed
+    // lines between the two ends (see SchematicLayer). Risk's sea routes are the
+    // first user; a game with no such connections leaves this empty.
+    hexLinks: g.links ?? [],
     // 'discrete' (integer tile grid) vs 'continuous' (real click-to-point positions,
     // see games/coord.js). Gates the straight-line slide animation, the move-radius
     // circle, and exact-point move submission — replaces the old shapes?.length proxy.

@@ -307,6 +307,17 @@ const boardSquares = computed(() => {
   return out;
 });
 
+// What a letter-token says: the game's own label if it gave one (a quantity, like
+// Risk's army count), otherwise the initial of the unit's name — a piece reads as
+// "K", not "King". Multi-character labels shrink so they stay inside the token.
+function tokenText(u) {
+  return u.label ?? u.name[0].toUpperCase();
+}
+function tokenFontSize(u) {
+  const len = tokenText(u).length;
+  return unitR(u) * (len > 1 ? 1.6 / (len + 0.6) : 1);
+}
+
 function unitR(u) {
   const mult = props.field.grid === 'square' ? (props.field.world.w <= 10 ? 0.36 : 0.42)
     : props.field.grid === 'hexagon' ? (props.field.hexSize ?? 1) * 0.55
@@ -859,6 +870,16 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               :stroke="segBorderColor(seg)"
               :stroke-width="isSegSelected(seg) ? 4 : 2.25"
               stroke-linecap="round" class="sl-noevents"/>
+        <!-- Two territories that are connected but don't share a border (a game's
+             toGrid may emit these as `links` — Risk's sea routes). Dashed, so a
+             crossing over open water never looks like a land border, and brightened
+             while either end is selected — the same rule as a shared edge. -->
+        <line v-for="(lk, li) in (field.hexLinks ?? [])" :key="'hl'+li"
+              :x1="fit.x(lk.p1[0])" :y1="fit.y(lk.p1[1])"
+              :x2="fit.x(lk.p2[0])" :y2="fit.y(lk.p2[1])"
+              :stroke="segBorderColor({ aId: lk.a, bId: lk.b, aOwner: lk.aOwner, bOwner: lk.bOwner })"
+              :stroke-width="isSegSelected({ aId: lk.a, bId: lk.b }) ? 3 : 1.5"
+              stroke-dasharray="5 5" stroke-linecap="round" class="sl-noevents"/>
       </template>
       <template v-else>
         <!-- A hair of overlap on the right/bottom edges so adjacent tiles overdraw
@@ -1246,9 +1267,9 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
           </template>
           <text v-else x="0" y="0"
                 :fill="u.id === highlightUnitId ? 'white' : u.teamObj.raw" :font-family="rdr.font"
-                :font-size="unitR(u)" font-weight="800"
+                :font-size="tokenFontSize(u)" font-weight="800"
                 text-anchor="middle" dominant-baseline="central"
-                class="sl-noselect sl-noevents">{{u.name[0].toUpperCase()}}</text>
+                class="sl-noselect sl-noevents">{{tokenText(u)}}</text>
           <!-- HP bar -->
           <template v-if="showHpBars">
             <rect :x="-unitR(u)" :y="unitR(u)+3" :width="unitR(u)*2" height="3" :fill="rdr.hpTrack"/>
