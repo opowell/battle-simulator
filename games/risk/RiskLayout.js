@@ -1,6 +1,7 @@
 // Visual layout of the classic Risk world map on a hex grid: each of the 42
-// territories is a small blob of hexes, laid out in roughly world-map shape, so
-// the board can be drawn (and clicked) like KDice's territory map — see
+// territories is a blob of hexes drawn to follow the printed board — continents
+// in their own silhouettes, sized against each other the way the board sizes
+// them — so it can be drawn (and clicked) like KDice's territory map. See
 // games/mapTypes/hexagon.js for the axial math and RiskGame.toGrid for the render.
 //
 // The rules never consult this file: RiskMap.ADJACENCY stays the single authority
@@ -9,8 +10,9 @@
 //   - two blobs may only touch if they are really adjacent (no fake borders), and
 //   - the pairs that are adjacent but do NOT touch are exactly SEA_ROUTES below.
 // That second set is the map's water crossings — the connection lines drawn on the
-// real board (Alaska↔Kamchatka and friends) plus the Mediterranean. toGrid emits
-// them as dashed links so a legal attack is never invisible.
+// real board (Alaska↔Kamchatka and friends), the Mediterranean, and every link an
+// island has to the mainland. toGrid emits them as dashed links so a legal attack
+// is never invisible.
 
 import { hexId, hexNeighbors, hexLayoutBounds, territoryCapital } from '../mapTypes/hexagon.js';
 
@@ -41,20 +43,30 @@ const CODE_TO_ID = {
 // every line the same width and never let two territories that RiskMap says are
 // NOT adjacent end up sharing an edge — the test will tell you if you did.
 const MAP = `
-~~~ ~~~ ~~~ ~~~ ~~~ ~~~ GRN GRN ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
-  ALA ALA NWT NWT NWT NWT GRN GRN ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ YAK YAK ~~~ ~~~ ~~~
-ALA ~~~ NWT NWT NWT GRN GRN ~~~ ~~~ ~~~ ~~~ ICE SCA SCA ~~~ ~~~ ~~~ ~~~ ~~~ SIB SIB YAK YAK KAM KAM ~~~
-  ABT ABT ABT ONT ONT QUE QUE ~~~ ~~~ ~~~ ~~~ GBR ~~~ SCA SCA UKR UKR URA URA SIB SIB IRK IRK KAM KAM ~~~
-~~~ WUS WUS WUS EUS EUS ~~~ ~~~ ~~~ ~~~ ~~~ GBR NEU NEU NEU UKR UKR URA URA URA SIB MON MON MON ~~~ ~~~
-  ~~~ WUS WUS EUS EUS ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ WEU WEU SEU SEU MDE AFG AFG AFG CHI CHI CHI ~~~ ~~~ JAP ~~~
-~~~ ~~~ ~~~ CAM ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ MDE MDE AFG AFG CHI CHI CHI ~~~ ~~~ JAP ~~~
-  ~~~ ~~~ ~~~ CAM ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ MDE MDE MDE IND IND IND SEA SEA ~~~ ~~~ ~~~ ~~~
-~~~ ~~~ ~~~ VEN VEN ~~~ ~~~ ~~~ ~~~ ~~~ NAF NAF NAF EGY EGY ~~~ ~~~ IND IND ~~~ ~~~ SEA ~~~ ~~~ ~~~ ~~~
-  ~~~ ~~~ PER BRA BRA BRA ~~~ ~~~ ~~~ ~~~ ~~~ NAF NAF EGY ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
-~~~ ~~~ PER PER BRA BRA ~~~ ~~~ ~~~ ~~~ ~~~ CON CON EAF EAF ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ INO INO NGU NGU
-  ~~~ ~~~ ~~~ ARG ARG ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ CON CON EAF ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ INO NGU NGU ~~~
-~~~ ~~~ ~~~ ARG ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ SAF SAF SAF MAD ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ WAU WAU EAU EAU
-  ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ MAD ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ EAU ~~~
+~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ GRN GRN GRN ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ SIB SIB SIB SIB SIB YAK YAK YAK YAK KAM KAM KAM KAM
+  ALA ALA ALA NWT NWT NWT NWT NWT NWT NWT ~~~ GRN GRN GRN GRN ~~~ ICE ICE ~~~ SCA SCA SCA ~~~ ~~~ ~~~ ~~~ ~~~ URA URA URA URA SIB SIB SIB SIB SIB YAK YAK YAK YAK KAM KAM KAM KAM
+ALA ALA ALA ALA NWT NWT NWT NWT NWT NWT NWT GRN GRN GRN GRN ~~~ ICE ICE ~~~ SCA SCA SCA SCA UKR UKR UKR UKR URA URA URA URA SIB SIB SIB SIB SIB YAK YAK YAK KAM KAM KAM KAM ~~~
+  ALA ALA ALA NWT NWT NWT NWT NWT NWT NWT GRN GRN GRN GRN ~~~ ~~~ ~~~ ~~~ ~~~ SCA SCA SCA SCA UKR UKR UKR UKR URA URA URA URA SIB SIB SIB SIB IRK IRK IRK KAM KAM KAM KAM ~~~ ~~~
+ALA ALA ABT ABT ABT ONT ONT ONT ONT ONT ONT GRN GRN GRN ~~~ GBR GBR GBR ~~~ SCA SCA SCA UKR UKR UKR UKR UKR URA URA URA URA SIB SIB SIB SIB IRK IRK IRK KAM KAM KAM ~~~ ~~~ ~~~
+  ~~~ ~~~ ABT ABT ABT ONT ONT ONT ONT QUE QUE QUE QUE QUE ~~~ GBR GBR GBR ~~~ NEU NEU NEU UKR UKR UKR UKR UKR AFG AFG AFG CHI CHI SIB SIB IRK IRK IRK IRK KAM KAM ~~~ ~~~ ~~~ ~~~
+~~~ ~~~ ABT ABT ABT ONT ONT ONT ONT QUE QUE QUE QUE ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ NEU NEU NEU UKR UKR UKR UKR UKR AFG AFG AFG CHI CHI CHI MON MON MON MON MON MON ~~~ ~~~ ~~~ ~~~ ~~~
+  ~~~ ~~~ WUS WUS WUS WUS WUS EUS EUS QUE QUE QUE QUE ~~~ ~~~ ~~~ WEU WEU NEU NEU NEU UKR UKR UKR UKR UKR AFG AFG AFG AFG CHI CHI CHI MON MON MON MON MON MON ~~~ ~~~ JAP JAP JAP
+~~~ ~~~ WUS WUS WUS WUS WUS EUS EUS EUS EUS EUS ~~~ ~~~ ~~~ ~~~ WEU WEU WEU WEU SEU SEU SEU MDE MDE MDE MDE AFG AFG AFG CHI CHI CHI CHI MON MON MON MON MON ~~~ ~~~ JAP JAP JAP
+  ~~~ ~~~ ~~~ WUS WUS WUS WUS EUS EUS EUS EUS ~~~ ~~~ ~~~ ~~~ ~~~ WEU WEU WEU SEU SEU SEU SEU MDE MDE MDE MDE IND IND IND CHI CHI CHI CHI CHI ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ JAP JAP
+~~~ ~~~ ~~~ ~~~ CAM CAM CAM CAM ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ MDE MDE MDE MDE IND IND IND IND IND CHI CHI CHI ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+  ~~~ ~~~ ~~~ ~~~ ~~~ CAM CAM CAM ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ MDE MDE MDE MDE IND IND IND IND SEA SEA SEA SEA ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+~~~ ~~~ ~~~ ~~~ ~~~ ~~~ CAM CAM ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ NAF NAF NAF NAF NAF NAF EGY EGY EGY ~~~ ~~~ ~~~ IND IND IND ~~~ SEA SEA SEA ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+  ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ VEN VEN VEN ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ NAF NAF NAF NAF NAF NAF EGY EGY EGY ~~~ ~~~ ~~~ IND IND ~~~ ~~~ SEA SEA SEA ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+~~~ ~~~ ~~~ ~~~ ~~~ ~~~ VEN VEN VEN BRA BRA BRA BRA ~~~ ~~~ ~~~ ~~~ NAF NAF NAF NAF NAF EAF EAF EAF ~~~ ~~~ ~~~ ~~~ IND ~~~ ~~~ SEA SEA ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+  ~~~ ~~~ ~~~ ~~~ ~~~ PER PER PER BRA BRA BRA BRA BRA ~~~ ~~~ ~~~ ~~~ ~~~ NAF NAF NAF EAF EAF EAF EAF ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+~~~ ~~~ ~~~ ~~~ ~~~ PER PER PER BRA BRA BRA BRA BRA ~~~ ~~~ ~~~ ~~~ CON CON CON CON EAF EAF EAF ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+  ~~~ ~~~ ~~~ ~~~ ~~~ PER PER PER BRA BRA BRA BRA ~~~ ~~~ ~~~ ~~~ ~~~ CON CON CON CON EAF EAF EAF ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ INO INO INO INO INO NGU NGU NGU NGU ~~~ ~~~
+~~~ ~~~ ~~~ ~~~ ~~~ ~~~ PER PER BRA BRA BRA ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ CON CON CON CON EAF EAF ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ INO INO INO INO ~~~ NGU NGU NGU ~~~ ~~~ ~~~
+  ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ARG ARG ARG ARG ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ SAF SAF SAF SAF SAF ~~~ ~~~ MAD MAD ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ WAU WAU WAU WAU WAU EAU EAU EAU EAU ~~~
+~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ARG ARG ARG ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ SAF SAF SAF SAF SAF ~~~ ~~~ MAD MAD MAD ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ WAU WAU WAU WAU EAU EAU EAU EAU EAU ~~~
+  ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ARG ARG ARG ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ SAF SAF SAF ~~~ ~~~ ~~~ MAD MAD ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ WAU WAU WAU EAU EAU EAU EAU ~~~ ~~~
+~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ARG ARG ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ WAU WAU ~~~ EAU EAU EAU ~~~ ~~~ ~~~
+  ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ARG ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
 `;
 
 // Adjacent on the board, separated by water on the map. Drawn as dashed sea
@@ -65,11 +77,18 @@ ALA ~~~ NWT NWT NWT GRN GRN ~~~ ~~~ ~~~ ~~~ ICE SCA SCA ~~~ ~~~ ~~~ ~~~ ~~~ SIB 
 export const SEA_ROUTES = [
   ['alaska', 'kamchatka'],
   ['greenland', 'iceland'],
+  ['iceland', 'great_britain'],
+  ['iceland', 'scandinavia'],
+  ['great_britain', 'scandinavia'],
+  ['great_britain', 'northern_europe'],
+  ['great_britain', 'western_europe'],
   ['brazil', 'north_africa'],
   ['north_africa', 'western_europe'],
   ['north_africa', 'southern_europe'],
   ['egypt', 'southern_europe'],
   ['east_africa', 'middle_east'],
+  ['east_africa', 'madagascar'],
+  ['south_africa', 'madagascar'],
   ['japan', 'kamchatka'],
   ['japan', 'mongolia'],
   ['indonesia', 'southeast_asia'],

@@ -111,21 +111,24 @@ The deck has 42 territory cards (one per territory, type cycling through infantr
 
 ## The board
 
-`RiskLayout.js` draws the world map: every territory is a small blob of hexes in
-roughly its real place, authored as ASCII art (one 3-letter code per hex) and
-parsed into the hex cells `toGrid` colours in. `RiskMap.ADJACENCY` remains the
-only authority on who can attack whom — the map just has to agree with it, and
-`layout.test.js` checks both directions:
+`RiskLayout.js` draws the world map: every territory is a blob of hexes shaped
+and placed to follow the printed board — the continents in their own silhouettes,
+Asia dwarfing Australia, Britain and Iceland and Madagascar out in open water —
+authored as ASCII art (one 3-letter code per hex) and parsed into the hex cells
+`toGrid` colours in. `RiskMap.ADJACENCY` remains the only authority on who can
+attack whom — the map just has to agree with it, and `layout.test.js` checks both
+directions:
 
 - two blobs may only share a border if those territories really are adjacent, and
 - the adjacent pairs that *don't* touch are exactly `SEA_ROUTES` — the water
-  crossings (Alaska↔Kamchatka and friends, plus the Mediterranean), drawn as
-  dashed connection lines the way the printed board draws them. Each line runs
-  between the two coasts facing each other — the closest hex of each blob, cut
-  back to its edge — so it spans the water and nothing else, instead of starting
-  inland at the army count. Alaska↔Kamchatka goes around the back of the globe
-  (distances are measured with the map wrapping), so it renders as a stub off
-  each edge, leaving Alaska's west coast and Kamchatka's east one.
+  crossings (Alaska↔Kamchatka and friends, the Mediterranean, and every link an
+  island has to the mainland), drawn as dashed connection lines the way the printed
+  board draws them. Each line runs between the two coasts facing each other — the
+  closest hex of each blob, cut back to its edge — so it spans the water and nothing
+  else, instead of starting inland at the army count. Alaska↔Kamchatka goes around
+  the back of the globe (distances are measured with the map wrapping), so it
+  renders as a stub off each edge, leaving Alaska's west coast and Kamchatka's east
+  one.
 
 To move a territory, edit the ASCII map and run the tests; a border you opened or
 closed by accident fails there rather than silently changing the game.
