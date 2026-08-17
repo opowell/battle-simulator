@@ -15,10 +15,10 @@ function players(n = 2) {
 // ── generateMap ───────────────────────────────────────────────────────────────
 
 test('kdice: generateMap produces a reasonable number of multi-hex territories', () => {
-  // Territories smaller than the minimum get folded into a neighbor (see
-  // games/mapTypes/hexagon.js clusterIntoTerritories' minSize merge), so the
-  // final count can land a bit under the numPlayers*8 seed target — just
-  // check it's in the right ballpark, not an exact floor.
+  // Territories under the minimum size, and any group of them the growth left
+  // marooned offshore, are dropped rather than kept (see games/mapTypes/hexagon.js
+  // growTerritories), so the final count can land a bit under the numPlayers*8
+  // target — just check it's in the right ballpark, not an exact floor.
   const { territoryIds } = generateMap(2, Math.random);
   assert.ok(territoryIds.length >= 10);
 });
@@ -37,6 +37,46 @@ test('kdice: generateMap adjacency is symmetric', () => {
       assert.ok(adjacency[nid].includes(id), `${nid} should list ${id} as neighbor`);
     }
   }
+});
+
+test('kdice: every territory is reachable from every other', () => {
+  // A territory no one can march to could never be captured, so a game holding
+  // one could never be won — growTerritories drops anything not attached to the
+  // main landmass for exactly this reason.
+  const { territoryIds, adjacency } = generateMap(4, Math.random);
+  const seen = new Set([territoryIds[0]]);
+  const queue = [territoryIds[0]];
+  while (queue.length) {
+    for (const nid of adjacency[queue.pop()]) if (!seen.has(nid)) { seen.add(nid); queue.push(nid); }
+  }
+  assert.equal(seen.size, territoryIds.length, 'the map is in more than one piece');
+});
+
+test('kdice: maps are ragged landmasses, not filled rectangles', () => {
+  // The whole point of growing the map by accretion instead of carving it out of
+  // a filled grid: the land should sprawl, and leave sea around and inside it.
+  // Measured as fill — land hexes over the hexes its bounding box could hold —
+  // which is 1.0 for a rectangle and well under it for anything with a coastline.
+  // Averaged over a batch, because one map in a hundred does grow out to a fairly
+  // solid rectangle by chance, and that map isn't a bug; a run of them is.
+  const fillOf = () => {
+    const { hexIdsByTerritory, hexCells } = generateMap(4, Math.random);
+    const land = Object.values(hexIdsByTerritory).flat();
+    let minCol = Infinity, maxCol = -Infinity, minR = Infinity, maxR = -Infinity;
+    for (const id of land) {
+      // Back to grid columns from axial, so rows are compared against a common
+      // origin rather than each one's own half-cell indent (see generateHexRect).
+      const { q, r } = hexCells[id];
+      const col = q + Math.floor(r / 2);
+      minCol = Math.min(minCol, col); maxCol = Math.max(maxCol, col);
+      minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+    }
+    return land.length / ((maxCol - minCol + 1) * (maxR - minR + 1));
+  };
+
+  const fills = Array.from({ length: 10 }, fillOf);
+  const mean = fills.reduce((a, b) => a + b, 0) / fills.length;
+  assert.ok(mean < 0.7, `maps fill ${(mean * 100).toFixed(0)}% of their bounding box — too square`);
 });
 
 // ── createInitialState ────────────────────────────────────────────────────────

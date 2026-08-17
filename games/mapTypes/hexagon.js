@@ -1,7 +1,7 @@
 // Generic hexagon map type: axial-coordinate hex grids, pixel layout, and
-// clustering hex cells into contiguous multi-hex "territories". Any game can
-// build a hex board on top of this (see games/kdice/map.js for the first user)
-// instead of reinventing axial math/adjacency/clustering per game.
+// growing contiguous multi-hex "territories" onto them. Any game can build a
+// hex board on top of this (see games/kdice/map.js for the first user) instead
+// of reinventing axial math/adjacency/map generation per game.
 
 const HEX_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]];
 
@@ -61,81 +61,6 @@ export function generateHexRect(cols, rows) {
 }
 
 /**
- * Carve an organic (non-rectangular) silhouette out of a hex grid: cells near
- * the edge are randomly dropped via a jittered radial cutoff — a rounded,
- * uneven coastline instead of a hard rectangle — and a handful of small
- * interior "lakes" are punched out too, so the map isn't a solid filled
- * block. Always returns a single connected region (keeps only the largest
- * connected component after carving), so territory growth never has to deal
- * with an unreachable pocket left over from the carving.
- * Returns { cellIds, cells, adjacency } in the same shape as generateHexRect.
- */
-export function carveOrganicShape(cellIds, cells, adjacency, rng, opts = {}) {
-  const { edgeJitter = 0.22, lakeCount = 4, lakeRadius = 1.6 } = opts;
-
-  let minQ = Infinity, maxQ = -Infinity, minR = Infinity, maxR = -Infinity;
-  for (const id of cellIds) {
-    const { q, r } = cells[id];
-    minQ = Math.min(minQ, q); maxQ = Math.max(maxQ, q);
-    minR = Math.min(minR, r); maxR = Math.max(maxR, r);
-  }
-  const cx = (minQ + maxQ) / 2, cy = (minR + maxR) / 2;
-  const rx = (maxQ - minQ) / 2 || 1, ry = (maxR - minR) / 2 || 1;
-
-  const keep = new Set(cellIds);
-
-  // Jittered radial cutoff for a rounded, uneven coastline instead of a hard
-  // rectangle — each cell's own random jitter nudges the effective radius in
-  // or out, so the dropped edge is ragged rather than a perfect ellipse.
-  for (const id of cellIds) {
-    const { q, r } = cells[id];
-    const nx = (q - cx) / rx, ny = (r - cy) / ry;
-    const dist = Math.sqrt(nx * nx + ny * ny);
-    const jitter = 1 + (rng() - 0.5) * edgeJitter * 2;
-    if (dist > jitter) keep.delete(id);
-  }
-
-  // A handful of small interior lakes/gaps.
-  for (let i = 0; i < lakeCount; i++) {
-    const centerId = cellIds[Math.floor(rng() * cellIds.length)];
-    const { q: lq, r: lr } = cells[centerId];
-    const centerPx = hexToPixel(lq, lr, 1);
-    const radius = lakeRadius * (0.5 + rng() * 0.5);
-    for (const id of cellIds) {
-      const { q, r } = cells[id];
-      const p = hexToPixel(q, r, 1);
-      if (Math.hypot(p.x - centerPx.x, p.y - centerPx.y) < radius) keep.delete(id);
-    }
-  }
-
-  // Keep only the largest connected component.
-  const visited = new Set();
-  let largest = [];
-  for (const start of keep) {
-    if (visited.has(start)) continue;
-    const region = [];
-    const queue = [start];
-    visited.add(start);
-    while (queue.length > 0) {
-      const cur = queue.shift();
-      region.push(cur);
-      for (const nid of (adjacency[cur] ?? [])) {
-        if (keep.has(nid) && !visited.has(nid)) { visited.add(nid); queue.push(nid); }
-      }
-    }
-    if (region.length > largest.length) largest = region;
-  }
-
-  const finalCells = {};
-  for (const id of largest) finalCells[id] = cells[id];
-  const idSet = new Set(largest);
-  const finalAdjacency = {};
-  for (const id of largest) finalAdjacency[id] = (adjacency[id] ?? []).filter(nid => idSet.has(nid));
-
-  return { cellIds: largest, cells: finalCells, adjacency: finalAdjacency };
-}
-
-/**
  * Compute the pixel-space bounding box + centered coordinates for a set of
  * hex cells, so callers can size a world/viewport around them.
  */
@@ -155,69 +80,151 @@ export function hexLayoutBounds(cellIds, cells, size) {
 }
 
 /**
- * Partition hex cells into `territoryCount` contiguous, roughly-similar-sized
- * blobs via randomized simultaneous multi-source BFS (a Voronoi-like growth
- * from random seed cells) — the standard technique for organic-looking
- * territory maps (Risk-style/K.Dice-style) on a regular grid. Any blob that
- * ends up smaller than `minSize` (a sliver the growth left stranded) is
- * merged into its smallest adjacent neighbor, repeated until every surviving
- * territory clears the floor.
+ * Grow `territoryCount` territories onto an empty hex grid by accretion, the
+ * way DICEWARS (the game K.Dice is a clone of) builds its maps. This is NOT a
+ * partition: the grid is a canvas, not the map. Territories are added one at a
+ * time, each seeded on the coast of the land built so far, and the algorithm
+ * stops when it has enough of them — so the landmass is an amoeba that grew
+ * out from a single cell and left the rest of the grid as sea. That is what
+ * gives the real game's maps their sprawling, ragged silhouette; carving a
+ * shape out of a filled rectangle instead gives a slab with nibbled corners,
+ * which reads as a spreadsheet no matter how the nibbling is randomised.
  *
- * Returns { territoryOf: {hexId: territoryIdx}, territories: [{id, hexIds}] }.
+ * The one trick worth spelling out is `order`: every cell draws a random
+ * priority once, up front, and all growth then takes the lowest-priority cell
+ * available. Because that ranking is fixed rather than re-rolled per step, a
+ * territory's growth keeps reaching back to whichever of its *accumulated*
+ * frontier cells happens to rank lowest, not just the ones it touched most
+ * recently — so blobs come out lopsided and interlocking rather than round.
+ *
+ * Each territory grows to `size` cells and then annexes its whole remaining
+ * frontier in one go (so the finished blobs are noticeably bigger than `size`,
+ * and the seam between two of them is jagged); the cells beyond that frontier
+ * become the candidate seeds for the next territory. Territories that end up
+ * smaller than `minSize` are dropped back to sea — those holes are a feature,
+ * they're where the map's inland seas and bays come from — as is any territory
+ * not in the largest connected group, since a marooned one could never be
+ * conquered.
+ *
+ * Returns { territoryOf: {hexId: territoryIdx}, territories: [{id, hexIds}] }
+ * covering only the cells that ended up as land.
  */
-export function clusterIntoTerritories(cellIds, adjacency, territoryCount, rng, { minSize = 1 } = {}) {
-  const n = Math.min(territoryCount, cellIds.length);
-  const shuffled = [...cellIds].sort(() => rng() - 0.5);
-  const seeds = shuffled.slice(0, n);
+export function growTerritories(cellIds, cells, adjacency, territoryCount, rng, { size = 8, minSize = 6 } = {}) {
+  // Fixed random priority per cell — see the note above on why it isn't re-rolled.
+  const order = {};
+  cellIds.forEach((id, i) => { order[id] = i; });
+  for (let i = cellIds.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const a = cellIds[i], b = cellIds[j];
+    [order[a], order[b]] = [order[b], order[a]];
+  }
+  const lowest = (ids) => {
+    let best = null, bestOrder = Infinity;
+    for (const id of ids) if (order[id] < bestOrder) { bestOrder = order[id]; best = id; }
+    return best;
+  };
 
   const territoryOf = {};
-  const bucket = seeds.map(() => []);
+  const bucket = [];
 
-  let frontier = seeds.map((id, idx) => ({ id, idx }));
-  seeds.forEach((id, idx) => { territoryOf[id] = idx; bucket[idx].push(id); });
+  // Seed the first territory near the middle of the grid. DICEWARS starts
+  // anywhere, but a blob that starts in a corner grows into the grid's edges
+  // and flattens itself against them — the straight coastline we're trying to
+  // get away from.
+  let minQ = Infinity, maxQ = -Infinity, minR = Infinity, maxR = -Infinity;
+  for (const id of cellIds) {
+    const { q, r } = cells[id];
+    minQ = Math.min(minQ, q); maxQ = Math.max(maxQ, q);
+    minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+  }
+  const middle = cellIds.filter(id => {
+    const { q, r } = cells[id];
+    return q > minQ + (maxQ - minQ) * 0.3 && q < minQ + (maxQ - minQ) * 0.7
+      && r > minR + (maxR - minR) * 0.3 && r < minR + (maxR - minR) * 0.7;
+  });
+  const seedPool = middle.length ? middle : cellIds;
+  const coast = new Set([seedPool[Math.floor(rng() * seedPool.length)]]);
 
-  while (frontier.length > 0) {
-    // Shuffle the frontier each round so no single territory's growth order
-    // systematically races ahead of the others (keeps blob sizes balanced).
-    frontier.sort(() => rng() - 0.5);
-    const next = [];
-    for (const { id, idx } of frontier) {
-      for (const nid of (adjacency[id] ?? [])) {
-        if (territoryOf[nid] != null) continue;
-        territoryOf[nid] = idx;
-        bucket[idx].push(nid);
-        next.push({ id: nid, idx });
-      }
+  while (bucket.length < territoryCount) {
+    const start = lowest([...coast].filter(id => territoryOf[id] == null));
+    if (start == null) break; // ran out of room on this grid
+
+    const idx = bucket.length;
+    const hexIds = [];
+    const frontier = new Set();
+
+    let cur = start;
+    while (true) {
+      territoryOf[cur] = idx;
+      hexIds.push(cur);
+      frontier.delete(cur);
+      for (const nid of (adjacency[cur] ?? [])) if (territoryOf[nid] == null) frontier.add(nid);
+      if (hexIds.length >= size) break;
+      const next = lowest(frontier);
+      if (next == null) break;
+      cur = next;
     }
-    frontier = next;
+
+    // Annex the leftover frontier, and open the ring beyond it as the coast the
+    // next territory may seed from.
+    for (const id of frontier) {
+      territoryOf[id] = idx;
+      hexIds.push(id);
+      for (const nid of (adjacency[id] ?? [])) if (territoryOf[nid] == null) coast.add(nid);
+    }
+
+    bucket.push(hexIds);
   }
 
-  // Fold undersized blobs into a neighbor (the smallest one bordering them,
-  // to keep sizes balanced) — may cascade, so keep sweeping until stable.
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let idx = 0; idx < bucket.length; idx++) {
-      if (bucket[idx].length === 0 || bucket[idx].length >= minSize) continue;
-      const neighborSizes = new Map();
-      for (const hid of bucket[idx]) {
+  // Sea cells with no sea neighbour are single-cell pinholes, not lakes — hand
+  // them to a bordering territory rather than leave the map speckled.
+  for (const id of cellIds) {
+    if (territoryOf[id] != null) continue;
+    let owner = null, hasSeaNeighbor = false;
+    for (const nid of (adjacency[id] ?? [])) {
+      if (territoryOf[nid] == null) hasSeaNeighbor = true; else owner = territoryOf[nid];
+    }
+    // A cell on the grid's rim has fewer than six neighbours; the missing ones
+    // are open sea, so it can never be a pinhole.
+    if (!hasSeaNeighbor && owner != null && (adjacency[id] ?? []).length === 6) {
+      territoryOf[id] = owner;
+      bucket[owner].push(id);
+    }
+  }
+
+  const alive = bucket.map(hexIds => hexIds.length >= minSize);
+
+  // Drop anything cut off from the main landmass: unreachable territories can
+  // never be taken, so a game containing one could never end.
+  const groupOf = new Map();
+  let biggest = null, biggestSize = -1;
+  for (let idx = 0; idx < bucket.length; idx++) {
+    if (!alive[idx] || groupOf.has(idx)) continue;
+    const group = [idx];
+    groupOf.set(idx, idx);
+    for (let qi = 0; qi < group.length; qi++) {
+      for (const hid of bucket[group[qi]]) {
         for (const nid of (adjacency[hid] ?? [])) {
-          const nIdx = territoryOf[nid];
-          if (nIdx != null && nIdx !== idx) neighborSizes.set(nIdx, bucket[nIdx].length);
+          const other = territoryOf[nid];
+          if (other == null || !alive[other] || groupOf.has(other)) continue;
+          groupOf.set(other, idx);
+          group.push(other);
         }
       }
-      if (neighborSizes.size === 0) continue; // isolated on a fully-partitioned grid — shouldn't happen
-      let target = null, targetSize = Infinity;
-      for (const [nIdx, size] of neighborSizes) if (size < targetSize) { target = nIdx; targetSize = size; }
-      for (const hid of bucket[idx]) { territoryOf[hid] = target; bucket[target].push(hid); }
-      bucket[idx] = [];
-      changed = true;
     }
+    if (group.length > biggestSize) { biggestSize = group.length; biggest = idx; }
+  }
+  for (let idx = 0; idx < bucket.length; idx++) {
+    if (alive[idx] && groupOf.get(idx) !== biggest) alive[idx] = false;
   }
 
-  // Reindex to drop emptied territories and keep ids dense/sequential.
-  const survivingIdx = [];
-  bucket.forEach((hexIds, idx) => { if (hexIds.length > 0) survivingIdx.push(idx); });
+  for (let idx = 0; idx < bucket.length; idx++) {
+    if (alive[idx]) continue;
+    for (const hid of bucket[idx]) delete territoryOf[hid];
+  }
+
+  // Reindex so the surviving territories are numbered 0..n-1.
+  const survivingIdx = bucket.map((_, idx) => idx).filter(idx => alive[idx]);
   const remap = new Map(survivingIdx.map((oldIdx, newIdx) => [oldIdx, newIdx]));
   for (const id of Object.keys(territoryOf)) territoryOf[id] = remap.get(territoryOf[id]);
   const territories = survivingIdx.map((oldIdx, newIdx) => ({ id: newIdx, hexIds: bucket[oldIdx] }));
