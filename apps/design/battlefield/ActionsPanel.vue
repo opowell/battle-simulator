@@ -25,6 +25,12 @@ const props = defineProps({
   // Set while the player is aiming a "button → pick a spot on the map" action (see
   // Battlefield.vue's `aiming`) — swaps the action list for a cancel prompt.
   aiming:           { type: Object, default: null },
+  // Pair-action strength picker (ui.territoryPairVariant — Risk's attack dice): the
+  // values the position offers, the one currently picked (null = the strongest the pair
+  // allows), and what to call it. Battlefield owns the choice; a map click reads it.
+  variantSpec:      { type: Object, default: null },
+  variantValues:    { type: Array, default: () => [] },
+  variantValue:     { type: Number, default: null },
   // Per-owner economy snapshot (civ1 only — see Civ1Game.toGrid's `civ` field),
   // keyed by player id. Drives the tax/luxury/science rates overlay below.
   civ:              { type: Object, default: null },
@@ -38,7 +44,7 @@ const props = defineProps({
   // below just ask for the same change through update:panel.
   panel:            { type: String, default: null },
 });
-defineEmits(['submit', 'aim', 'cancel-aim', 'goto', 'update:panel']);
+defineEmits(['submit', 'aim', 'cancel-aim', 'goto', 'update:panel', 'set-variant']);
 
 // Action types listed in field.ui.aimedActionTypes resolve their target by clicking
 // the map (see SchematicLayer.vue's aiming overlay) instead of one button per legal
@@ -97,7 +103,34 @@ const myCiv           = computed(() => props.civ?.[props.pendingPlayerId] ?? nul
 // clicking a city — see Battlefield.vue's selectedCity) already disambiguates that
 // for free.
 const OVERLAY_HANDLED = new Set(['set-tax', 'set-luxury', 'set-research', 'set-production']);
-const listActions = computed(() => aimedActions.value.filter(a => !OVERLAY_HANDLED.has(a.type)));
+const allListActions = computed(() => aimedActions.value.filter(a => !OVERLAY_HANDLED.has(a.type)));
+
+// One choice offered at several sizes — Risk's "how many armies follow the dice into the
+// territory you just took" — arrives as a run of actions identical but for one number.
+// A column of near-identical buttons is a bad way to ask "how many?", so those collapse
+// into a single row of numbers. Purely structural: the panel doesn't know what the
+// number means, only that it is the one thing that varies.
+const NUMERIC_CHOICE_MIN = 3;
+const numericChoices = computed(() => {
+  const byType = new Map();
+  for (const a of allListActions.value) {
+    if (!byType.has(a.type)) byType.set(a.type, []);
+    byType.get(a.type).push(a);
+  }
+  const groups = [];
+  for (const [type, actions] of byType) {
+    if (actions.length < NUMERIC_CHOICE_MIN) continue;
+    const keys = [...new Set(actions.flatMap(a => Object.keys(a)))].filter(k => k !== 'type');
+    const varying = keys.filter(k => new Set(actions.map(a => JSON.stringify(a[k]))).size > 1);
+    if (varying.length !== 1) continue;
+    const field = varying[0];
+    if (!actions.every(a => typeof a[field] === 'number')) continue;
+    groups.push({ type, field, actions: [...actions].sort((a, b) => a[field] - b[field]) });
+  }
+  return groups;
+});
+const groupedTypes = computed(() => new Set(numericChoices.value.map(g => g.type)));
+const listActions = computed(() => allListActions.value.filter(a => !groupedTypes.value.has(a.type)));
 
 // Territory games (ui.territoryClick — kdice, risk) issue every territory action on the
 // map, so the panel can be empty while there is plenty to do. Say what the map does
@@ -116,6 +149,10 @@ const territoryHint = computed(() => {
 
 function fmtAction(action) {
   const t = action.type ?? '';
+  // A game that knows how to say what one of its actions does says it (getLegalActions
+  // may put a `label` on any action) — nothing here can describe "turn in these three
+  // cards for six armies" from the action's fields alone.
+  if (action.label) return action.label;
   if (t === 'move') {
     if (action.__aim) return 'Move…';
     if (typeof action.from === 'string' && typeof action.to === 'string')
@@ -220,6 +257,23 @@ function fmtAction(action) {
           {{queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
         </div>
         <div v-else-if="territoryHint" class="mono ap-hint">{{territoryHint}}</div>
+        <!-- Pair-action strength (Risk's attack dice): picked here, spent by a click on
+             the map. "max" is the default and follows whatever the pair can manage. -->
+        <div v-if="variantSpec && variantValues.length > 1" class="ap-variant">
+          <span class="mono ap-variant-label">{{variantSpec.label ?? 'Strength'}}</span>
+          <button class="ap-chip" :class="{ 'ap-chip--on': variantValue == null }"
+                  title="Commit as many as the attack allows"
+                  @click="$emit('set-variant', null)">max</button>
+          <button v-for="v in variantValues" :key="v"
+                  class="ap-chip" :class="{ 'ap-chip--on': variantValue === v }"
+                  @click="$emit('set-variant', v)">{{v}}</button>
+        </div>
+        <!-- One choice at several sizes (Risk's occupying force) — a row of numbers. -->
+        <div v-for="g in numericChoices" :key="'nc' + g.type" class="ap-variant">
+          <span class="mono ap-variant-label">{{ui?.actionGroupLabels?.[g.type] ?? g.type.replace(/-/g, ' ')}}</span>
+          <button v-for="a in g.actions" :key="a[g.field]"
+                  class="ap-chip" @click="$emit('submit', a)">{{a[g.field]}}</button>
+        </div>
         <div class="ap-list">
           <button v-for="(action, i) in listActions" :key="i"
                   class="action-btn ap-btn ap-btn--icon"
@@ -229,7 +283,7 @@ function fmtAction(action) {
           </button>
           <!-- On a territory map an empty list is normal: the hint above already says
                where the actions are. -->
-          <div v-if="!listActions.length && !territoryHint" class="ap-empty">No actions.</div>
+          <div v-if="!listActions.length && !numericChoices.length && !territoryHint" class="ap-empty">No actions.</div>
         </div>
       </template>
     </template>
@@ -264,6 +318,11 @@ function fmtAction(action) {
 .ap-prompt { font-size: 11px; color: var(--dim); margin-bottom: 8px; }
 .ap-accent { color: var(--accent); }
 .ap-money { color: var(--ok); }
+.ap-variant { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.ap-variant-label { font-size: 10px; color: var(--faint); margin-right: 2px; }
+.ap-chip { font-size: 11px; padding: 3px 9px; border-radius: 4px; border: 1px solid var(--line2); background: transparent; color: var(--dim); cursor: pointer; }
+.ap-chip:hover { border-color: var(--accent); color: var(--accent); }
+.ap-chip--on { border-color: var(--accent); color: var(--accent); background: rgba(66,198,230,.12); }
 .ap-hint { font-size: 10px; color: var(--faint); margin-bottom: 8px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; }
 .ap-hint--aim { color: var(--accent); }
 .ap-btn { font-size: 11px; font-family: var(--mono); }

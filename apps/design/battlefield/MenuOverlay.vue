@@ -11,13 +11,16 @@ defineProps({
   gamesCount: { type: Number, default: 0 },
   showRuler:  Boolean,
   showHpBars: { type: Boolean, default: true },
+  showSidebar: { type: Boolean, default: true },
+  showAiAnalysis: { type: Boolean, default: true },
   canSurrender: Boolean,
   // Observer-only; omitted (empty) for a seated player, which hides the section.
   observerPlayers: { type: Array, default: () => [] },
   teams:           { type: Array, default: () => [] },
   observerView:    { type: String, default: null },
 });
-defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars', 'surrender', 'set-observer-view']);
+defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars',
+             'toggle-sidebar', 'toggle-ai-analysis', 'surrender', 'set-observer-view']);
 const apiLabel = 'api · ' + window.location.host + window.api.basePath;
 </script>
 
@@ -58,6 +61,16 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
                   @click="$emit('toggle-hp-bars')">
             <BsIcon name="shield" :size="14" :color="showHpBars ? 'var(--accent)' : 'var(--dim)'"/>
             {{showHpBars ? 'Hide health bars' : 'Show health bars'}}
+          </button>
+          <button class="btn btn-ghost menu-btn"
+                  @click="$emit('toggle-sidebar')">
+            <BsIcon name="grid" :size="14" :color="showSidebar ? 'var(--accent)' : 'var(--dim)'"/>
+            {{showSidebar ? 'Hide side panel' : 'Show side panel'}}
+          </button>
+          <button class="btn btn-ghost menu-btn"
+                  @click="$emit('toggle-ai-analysis')">
+            <BsIcon name="eye" :size="14" :color="showAiAnalysis ? 'var(--accent)' : 'var(--dim)'"/>
+            {{showAiAnalysis ? 'Hide AI analysis' : 'Show AI analysis'}}
           </button>
           <button class="btn btn-ghost menu-btn"
                   @click="$emit('close'); $emit('open-settings')">

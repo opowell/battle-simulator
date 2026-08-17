@@ -49,25 +49,42 @@ the phase (`ui.phases`) and the action panel the sentence explaining it
 | Type | Phase | Notes |
 |---|---|---|
 | `place-armies` | reinforce | `territoryId`, `count` — place armies on owned territory |
-| `turn-in-cards` | reinforce | `cardIndices` — indices of 3 cards; must turn in if hand ≥ 5 cards |
-| `end-reinforce` | reinforce | Advance to attack phase |
+| `turn-in-cards` | reinforce | `cardIndices` — indices of 3 cards; must turn in if hand ≥ 5 cards. Carries a `label` naming the cards and the bonus, since the indices mean nothing to a player |
+| `end-reinforce` | reinforce | Advance to attack phase (only offered when a card set is still turnable in — otherwise the phase ends itself) |
 | `attack` | attack | `from`, `to`, `attackerDice` (1–3) — roll dice combat |
+| `occupy` | attack | `from`, `to`, `armies` — how many MORE armies follow the dice into a territory just captured. Only legal while `gameSpecific.pendingOccupy` is set, and then it is the only legal action |
 | `end-attack` | attack | Advance to fortify phase (draws a card if territory captured this turn) |
 | `fortify` | fortify | `from`, `to`, `armies` — move armies between connected owned territories |
 | `end-turn` | fortify | End turn; advance to next player |
+
+## Rule options
+
+Set in the lobby, resolved once at setup and kept in `gameSpecific.options`, so a game
+keeps the rules it started with.
+
+| Option | Default | Alternative |
+|---|---|---|
+| `cardSetValues` | `fixed` — every set is worth 6 armies | `increasing` — 4, 6, 8, 10, 12, 15, then +5 each, the classic escalation that makes cards the game's clock |
+| `fortifyMoves` | `one` — a single move along one connected path per turn | `unlimited` — reshuffle your armies freely until you end the turn |
+| `reinforcePlacement` | `selected` — you tap territories to place each army | `random` — they scatter over your territories on their own and the turn starts at the attack phase |
+| `postCaptureFortify` | `true` — after taking a territory you choose how many more armies follow the dice in | `false` — exactly as many armies as dice rolled move in |
 
 ## Combat
 
 Attacker rolls up to 3 dice (max `attackers`), defender rolls 1 or 2. Highest die of each side compared in descending order; defender wins ties. Losing side removes one army per comparison. Attacker needs at least 2 armies in the source territory to attack.
 
-**Occupying what you take** — when the last defender falls, the attacker moves in
-exactly `attackerDice` armies and the rest stay home. There is no separate "how many
-move in?" decision: the dice you commit are the armies you commit, which is why
-`getLegalActions` offers an `attack` per dice count and lists the biggest first — a
-click on the map takes that one, so a capture normally moves 3 in (fewer when the
-attacking territory can't spare them). If a player should be able to choose the
-occupying force independently of the dice, that needs a new post-capture action; today
-the choice is the dice.
+**Occupying what you take** — when the last defender falls, `attackerDice` armies move
+in straight away, and then (with `postCaptureFortify` on, the default) the capture stops
+the game to ask how many MORE should follow: anything the attacking territory can spare
+above the one army that must hold it. Until that `occupy` action is submitted it is the
+only legal action there is, for a human and an AI alike.
+
+**Choosing the dice** — `getLegalActions` offers an `attack` per dice count, biggest
+first. The panel's dice picker (`ui.territoryPairVariant`) decides which one a click on
+the map takes; shift-click ignores the picker and rolls the most the territory allows.
+Fewer dice risk fewer armies per exchange — worth it when you want the territory but not
+the commitment, since with `postCaptureFortify` off the dice are also the occupying
+force.
 
 ## Reinforcements
 
@@ -107,9 +124,16 @@ works the same way in the fortify phase). Every hex is an HTML element that fiel
 its own clicks (apps/design/HtmlHexLayer.vue draws the whole board in divs, no SVG),
 so a click acts on the hex it actually landed on and the open sea between two blobs
 is a miss that clears the selection rather than a tap on the nearest territory.
-Only what a click can't say stays in the action panel: card sets and ending a phase.
-`place-armies` with a count above 1 remains a legal action for the AI to use, but
-the panel doesn't offer it — placing is what tapping is for.
+Only what a click can't say stays in the action panel: card sets, ending a phase, the
+dice picker, and the "how many move in?" row after a capture. `place-armies` with a
+count above 1 remains a legal action for the AI to use, but the panel doesn't offer it —
+placing is what tapping is for. An attack leaves its source selected while that
+territory can still attack, so pressing an assault is one click per roll.
+
+What the board can't draw sits in the header's status strip: the armies still to place,
+and your hand, one chip per card (`toGrid`'s `statusChips`). The side column — log,
+roster, AI reasoning — starts hidden (`ui.showRightSidebar`, `ui.showAiAnalysis`) and
+comes back from the menu.
 
 ## Win conditions
 

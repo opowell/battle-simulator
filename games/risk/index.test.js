@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RiskGame, TERRITORY_IDS, resolveCombat } from './index.js';
+import { RiskGame, TERRITORY_IDS, ADJACENCY, resolveCombat } from './index.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -195,4 +195,153 @@ test('risk: self-play completes with a valid result', async () => {
   const engine = new GameEngine(RiskGame, players(), { maxTurns: 80 });
   const { result } = await engine.run();
   assert.ok(['win', 'draw', 'victory'].includes(result.outcome));
+});
+
+// ---------------------------------------------------------------------------
+// Rule options
+// ---------------------------------------------------------------------------
+
+// Puts p1 in the attack phase with a stack big enough to take a one-army neighbour,
+// so what happens AFTER the capture can be examined.
+function attackReady(config = {}) {
+  const state = RiskGame.createInitialState(players(), config);
+  const territories = { ...state.board.territories };
+  const mine = Object.values(territories).find(t =>
+    t.owner === 'p1' && (ADJACENCY[t.id] ?? []).some(id => territories[id].owner !== 'p1'));
+  const target = (ADJACENCY[mine.id] ?? []).find(id => territories[id].owner !== 'p1');
+  territories[mine.id] = { ...territories[mine.id], armies: 10 };
+  territories[target] = { ...territories[target], armies: 1 };
+  return {
+    state: {
+      ...state,
+      currentPhase: 'attack',
+      board: { ...state.board, territories },
+      gameSpecific: { ...state.gameSpecific, reinforcementsLeft: 0 },
+    },
+    from: mine.id,
+    to: target,
+  };
+}
+
+// Rigged rng: resolveCombat rolls the attacker's dice first and the defender's after,
+// so the first `dice` calls come out 6 and the rest 1. The capture is then certain and
+// the test is about what follows it, not about luck.
+function riggedRng(dice) {
+  let call = 0;
+  return () => (call++ < dice ? 0.999 : 0);
+}
+
+test('risk: a capture asks how many armies follow the dice in (postCaptureFortify on)', () => {
+  const { state, from, to } = attackReady();
+  const after = RiskGame.applyActions(state,
+    [{ playerId: 'p1', action: { type: 'attack', from, to, attackerDice: 3 } }], riggedRng(3));
+  assert.equal(after.board.territories[to].owner, 'p1');
+  const pending = after.gameSpecific.pendingOccupy;
+  assert.ok(pending, 'expected a pending occupy after the capture');
+  // A phase of its own while it lasts, so the UI can say what it's waiting for.
+  assert.equal(after.currentPhase, 'occupy');
+  assert.equal(pending.from, from);
+  assert.equal(pending.to, to);
+  // Everything above the one army that must hold the attacking territory may follow.
+  assert.equal(pending.max, after.board.territories[from].armies - 1);
+
+  // Nothing else is legal until it is answered, and every choice is an `occupy`.
+  const actions = RiskGame.getLegalActions(after, 'p1');
+  assert.ok(actions.length > 1);
+  assert.ok(actions.every(a => a.type === 'occupy'));
+
+  const moved = RiskGame.applyActions(after,
+    [{ playerId: 'p1', action: { type: 'occupy', from, to, armies: 2 } }]);
+  assert.equal(moved.gameSpecific.pendingOccupy, null);
+  assert.equal(moved.currentPhase, 'attack', 'the attack phase resumes once occupied');
+  assert.equal(moved.board.territories[to].armies, after.board.territories[to].armies + 2);
+  assert.equal(moved.board.territories[from].armies, after.board.territories[from].armies - 2);
+});
+
+test('risk: with postCaptureFortify off, only the dice move in', () => {
+  const { state, from, to } = attackReady({ postCaptureFortify: false });
+  const after = RiskGame.applyActions(state,
+    [{ playerId: 'p1', action: { type: 'attack', from, to, attackerDice: 3 } }], riggedRng(3));
+  assert.equal(after.board.territories[to].owner, 'p1');
+  assert.equal(after.gameSpecific.pendingOccupy, null);
+  assert.equal(after.board.territories[to].armies, 3);
+  assert.ok(RiskGame.getLegalActions(after, 'p1').some(a => a.type === 'end-attack'));
+});
+
+test('risk: card sets are worth a flat 6 by default, and escalate on request', () => {
+  const set = [
+    { type: 'infantry', territory: null },
+    { type: 'infantry', territory: null },
+    { type: 'infantry', territory: null },
+  ];
+  const withHand = (config, cardSetCount) => {
+    const s = RiskGame.createInitialState(players(), config);
+    return {
+      ...s,
+      gameSpecific: {
+        ...s.gameSpecific, cardSetCount, reinforcementsLeft: 0,
+        cards: { ...s.gameSpecific.cards, p1: [...set] },
+      },
+    };
+  };
+  const turnIn = (state) => RiskGame.applyActions(state,
+    [{ playerId: 'p1', action: { type: 'turn-in-cards', cardIndices: [0, 1, 2] } }]).gameSpecific.reinforcementsLeft;
+
+  assert.equal(turnIn(withHand({}, 0)), 6);
+  assert.equal(turnIn(withHand({}, 4)), 6);
+  assert.equal(turnIn(withHand({ cardSetValues: 'increasing' }, 0)), 4);
+  assert.equal(turnIn(withHand({ cardSetValues: 'increasing' }, 4)), 12);
+});
+
+test('risk: unlimited fortify keeps offering moves after the first', () => {
+  const base = RiskGame.createInitialState(players(), { fortifyMoves: 'unlimited' });
+  const state = { ...base, currentPhase: 'fortify', gameSpecific: { ...base.gameSpecific, hasFortified: true } };
+  assert.ok(RiskGame.getLegalActions(state, 'p1').some(a => a.type === 'fortify'));
+
+  const once = RiskGame.createInitialState(players(), {});
+  const onceState = { ...once, currentPhase: 'fortify', gameSpecific: { ...once.gameSpecific, hasFortified: true } };
+  assert.ok(!RiskGame.getLegalActions(onceState, 'p1').some(a => a.type === 'fortify'));
+});
+
+test('risk: random reinforcements place themselves and start the turn at the attack phase', () => {
+  const state = RiskGame.createInitialState(players(), { reinforcePlacement: 'random' });
+  assert.equal(state.gameSpecific.reinforcementsLeft, 0);
+  assert.equal(state.currentPhase, 'attack');
+  const mine = Object.values(state.board.territories).filter(t => t.owner === 'p1');
+  assert.ok(mine.reduce((s, t) => s + t.armies, 0) > mine.length);
+  assert.ok(!RiskGame.getLegalActions(state, 'p1').some(a => a.type === 'place-armies'));
+});
+
+test('risk: turn-in-cards actions carry a label naming the cards and the bonus', () => {
+  const s = RiskGame.createInitialState(players());
+  const state = {
+    ...s,
+    gameSpecific: {
+      ...s.gameSpecific,
+      cards: { ...s.gameSpecific.cards, p1: [
+        { type: 'infantry', territory: 'alaska' },
+        { type: 'cavalry', territory: 'peru' },
+        { type: 'artillery', territory: 'egypt' },
+      ] },
+    },
+  };
+  const action = RiskGame.getLegalActions(state, 'p1').find(a => a.type === 'turn-in-cards');
+  assert.ok(action, 'expected a turn-in-cards action');
+  assert.match(action.label, /INF/);
+  assert.match(action.label, /Alaska/);
+  assert.match(action.label, /\+6 armies/);
+});
+
+test('risk: toGrid reports reinforcements left and the hand as status chips', () => {
+  const s = RiskGame.createInitialState(players());
+  const state = {
+    ...s,
+    gameSpecific: {
+      ...s.gameSpecific, reinforcementsLeft: 4,
+      cards: { ...s.gameSpecific.cards, p1: [{ type: 'cavalry', territory: 'peru' }] },
+    },
+  };
+  const chips = RiskGame.toGrid(state).statusChips.p1;
+  assert.ok(chips.some(c => String(c.value).includes('4 to place')));
+  assert.ok(chips.some(c => c.value === 'CAV'));
 });

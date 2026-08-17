@@ -8,6 +8,8 @@ import { hexLayoutBounds, territoryBorders } from '../mapTypes/hexagon.js';
 // ── Cards ─────────────────────────────────────────────────────────────────────
 
 export const CARD_TYPES = ['infantry', 'cavalry', 'artillery'];
+// Short forms for anywhere a card has to fit in a chip or a button.
+export const CARD_LABELS = { infantry: 'INF', cavalry: 'CAV', artillery: 'ART', wild: 'WILD' };
 
 // The full card pool is deterministic (one card per territory, cycling type by
 // index, plus 2 wilds) — only the deal *order* is random. belief.js reuses this
@@ -47,7 +49,14 @@ function validSetsInHand(hand) {
 }
 
 const CARD_SET_BONUSES = [4, 6, 8, 10, 12, 15];
-function cardSetBonus(count) {
+// Fixed-value sets (the `cardSetValues: 'fixed'` option, and the default): every set is
+// worth the same, so holding cards never becomes the game's dominant clock the way the
+// escalating table does once the fifth or sixth set is turned in. 6 is the escalating
+// table's second step — an early set is worth slightly more than it would be, a late
+// one far less.
+const CARD_SET_FIXED = 6;
+function cardSetBonus(count, escalating) {
+  if (!escalating) return CARD_SET_FIXED;
   return count < CARD_SET_BONUSES.length ? CARD_SET_BONUSES[count] : 15 + (count - 5) * 5;
 }
 
@@ -96,11 +105,44 @@ function cloneState(state) {
       lastCombat: state.gameSpecific.lastCombat
         ? { ...state.gameSpecific.lastCombat, attackerRolls: [...state.gameSpecific.lastCombat.attackerRolls], defenderRolls: [...state.gameSpecific.lastCombat.defenderRolls] }
         : null,
+      pendingOccupy: state.gameSpecific.pendingOccupy ? { ...state.gameSpecific.pendingOccupy } : null,
+      options: { ...(state.gameSpecific.options ?? {}) },
     },
   };
 }
 
 // ── Game definition ───────────────────────────────────────────────────────────
+
+// The rule variants a session can pick (see gameOptions below). Resolved once, at
+// setup, and carried in gameSpecific so every later rule reads the same answer — and so
+// a saved game keeps the rules it was started with.
+function resolveOptions(config = {}) {
+  return {
+    cardSetValues:     config.cardSetValues === 'increasing' ? 'increasing' : 'fixed',
+    fortifyMoves:      config.fortifyMoves === 'unlimited' ? 'unlimited' : 'one',
+    reinforcePlacement: config.reinforcePlacement === 'random' ? 'random' : 'selected',
+    // Classic Risk: after taking a territory you may push more of the attacking stack
+    // in behind the dice. On by default; off keeps the earlier behaviour where exactly
+    // as many armies as dice rolled move in and the turn goes straight on.
+    postCaptureFortify: config.postCaptureFortify !== false,
+  };
+}
+
+// Random placement (the `reinforcePlacement: 'random'` option): the armies land on
+// their own, spread one at a time over the territories you hold, so the reinforce phase
+// is something that happens to you rather than something you do. Returns the number
+// actually placed (0 when you hold nothing, which can't happen while you're still in).
+function autoPlaceReinforcements(gs, territories, playerId, rng) {
+  const owned = Object.values(territories).filter(t => t.owner === playerId);
+  if (!owned.length) { gs.reinforcementsLeft = 0; return 0; }
+  const placed = gs.reinforcementsLeft;
+  for (let i = 0; i < placed; i++) {
+    const t = owned[Math.floor(rng() * owned.length)];
+    territories[t.id] = { ...territories[t.id], armies: territories[t.id].armies + 1 };
+  }
+  gs.reinforcementsLeft = 0;
+  return placed;
+}
 
 function createInitialState(players, config = {}) {
   const rng = config.rng ?? Math.random;
@@ -133,49 +175,90 @@ function createInitialState(players, config = {}) {
   for (const p of players) cards[p.id] = [];
 
   const firstId = players[0].id;
+  const options = resolveOptions(config);
+  const gameSpecific = {
+    currentPlayerIndex: 0,
+    reinforcementsLeft: calcReinforcements(firstId, territories),
+    conqueredThisTurn: false,
+    hasFortified: false,
+    cards,
+    deck: createDeck(rng),
+    cardSetCount: 0,
+    eliminatedPlayers: [],
+    lastCombat: null,
+    // Set while a capture is waiting for its occupying force (postCaptureFortify):
+    // { from, to, max } — how many MORE armies may follow the dice in.
+    pendingOccupy: null,
+    options,
+  };
+
+  let currentPhase = 'reinforce';
+  if (options.reinforcePlacement === 'random') {
+    autoPlaceReinforcements(gameSpecific, territories, firstId, rng);
+    currentPhase = 'attack';
+  }
+
   return {
     gameName: 'Risk',
     turnNumber: 1,
     activePlayers: [firstId],
-    currentPhase: 'reinforce',
+    currentPhase,
     players: players.map(p => ({ ...p })),
     units: [],
     board: { territories },
     lastActions: [],
-    gameSpecific: {
-      currentPlayerIndex: 0,
-      reinforcementsLeft: calcReinforcements(firstId, territories),
-      conqueredThisTurn: false,
-      hasFortified: false,
-      cards,
-      deck: createDeck(rng),
-      cardSetCount: 0,
-      eliminatedPlayers: [],
-      lastCombat: null,
-    },
+    gameSpecific,
   };
 }
 
 function getLegalActions(state, playerId) {
   const { currentPhase, board, gameSpecific } = state;
   const { territories } = board;
-  const { reinforcementsLeft, cards, cardSetCount, hasFortified } = gameSpecific;
+  const { reinforcementsLeft, cards, hasFortified, pendingOccupy } = gameSpecific;
+  const options = gameSpecific.options ?? resolveOptions();
   const actions = [];
+
+  // A capture waiting for its occupying force blocks everything else: how many armies
+  // follow the dice in is the only question on the table until it's answered.
+  if (pendingOccupy) {
+    for (let extra = 0; extra <= pendingOccupy.max; extra++) {
+      actions.push({ type: 'occupy', from: pendingOccupy.from, to: pendingOccupy.to, armies: extra });
+    }
+    return actions;
+  }
 
   if (currentPhase === 'reinforce') {
     const hand = cards[playerId] ?? [];
     const sets = validSetsInHand(hand);
     const mustTurnIn = hand.length >= 5 && sets.length > 0;
 
+    // "turn-in-cards [0,2,3]" says nothing to a player who can't see the hand those
+    // indices point into: name the three cards and what they're worth. The bonus is
+    // this set's, so two different sets in one hand can be told apart by value as well
+    // as by card. (The panel prefers an action's own `label` — see fmtAction.)
+    const bonus = cardSetBonus(gameSpecific.cardSetCount, options.cardSetValues === 'increasing');
+    const setLabel = (indices) => {
+      const named = indices.map(i => {
+        const c = hand[i];
+        const type = CARD_LABELS[c.type] ?? c.type;
+        return c.territory ? `${type} ${TERRITORY_NAMES[c.territory] ?? c.territory}` : type;
+      });
+      const owned = indices.filter(i => hand[i].territory && territories[hand[i].territory]?.owner === playerId);
+      const extra = owned.length ? ` (+2 each on ${owned.length} you hold)` : '';
+      return `Turn in ${named.join(' · ')} → +${bonus} armies${extra}`;
+    };
+
     if (mustTurnIn) {
-      return sets.map(indices => ({ type: 'turn-in-cards', cardIndices: indices }));
+      return sets.map(indices => ({ type: 'turn-in-cards', cardIndices: indices, label: `${setLabel(indices)} — required, you hold 5+ cards` }));
     }
 
     for (const indices of sets) {
-      actions.push({ type: 'turn-in-cards', cardIndices: indices });
+      actions.push({ type: 'turn-in-cards', cardIndices: indices, label: setLabel(indices) });
     }
 
-    if (reinforcementsLeft > 0) {
+    // Under random placement the armies have already landed by themselves (see
+    // autoPlaceReinforcements), so there is never anything left to place here.
+    if (reinforcementsLeft > 0 && options.reinforcePlacement === 'selected') {
       const ownedTerritories = Object.values(territories).filter(t => t.owner === playerId);
       for (const t of ownedTerritories) {
         actions.push({ type: 'place-armies', territoryId: t.id, count: 1 });
@@ -215,7 +298,9 @@ function getLegalActions(state, playerId) {
   }
 
   if (currentPhase === 'fortify') {
-    if (!hasFortified) {
+    // One move per turn, unless the session chose `fortifyMoves: 'unlimited'` — where
+    // the phase is instead a free reshuffle of your own armies, ended by end-turn.
+    if (!hasFortified || options.fortifyMoves === 'unlimited') {
       const myTerritories = Object.values(territories).filter(t => t.owner === playerId && t.armies >= 2);
       for (const t of myTerritories) {
         const reachable = getConnectedOwned(t.id, playerId, territories);
@@ -231,15 +316,31 @@ function getLegalActions(state, playerId) {
   return actions;
 }
 
+// The last army placed ends the reinforce phase by itself: with no armies left and no
+// card set to turn in, "end reinforce" would be the only legal action, and a button
+// whose every press is forced is just a step between the player and the attack phase. A
+// player still holding a valid set keeps the choice (and the button): turning it in
+// there yields more armies to place.
+function endReinforceIfSettled(newState, gs, playerId) {
+  if (newState.currentPhase !== 'reinforce') return;
+  if (gs.reinforcementsLeft > 0) return;
+  if (validSetsInHand(gs.cards[playerId] ?? []).length > 0) return;
+  newState.currentPhase = 'attack';
+  gs.conqueredThisTurn = false;
+  gs.lastCombat = null;
+}
+
 function applyActions(state, playerActions, rng = Math.random) {
   const { playerId, action } = playerActions[0];
   const newState = cloneState(state);
   const gs = newState.gameSpecific;
   const territories = newState.board.territories;
 
+  const options = gs.options ?? resolveOptions();
+
   if (action.type === 'turn-in-cards') {
     const hand = gs.cards[playerId];
-    const bonus = cardSetBonus(gs.cardSetCount);
+    const bonus = cardSetBonus(gs.cardSetCount, options.cardSetValues === 'increasing');
     const sortedIdx = [...action.cardIndices].sort((a, b) => b - a);
 
     // Territory bonus: +2 armies on any matching territory you own
@@ -253,22 +354,18 @@ function applyActions(state, playerActions, rng = Math.random) {
     for (const idx of sortedIdx) hand.splice(idx, 1);
     gs.cardSetCount++;
     gs.reinforcementsLeft += bonus;
+    // The set's armies land the same way the turn's own reinforcements did.
+    if (options.reinforcePlacement === 'random') {
+      autoPlaceReinforcements(gs, territories, playerId, rng);
+      endReinforceIfSettled(newState, gs, playerId);
+    }
   }
 
   else if (action.type === 'place-armies') {
     const t = territories[action.territoryId];
     territories[action.territoryId] = { ...t, armies: t.armies + action.count };
     gs.reinforcementsLeft = Math.max(0, gs.reinforcementsLeft - action.count);
-    // The last army placed ends the phase by itself: with no armies left and no card
-    // set to turn in, "end reinforce" would be the only legal action, and a button
-    // whose every press is forced is just a step between the player and the attack
-    // phase. A player still holding a valid set keeps the choice (and the button):
-    // turning it in there yields more armies to place.
-    if (gs.reinforcementsLeft === 0 && validSetsInHand(gs.cards[playerId] ?? []).length === 0) {
-      newState.currentPhase = 'attack';
-      gs.conqueredThisTurn = false;
-      gs.lastCombat = null;
-    }
+    endReinforceIfSettled(newState, gs, playerId);
   }
 
   else if (action.type === 'end-reinforce') {
@@ -292,6 +389,18 @@ function applyActions(state, playerActions, rng = Math.random) {
       territories[action.from] = { ...attTerr, armies: newAttArmies - moveIn };
       territories[action.to] = { ...defTerr, armies: moveIn, owner: playerId };
       gs.conqueredThisTurn = true;
+      // With postCaptureFortify on, the dice are only the minimum: whatever the
+      // attacking territory can spare (everything above the one army that must hold it)
+      // may follow them in, and nothing else happens until that's decided.
+      const spare = territories[action.from].armies - 1;
+      if (options.postCaptureFortify && spare > 0) {
+        gs.pendingOccupy = { from: action.from, to: action.to, max: spare };
+        // A phase of its own while it lasts: nothing else is legal, and the header and
+        // the action panel both say what the game is waiting for (ui.phaseHints). It is
+        // deliberately not in ui.phases — it isn't a step of every turn, it's an
+        // interruption of the attack phase, which resumes as soon as it's answered.
+        newState.currentPhase = 'occupy';
+      }
 
       gs.lastCombat = {
         from: action.from, to: action.to,
@@ -318,6 +427,17 @@ function applyActions(state, playerActions, rng = Math.random) {
         captured: false,
       };
     }
+  }
+
+  else if (action.type === 'occupy') {
+    const from = territories[action.from];
+    const to = territories[action.to];
+    if (action.armies > 0) {
+      territories[action.from] = { ...from, armies: from.armies - action.armies };
+      territories[action.to] = { ...to, armies: to.armies + action.armies };
+    }
+    gs.pendingOccupy = null;
+    newState.currentPhase = 'attack';   // the interrupted phase resumes
   }
 
   else if (action.type === 'end-attack') {
@@ -356,6 +476,11 @@ function applyActions(state, playerActions, rng = Math.random) {
     gs.conqueredThisTurn = false;
     gs.hasFortified = false;
     gs.lastCombat = null;
+    gs.pendingOccupy = null;
+    if (options.reinforcePlacement === 'random') {
+      autoPlaceReinforcements(gs, territories, nextId, rng);
+      endReinforceIfSettled(newState, gs, nextId);
+    }
   }
 
   newState.lastActions = playerActions;
@@ -368,13 +493,13 @@ function getResult(state) {
   const active = players.filter(p => !eliminatedPlayers.includes(p.id));
 
   if (active.length === 1) {
-    return { outcome: 'victory', winnerId: active[0].id, reason: `${active[0].name} conquered the world!` };
+    return { outcome: 'win', winnerId: active[0].id, reason: `${active[0].name} conquered the world!` };
   }
 
   const territories = Object.values(board.territories);
   for (const p of active) {
     if (territories.every(t => t.owner === p.id)) {
-      return { outcome: 'victory', winnerId: p.id, reason: `${p.name} conquered the world!` };
+      return { outcome: 'win', winnerId: p.id, reason: `${p.name} conquered the world!` };
     }
   }
 
@@ -572,12 +697,39 @@ function toGrid(state) {
     }
   }
 
+  // What a player needs to know that isn't drawn on the map: the armies still waiting
+  // to be placed, and the hand they're holding. The header's status strip renders these
+  // (apps/design/battlefield/StatusChips.vue is domain-agnostic — it shows what it's
+  // given), which is why a card is spelled out as its type and territory rather than
+  // left as an index into a hand nobody can see.
+  const { reinforcementsLeft, cards } = state.gameSpecific;
+  const activeId = state.activePlayers?.[0];
+  const statusChips = {};
+  for (const p of state.players) {
+    const chips = [];
+    if (p.id === activeId && state.currentPhase === 'reinforce' && reinforcementsLeft > 0) {
+      chips.push({ icon: 'plus', value: `${reinforcementsLeft} to place`, title: 'Reinforcements left to place', warn: true });
+    }
+    const hand = cards?.[p.id] ?? [];
+    // Fog hides other players' hands (see getVisibleState), so an empty hand here is
+    // either an empty hand or a hidden one — say how many are hidden, not "no cards".
+    for (const c of hand) {
+      chips.push({
+        value: CARD_LABELS[c.type] ?? c.type,
+        title: c.territory ? `Card: ${c.type} — ${TERRITORY_NAMES[c.territory] ?? c.territory}` : `Card: ${c.type}`,
+      });
+    }
+    if (hand.length >= 3) chips.push({ value: 'set?', title: 'Three cards: a set may be turnable in during your reinforce phase' });
+    statusChips[p.id] = chips;
+  }
+
   return {
     width: width + pad * 2, height: height + pad * 2,
     grid: 'hexagon', hexSize: HEX_SIZE,
     cells,
     territoryBorders: borders,
     links,
+    statusChips,
   };
 }
 
@@ -606,6 +758,16 @@ export const RiskGame = {
     territoryPairTypes: ['attack', 'fortify'],
     territoryTapType: 'place-armies',
     combatFx: true,
+    // The map is the game; the log, the roster and the AI's reasoning are not what a
+    // player is here for. Both are still a keypress away in the menu.
+    showRightSidebar: false, showAiAnalysis: false,
+    // Several attacks can match one click on a neighbour, differing only in how many
+    // dice are committed — and the dice are also the armies that occupy what you take.
+    // The panel offers the choice; a click uses it, shift-click always uses the most.
+    territoryPairVariant: { field: 'attackerDice', label: 'Dice', types: ['attack'] },
+    // What to call a row of same-action-different-number buttons (the panel groups those
+    // on its own; only the game knows what the number counts).
+    actionGroupLabels: { occupy: 'Armies to move in' },
     // Three phases inside one turn, and which one you're in decides what a click does —
     // so the header names the phase (ui.phases, in order) and the action panel explains
     // it (ui.phaseHints). The attack hint carries the one rule a player can't read off
@@ -639,12 +801,59 @@ export const RiskGame = {
     },
     phaseHints: {
       reinforce: 'Tap your territories to place armies — one per tap. The phase ends itself once the last one is down.',
-      attack: 'Click one of your territories, then a neighbour to attack it. Take it and you occupy it with the number of dice you rolled (3 whenever you have the armies for it), leaving the rest behind.',
-      fortify: 'Click one of your territories, then a connected one to move armies there — one move per turn. Or end your turn.',
+      attack: 'Click one of your territories, then a neighbour to attack it. The dice you commit are also the armies that move in if you take it — shift-click to always roll the most you can.',
+      occupy: 'Territory taken. Choose how many more armies follow the dice in — everything above the one army that has to hold the territory you attacked from.',
+      fortify: 'Click one of your territories, then a connected one to move armies there. Or end your turn.',
     },
   },
+  // Rule variants, offered in the lobby and resolved once at setup (resolveOptions).
+  // Each default is the classic-but-quieter reading: sets worth a flat amount rather
+  // than an escalating one, a single fortify move, armies placed by hand — and the
+  // occupying force after a capture left to the player, which is the real rule.
+  gameOptions: [
+    {
+      id: 'cardSetValues',
+      label: 'Card set values',
+      description: 'Fixed: every set of three cards is worth 6 armies. Increasing: sets are worth 4, 6, 8, 10, 12, 15, then +5 each — the classic escalation, which makes holding cards the game\'s clock.',
+      type: 'select',
+      options: [
+        { value: 'fixed', label: 'Fixed (6 each)' },
+        { value: 'increasing', label: 'Increasing (4, 6, 8, …)' },
+      ],
+      default: 'fixed',
+    },
+    {
+      id: 'fortifyMoves',
+      label: 'Fortify moves',
+      description: 'One: a single move of armies along one connected path per turn (classic). Unlimited: reshuffle your armies as much as you like before ending the turn.',
+      type: 'select',
+      options: [
+        { value: 'one', label: 'One per turn' },
+        { value: 'unlimited', label: 'Unlimited' },
+      ],
+      default: 'one',
+    },
+    {
+      id: 'reinforcePlacement',
+      label: 'Reinforcements',
+      description: 'Selected: you tap your territories to place each army. Random: they scatter across your territories on their own and the turn starts at the attack phase.',
+      type: 'select',
+      options: [
+        { value: 'selected', label: 'Placed by you' },
+        { value: 'random', label: 'Placed at random' },
+      ],
+      default: 'selected',
+    },
+    {
+      id: 'postCaptureFortify',
+      label: 'Choose occupying force',
+      description: 'After taking a territory, choose how many more armies follow the dice in (leaving at least one behind). Off: exactly as many armies as dice rolled move in.',
+      type: 'boolean',
+      default: true,
+    },
+  ],
   scenarios: [
-    { 
+    {
       id: 'world-domination',
       name: 'World Domination',
       description: 'Classic 42-territory world map — conquer all to win: you against five AI rivals',

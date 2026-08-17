@@ -214,13 +214,13 @@ function getResult(state) {
   const active = players.filter(p => !eliminatedPlayers.includes(p.id));
 
   if (active.length === 1) {
-    return { outcome: 'victory', winnerId: active[0].id, reason: `${active[0].name} conquered the map!` };
+    return { outcome: 'win', winnerId: active[0].id, reason: `${active[0].name} conquered the map!` };
   }
 
   const allTerritories = Object.values(board.territories);
   for (const p of active) {
     if (allTerritories.every(t => t.owner === p.id)) {
-      return { outcome: 'victory', winnerId: p.id, reason: `${p.name} conquered the map!` };
+      return { outcome: 'win', winnerId: p.id, reason: `${p.name} conquered the map!` };
     }
   }
 
@@ -372,6 +372,12 @@ function toGrid(state) {
         unitName: isCapital && !hidden ? String(t.dice) : '',
         hp: isCapital && !hidden ? t.dice : undefined,
         maxHp: MAX_DICE,
+        // The stack, drawn rather than spelled: a dot per die under the token, and a
+        // token that grows with it. Which territory can take which is the whole game,
+        // and reading two numbers off two hexes is a slower way to see it than
+        // comparing two blobs.
+        pips: isCapital && !hidden ? t.dice : undefined,
+        sizeFrac: isCapital && !hidden ? 0.65 + 0.7 * ((t.dice - 1) / (MAX_DICE - 1)) : undefined,
       });
     }
   }
@@ -421,6 +427,9 @@ export const KDiceGame = {
     showRuler: false, hideGridLines: true, territoryClick: true, clearSelectedAtEndOfTurn: true,
     // Flashes attacker + defender white on each attack (see App.vue's action.to handling).
     combatFx: true,
+    // The map is the game: the log, the roster and the AI's reasoning start hidden, and
+    // are a menu toggle away for anyone who wants them.
+    showRightSidebar: false, showAiAnalysis: false,
   },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Distant territories are hidden until you border them', type: 'boolean', default: false },

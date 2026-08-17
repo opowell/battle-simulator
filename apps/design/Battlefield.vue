@@ -54,6 +54,10 @@ const props = defineProps({
   // and wait for a manual "Next", and whether we're currently so parked.
   pauseAfterPlayback: { type: Boolean, default: true },
   awaitingStep:       { type: Boolean, default: false },
+  // True while App.vue is still playing out what just happened (hops, combat flashes,
+  // a turn replay). Anything that announces "it's your turn now" waits for this to
+  // fall, so the announcement lands after the board has finished saying why.
+  animating:          { type: Boolean, default: false },
   // Wall-clock multiplier for every animated playback (history scrub, turn replay,
   // non-live field playback) — App.vue owns it, the footer's speed control sets it.
   playbackSpeed:      { type: Number, default: 1 },
@@ -99,6 +103,10 @@ let exactFrameSeq = 0, exactFrameTimer = null;
 
 // ── view toggles ──────────────────────────────────────────────
 const showRuler  = ref(false);
+// Side column (log/roster/analysis) and the AI's own reasoning: shown or not, per game
+// default (ui.showRightSidebar / ui.showAiAnalysis), toggled from the menu.
+const showSidebar = ref(true);
+const showAiAnalysis = ref(true);
 const showHpBars = ref(true);
 const showMenu   = ref(false);
 const showHelp   = ref(false);
@@ -781,6 +789,11 @@ watch(() => props.liveState?.id, (id) => {
   if (id) {
     showRuler.value  = ui.value.showRuler ?? true;
     showHpBars.value = ui.value.showHpBars ?? true;
+    // Each game says whether its side column (log, roster, analysis) and the AI's own
+    // reasoning are worth the space by default; both stay togglable from the menu, so
+    // "off" here means "not in the way", not "unavailable".
+    showSidebar.value = ui.value.showRightSidebar !== false;
+    showAiAnalysis.value = ui.value.showAiAnalysis !== false;
   }
 }, { immediate: true });
 
@@ -975,16 +988,31 @@ const canMove = computed(() => isPending.value || (canExplore.value && (forking.
 // already waiting on you doesn't beep; only an actual transition does. Keying on
 // `pendingPlayerId` (not just isPending) also catches the rarer human→human handoff
 // (two humans in one session), where isPending stays true across the switch.
+//
+// The chime waits for the board, though: a bundled AI turn arrives as one update whose
+// battles animate over the next few seconds, and chiming on arrival announces your turn
+// over the top of someone else's still being shown. So a handover is ARMED by the first
+// watcher and FIRED by the second once nothing is animating — which also means an
+// animation ending on its own never chimes, only a handover that was waiting for one.
+const chimeArmed = ref(null);
 watch(() => (isPending.value ? pendingPlayerId.value : null), (pending, prev) => {
-  if (pending && pending !== prev) window.playTurnSound?.();
+  chimeArmed.value = pending && pending !== prev ? pending : null;
+});
+watch([chimeArmed, () => props.animating], ([pending, busy]) => {
+  if (!pending || busy) return;
+  chimeArmed.value = null;
+  window.playTurnSound?.();
 });
 
 // Cheer + confetti (or a losing stinger) on a decisive win — keyed on isDone's
 // false→true edge (not `immediate`) so opening/resuming an already-finished game
 // never replays it. With no human seated (pure spectating) there's no "you" to win
 // or lose, so it defaults to the celebration.
+// "Somebody won" is a result that names a winner, whatever word the game's getResult
+// chose for its outcome — a game that says 'victory' rather than 'win' still ends in a
+// cheer (kdice and risk both did, and both went out in silence for it).
 watch(() => isDone.value, (done, prev) => {
-  if (!done || prev || props.liveState?.result?.outcome !== 'win') return;
+  if (!done || prev || props.liveState?.result?.winnerId == null) return;
   const humanPlayers = props.liveState?.humanPlayers ?? [];
   if (humanPlayers.length && !humanPlayers.includes(props.liveState.result.winnerId)) {
     playLoseSound();
@@ -1335,6 +1363,39 @@ function nearestTerritoryUnitId(x, y) {
   return best?.territoryId ?? null;
 }
 
+// Some games offer the same pair action at several strengths, differing in one numeric
+// field they name in ui.territoryPairVariant (Risk: how many dice an attack commits,
+// which are also the armies that occupy what it takes). The player picks a value in the
+// action panel; a click takes the largest option that doesn't exceed it, so a pick of 3
+// still attacks from a territory that can only manage 2. Null = whatever the game
+// listed first, which it orders strongest-first.
+const pairVariant = ref(null);
+const pairVariantSpec = computed(() => ui.value.territoryPairVariant ?? null);
+// Every value the current position actually offers, high to low — the panel's choices.
+const pairVariantValues = computed(() => {
+  const spec = pairVariantSpec.value;
+  if (!spec || !isPending.value) return [];
+  const types = spec.types ?? ui.value.territoryPairTypes ?? ['attack'];
+  const vals = new Set();
+  for (const a of legalActions.value) {
+    if (types.includes(a.type) && typeof a[spec.field] === 'number') vals.add(a[spec.field]);
+  }
+  return [...vals].sort((a, b) => b - a);
+});
+function pickPairVariant(matches) {
+  const spec = pairVariantSpec.value;
+  if (!spec || pairVariant.value == null || !matches.length) return matches[0];
+  const wanted = matches.filter(a => a[spec.field] <= pairVariant.value);
+  return wanted[0] ?? matches[matches.length - 1];
+}
+// A pick the position no longer offers at all goes back to "strongest available", so a
+// stale choice never sits in the panel claiming something that can't happen.
+watch(pairVariantValues, (vals) => {
+  if (pairVariant.value != null && vals.length && !vals.includes(pairVariant.value)) {
+    pairVariant.value = null;
+  }
+});
+
 // A click on a territory map means one of three things, in order: finish a pair
 // (something is selected and the pair is a legal from→to action — attack, or Risk's
 // fortify), act on the territory alone (a legal action naming just it — Risk's
@@ -1343,16 +1404,27 @@ function nearestTerritoryUnitId(x, y) {
 // about clicks rather than about any particular game; several actions of the same
 // type may match, and the game orders its legal actions so the first is the one a
 // click should mean.
-function handleTerritoryClick(x, y) {
+function handleTerritoryClick(x, y, mods = {}) {
   const clickedId = nearestTerritoryUnitId(x, y);
   if (!clickedId) { selectedId.value = null; return; }
   const pairTypes = ui.value.territoryPairTypes ?? ['attack'];
   const tapType = ui.value.territoryTapType;
 
   if (isPending.value && selectedId.value && selectedId.value !== clickedId) {
-    const action = legalActions.value.find(a =>
+    const matches = legalActions.value.filter(a =>
       pairTypes.includes(a.type) && a.from === selectedId.value && a.to === clickedId);
-    if (action) { submitAction(action); selectedId.value = null; return; }
+    // Several matches differ only in the variant field the game named (Risk's dice):
+    // take the player's pick, or the most the pair allows when they picked more than
+    // this one can manage — and always the most when the click was shift-held.
+    const action = mods.shift ? matches[0] : pickPairVariant(matches);
+    if (action) {
+      submitAction(action);
+      // Keep the source selected: after an attack that didn't take the territory, the
+      // obvious next move is to attack again from the same place. A watcher below drops
+      // the selection as soon as nothing can be done from there.
+      selectedId.value = action.from;
+      return;
+    }
   }
   if (isPending.value && tapType) {
     const action = legalActions.value.find(a => a.type === tapType && a.territoryId === clickedId);
@@ -1361,8 +1433,22 @@ function handleTerritoryClick(x, y) {
   selectedId.value = selectedId.value === clickedId ? null : clickedId;
 }
 
-function handleSqClick(col, row, x, y) {
-  if (props.field.ui?.territoryClick) { handleTerritoryClick(x, y); return; }
+// Prune a kept selection (see the pair path above) once the position moves on: the
+// territory you attacked from stays selected while it can still attack, and lets go by
+// itself when it runs out of armies, loses the phase, or the turn passes.
+watch(legalActions, (actions) => {
+  if (!ui.value.territoryClick || !selectedId.value) return;
+  if (!isPending.value) return;
+  const pairTypes = ui.value.territoryPairTypes ?? ['attack'];
+  const tapType = ui.value.territoryTapType;
+  const stillUsable = actions.some(a =>
+    (pairTypes.includes(a.type) && a.from === selectedId.value)
+    || (tapType && a.type === tapType && a.territoryId === selectedId.value));
+  if (!stillUsable) selectedId.value = null;
+});
+
+function handleSqClick(col, row, x, y, mods) {
+  if (props.field.ui?.territoryClick) { handleTerritoryClick(x, y, mods ?? {}); return; }
   if (inspectTerrain.value) {
     // Armed via the "Inspect terrain…" toggle: clicks look up terrain info instead of
     // clearing the selection like a normal click would. Stays armed across clicks so
@@ -1846,7 +1932,9 @@ onUnmounted(() => {
             :awaitingStep="awaitingStep"
             :aiming="aiming" :civ="field.civ" :cities="field.cities" :military="field.military"
             :panel="openPanel"
+            :variantSpec="pairVariantSpec" :variantValues="pairVariantValues" :variantValue="pairVariant"
             @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"
+            @set-variant="pairVariant = $event"
             @update:panel="openPanel = $event"/>
         </div>
 
@@ -1936,7 +2024,7 @@ onUnmounted(() => {
            the ones that appear on their own schedule (the database at game over).
            The one control with no other home, the observer's perspective switcher,
            is in MenuOverlay too, so hiding this column never strands an observer. -->
-      <div v-if="ui.showRightSidebar !== false" class="bf-col bf-col--right">
+      <div v-if="showSidebar" class="bf-col bf-col--right">
         <ObserverPerspective v-if="isObserver"
           :players="observerPlayers" :teams="field.teams" :value="observerView"
           @change="v => $emit('set-observer-view', v)"/>
@@ -1969,7 +2057,7 @@ onUnmounted(() => {
           :units="displayUnits"
           @seek="seekTo"/>
 
-        <AiAnalysisPanel v-if="isLive && liveState?.aiAnalysis"
+        <AiAnalysisPanel v-if="isLive && showAiAnalysis && liveState?.aiAnalysis"
           :analysis="liveState.aiAnalysis"/>
       </div>
     </div>
@@ -2003,6 +2091,7 @@ onUnmounted(() => {
   <MenuOverlay
     :show="showMenu" :serverErr="serverErr" :gamesCount="gamesCount"
     :showRuler="showRuler" :showHpBars="showHpBars"
+    :showSidebar="showSidebar" :showAiAnalysis="showAiAnalysis"
     :canSurrender="!!analysisPlayerId && liveState?.status === 'active'"
     :observerPlayers="isObserver ? observerPlayers : []"
     :teams="field?.teams ?? []" :observerView="observerView"
@@ -2012,6 +2101,8 @@ onUnmounted(() => {
     @open-settings="$emit('open-settings')"
     @toggle-ruler="showRuler = !showRuler"
     @toggle-hp-bars="showHpBars = !showHpBars"
+    @toggle-sidebar="showSidebar = !showSidebar"
+    @toggle-ai-analysis="showAiAnalysis = !showAiAnalysis"
     @surrender="confirmSurrender"/>
 
   <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"

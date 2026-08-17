@@ -16,7 +16,8 @@ defineEmits(['dismiss', 'exit', 'new-game']);
       <div class="go-panel">
         <div class="go-head">
           <div class="mono up go-kicker">
-            {{ liveState.status === 'error' ? 'Error' : liveState.result?.outcome === 'win' ? 'Victory' : 'Battle Over' }}
+            <!-- A named winner is a victory whatever word the game's getResult used. -->
+            {{ liveState.status === 'error' ? 'Error' : liveState.result?.winnerId != null ? 'Victory' : 'Battle Over' }}
           </div>
           <div v-if="liveState.status === 'error'" class="go-error">
             {{ liveState.error || 'Something went wrong' }}

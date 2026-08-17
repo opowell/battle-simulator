@@ -116,10 +116,10 @@ function clearColourHolds() {
   territoryFx.value = next;
 }
 
-function triggerTerritoryFx(territoryId, blinks, holdOwner) {
+function triggerTerritoryFx(territoryId, blinks, holdOwner, holdLabel = null) {
   if (!territoryId) return;
   territoryFxKey += 1;
-  territoryFx.value = { ...territoryFx.value, [territoryId]: { key: territoryFxKey, blinks, holdOwner } };
+  territoryFx.value = { ...territoryFx.value, [territoryId]: { key: territoryFxKey, blinks, holdOwner, holdLabel } };
   clearTimeout(territoryFxTimers.get(territoryId));
   territoryFxTimers.set(territoryId, setTimeout(() => {
     const next = { ...territoryFx.value };
@@ -197,6 +197,11 @@ let parkedTurn = null, parkedSeq = -1;
 
 let ackedSeq = -1, shownSeq = -1, shownAt = 0, ackTimer = null;
 const animating = () => !!hopAnim.value || fxBusy.value || !!replayAnim.value || animQueue.value.length > 0;
+// The same thing as a reactive value, for anything that has to wait out the animation
+// rather than poll it — Battlefield holds the "your turn" chime until the board has
+// finished showing what the last player did (see its chime watcher).
+const animatingNow = computed(() =>
+  !!hopAnim.value || fxBusy.value || !!replayAnim.value || animQueue.value.length > 0);
 function maybeAckAdvance() {
   const s = liveState.value;
   if (!s || !s.observerPaced || !s.awaitingAdvance || s.status !== 'active') return;
@@ -281,12 +286,18 @@ function playNext() {
     if (territoryFlashes.length) {
       let maxBlinks = 0;
       for (const tf of territoryFlashes) {
-        triggerTerritoryFx(tf.territoryId, tf.blinks, tf.holdOwner);
+        triggerTerritoryFx(tf.territoryId, tf.blinks, tf.holdOwner, tf.holdLabel);
         maxBlinks = Math.max(maxBlinks, tf.blinks);
       }
-      delay = maxBlinks * TERRITORY_BLINK_MS + TERRITORY_PAUSE_MS;
+      // The pause separates one battle from the next. A long tail of them — a bundled
+      // AI turn, which the player now waits out before their own turn is announced —
+      // plays at a brisker beat, so ten battles take a few seconds rather than twenty.
+      const pause = animQueue.value.length > 2 ? TERRITORY_PAUSE_MS / 4 : TERRITORY_PAUSE_MS;
+      delay = maxBlinks * TERRITORY_BLINK_MS + pause;
     }
-    animTimer = setTimeout(() => { fxBusy.value = false; playNext(); }, delay);
+    // The footer's speed control scales this like every other playback it drives, so a
+    // player who doesn't want to watch the AI's turn at all can wind it up.
+    animTimer = setTimeout(() => { fxBusy.value = false; playNext(); }, delay / playbackSpeed.value);
     return;
   }
   hopAnim.value = { unitId: beat.unitId, steps: beat.steps, step: 0 };
@@ -370,17 +381,25 @@ watch(liveState, (newState, oldState) => {
     return c ? { x: c.x + offset, y: c.y + offset } : {};
   };
 
-  // Pre-bundle owner of every territory (kdice), so a conquered territory's hexes
-  // can keep displaying its old owner's colour throughout the attack flash and
-  // only flip to the new colour once the flash ends (see territoryFx's holdOwner,
-  // read by SchematicLayer's tileColor/segBorderColor). Built once per watch fire
-  // (not per attack) since a single update can bundle several AI turns' worth of
-  // attacks — see the bundleHold pre-population below.
+  // Pre-bundle owner AND army count of every territory (kdice, risk), so a territory
+  // under attack keeps showing what it looked like before — its old owner's colour and
+  // its old count — until the flash for that attack plays. Without the count, a bundled
+  // AI turn gives itself away: every number on the board lands at its final value the
+  // instant the update arrives, seconds before the battles that produced it animate.
+  // (See territoryFx's holdOwner/holdLabel, read by the renderers' tileColor and token.)
+  // Built once per watch fire, not per attack, since one update can bundle several AI
+  // turns' worth of attacks — see the bundleHold pre-population below.
   const oldOwnerByTerritory = new Map();
+  const oldLabelByTerritory = new Map();
   for (const c of oldState.grid.cells) {
-    if (c.territoryId != null && !oldOwnerByTerritory.has(c.territoryId)) oldOwnerByTerritory.set(c.territoryId, c.owner);
+    if (c.territoryId == null) continue;
+    if (!oldOwnerByTerritory.has(c.territoryId)) oldOwnerByTerritory.set(c.territoryId, c.owner);
+    if (c.label != null && c.label !== '' && !oldLabelByTerritory.has(c.territoryId)) {
+      oldLabelByTerritory.set(c.territoryId, c.label);
+    }
   }
   const oldOwnerOf = (territoryId) => oldOwnerByTerritory.get(territoryId) ?? null;
+  const oldLabelOf = (territoryId) => oldLabelByTerritory.get(territoryId) ?? null;
   // Every territory id on this board. An action counts as a territory attack when it
   // names two of them — whichever field it uses for the attacker (kdice puts it in
   // unitId, risk in from) — so the flash follows the ids, not one game's action shape.
@@ -418,15 +437,31 @@ watch(liveState, (newState, oldState) => {
   // animate: a hold has no timer of its own and is lifted by the animation that
   // follows it, so a hold applied to an update that animates nothing would pin a
   // captured territory to its old owner's colour for good.
+  // The count is held for every territory whose count changed, not just the ones that
+  // changed hands: armies lost defending a held territory are as much a spoiler as a
+  // capture, and they are what most of a Risk bundle consists of.
   const bundleHold = {};
   if (fxOn) {
     const newOwnerByTerritory = new Map();
+    const newLabelByTerritory = new Map();
     for (const c of newState.grid.cells) {
-      if (c.territoryId != null && !newOwnerByTerritory.has(c.territoryId)) newOwnerByTerritory.set(c.territoryId, c.owner);
+      if (c.territoryId == null) continue;
+      if (!newOwnerByTerritory.has(c.territoryId)) newOwnerByTerritory.set(c.territoryId, c.owner);
+      if (c.label != null && c.label !== '' && !newLabelByTerritory.has(c.territoryId)) {
+        newLabelByTerritory.set(c.territoryId, c.label);
+      }
     }
     for (const [tid, newOwner] of newOwnerByTerritory) {
-      const old = oldOwnerByTerritory.get(tid);
-      if (old != null && old !== newOwner) bundleHold[tid] = { key: 0, blinks: 0, holdOwner: old };
+      const oldOwner = oldOwnerByTerritory.get(tid);
+      const oldLabel = oldLabelByTerritory.get(tid);
+      const ownerChanged = oldOwner != null && oldOwner !== newOwner;
+      const labelChanged = oldLabel != null && oldLabel !== newLabelByTerritory.get(tid);
+      if (!ownerChanged && !labelChanged) continue;
+      bundleHold[tid] = {
+        key: 0, blinks: 0,
+        holdOwner: ownerChanged ? oldOwner : null,
+        holdLabel: labelChanged ? oldLabel : null,
+      };
     }
   }
 
@@ -459,8 +494,8 @@ watch(liveState, (newState, oldState) => {
         : null;
       if (attackerTid && territoryIds.has(action.to) && action.to !== attackerTid) {
         territoryFlashes.push(
-          { territoryId: attackerTid, blinks: 3, holdOwner: oldOwnerOf(attackerTid) },
-          { territoryId: action.to, blinks: 3, holdOwner: oldOwnerOf(action.to) },
+          { territoryId: attackerTid, blinks: 3, holdOwner: oldOwnerOf(attackerTid), holdLabel: oldLabelOf(attackerTid) },
+          { territoryId: action.to, blinks: 3, holdOwner: oldOwnerOf(action.to), holdLabel: oldLabelOf(action.to) },
         );
       } else if (action?.unitId && FX_ACTION_TYPES.has(action.type)) {
         flashes.push({ unitId: action.unitId, fx: { type: 'action', ...fxSquare(action.unitId) } });
@@ -651,6 +686,10 @@ function buildField(g, s) {
       // for the board). A game's toGrid may set it where one token stands for a bigger
       // thing than another — e.g. an SC1 command center vs a marine.
       sizeFrac:      c.sizeFrac,
+      // A small count worth SEEING as well as reading — kdice's dice stack. Drawn as a
+      // row of dots under the token (see HtmlHexLayer), so a big stack is recognisable
+      // without reading the number off it.
+      pips:          c.pips,
       // Widens the clickable hit area past the body radius for sprites that draw
       // outside it (see CsGame.js's armor ring and SchematicLayer's u.hitRFrac).
       hitRFrac:      c.hitRFrac,
@@ -1319,6 +1358,7 @@ async function restartGame() {
                    :fork-error="forkError"
                    :pause-after-playback="pauseAfterPlayback"
                    :awaiting-step="awaitingStep"
+                   :animating="animatingNow"
                    :playback-speed="playbackSpeed"
                    @exit="exitBattle"
                    @new-game="restartGame"

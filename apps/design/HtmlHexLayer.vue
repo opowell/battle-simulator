@@ -159,27 +159,67 @@ const flashingHexes = computed(() => {
 
 // Token size: the same fraction of a hex the SVG board used, so the army/dice count
 // badge sits in its hex exactly as before.
-const tokenR = computed(() => Math.max(5, props.fit.len((props.field.hexSize ?? 1) * 0.55)));
+// Token size: the same fraction of a hex the board has always used, times whatever the
+// game asked for on this token (u.sizeFrac) — a bigger stack can simply be a bigger
+// token, which reads across the whole map at a glance where a two-digit number doesn't.
+const tokenBaseR = computed(() => Math.max(5, props.fit.len((props.field.hexSize ?? 1) * 0.55)));
+function tokenR(u) {
+  return Math.max(5, tokenBaseR.value * (u?.sizeFrac ?? 1));
+}
+// Dot per unit of a small count (u.pips — kdice's dice), under the token. Sized off the
+// token so they stay legible at any board scale, and wrapped at four per row so a full
+// stack is two short rows rather than a line wider than its own hex.
+function pipList(u) {
+  const n = Math.min(u?.pips ?? 0, 12);
+  return n > 0 ? Array.from({ length: n }, (_, i) => i) : [];
+}
+function pipStyle(u) {
+  const d = Math.max(3, Math.round(tokenR(u) * 0.34));
+  return { width: `${d}px`, height: `${d}px` };
+}
+function pipRowStyle(u) {
+  const d = Math.max(3, Math.round(tokenR(u) * 0.34));
+  return { maxWidth: `${d * 4 + 3 * 3}px`, gap: '3px' };
+}
 function tokenStyle(u) {
   return { left: `${props.fit.x(u.x)}px`, top: `${props.fit.y(u.y)}px` };
 }
+
+// A token whose territory is holding its pre-attack look (App.vue's territoryFx) shows
+// the held count and the held owner's colour, exactly like the hexes under it. Without
+// this the board contradicts itself mid-animation: the blob still the old owner's
+// colour, the number on it already the result of a battle that hasn't been shown yet —
+// and a bundled AI turn spoils its whole outcome the moment it arrives.
+const displayUnits = computed(() => (props.units ?? []).map(u => {
+  const fx = props.territoryFx?.[u.id];
+  if (!fx || (fx.holdOwner == null && fx.holdLabel == null)) return u;
+  return {
+    ...u,
+    label: fx.holdLabel ?? u.label,
+    teamObj: fx.holdOwner != null ? (props.field.teams[fx.holdOwner - 1] ?? u.teamObj) : u.teamObj,
+  };
+}));
 
 // ── clicks ────────────────────────────────────────────────────────────────────
 // A hex and a token each report their OWN position: the element that was clicked is the
 // answer, and Battlefield resolves it to a territory (nearestTerritoryUnitId). Anything
 // else is a click on the board's background — the open sea between blobs — which is
 // reported as the point it actually landed on and resolves to no territory at all.
-function clickHex(tile) {
-  emit('sq-click', null, null, tile.x, tile.y);
+// Modifier keys travel with the click: a game may mean something different by a
+// shift-held click (Risk attacks with every die it can) — see Battlefield's
+// handleTerritoryClick.
+const mods = (e) => ({ shift: !!e.shiftKey, alt: !!e.altKey, ctrl: !!(e.ctrlKey || e.metaKey) });
+function clickHex(e, tile) {
+  emit('sq-click', null, null, tile.x, tile.y, mods(e));
 }
-function clickToken(u) {
-  emit('sq-click', null, null, u.x, u.y);
+function clickToken(e, u) {
+  emit('sq-click', null, null, u.x, u.y, mods(e));
 }
 function clickBackground(e) {
   const rect = layerEl.value.getBoundingClientRect();
   emit('sq-click', null, null,
     (e.clientX - rect.left - props.fit.x(0)) / props.fit.s,
-    (e.clientY - rect.top - props.fit.y(0)) / props.fit.s);
+    (e.clientY - rect.top - props.fit.y(0)) / props.fit.s, mods(e));
 }
 </script>
 
@@ -192,7 +232,7 @@ function clickBackground(e) {
          the borders below trace just the blob's outer edge, not a honeycomb lattice. -->
     <div v-for="(tile, i) in (field.tiles ?? [])" :key="'hx' + i"
          class="hx-hex" :style="tileStyle(tile)"
-         @click.stop="clickHex(tile)"/>
+         @click.stop="clickHex($event, tile)"/>
 
     <!-- Territory flash: an all-white hex over each of the territory's tiles, hard
          blinking on/off (blink count/timing must match App.vue's TERRITORY_BLINK_MS). -->
@@ -207,10 +247,17 @@ function clickBackground(e) {
     <!-- One token per territory (its army/dice count), centred on the territory's
          capital hex. No HP bar and no state ring: on a territory map the selection is
          already drawn as a white outline around the whole blob. -->
-    <div v-for="u in units" :key="u.id" class="hx-token" :style="tokenStyle(u)">
-      <HtmlUnit :unit="u" :r="tokenR" :rdr="rdr" shape="square" :showHp="false"
+    <div v-for="u in displayUnits" :key="u.id" class="hx-token" :style="tokenStyle(u)">
+      <HtmlUnit :unit="u" :r="tokenR(u)" :rdr="rdr" shape="square" :showHp="false"
                 :hovered="u.id === hoveredId"
-                @click.stop="clickToken(u)"/>
+                @click.stop="clickToken($event, u)"/>
+      <!-- The count, seen rather than read (u.pips) — one dot per die/army, so the
+           board's big stacks stand out without counting digits. -->
+      <div v-if="pipList(u).length" class="hx-pips" :style="pipRowStyle(u)"
+           @click.stop="clickToken($event, u)">
+        <span v-for="i in pipList(u)" :key="i" class="hx-pip"
+              :style="{ ...pipStyle(u), background: u.teamObj.raw }"/>
+      </div>
     </div>
   </div>
 </template>
@@ -240,5 +287,8 @@ function clickBackground(e) {
 }
 .hx-bound { position: absolute; box-sizing: border-box; pointer-events: none; }
 .hx-edge { position: absolute; pointer-events: none; }
-.hx-token { position: absolute; transform: translate(-50%, -50%); }
+.hx-token { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+/* Two rows at most, so a full stack stays inside its hex. */
+.hx-pips { display: flex; flex-wrap: wrap; justify-content: center; cursor: pointer; }
+.hx-pip { border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.6); flex: none; }
 </style>
