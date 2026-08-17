@@ -100,11 +100,11 @@ export function hexLayoutBounds(cellIds, cells, size) {
  * Each territory grows to `size` cells and then annexes its whole remaining
  * frontier in one go (so the finished blobs are noticeably bigger than `size`,
  * and the seam between two of them is jagged); the cells beyond that frontier
- * become the candidate seeds for the next territory. Territories that end up
- * smaller than `minSize` are dropped back to sea — those holes are a feature,
- * they're where the map's inland seas and bays come from — as is any territory
- * not in the largest connected group, since a marooned one could never be
- * conquered.
+ * become the candidate seeds for the next territory. Pockets of grid the growth
+ * flowed around rather than into stay sea, which is where the map's bays and
+ * inland seas come from. Two kinds of territory are then dropped back to sea:
+ * ones that came out smaller than `minSize`, and any that aren't in the largest
+ * connected group, since a marooned territory could never be conquered.
  *
  * Returns { territoryOf: {hexId: territoryIdx}, territories: [{id, hexIds}] }
  * covering only the cells that ended up as land.
