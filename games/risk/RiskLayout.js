@@ -12,7 +12,7 @@
 // real board (Alaska↔Kamchatka and friends) plus the Mediterranean. toGrid emits
 // them as dashed links so a legal attack is never invisible.
 
-import { hexId, hexNeighbors, territoryCapital } from '../mapTypes/hexagon.js';
+import { hexId, hexNeighbors, hexLayoutBounds, territoryCapital } from '../mapTypes/hexagon.js';
 
 export const HEX_SIZE = 1;
 
@@ -116,7 +116,57 @@ function parseMap() {
     capitalHexByTerritory[id] = territoryCapital(hexes, hexCells, HEX_SIZE, seaAdjacency);
   }
 
-  return { hexIdsByTerritory, capitalHexByTerritory, hexCells, territoryOfHex, hexAdjacency };
+  const shoreHexesBySeaRoute = seaRouteShores(hexIdsByTerritory, hexCells, capitalHexByTerritory);
+
+  return {
+    hexIdsByTerritory, capitalHexByTerritory, hexCells, territoryOfHex, hexAdjacency,
+    shoreHexesBySeaRoute,
+  };
+}
+
+// Where each sea route meets land: the closest hex of one blob to the other, per
+// end — the shore the crossing actually leaves from, not the capital. A line drawn
+// capital-to-capital would start deep inland and cut back out across its own
+// territory (Brazil's would cross Brazil before reaching the Atlantic), which is
+// not how the printed board draws a connection.
+//
+// Distance is measured with the map wrapping east to west, so the route around the
+// back of the globe picks the outward-facing coasts — Alaska's western hex and
+// Kamchatka's eastern one — rather than the two shores facing each other across
+// the whole map. Ties (a straight coast facing another straight coast) go to the
+// pair sitting closest to its own capitals, so the line leaves near the middle of
+// the blob rather than off whichever corner the parse happened to reach first.
+function seaRouteShores(hexIdsByTerritory, hexCells, capitalHexByTerritory) {
+  const { pixels, width } = hexLayoutBounds(Object.keys(hexCells), hexCells, HEX_SIZE);
+  const dist2 = (h1, h2, wrap) => {
+    let dx = Math.abs(pixels[h1].x - pixels[h2].x);
+    if (wrap) dx = Math.min(dx, width - dx);
+    const dy = pixels[h1].y - pixels[h2].y;
+    return dx * dx + dy * dy;
+  };
+
+  const shores = {};
+  for (const [a, b] of SEA_ROUTES) {
+    let best = null;
+    for (const ha of hexIdsByTerritory[a]) {
+      for (const hb of hexIdsByTerritory[b]) {
+        const gap = dist2(ha, hb, true);
+        const inland = dist2(ha, capitalHexByTerritory[a], false)
+                     + dist2(hb, capitalHexByTerritory[b], false);
+        if (!best || gap < best.gap - 1e-9 || (gap < best.gap + 1e-9 && inland < best.inland)) {
+          best = { gap, inland, ha, hb };
+        }
+      }
+    }
+    shores[routeKey(a, b)] = [best.ha, best.hb];
+  }
+  return shores;
+}
+
+// How a sea route is keyed in LAYOUT.shoreHexesBySeaRoute: the pair in the order
+// SEA_ROUTES lists it (a declaration, not a const, so parseMap can use it above).
+export function routeKey(a, b) {
+  return `${a}|${b}`;
 }
 
 export const LAYOUT = parseMap();

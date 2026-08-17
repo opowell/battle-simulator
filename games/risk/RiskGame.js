@@ -2,7 +2,7 @@ import { sidesEval } from '../evalHelpers.js';
 import { TERRITORY_IDS, TERRITORY_NAMES, ADJACENCY, CONTINENTS, getConnectedOwned } from './RiskMap.js';
 import { resolveCombat } from './RiskCombat.js';
 import { getRiskBelief } from './belief.js';
-import { LAYOUT, SEA_ROUTES, HEX_SIZE } from './RiskLayout.js';
+import { LAYOUT, SEA_ROUTES, HEX_SIZE, routeKey } from './RiskLayout.js';
 import { hexLayoutBounds, territoryBorders } from '../mapTypes/hexagon.js';
 
 // ── Cards ─────────────────────────────────────────────────────────────────────
@@ -627,7 +627,7 @@ function sampleWorlds(observation, playerId, n, rng = Math.random) {
 // "capital" hex. Everything about the drawing lives in RiskLayout — this only
 // colours it in for the current state.
 function toGrid(state) {
-  const { hexIdsByTerritory, capitalHexByTerritory, hexCells, territoryOfHex } = LAYOUT;
+  const { hexIdsByTerritory, capitalHexByTerritory, hexCells, territoryOfHex, shoreHexesBySeaRoute } = LAYOUT;
   const territories = state.board.territories;
 
   const pidIdx = {};
@@ -677,23 +677,34 @@ function toGrid(state) {
     }));
 
   // The board's connection lines: pairs that can attack each other across water,
-  // so the crossing is visible even though the blobs don't touch. A route between
-  // opposite edges of the map (Alaska–Kamchatka, around the back of the globe) is
-  // drawn as two stubs running off either side rather than one line dragged across
-  // every other continent — the same thing the printed board does. Both stubs carry
-  // the same pair of ids, so selecting either end lights up both.
+  // so the crossing is visible even though the blobs don't touch. Each line runs
+  // between the two coasts facing each other (RiskLayout picks the shore hexes),
+  // pulled back to the hex's edge so it spans only the water — a line between the
+  // capitals would start inland and cross its own territory to get out to sea.
+  //
+  // A route between opposite edges of the map (Alaska–Kamchatka, around the back of
+  // the globe) is drawn as two stubs running off either side rather than one line
+  // dragged across every other continent — the same thing the printed board does.
+  // Both stubs carry the same pair of ids, so selecting either end lights up both.
   const w = width + pad * 2;
+  const shore = HEX_SIZE * Math.sqrt(3) / 2;   // hex centre → middle of an edge
+  const toEdge = (from, toward) => {
+    const [dx, dy] = [toward[0] - from[0], toward[1] - from[1]];
+    const len = Math.hypot(dx, dy) || 1;
+    return [from[0] + dx / len * shore, from[1] + dy / len * shore];
+  };
   const links = [];
   for (const [a, b] of SEA_ROUTES) {
-    const p1 = at(capitalHexByTerritory[a]);
-    const p2 = at(capitalHexByTerritory[b]);
+    const [ha, hb] = shoreHexesBySeaRoute[routeKey(a, b)];
+    const p1 = at(ha);
+    const p2 = at(hb);
     const ends = { a, b, aOwner: ownerIdx(a), bOwner: ownerIdx(b) };
     if (Math.abs(p2[0] - p1[0]) > w / 2) {
       const [west, east] = p1[0] < p2[0] ? [p1, p2] : [p2, p1];
-      links.push({ ...ends, p1: west, p2: [0, west[1]] });
-      links.push({ ...ends, p1: east, p2: [w, east[1]] });
+      links.push({ ...ends, p1: toEdge(west, [west[0] - 1, west[1]]), p2: [0, west[1]] });
+      links.push({ ...ends, p1: toEdge(east, [east[0] + 1, east[1]]), p2: [w, east[1]] });
     } else {
-      links.push({ ...ends, p1, p2 });
+      links.push({ ...ends, p1: toEdge(p1, p2), p2: toEdge(p2, p1) });
     }
   }
 

@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ADJACENCY, TERRITORY_IDS } from './RiskMap.js';
-import { LAYOUT, SEA_ROUTES, touchingPairs } from './RiskLayout.js';
+import { LAYOUT, SEA_ROUTES, HEX_SIZE, routeKey, touchingPairs } from './RiskLayout.js';
+import { hexToPixel, hexLayoutBounds } from '../mapTypes/hexagon.js';
 import { RiskGame } from './index.js';
 
 const key = (a, b) => [a, b].sort().join('|');
@@ -64,7 +65,31 @@ test('risk toGrid: one army-count token per territory, tiles carry their territo
   }
 });
 
-test('risk toGrid: sea routes are drawn between the two capitals they connect', () => {
+test('risk layout: a sea route ends on each territory, at its closest hex to the other', () => {
+  const { hexIdsByTerritory, hexCells, shoreHexesBySeaRoute } = LAYOUT;
+  const pixel = (hex) => hexToPixel(hexCells[hex].q, hexCells[hex].r, HEX_SIZE);
+  // The map wraps east to west, the way RiskLayout measures a crossing.
+  const { width } = hexLayoutBounds(Object.keys(hexCells), hexCells, HEX_SIZE);
+  const gap = (h1, h2) => {
+    const [p1, p2] = [pixel(h1), pixel(h2)];
+    const dx = Math.abs(p1.x - p2.x);
+    return Math.hypot(Math.min(dx, width - dx), p1.y - p2.y);
+  };
+
+  for (const [a, b] of SEA_ROUTES) {
+    const [ha, hb] = shoreHexesBySeaRoute[routeKey(a, b)];
+    assert.ok(hexIdsByTerritory[a].includes(ha), `${a}'s end of the ${a}-${b} route is outside it`);
+    assert.ok(hexIdsByTerritory[b].includes(hb), `${b}'s end of the ${a}-${b} route is outside it`);
+    for (const x of hexIdsByTerritory[a]) {
+      for (const y of hexIdsByTerritory[b]) {
+        assert.ok(gap(x, y) >= gap(ha, hb) - 1e-9,
+          `${a}-${b} crosses more water than it has to: ${x}-${y} is closer than ${ha}-${hb}`);
+      }
+    }
+  }
+});
+
+test('risk toGrid: sea routes are drawn coast to coast, not capital to capital', () => {
   const players = [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
   const grid = RiskGame.toGrid(RiskGame.createInitialState(players));
   // One line per route, except the one that goes around the back of the map
@@ -78,7 +103,29 @@ test('risk toGrid: sea routes are drawn between the two capitals they connect', 
     assert.ok(realPairs.has(key(link.a, link.b)), `${link.a}-${link.b} is not an adjacency`);
     assert.equal(link.p1.length, 2);
     assert.equal(link.p2.length, 2);
+    assert.ok(Math.hypot(link.p2[0] - link.p1[0], link.p2[1] - link.p1[1]) > 0,
+      `${link.a}-${link.b} collapsed to a point`);
   }
+
+  // A crossing spans water only: it can never be longer than the line between the
+  // two capitals, and where the capital sits inland it is strictly shorter. Both
+  // are measured in raw hex pixels — toGrid only translates them.
+  const { capitalHexByTerritory, hexCells } = LAYOUT;
+  const capitalGap = (a, b) => {
+    const p1 = hexToPixel(hexCells[capitalHexByTerritory[a]].q, hexCells[capitalHexByTerritory[a]].r, HEX_SIZE);
+    const p2 = hexToPixel(hexCells[capitalHexByTerritory[b]].q, hexCells[capitalHexByTerritory[b]].r, HEX_SIZE);
+    return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+  };
+  for (const link of grid.links) {
+    if (link.a === 'alaska') continue;  // the wrapped one: two stubs, not one span
+    const len = Math.hypot(link.p2[0] - link.p1[0], link.p2[1] - link.p1[1]);
+    assert.ok(len <= capitalGap(link.a, link.b) + 1e-9,
+      `${link.a}-${link.b} is drawn longer than the capital-to-capital line`);
+  }
+  const atlantic = grid.links.find(l => l.a === 'brazil' && l.b === 'north_africa');
+  assert.ok(Math.hypot(atlantic.p2[0] - atlantic.p1[0], atlantic.p2[1] - atlantic.p1[1])
+    < capitalGap('brazil', 'north_africa') - HEX_SIZE,
+    'brazil-north_africa should leave the coast, well short of the two capitals');
 });
 
 test('risk toGrid: hidden territories render neutral, with no army count', () => {
