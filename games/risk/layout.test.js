@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ADJACENCY, TERRITORY_IDS } from './RiskMap.js';
+import { ADJACENCY, TERRITORY_IDS, CONTINENTS, getContinent } from './RiskMap.js';
 import { LAYOUT, SEA_ROUTES, HEX_SIZE, routeKey, touchingPairs } from './RiskLayout.js';
 import { hexToPixel, hexLayoutBounds } from '../mapTypes/hexagon.js';
 import { RiskGame } from './index.js';
@@ -128,11 +128,12 @@ test('risk toGrid: sea routes are drawn coast to coast, not capital to capital',
     'brazil-north_africa should leave the coast, well short of the two capitals');
 });
 
-test('risk toGrid: hidden territories render neutral, with no army count', () => {
+test('risk toGrid: hidden territories keep their continent colour, with no army count', () => {
   const players = [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
   const state = RiskGame.createInitialState(players);
   // Fog leaves a territory owner-less (see getVisibleState); the renderer must not
-  // print "null" armies on it or paint it in a seat colour.
+  // print "null" armies on it. The FILL is not fog's business either way — which
+  // continent a territory sits in was never hidden.
   const hidden = TERRITORY_IDS[0];
   state.board.territories[hidden] = { ...state.board.territories[hidden], owner: null, armies: null };
 
@@ -140,5 +141,38 @@ test('risk toGrid: hidden territories render neutral, with no army count', () =>
   for (const cell of grid.cells.filter(c => c.territoryId === hidden)) {
     assert.equal(cell.owner, 0);
     assert.equal(cell.glyph, '');
+    assert.equal(cell.color, CONTINENTS[getContinent(hidden)].color);
   }
+});
+
+test('risk toGrid: every territory is painted its continent colour, whoever owns it', () => {
+  const players = [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
+  const state = RiskGame.createInitialState(players);
+  const grid = RiskGame.toGrid(state);
+
+  const seen = new Set();
+  for (const cell of grid.cells) {
+    const cont = CONTINENTS[getContinent(cell.territoryId)];
+    // Never the 'team' sentinel: ownership lives in the outline and the token now, so a
+    // fill that deferred to the seat colour would put it back in two places at once.
+    assert.equal(cell.color, cont.color, `${cell.territoryId} should be ${cont.name}'s colour`);
+    seen.add(cont.color);
+  }
+  // Six continents, six distinguishable colours — a shared one would silently merge two
+  // bonus regions into one blob on the board.
+  assert.equal(seen.size, Object.keys(CONTINENTS).length);
+});
+
+test('risk toGrid: a territory names its continent for the side panel', () => {
+  const players = [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
+  const state = RiskGame.createInitialState(players);
+  const grid = RiskGame.toGrid(state);
+
+  // The tag rides on the same cell as the army token (the capital), because that cell is
+  // the one that becomes a selectable unit — see App.vue, which only makes units of
+  // cells carrying a glyph.
+  const capital = grid.cells.find(c => c.territoryId === 'egypt' && c.unitId);
+  assert.deepEqual(capital.tags?.map(t => t.label), ['Africa']);
+  assert.equal(capital.tags[0].color, CONTINENTS.africa.color);
+  assert.match(capital.tags[0].title, /\+3 armies/);
 });

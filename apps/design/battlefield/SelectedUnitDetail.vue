@@ -25,6 +25,17 @@ const imgSrc = window.api.imgSrc;
         ACTIVE
       </span>
     </div>
+    <!-- Which group this unit belongs to, in that group's own colour (see App.vue's
+         `tags`) — Risk's continent. Sits directly under the name because it's part of
+         naming the thing, not a stat about it. -->
+    <div v-if="unit.tags?.length" class="sud-tags">
+      <span v-for="tag in unit.tags" :key="tag.label" class="sud-tag" :title="tag.title ?? ''">
+        <!-- The group's own colour as a swatch rather than as the chip's text, so the
+             label stays legible whether that colour is a dark map fill or a bright one. -->
+        <BsDot v-if="tag.color" :color="tag.color" :size="8"/>
+        {{tag.label}}
+      </span>
+    </div>
     <div v-if="unit.x != null" class="mono sud-coord">
       ({{Math.floor(unit.x)}}, {{Math.floor(unit.y)}})
     </div>
@@ -128,6 +139,8 @@ const imgSrc = window.api.imgSrc;
 .sud-name { font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line3); }
 .sud-id { font-size: 10px; color: var(--faint); }
 .sud-active { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(70,211,154,.15); color: var(--ok); }
+.sud-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.sud-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; padding: 2px 7px; border-radius: 10px; background: var(--bg3); color: var(--txt); }
 .sud-coord { font-size: 10px; color: var(--faint); margin-bottom: 8px; }
 .sud-money { font-size: 11px; color: var(--ok); margin-bottom: 8px; }
 .sud-kia { font-size: 11px; color: #ff5f56; }

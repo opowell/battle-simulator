@@ -1,5 +1,5 @@
 import { sidesEval } from '../evalHelpers.js';
-import { TERRITORY_IDS, TERRITORY_NAMES, ADJACENCY, CONTINENTS, getConnectedOwned } from './RiskMap.js';
+import { TERRITORY_IDS, TERRITORY_NAMES, ADJACENCY, CONTINENTS, CONTINENT_OF, getConnectedOwned } from './RiskMap.js';
 import { resolveCombat } from './RiskCombat.js';
 import { getRiskBelief } from './belief.js';
 import { LAYOUT, SEA_ROUTES, HEX_SIZE, routeKey } from './RiskLayout.js';
@@ -623,9 +623,16 @@ function sampleWorlds(observation, playerId, n, rng = Math.random) {
 }
 
 // The world map: each territory is a blob of hexes in its real-world place (see
-// RiskLayout.js), painted in its owner's seat colour, with its army count on one
+// RiskLayout.js), painted its CONTINENT's colour, with its army count on one
 // "capital" hex. Everything about the drawing lives in RiskLayout — this only
 // colours it in for the current state.
+//
+// The fill is the continent's and never the owner's, so the six bonus regions are
+// readable off the board at a glance — which continent you are one territory short
+// of is the question a Risk player asks most, and it is not one a board coloured by
+// seat can answer. Ownership moves onto the things drawn OVER the fill: the blob's
+// outline and its army token, both in the owner's seat colour (see HtmlHexLayer,
+// which brightens an outline when the fill it surrounds isn't the owner's).
 function toGrid(state) {
   const { hexIdsByTerritory, capitalHexByTerritory, hexCells, territoryOfHex, shoreHexesBySeaRoute } = LAYOUT;
   const territories = state.board.territories;
@@ -641,16 +648,18 @@ function toGrid(state) {
   const cells = [];
   for (const [tid, hexes] of Object.entries(hexIdsByTerritory)) {
     const t = territories[tid];
-    // A territory with no owner is one fog is hiding (getVisibleState) — draw it as
-    // a neutral blob rather than a token reading "null".
+    // A territory with no owner is one fog is hiding (getVisibleState) — it keeps its
+    // continent colour (which continent a territory is in was never secret) and simply
+    // has no token, rather than showing a blob whose count reads "null".
     const hidden = !t || t.owner == null;
+    const cont = CONTINENTS[CONTINENT_OF[tid]];
     const capital = capitalHexByTerritory[tid];
     for (const hexId of hexes) {
       const [x, y] = at(hexId);
       const isCapital = hexId === capital;
       cells.push({
         x, y,
-        color: hidden ? '#2b2f38' : 'team',
+        color: cont.color,
         owner: hidden ? 0 : (pidIdx[t.owner] ?? 0),
         territoryId: tid,
         // The token is the army count, not a piece: `label` is what gets drawn on it,
@@ -660,6 +669,13 @@ function toGrid(state) {
         label: isCapital && !hidden ? String(t.armies) : '',
         unitId: isCapital ? tid : undefined,
         unitName: isCapital && !hidden ? TERRITORY_NAMES[tid] : '',
+        // Selecting a territory names its continent in the side panel, in the same
+        // colour the map just painted it — the fill is now a fact about the board that
+        // a player is entitled to read back, along with what holding it all is worth.
+        tags: isCapital
+          ? [{ label: cont.name, color: cont.color,
+               title: `${cont.name} — ${cont.territories.length} territories, +${cont.bonus} armies a turn for holding them all` }]
+          : undefined,
       });
     }
   }

@@ -80,10 +80,35 @@ function isSegSelected(seg) {
   const sel = props.selectedId ?? props.activeUnitId;
   return sel != null && (seg.aId === sel || seg.bId === sel);
 }
+// Whether a territory's FILL says who owns it — true wherever the game left the tile
+// on the 'team' sentinel. A game that paints the fill itself (Risk's continent colours)
+// has taken ownership out of the fill, so on those blobs the outline is the only thing
+// left to carry it: it takes the seat colour straight, and thicker, instead of the dark
+// shade that only works as the trim on an already-owner-coloured blob.
+const fillCarriesOwner = computed(() => {
+  const byTerritory = {};
+  for (const t of props.field.tiles ?? []) {
+    if (t.territoryId != null) byTerritory[t.territoryId] = t.color === 'team';
+  }
+  return byTerritory;
+});
+function ownerBorder(territoryId) {
+  return territoryId != null && fillCarriesOwner.value[territoryId] === false;
+}
+// The colour one SIDE of a border is drawn in: its own owner's, whether dark trim or
+// bright outline. A side with nothing to own (the map's edge, or an unowned territory)
+// has no colour of its own and borrows the other side's, so a coast is one clean line
+// rather than a line half-faded into grey.
+function sideColor(seg, wantA) {
+  const owned = (id, owner) => id != null && !!owner;
+  const useA = wantA ? owned(seg.aId, seg.aOwner) : !owned(seg.bId, seg.bOwner);
+  const id = useA ? seg.aId : seg.bId;
+  const raw = teamRaw(heldOwner(id) ?? (useA ? seg.aOwner : seg.bOwner));
+  return ownerBorder(id) ? raw : darken(raw, 0.55);
+}
 function segBorderColor(seg) {
   if (isSegSelected(seg)) return '#ffffff';
-  const useA = !!seg.aOwner;
-  return darken(teamRaw(heldOwner(useA ? seg.aId : seg.bId) ?? (useA ? seg.aOwner : seg.bOwner)), 0.55);
+  return sideColor(seg, true);
 }
 
 // ── geometry ──────────────────────────────────────────────────────────────────
@@ -116,7 +141,10 @@ const boundStyle = computed(() => ({
 
 // A segment as a rotated box: a div as long as the segment, as thick as its stroke,
 // pivoted about its left-hand end — the HTML equivalent of a line with round caps.
-function edgeStyle(p1, p2, color, thickness, dashed = false) {
+// `farColor`, when given, paints the half of the stroke on the FAR side of the segment
+// (see borderStyle) in a second colour, so one line can belong to both territories it
+// separates.
+function edgeStyle(p1, p2, color, thickness, dashed = false, farColor = null) {
   const x1 = props.fit.x(p1[0]), y1 = props.fit.y(p1[1]);
   const x2 = props.fit.x(p2[0]), y2 = props.fit.y(p2[1]);
   const len = Math.hypot(x2 - x1, y2 - y1);
@@ -131,11 +159,27 @@ function edgeStyle(p1, p2, color, thickness, dashed = false) {
     // the same dash pattern the SVG board used).
     background: dashed
       ? `repeating-linear-gradient(to right, ${color} 0 5px, transparent 5px 10px)`
-      : color,
+      : farColor
+        ? `linear-gradient(to bottom, ${farColor} 50%, ${color} 50%)`
+        : color,
   };
 }
+// While the fill carries ownership a border is just trim and one shade does for the
+// whole line. Once the outline is what says who owns a blob, a line between two players
+// has to say it for BOTH of them, or a player reading their own frontier finds it drawn
+// in their opponent's colour: so it is split down its length, each half in the colour of
+// the territory on that side.
+//
+// The half nearer side `a` is the lower half of the un-rotated div. territoryBorders
+// walks each hex's corners in a fixed order and emits the edge as corner[k]→corner[k+1],
+// which always leaves the hex it came from — side `a` — on that side, and `fit` scales
+// without flipping either axis, so the relationship survives to the screen.
 function borderStyle(seg) {
-  return edgeStyle(seg.p1, seg.p2, segBorderColor(seg), isSegSelected(seg) ? 4 : 2.25);
+  const carries = ownerBorder(seg.aId) || ownerBorder(seg.bId);
+  const near = segBorderColor(seg);
+  const far = carries && !isSegSelected(seg) ? sideColor(seg, false) : near;
+  return edgeStyle(seg.p1, seg.p2, near, isSegSelected(seg) ? 4 : carries ? 3 : 2.25,
+                   false, far === near ? null : far);
 }
 // Two territories connected without sharing a border (a game's toGrid may emit these as
 // `links` — Risk's sea routes). Dashed, so a crossing over open water never looks like a

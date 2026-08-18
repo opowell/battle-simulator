@@ -665,6 +665,11 @@ function buildField(g, s) {
       apNow:         c.apNow,
       apMax:         c.apMax,
       stats:         c.stats,
+      // Standing facts about a unit worth naming in its own colour — what group it
+      // belongs to, rather than what has happened to it (that's statusEffects). A
+      // game's toGrid may set [{ label, color?, title? }]; Risk names the continent a
+      // territory is in, in the colour the map paints it.
+      tags:          c.tags,
       abilities:     c.abilities,
       equipment:     c.equipment,
       statusEffects: c.statusEffects,

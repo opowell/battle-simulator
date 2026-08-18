@@ -121,6 +121,23 @@ only authority on who can attack whom — the map just has to agree with it, and
 To move a territory, edit the ASCII map and run the tests; a border you opened or
 closed by accident fails there rather than silently changing the game.
 
+**Who owns what, and what it's part of** — a territory is filled with its
+**continent's** colour (`CONTINENTS[…].color`) and never its owner's, so the six bonus
+regions are legible off the board itself: which continent you are one territory short
+of is the question a Risk player asks most often, and a board coloured by seat cannot
+answer it. Ownership moves onto what is drawn *over* the fill, exactly as on a printed
+board where the map is the same six colours every game and the pieces say whose it is:
+each blob is outlined in its owner's seat colour, and its army token is in that colour
+too. Where two players meet, the border between them is split down its length — half in
+each owner's colour — so a player's frontier is never drawn entirely in their
+opponent's colour. `HtmlHexLayer` decides this for itself: an outline goes bright and
+splits precisely when the fill it surrounds is *not* the `'team'` sentinel, which
+leaves kdice (whose fills do carry ownership) drawn exactly as before.
+
+Selecting a territory names its continent in the left panel, as a chip carrying the
+same colour the map just painted it, with the continent's size and bonus on hover —
+`toGrid` puts it on the territory's capital cell as a generic `tags` entry.
+
 Playing it is all clicks: tap one of your territories to place a reinforcement —
 one army per tap, and the territory blinks once so a tap that only moves a number
 by one still visibly lands — or select it and click a neighbour to attack (fortify

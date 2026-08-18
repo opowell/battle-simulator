@@ -106,34 +106,46 @@ export const ADJACENCY = {
   eastern_australia:  ['new_guinea', 'western_australia'],
 };
 
+// The six continents, and the colour each one paints its territories (RiskGame's
+// toGrid). That fill does NOT say who owns a territory — the owner-coloured outline
+// and army token drawn over it do, the way a printed Risk board works: the board is
+// the same six colours every game and the pieces on it say whose it is. So these are
+// muted and dark, leaving the bright seat colours the loud thing on the map, and set
+// far enough apart in hue that two continents never read as one.
 export const CONTINENTS = {
   northAmerica: {
     name: 'North America',
+    color: '#685b27',
     bonus: 5,
     territories: ['alaska', 'northwest_territory', 'greenland', 'alberta', 'ontario', 'quebec', 'western_us', 'eastern_us', 'central_america'],
   },
   southAmerica: {
     name: 'South America',
+    color: '#6d2c35',
     bonus: 2,
     territories: ['venezuela', 'peru', 'brazil', 'argentina'],
   },
   europe: {
     name: 'Europe',
+    color: '#2c4f6d',
     bonus: 5,
     territories: ['iceland', 'great_britain', 'western_europe', 'northern_europe', 'scandinavia', 'ukraine', 'southern_europe'],
   },
   africa: {
     name: 'Africa',
+    color: '#554230',
     bonus: 3,
     territories: ['north_africa', 'egypt', 'east_africa', 'congo', 'south_africa', 'madagascar'],
   },
   asia: {
     name: 'Asia',
+    color: '#2e563c',
     bonus: 7,
     territories: ['middle_east', 'afghanistan', 'ural', 'siberia', 'yakutsk', 'kamchatka', 'irkutsk', 'mongolia', 'china', 'india', 'southeast_asia', 'japan'],
   },
   australia: {
     name: 'Australia',
+    color: '#5d3767',
     bonus: 2,
     territories: ['indonesia', 'new_guinea', 'western_australia', 'eastern_australia'],
   },
@@ -143,11 +155,14 @@ export function areAdjacent(t1, t2) {
   return ADJACENCY[t1]?.includes(t2) ?? false;
 }
 
+// territoryId → the key of the continent it belongs to. Inverted once here rather
+// than scanned per lookup, because the renderer asks for all 42 every frame.
+export const CONTINENT_OF = Object.fromEntries(
+  Object.entries(CONTINENTS).flatMap(([id, cont]) => cont.territories.map(t => [t, id])),
+);
+
 export function getContinent(territoryId) {
-  for (const [id, cont] of Object.entries(CONTINENTS)) {
-    if (cont.territories.includes(territoryId)) return id;
-  }
-  return null;
+  return CONTINENT_OF[territoryId] ?? null;
 }
 
 // BFS over owned territories to find all reachable territories from `fromId`
