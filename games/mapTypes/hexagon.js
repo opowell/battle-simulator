@@ -303,6 +303,13 @@ export function territoryBorders(hexIds, territoryOf, cells, size) {
  * territory on most sides — a marker there visually crowds the neighbor's
  * colour. The deepest-interior hex is always fully (or as close to fully as
  * the blob allows) surrounded by its own territory's hexes instead.
+ *
+ * Depth alone leaves ties, and on a small blob it leaves nothing BUT ties: a
+ * territory only a hex or two thick (most of Risk's, where the open sea counts
+ * as outside) has every hex at depth 0. Ties go to the hex nearest the blob's
+ * centroid, so the marker lands in the middle of the shape rather than on
+ * whichever hex the caller happened to list first — which, for a map parsed
+ * top-to-bottom, is the top-left corner of every territory on the board.
  */
 export function territoryCapital(hexIds, cells, size, adjacency) {
   const hexSet = new Set(hexIds);
@@ -312,9 +319,6 @@ export function territoryCapital(hexIds, cells, size, adjacency) {
     const isBoundary = (adjacency?.[id] ?? []).some(nid => !hexSet.has(nid));
     if (isBoundary) { dist[id] = 0; queue.push(id); }
   }
-  // Every hex is on the boundary (a sliver with no interior) — any hex works.
-  if (queue.length === 0) return hexIds[0];
-
   let qi = 0;
   while (qi < queue.length) {
     const cur = queue[qi++];
@@ -323,10 +327,26 @@ export function territoryCapital(hexIds, cells, size, adjacency) {
     }
   }
 
-  let best = hexIds[0], bestD = -1;
+  // The blob's centre of mass, in the same pixels the board is drawn in — a hex
+  // one row down is only half a column across, so counting rows and columns
+  // instead would pull the answer off to one side on a staggered grid.
+  const pts = {};
+  let cx = 0, cy = 0;
+  for (const id of hexIds) {
+    const { q, r } = cells[id];
+    const p = hexToPixel(q, r, size);
+    pts[id] = p;
+    cx += p.x / hexIds.length;
+    cy += p.y / hexIds.length;
+  }
+
+  // A blob with no boundary at all (it is the whole map) leaves every depth at 0,
+  // which is the tie the centroid resolves.
+  let best = null, bestD = -1, bestOff = Infinity;
   for (const id of hexIds) {
     const d = dist[id] ?? 0;
-    if (d > bestD) { bestD = d; best = id; }
+    const off = Math.hypot(pts[id].x - cx, pts[id].y - cy);
+    if (d > bestD || (d === bestD && off < bestOff)) { best = id; bestD = d; bestOff = off; }
   }
   return best;
 }
