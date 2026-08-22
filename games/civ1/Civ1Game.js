@@ -1047,7 +1047,11 @@ export const Civ1Game = {
         fogOfWar: true,
         width: 30,
         height: 20,
-        maxTurns: 200,
+        // The form's own ceiling (the Max turns slider stops at 500), because a
+        // 200-turn cap parked this matchup at max-turns with one civ well ahead
+        // on cities but neither destroyed — the exhibition wants to run long
+        // enough to reach an actual conquest.
+        maxTurns: 500,
       },
     },
   ],

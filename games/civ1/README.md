@@ -169,7 +169,12 @@ the next one computed, so a match that would otherwise finish in a couple of min
 unfolds at watching speed. It starts paused; Resume plays it out, and "pause after
 playback" (on by default) stops it after every turn until you click Next. Fog stays on,
 so the perspective switcher is meaningful — watch the whole world, or drop into either
-civ's own fogged view and see what it is actually deciding from.
+civ's own fogged view and see what it is actually deciding from. Civ1 hides the right
+sidebar, so that switcher is in the menu (the grid button beside the turn counter).
+
+Because there is no seat to give orders from, the left panel drops its order controls
+and keeps only the overview screens — Cities, Military, Rates, Science, which report on
+whichever civ you are watching through (Everyone falls back to the first seat).
 
 Seat 1 has a real advantage here (see `AI-DESIGN.md`), so a single exhibition run
 shows you how the AIs play; it does not measure which is better.

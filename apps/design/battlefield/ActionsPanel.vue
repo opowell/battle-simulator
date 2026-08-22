@@ -43,6 +43,16 @@ const props = defineProps({
   // open one too (ui.keys' `panel` effect — see keyBindings.js); the toolbar buttons
   // below just ask for the same change through update:panel.
   panel:            { type: String, default: null },
+  // The viewer holds no seat — they are watching a game, not playing one (see
+  // Battlefield's isObserver). There are no orders for them to give, so the panel
+  // keeps only what is worth reading: the overview screens and the final result.
+  observing:        { type: Boolean, default: false },
+  // Whose empire the overview screens describe. Null follows the player currently
+  // to move, which is what a seated player wants (it is always them). An observer
+  // is never told a pending player — the server only names seats it is waiting on,
+  // and an all-AI session has none — so Battlefield passes one explicitly, and the
+  // screens stay on that civ instead of describing nobody.
+  overviewPlayerId: { type: String, default: null },
 });
 defineEmits(['submit', 'aim', 'cancel-aim', 'goto', 'update:panel', 'set-variant']);
 
@@ -96,7 +106,15 @@ const activeMoney = computed(() => {
 const taxActions      = computed(() => props.displayedActions.filter(a => a.type === 'set-tax'));
 const luxActions      = computed(() => props.displayedActions.filter(a => a.type === 'set-luxury'));
 const researchActions = computed(() => props.displayedActions.filter(a => a.type === 'set-research'));
-const myCiv           = computed(() => props.civ?.[props.pendingPlayerId] ?? null);
+// The empire the overview screens report on: whoever the viewer is watching
+// through, falling back to the player to move (see overviewPlayerId).
+const overviewId      = computed(() => props.overviewPlayerId ?? props.pendingPlayerId);
+const myCiv           = computed(() => props.civ?.[overviewId.value] ?? null);
+
+// With no seat and no overview screens to offer, an observer's panel would be an
+// empty titled box — draw nothing at all instead. A finished game still has its
+// result to report, whoever is watching.
+const hasContent      = computed(() => !props.observing || !!props.civ || props.isDone);
 
 // set-production also moves out: with more than one city its flat label ("Build
 // militia") doesn't even say which city, and the City Inspector overlay (opened by
@@ -214,9 +232,9 @@ function fmtAction(action) {
 </script>
 
 <template>
-  <div class="ap">
+  <div v-if="hasContent" class="ap">
     <div class="panel-t ap-title">
-      Actions
+      {{ observing ? 'Overview' : 'Actions' }}
       <span v-if="liveState.phase" class="mono ap-phase">
         · {{liveState.phase}}
       </span>
@@ -234,72 +252,77 @@ function fmtAction(action) {
         : liveState.status === 'error' ? ('Error: ' + liveState.error)
         : 'Game over'}}
     </div>
-    <div v-else-if="!atLatest" class="ap-past">
-      Viewing past state — advance to latest to issue orders.
-    </div>
-    <template v-else-if="isPending && (ui.freeSelection || ui.territoryClick || (selectedId && selectedId === activeUnitId) || (!selectedId && displayedActions.length))">
-      <div class="ap-prompt">
-        Choose action for <b class="ap-accent">{{pendingPlayerId}}</b>:
-        <span v-if="activeMoney != null" class="mono ap-money">
-          {{selectedId}} ${{activeMoney}}</span>
+    <!-- Everything below is about taking a turn, so none of it is for an observer:
+         no orders to issue, and no "waiting for AI" either — the AI is the whole
+         point of what they are watching, not something holding them up. -->
+    <template v-else-if="!observing">
+      <div v-if="!atLatest" class="ap-past">
+        Viewing past state — advance to latest to issue orders.
       </div>
-      <template v-if="aiming">
-        <div class="mono ap-hint ap-hint--aim">
-          {{aiming.type === 'throw' ? 'Click the map to throw'
-            : aiming.type === 'move' ? 'Click the map to move'
-            : aiming.type === 'rotate' ? 'Click the map to face that direction'
-            : aiming.type === 'punch' ? 'Click the map to choose a punch direction' : 'Click the map to aim'}}
+      <template v-else-if="isPending && (ui.freeSelection || ui.territoryClick || (selectedId && selectedId === activeUnitId) || (!selectedId && displayedActions.length))">
+        <div class="ap-prompt">
+          Choose action for <b class="ap-accent">{{pendingPlayerId}}</b>:
+          <span v-if="activeMoney != null" class="mono ap-money">
+            {{selectedId}} ${{activeMoney}}</span>
         </div>
-        <button class="action-btn ap-btn" @click="$emit('cancel-aim')">Cancel</button>
+        <template v-if="aiming">
+          <div class="mono ap-hint ap-hint--aim">
+            {{aiming.type === 'throw' ? 'Click the map to throw'
+              : aiming.type === 'move' ? 'Click the map to move'
+              : aiming.type === 'rotate' ? 'Click the map to face that direction'
+              : aiming.type === 'punch' ? 'Click the map to choose a punch direction' : 'Click the map to aim'}}
+          </div>
+          <button class="action-btn ap-btn" @click="$emit('cancel-aim')">Cancel</button>
+        </template>
+        <template v-else>
+          <div v-if="unitMoves.length && !ui?.aimedActionTypes?.includes('move')" class="mono ap-hint">
+            {{queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
+          </div>
+          <div v-else-if="territoryHint" class="mono ap-hint">{{territoryHint}}</div>
+          <!-- Pair-action strength (Risk's attack dice): picked here, spent by a click on
+               the map. "max" is the default and follows whatever the pair can manage. -->
+          <div v-if="variantSpec && variantValues.length > 1" class="ap-variant">
+            <span class="mono ap-variant-label">{{variantSpec.label ?? 'Strength'}}</span>
+            <button class="ap-chip" :class="{ 'ap-chip--on': variantValue == null }"
+                    title="Commit as many as the attack allows"
+                    @click="$emit('set-variant', null)">max</button>
+            <button v-for="v in variantValues" :key="v"
+                    class="ap-chip" :class="{ 'ap-chip--on': variantValue === v }"
+                    @click="$emit('set-variant', v)">{{v}}</button>
+          </div>
+          <!-- One choice at several sizes (Risk's occupying force) — a row of numbers. -->
+          <div v-for="g in numericChoices" :key="'nc' + g.type" class="ap-variant">
+            <span class="mono ap-variant-label">{{ui?.actionGroupLabels?.[g.type] ?? g.type.replace(/-/g, ' ')}}</span>
+            <button v-for="a in g.actions" :key="a[g.field]"
+                    class="ap-chip" @click="$emit('submit', a)">{{a[g.field]}}</button>
+          </div>
+          <div class="ap-list">
+            <button v-for="(action, i) in listActions" :key="i"
+                    class="action-btn ap-btn ap-btn--icon"
+                    @click="action.__aim ? $emit('aim', action) : $emit('submit', action)">
+              <img v-if="action.icon" :src="imgSrc(action.icon)" alt="" class="ap-icon"/>
+              {{fmtAction(action)}}
+            </button>
+            <!-- On a territory map an empty list is normal: the hint above already says
+                 where the actions are. -->
+            <div v-if="!listActions.length && !numericChoices.length && !territoryHint" class="ap-empty">No actions.</div>
+          </div>
+        </template>
       </template>
-      <template v-else>
-        <div v-if="unitMoves.length && !ui?.aimedActionTypes?.includes('move')" class="mono ap-hint">
-          {{queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
-        </div>
-        <div v-else-if="territoryHint" class="mono ap-hint">{{territoryHint}}</div>
-        <!-- Pair-action strength (Risk's attack dice): picked here, spent by a click on
-             the map. "max" is the default and follows whatever the pair can manage. -->
-        <div v-if="variantSpec && variantValues.length > 1" class="ap-variant">
-          <span class="mono ap-variant-label">{{variantSpec.label ?? 'Strength'}}</span>
-          <button class="ap-chip" :class="{ 'ap-chip--on': variantValue == null }"
-                  title="Commit as many as the attack allows"
-                  @click="$emit('set-variant', null)">max</button>
-          <button v-for="v in variantValues" :key="v"
-                  class="ap-chip" :class="{ 'ap-chip--on': variantValue === v }"
-                  @click="$emit('set-variant', v)">{{v}}</button>
-        </div>
-        <!-- One choice at several sizes (Risk's occupying force) — a row of numbers. -->
-        <div v-for="g in numericChoices" :key="'nc' + g.type" class="ap-variant">
-          <span class="mono ap-variant-label">{{ui?.actionGroupLabels?.[g.type] ?? g.type.replace(/-/g, ' ')}}</span>
-          <button v-for="a in g.actions" :key="a[g.field]"
-                  class="ap-chip" @click="$emit('submit', a)">{{a[g.field]}}</button>
-        </div>
-        <div class="ap-list">
-          <button v-for="(action, i) in listActions" :key="i"
-                  class="action-btn ap-btn ap-btn--icon"
-                  @click="action.__aim ? $emit('aim', action) : $emit('submit', action)">
-            <img v-if="action.icon" :src="imgSrc(action.icon)" alt="" class="ap-icon"/>
-            {{fmtAction(action)}}
-          </button>
-          <!-- On a territory map an empty list is normal: the hint above already says
-               where the actions are. -->
-          <div v-if="!listActions.length && !numericChoices.length && !territoryHint" class="ap-empty">No actions.</div>
+      <template v-else-if="isPending">
+        <div class="ap-prompt">
+          Click the <b class="ap-accent">{{ui.freeSelection ? 'a piece' : 'active unit'}}</b> on the board to see actions.
         </div>
       </template>
+      <div v-else class="ap-waiting">{{ awaitingStep ? 'Paused — press Next to play the turn.' : 'Waiting for AI…' }}</div>
     </template>
-    <template v-else-if="isPending">
-      <div class="ap-prompt">
-        Click the <b class="ap-accent">{{ui.freeSelection ? 'a piece' : 'active unit'}}</b> on the board to see actions.
-      </div>
-    </template>
-    <div v-else class="ap-waiting">{{ awaitingStep ? 'Paused — press Next to play the turn.' : 'Waiting for AI…' }}</div>
     <RatesOverlay :show="panel === 'rates'" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
                   @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
     <ScienceOverlay :show="panel === 'science'" :civ="myCiv" :researchActions="researchActions"
                   @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
-    <CitiesOverlay :show="panel === 'cities'" :cities="cities" :playerId="pendingPlayerId"
+    <CitiesOverlay :show="panel === 'cities'" :cities="cities" :playerId="overviewId"
                   @close="$emit('update:panel', null)" @goto="g => $emit('goto', g)"/>
-    <MilitaryOverlay :show="panel === 'military'" :military="military" :playerId="pendingPlayerId"
+    <MilitaryOverlay :show="panel === 'military'" :military="military" :playerId="overviewId"
                   @close="$emit('update:panel', null)"/>
   </div>
 </template>

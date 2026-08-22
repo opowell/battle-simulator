@@ -977,6 +977,16 @@ watch(() => [props.liveState?.id, histPos.value, atLatest.value, forking.value, 
   } catch { plyActions.value = { ply: null, actions: [] }; }
 }, { immediate: true });
 const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
+// Whose empire the left panel's overview screens describe (ActionsPanel's
+// overviewPlayerId). A seated player: null, so the panel follows the player to
+// move — always them. An observer: whoever they picked in the perspective
+// switcher, and in "everyone" mode the first seat, because an observer is never
+// given a pending player (the server names only seats it is waiting on, and an
+// all-AI session has none) and the screens would otherwise describe nobody.
+const overviewPlayerId = computed(() => {
+  if (!isObserver.value) return null;
+  return perspectiveViewer.value ?? pendingPlayerId.value ?? observerPlayers.value[0]?.id ?? null;
+});
 // Board interaction (destination highlights, click-to-move) is live for the
 // real game's pending player as usual, or — while browsing replay/forking —
 // for whichever side forkPlayMove would move next, so a suggested/forked line
@@ -1932,6 +1942,7 @@ onUnmounted(() => {
             :awaitingStep="awaitingStep"
             :aiming="aiming" :civ="field.civ" :cities="field.cities" :military="field.military"
             :panel="openPanel"
+            :observing="isObserver" :overviewPlayerId="overviewPlayerId"
             :variantSpec="pairVariantSpec" :variantValues="pairVariantValues" :variantValue="pairVariant"
             @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"
             @set-variant="pairVariant = $event"
