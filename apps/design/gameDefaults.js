@@ -6,11 +6,14 @@ function defaultCpuAgent(g) {
   return ids.includes('obscuro') ? 'obscuro' : (ids[0] ?? 'random');
 }
 
-function makeSlots(g, n) {
-  const count = n || (g?.defaultPlayers?.length ?? 2);
+function makeSlots(g, n, players) {
   // A game may prefer specific per-slot agents (g.uiDefaults.players) — e.g. csmini
-  // defaults to two AIs watched by an observer, rather than "you vs one CPU".
-  const pref = g?.uiDefaults?.players;
+  // defaults to two AIs watched by an observer, rather than "you vs one CPU". A
+  // chosen scenario may override that again with its own `config.players`, which
+  // is what `players` carries in; either way each entry only has to name the parts
+  // it cares about (name, agent), and the rest falls back to the generic seating.
+  const pref = players ?? g?.uiDefaults?.players;
+  const count = n || pref?.length || (g?.defaultPlayers?.length ?? 2);
   // One colour per seat, however many seats there are — teamPalette generates
   // them, so nothing here caps the table at the length of a colour list.
   const palette = teamPalette.seatColors(g, count);
@@ -41,13 +44,20 @@ function initGameOpts(g) {
   return opts;
 }
 
-// Overrides a scenario's config layers on top of a game's plain defaults.
+// A scenario's config, split into the layers the form applies it to. `maxTurns`
+// and `players` are fields of their own; EVERYTHING else is a game or engine
+// option (map size, a map id, `allowObservers`, …) and is merged over the game's
+// plain option defaults — so a scenario can set up any session the Configure
+// screen itself could, and the observer still sees each value in its own control.
 function scenarioOverrides(sc) {
-  if (!sc) return { maxTurns: 300 };
-  const fog = sc.config?.fog ?? sc.config?.fogOfWar;
+  if (!sc) return { maxTurns: 300, players: null, config: {} };
+  const { players = null, maxTurns, fog, fogOfWar, ...rest } = sc.config ?? {};
+  // `fog` and `fogOfWar` are the same switch under two names (create() sends both).
+  const f = fog ?? fogOfWar;
   return {
-    maxTurns: sc.config?.maxTurns ?? 300,
-    ...(fog != null ? { fogOfWar: fog } : {}),
+    maxTurns: maxTurns ?? 300,
+    players,
+    config: { ...rest, ...(f != null ? { fogOfWar: f } : {}) },
   };
 }
 

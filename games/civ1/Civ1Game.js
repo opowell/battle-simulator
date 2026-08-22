@@ -1022,6 +1022,34 @@ export const Civ1Game = {
     { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
     // Hand-built fixed maps (see fixedMaps.js).
     ...FIXED_MAPS.map(m => ({ id: m.id, name: m.name, description: m.description, config: {} })),
+    // An exhibition rather than a game: both seats are AI and none is yours, which
+    // is exactly the condition the server puts on observer lock-step (api-server.js
+    // Session.observerPaced) — it computes one step, waits for the watching client
+    // to finish playing that step back, and only then computes the next. So a match
+    // that would otherwise be over before the first frame drew instead unfolds at
+    // watching speed. Such a session starts paused; Resume plays it out.
+    //
+    // The world is small on purpose: search time grows with the size of the empire
+    // being searched, and 30x20 brings the two civs into contact well inside the turn
+    // limit rather than leaving them to develop alone at opposite ends of the default
+    // 50x30 map. Fog stays on — an observer can watch full-information or switch into
+    // either civ's own fogged view, and only the fog makes that second view mean
+    // anything. Seat 1 has a real advantage in this game (games/civ1/AI-DESIGN.md),
+    // so a single run of this shows how the AIs play; it does not measure which is
+    // better.
+    {
+      id: 'ai-exhibition',
+      name: 'AI Exhibition',
+      description: 'Watch two AIs play it out — Obscuro against the greedy baseline on a small world. No seat for you.',
+      config: {
+        players: [{ name: 'Obscuro', agent: 'obscuro' }, { name: 'Greedy', agent: 'greedy' }],
+        allowObservers: true,
+        fogOfWar: true,
+        width: 30,
+        height: 20,
+        maxTurns: 200,
+      },
+    },
   ],
   // Water is the authentic Civ1 palette sampled from images/terrain (deep ocean
   // #5448a0 matches ocean.png exactly; coast is the shallow-blue ramp). The

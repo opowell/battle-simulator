@@ -16,24 +16,29 @@ const maxTurns = ref(300);
 const gameOpts = ref({});
 const slots    = ref([]);
 
+// Lay a scenario's config over the game's plain defaults. Called with the options
+// already re-seeded, so leaving a scenario also leaves whatever it had set rather
+// than carrying it into the next one.
 function applyScenario(sc) {
   const ov = gameDefaults.scenarioOverrides(sc);
   maxTurns.value = ov.maxTurns ?? 300;
-  if (ov.fogOfWar != null) gameOpts.value = { ...gameOpts.value, fogOfWar: ov.fogOfWar };
-  slots.value = gameDefaults.makeSlots(props.game);
+  gameOpts.value = { ...gameOpts.value, ...ov.config };
+  // A scenario may seat the table itself — e.g. two AIs and no human seat, for a
+  // match that is watched rather than played.
+  slots.value = gameDefaults.makeSlots(props.game, null, ov.players);
 }
 
 // Re-seed the whole form whenever a different game — or scenario — is chosen.
 watch(() => props.game, (g) => {
   if (!g) return;
   gameOpts.value = gameDefaults.initGameOpts(g);
-  slots.value = gameDefaults.makeSlots(g);
   maxTurns.value = 300;
   applyScenario(g.scenarios?.find(s => s.id === props.scenario));
 }, { immediate: true });
 
 watch(() => props.scenario, () => {
   if (!props.game) return;
+  gameOpts.value = gameDefaults.initGameOpts(props.game);
   applyScenario(props.game.scenarios?.find(s => s.id === props.scenario));
 });
 

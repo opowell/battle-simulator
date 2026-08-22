@@ -157,10 +157,28 @@ research, spaceship) so an agent choosing a move cannot read it.
 | Win | `space-race` — your spaceship reaches Alpha Centauri |
 | Draw | `max-turns` |
 
+## Scenarios
+
+**Standard** generates a random world at whatever size the options ask for, and each
+hand-built fixed map (`fixedMaps.js`) is a scenario of its own.
+
+**AI Exhibition** is not a game you play — it seats Obscuro against the greedy baseline
+on a 30×20 world and leaves you no seat at all, which is what puts the session into the
+server's observer lock-step: one turn is computed, played back to you, and only then is
+the next one computed, so a match that would otherwise finish in a couple of minutes
+unfolds at watching speed. It starts paused; Resume plays it out, and "pause after
+playback" (on by default) stops it after every turn until you click Next. Fog stays on,
+so the perspective switcher is meaningful — watch the whole world, or drop into either
+civ's own fogged view and see what it is actually deciding from.
+
+Seat 1 has a real advantage here (see `AI-DESIGN.md`), so a single exhibition run
+shows you how the AIs play; it does not measure which is better.
+
 ## Run
 
 ```sh
 npm run demo:civ1           # interactive
 npm run demo:civ1:auto      # random vs random
 npm run demo:civ1:greedy    # greedy AI vs random
+npm run demo:civ1:obscuro   # Obscuro vs greedy, headless (the AI Exhibition matchup)
 ```
