@@ -13,6 +13,10 @@ import { GOVERNMENTS, availableGovernments } from './governments.js';
 import { foodBox, computeCity, FAT_CROSS, workedTileYield } from './city.js';
 import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy } from './economy.js';
 import { DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, resolveRules } from './difficulty.js';
+import {
+  BARBARIAN_ID, BARBARIAN_TEAM, BARBARIAN_LEVELS, BARBARIAN_LEVEL_IDS,
+  DEFAULT_BARBARIAN_LEVEL, resolveBarbarianLevel, barbarianPhase,
+} from './barbarians.js';
 import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '../moveQueue.js';
 import * as ST from '../spacetime.js';
 
@@ -234,7 +238,10 @@ function getLegalActions(state, playerId) {
 
   // Production: at most one change per city per turn. The cap matters — without it
   // an agent can sit in a set-production loop and never end its turn.
-  const ctx = state.gameSpecific.civ ? buildOwnerCtx(state, playerId) : null;
+  // Keyed on the owner having a civ ledger, not merely on there being one: the
+  // barbarians own units and sometimes cities but no ledger at all (barbarians.js),
+  // and buildOwnerCtx reads straight through to their advances.
+  const ctx = state.gameSpecific.civ?.[playerId] ? buildOwnerCtx(state, playerId) : null;
   for (const city of cities) {
     if (city.ownerId !== playerId) continue;
     if (city.productionSetTurn === state.turnNumber) continue;
@@ -347,7 +354,80 @@ function isMoveTargetLegal(to, board, units, playerId, domain) {
   return true;
 }
 
+// One unit-vs-unit attack: the combat rounds, the casualties, the capture of any city
+// the defender was holding, and the winner's advance onto the emptied square. Shared
+// by the 'attack' action below and by the barbarian phase (barbarians.js), which
+// raids by exactly these rules — `units`/`cities` are passed in (rather than read off
+// `state`) because the raid resolves several fights inside one phase.
+function resolveAttack(state, units, cities, attackerId, targetId, rng) {
+  const attacker = units.find(u => u.id === attackerId);
+  const defender = units.find(u => u.id === targetId);
+  if (!attacker || !defender) return { units, cities };
+
+  const result = resolveCombat(attacker, defender, { ...state, units, cities }, rng);
+
+  units = units.map(u => {
+    if (u.id === attackerId) {
+      if (result.attackerSurvived) return { ...u, hp: result.attackerHpLeft, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } };
+      return { ...u, alive: false, hp: 0, movesLeft: 0 };
+    }
+    if (u.id === targetId) {
+      if (!result.attackerSurvived) return { ...u, hp: result.defenderHpLeft };
+      return { ...u, alive: false, hp: 0 };
+    }
+    return u;
+  });
+
+  if (result.attackerSurvived) {
+    const defPos = defender.position;
+    const capturedCity = cities.find(c => c.position.x === defPos.x && c.position.y === defPos.y);
+    if (capturedCity) {
+      cities = cities.map(c => c.id === capturedCity.id ? { ...c, ownerId: attacker.ownerId } : c);
+    }
+    const occupiedAfter = new Set(units.filter(u => u.alive && u.id !== attackerId).map(u => `${u.position.x},${u.position.y}`));
+    if (!occupiedAfter.has(`${defPos.x},${defPos.y}`)) {
+      units = units.map(u => u.id === attackerId ? { ...u, position: defPos } : u);
+    }
+  }
+
+  return { units, cities };
+}
+
+const reaches = (unit, board, units, playerId, to) =>
+  getReachableTiles(unit, board, units, playerId).some(t => t.x === to.x && t.y === to.y);
+
+/**
+ * The one action the enumerated legal list can't cover (see engine/ActionValidator).
+ *
+ * getReachableTiles routes around every unit on the board — you attack what stands
+ * in your way rather than walking through it. A player under fog, though, plans
+ * against getVisibleState, where a unit they cannot see simply isn't there: an
+ * ordinary-looking march can be aimed at a square something is standing on, or
+ * along a lane something is standing in. Rejecting those as illegal means the engine
+ * throwing out its own agent's move, which is exactly what happened once barbarians
+ * were about — they appear unannounced beside cities, so they are in the dark
+ * constantly.
+ *
+ * Such a march is accepted here and resolved by the 'move' handler as a bump: the
+ * unit walks into what it couldn't see, stays where it is and loses the turn. The
+ * test is "reachable in the world this player was planning in" — their own units on
+ * the board and nobody else's — so nothing outside a march they could honestly have
+ * intended gets in.
+ */
+function isActionLegal(state, playerId, action) {
+  if (action?.type !== 'move' || !action.to) return false;
+  const unit = state.units.find(u => u.id === action.unitId);
+  if (!unit || !unit.alive || unit.ownerId !== playerId || unit.movesLeft <= 0) return false;
+  const own = state.units.filter(u => u.ownerId === playerId);
+  return reaches(unit, state.board, own, playerId, action.to);
+}
+
 // ── Apply actions ─────────────────────────────────────────────────────────────
+
+// The handful of Civ1Game-private helpers the barbarian phase needs. Handed over as
+// a bundle rather than imported there, so barbarians.js doesn't import this module
+// back (this one already imports it).
+const BARBARIAN_DEPS = { makeUnit, applyMove, resolveAttack };
 
 function applyActions(state, playerActions, rng = Math.random) {
   const { playerId, action } = playerActions[0];
@@ -379,6 +459,22 @@ function applyActions(state, playerActions, rng = Math.random) {
       if (nextIdx === 0) newTurn = state.turnNumber + 1;
     }
     const nextPlayerId = playerIds[nextIdx];
+
+    // Barbarians. Once the rotation has been all the way round, the uncivilised
+    // tribes take their own turn: any uprising due rises up, and every raider already
+    // on the map moves and fights (barbarians.js). They hold no seat, so this is the
+    // only place they are ever asked for anything. It runs before the refresh below so
+    // a raider that has just closed in wakes the next player's sentries, and before
+    // getResult is next consulted so a civ the barbarians have finished off is seen
+    // as finished off.
+    if (newTurn > state.turnNumber) {
+      const barb = barbarianPhase(
+        { ...state, units, cities, turnNumber: newTurn, gameSpecific: { ...state.gameSpecific, nextId, civ } },
+        rng, BARBARIAN_DEPS);
+      units = barb.units;
+      cities = barb.cities;
+      nextId = barb.nextId;
+    }
 
     // Refresh the next player's units. Magellan's Expedition grants +2 movement to
     // their ships.
@@ -418,6 +514,19 @@ function applyActions(state, playerActions, rng = Math.random) {
   // ── move ──────────────────────────────────────────────────────────────────
   if (action.type === 'move') {
     const unit = units.find(u => u.id === action.unitId);
+    // Bumping into the dark. Under fog a player plans against what they can see, so
+    // a perfectly honest march can be aimed at a square (or along a lane) something
+    // they couldn't see is standing on — see isActionLegal. The march runs into it:
+    // the unit stays put and the turn is spent, which is also the only answer that
+    // keeps two hostile units off one square. Whatever was hiding is in plain sight
+    // afterwards. A move the engine enumerated is reachable by construction, so this
+    // never fires on the ordinary path.
+    if (!reaches(unit, board, units, playerId, action.to)) {
+      units = units.map(u => u.id === action.unitId
+        ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } }
+        : u);
+      return { ...state, units, lastActions: playerActions };
+    }
     const applied = applyMove(units, cities, board, playerId, unit, action.to);
     return { ...state, units: applied.units, cities: applied.cities, lastActions: playerActions };
   }
@@ -469,37 +578,9 @@ function applyActions(state, playerActions, rng = Math.random) {
 
   // ── attack ────────────────────────────────────────────────────────────────
   if (action.type === 'attack') {
-    const attacker = units.find(u => u.id === action.unitId);
-    const defender = units.find(u => u.id === action.targetId);
-    if (!attacker || !defender) return state;
-
-    const result = resolveCombat(attacker, defender, state, rng);
-
-    units = units.map(u => {
-      if (u.id === action.unitId) {
-        if (result.attackerSurvived) return { ...u, hp: result.attackerHpLeft, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } };
-        return { ...u, alive: false, hp: 0, movesLeft: 0 };
-      }
-      if (u.id === action.targetId) {
-        if (!result.attackerSurvived) return { ...u, hp: result.defenderHpLeft };
-        return { ...u, alive: false, hp: 0 };
-      }
-      return u;
-    });
-
-    if (result.attackerSurvived) {
-      const defPos = defender.position;
-      const capturedCity = cities.find(c => c.position.x === defPos.x && c.position.y === defPos.y);
-      if (capturedCity) {
-        cities = cities.map(c => c.id === capturedCity.id ? { ...c, ownerId: playerId } : c);
-      }
-      const occupiedAfter = new Set(units.filter(u => u.alive && u.id !== action.unitId).map(u => `${u.position.x},${u.position.y}`));
-      if (!occupiedAfter.has(`${defPos.x},${defPos.y}`)) {
-        units = units.map(u => u.id === action.unitId ? { ...u, position: defPos, movesLeft: 0 } : u);
-      }
-    }
-
-    return { ...state, units, cities, lastActions: playerActions };
+    if (!units.some(u => u.id === action.unitId) || !units.some(u => u.id === action.targetId)) return state;
+    const fought = resolveAttack(state, units, cities, action.unitId, action.targetId, rng);
+    return { ...state, units: fought.units, cities: fought.cities, lastActions: playerActions };
   }
 
   // ── set-production ────────────────────────────────────────────────────────
@@ -672,10 +753,14 @@ function renderState(state) {
   return [
     `═══ Turn ${turnNumber} — ${activePlayers[0]} to move ═══`,
     renderMap(state),
-    `Legend: 1/2=city  Uppercase=P1  lowercase=P2  ~=ocean ^=arctic t=tundra d=desert`,
+    `Legend: 1/2=city  Uppercase=P1  lowercase=P2  *=barbarian  %=barbarian city`,
+    `        ~=ocean ^=arctic t=tundra d=desert`,
     `        .=plains  ,=grass  f=forest  n=hills  A=mtns  s=swamp  j=jungle`,
     '',
     ...players.map(p => summarize(p.id)),
+    // The barbarians get a line only once they are actually out there — they have no
+    // ledger to summarize, so it lists what is on the map and nothing else.
+    ...(units.some(u => u.alive && u.ownerId === BARBARIAN_ID) ? [summarize(BARBARIAN_ID)] : []),
   ].join('\n');
 }
 
@@ -711,6 +796,10 @@ function createFixedMapState(map, players, config) {
       fogOfWar: config.fogOfWar ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
       rules: resolveRules(config),
+      // Barbarian activity level (see barbarians.js). Only the id is stored — the
+      // schedule it selects lives in the module, so it never has to survive a
+      // round-trip through JSON.
+      barbarians: resolveBarbarianLevel(config),
       startRoster: {
         units: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
         cities: [],
@@ -785,6 +874,10 @@ function createInitialState(players, config = {}) {
       fogOfWar: config.fogOfWar ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
       rules: resolveRules(config),
+      // Barbarian activity level (see barbarians.js). Only the id is stored — the
+      // schedule it selects lives in the module, so it never has to survive a
+      // round-trip through JSON.
+      barbarians: resolveBarbarianLevel(config),
       // Common-knowledge starting deployment: cities are founded later so this
       // only seeds units; the belief tracker (belief.js) learns enemy cities
       // the first time it sees them.
@@ -799,6 +892,14 @@ function createInitialState(players, config = {}) {
 // ── Fog of war ────────────────────────────────────────────────────────────────
 
 function getVisibleState(state, playerId) {
+  // With fog switched off there is nothing to hide, and hiding anyway is actively
+  // wrong: the agents call this themselves (civ1SearchActions) rather than only
+  // receiving it from the engine, so a full-information game was handing them a
+  // fogged board to plan on — they would plan a move onto a square they "couldn't
+  // see" was occupied, and the engine, validating against the real board, threw the
+  // agent's own move out as illegal.
+  if (state.gameSpecific?.fogOfWar === false) return state;
+
   // Cities (bigger, garrisoned, elevated) see a little further than the module-level
   // UNIT_VISION units use (also shared with wakeSentryUnits above).
   const CITY_VISION = 2;
@@ -1070,6 +1171,17 @@ export const Civ1Game = {
       options: DIFFICULTY_IDS.map(id => ({ value: id, label: `${DIFFICULTIES[id].name} (content ${DIFFICULTIES[id].contentBaseline})` })) },
     { id: 'contentBaseline', label: 'Content citizens (override)', description: 'Citizens content before the rest turn unhappy — blank uses the difficulty preset', type: 'integer', placeholder: 'from difficulty' },
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units and cities near its own', type: 'boolean', default: true },
+    // The original's setup-screen menu, under its own names (see barbarians.js). Not a
+    // third civilization: barbarians hold no seat, so raising this doesn't change how
+    // many players the game is for.
+    { id: 'barbarians', label: 'Barbarian activity', description: 'How often raiders rise up against the world’s cities — they hold no seat and can never win', type: 'select', default: DEFAULT_BARBARIAN_LEVEL,
+      options: BARBARIAN_LEVEL_IDS.map(id => ({
+        value: id,
+        // "Villages only" means "out of huts and nowhere else" in the original, and this
+        // engine has no huts — so say what it actually does here rather than leave the
+        // menu promising something it can't deliver.
+        label: BARBARIAN_LEVELS[id].band === 0 ? `${BARBARIAN_LEVELS[id].name} (no barbarians)` : BARBARIAN_LEVELS[id].name,
+      })) },
     { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
     { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },
     { id: 'land',    label: 'Land mass',   description: 'How much of the world is land', type: 'select', default: 1, options: [
@@ -1088,6 +1200,7 @@ export const Civ1Game = {
   getResult,
   renderState,
   getVisibleState,
+  isActionLegal,
   sampleWorlds,
   getActionDuration,
 
@@ -1096,6 +1209,11 @@ export const Civ1Game = {
     const { width, height, tiles } = board;
     const pidIdx = {};
     (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
+    // Barbarians hold no seat, so they take the owner index just past the last one —
+    // matching the `extraTeams` entry appended after the seat teams at the bottom of
+    // this method. Without it their raiders would fall through to owner 0, which the
+    // client reads as "the first team" and would paint them in player 1's colours.
+    pidIdx[BARBARIAN_ID] = (state.players ?? []).length + 1;
     const umap = {}, cmap = {};
     for (const u of units) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
     for (const c of cities) cmap[`${c.position.x},${c.position.y}`] = c;
@@ -1340,9 +1458,16 @@ export const Civ1Game = {
         ...(c.anarchyTurns ? [{ value: 'Anarchy', warn: true }] : []),
       ]]));
 
+    // Factions that own pieces without occupying a seat. The client appends these
+    // after the seat teams (apps/design/App.vue's buildField), which is what gives the
+    // barbarians' owner index above a name and a colour of their own. Advertised
+    // whenever the option is on, so the index never shifts mid-game as raiders come
+    // and go.
+    const extraTeams = BARBARIAN_LEVELS[state.gameSpecific.barbarians]?.band ? [BARBARIAN_TEAM] : [];
+
     // wrap: true tells the client the map is a horizontal cylinder (see wrapX above) —
     // Battlefield's click-to-pan centres on any column instead of clamping near the
     // east/west seam, and HtmlLayer draws duplicate columns there so panning stays seamless.
-    return { width, height, cells, wrap: true, civ, cities: citiesOut, military, statusChips };
+    return { width, height, cells, wrap: true, civ, cities: citiesOut, military, statusChips, extraTeams };
   },
 };

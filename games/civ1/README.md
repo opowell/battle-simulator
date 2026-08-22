@@ -9,6 +9,9 @@ Turn-based 4X strategy on a tile map. Build cities, produce units, and conquer y
 | `p1` | Player 1 |
 | `p2` | Player 2 |
 
+(3 and 4 player games are supported too. `barbarian` is **not** in this table and never
+is — see [Barbarians](#barbarians).)
+
 ## Units
 
 All units have `firepower: 1` (damage per combat hit). Combat continues round-by-round until one side reaches 0 HP.
@@ -133,6 +136,44 @@ Data lives in `tech.js`, `improvements.js`, `governments.js`; the per-turn maths
 - **Nuclear weapons** — once the Manhattan Project exists, any civ can build the Nuclear missile. A strike wipes out every unit on the target tile and the eight around it and halves the target city; SDI Defense in the blast intercepts it. The missile is single-use.
 - **Space race** — after the Apollo Program is built, cities produce spaceship parts (Structural / Component / Module) that accumulate on the civ's ship. With the minimum parts it can be launched; it reaches Alpha Centauri after a travel time (shorter with more parts) and its owner wins on arrival — unless the capital is lost first, which destroys the ship.
 - **Fog of war** — vision radius 2; `getVisibleState` hides unseen tiles and enemy units.
+- **Barbarians** — periodic uprisings that raid the world's cities. See below.
+
+## Barbarians
+
+The **Barbarian activity** option is the original's setup-screen menu — Villages only,
+Roving bands, Restless tribes, Raging hordes. It is **off by default** (Villages only):
+the original means "out of tribal huts and nowhere else" by that setting, and this
+engine has no huts, so it raises nobody. Leaving it off by default also keeps the agent
+measurements, which replay civ1 with nothing but the two seats, reading what they always
+have. See `barbarians.js`.
+
+Barbarians are **not a civilization**. They hold no seat, no agent is ever asked for
+their orders, they research nothing, build nothing and own no treasury, and `getResult`
+never counts them among the surviving civs — a world where only barbarians are left
+standing is still a world where the last real civ won. They exist purely as units owned
+by `barbarian`, which every `ownerId !== playerId` test already treats as hostile to
+everyone: they have no allies.
+
+Each level sets when the first uprising comes, how often they come after that, how many
+raiders rise up, and a cap on how many can be alive at once. A band appears 2–4 squares
+from one of the world's cities (bigger cities are likelier targets, so raids land on
+whoever is doing well) armed with the best unit the civ it is raiding could field. On
+each new turn every raider takes a move: it attacks what is adjacent, walks into a city
+left undefended, and otherwise marches at the nearest one. Cities they take are held —
+they can be taken back.
+
+The turn numbers are calibrated to this engine's clock, not the original's: a civ here
+is still one small city at turn 20, so uprisings start at turn 28 even at the most
+violent setting. (Measured: a band of 4 arriving at turn 20 ended every greedy-vs-greedy
+game within two turns.)
+
+Raiders and the cities they hold are drawn in the faction's own violet. Picking that
+colour is constrained, not decorative: civ1 sets `ui.recolorTeamSprites`, so a team
+colour reaches a unit sprite through `apps/design/teamSprite.js`, which repaints the
+sprite's green-ramp flag with the colour's **hue and saturation only** and clamps
+saturation up to 0.75. A near-grey therefore can't be used (it comes out as a vivid
+version of whatever hue its tiny channel imbalance happens to have), and factions are
+told apart by hue alone. See the note on `BARBARIAN_TEAM` in `barbarians.js`.
 
 ## Difficulty (game modes)
 

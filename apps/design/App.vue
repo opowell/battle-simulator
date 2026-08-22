@@ -598,6 +598,16 @@ function buildField(g, s) {
     }));
   }
 
+  // Factions a game declares that hold pieces without occupying a seat — nobody plays
+  // them, no agent is asked for their orders, and they are not in defaultPlayers, but
+  // their pieces still need a name and a colour of their own. A game names them in
+  // toGrid's `extraTeams` and gives them owner indices continuing past the seats, so
+  // they simply append here. Each supplies its own colours (there is no seat palette
+  // slot to take) and falls back to neutral grey if it doesn't.
+  for (const t of g.extraTeams ?? []) {
+    teams.push({ id: t.id, name: t.name, color: t.color ?? '#8a96a1', raw: t.raw ?? '#8a96a1' });
+  }
+
   const ownerTeam = {};
   teams.forEach((t, i) => { ownerTeam[i + 1] = t.id; });
 

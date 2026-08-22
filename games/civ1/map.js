@@ -386,6 +386,11 @@ export function renderMap(state) {
   }
 
   const p1Id = state.players[0].id;
+  // Anything owned by a non-seat faction — the barbarians (see barbarians.js). This
+  // one-char map has only "P1 or not" to say, so without a mark of their own raiders
+  // would read as the second civ's units.
+  const seatIds = new Set(state.players.map(p => p.id));
+  const unseated = ownerId => !seatIds.has(ownerId);
 
   const header = '    ' + Array.from({ length: width }, (_, i) => String(i).padStart(2)).join('');
   const rows = [header];
@@ -399,11 +404,11 @@ export function renderMap(state) {
       const unit = unitMap[k];
 
       if (city) {
-        const mark = city.ownerId === p1Id ? '1' : '2';
+        const mark = unseated(city.ownerId) ? '%' : city.ownerId === p1Id ? '1' : '2';
         row += ` ${mark}`;
       } else if (unit) {
         const sym = unit.type[0];
-        row += ` ${unit.ownerId === p1Id ? sym.toUpperCase() : sym.toLowerCase()}`;
+        row += ` ${unseated(unit.ownerId) ? '*' : unit.ownerId === p1Id ? sym.toUpperCase() : sym.toLowerCase()}`;
       } else {
         const sym = tile ? (TERRAIN[tile.terrain]?.symbol ?? '?') : ' ';
         row += ` ${sym}`;

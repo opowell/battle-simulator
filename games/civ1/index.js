@@ -41,3 +41,4 @@ export { TERRAIN } from './terrain.js';
 export { UNITS } from './units.js';
 export { resolveCombat, getCombatStrengths } from './combat.js';
 export { generateMap, getReachableTiles, renderMap } from './map.js';
+export { BARBARIAN_ID, BARBARIAN_LEVELS, BARBARIAN_LEVEL_IDS, DEFAULT_BARBARIAN_LEVEL } from './barbarians.js';
