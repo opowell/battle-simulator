@@ -135,6 +135,25 @@ test('economy: maintenance is charged and research accrues over turns', () => {
   assert.ok(Array.isArray(civ.techs));
 });
 
+// A completed improvement leaves `production` naming something the city can never
+// build again. Before this was handled, the city simply built it a second time the
+// next time its shields filled — and a third, and a ninth — each copy charging its
+// own maintenance for no extra effect.
+test('economy: a finished improvement is not built twice', () => {
+  let s = miniState({ size: 4, techs: ['ceremonial-burial'], buildings: ['palace'] });
+  s.cities[0].production = 'temple';
+  s.cities[0].shields = 1000;             // enough to finish it many times over
+
+  for (let i = 0; i < 5; i++) {
+    s = Civ1Game.applyActions(s, [{ playerId: 'p1', action: { type: 'end-turn', unitId: '__player__' } }]);
+  }
+
+  const temples = s.cities[0].buildings.filter(b => b === 'temple').length;
+  assert.equal(temples, 1, 'exactly one Temple was built');
+  assert.notEqual(s.cities[0].production, 'temple', 'the city moved off what it had finished');
+  assert.ok(!buildableForCity(s, s.cities[0]).includes('temple'), 'and could not choose it again');
+});
+
 test('economy: change-government enters anarchy then adopts the new government', () => {
   let s = miniState({ techs: ['monarchy', 'ceremonial-burial', 'code-of-laws'] });
   s = Civ1Game.applyActions(s, [{ playerId: 'p1', action: { type: 'change-government', government: 'monarchy', unitId: '__player__' } }]);

@@ -125,6 +125,12 @@ export function buildableForCity(state, city, ctx = null) {
   return out;
 }
 
+// What a city falls back to when what it was building can never be built again (see
+// the Production block below), and what a newly founded city starts on. Militia is
+// the one item gated behind no advance at all, so it is always a legal thing to be
+// building — which is what a fallback has to be.
+export const DEFAULT_PRODUCTION = 'militia';
+
 // Cost in shields of any buildable id (unit, improvement, wonder, or spaceship part).
 export function buildCost(id) {
   return UNITS[id]?.cost ?? IMPROVEMENTS[id]?.cost ?? WONDERS[id]?.cost ?? SPACESHIP[id]?.cost ?? 10;
@@ -198,12 +204,28 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
             applyWonderOnComplete(production, known, events);
           }
           shields -= cost;
+          // What was just built can never be built here again — buildableForCity
+          // drops it from the moment it lands in `buildings`. `production` still
+          // names it, though, and nothing below re-reads that list, so the next
+          // time the shields fill the city builds a SECOND one: left alone, a city
+          // reached nine Temples in a 200-turn game, paying nine lots of upkeep
+          // (cityMaintenance sums the list, duplicates and all) for one Temple's
+          // effect and burning eight Temples' worth of shields to get there. Point
+          // it back at the starter instead; the owner's ordinary once-per-turn
+          // set-production chooses something better from there.
+          production = DEFAULT_PRODUCTION;
         }
       } else if (SPACESHIP[production]) {
         // A spaceship part: adds to the owner's ship (capped) rather than the city.
         const part = SPACESHIP[production].part;
-        if (spaceship[part] < SPACESHIP[production].cap) spaceship[part] += 1;
-        shields -= cost;
+        if (spaceship[part] < SPACESHIP[production].cap) {
+          spaceship[part] += 1;
+          shields -= cost;
+        }
+        // Same trap as an improvement, and worse: a berth that is already full
+        // takes no part, so every further completion charged the shields and
+        // delivered nothing at all. Bank them and move the city on.
+        if (spaceship[part] >= SPACESHIP[production].cap) production = DEFAULT_PRODUCTION;
       } else if (UNITS[production]) {
         const spawn = findAdjacentFree(city.position, state.board, units);
         if (spawn) {

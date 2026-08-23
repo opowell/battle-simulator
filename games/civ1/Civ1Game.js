@@ -11,7 +11,7 @@ import { TECHS, researchableTechs, techCost } from './tech.js';
 import { IMPROVEMENTS, WONDERS, SPACESHIP, SPACESHIP_MIN, wonderEffectsFor, wonderBuiltInWorld } from './improvements.js';
 import { GOVERNMENTS, availableGovernments } from './governments.js';
 import { foodBox, computeCity, FAT_CROSS, workedTileYield } from './city.js';
-import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy } from './economy.js';
+import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy, DEFAULT_PRODUCTION } from './economy.js';
 import { DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, resolveRules } from './difficulty.js';
 import {
   BARBARIAN_ID, BARBARIAN_TEAM, BARBARIAN_LEVELS, BARBARIAN_LEVEL_IDS,
@@ -607,7 +607,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       size: 1,
       shields: 0,
       food: 0,
-      production: 'militia',
+      production: DEFAULT_PRODUCTION,
       buildings: isFirst ? ['palace'] : [],
     };
     cities = [...cities, newCity];
