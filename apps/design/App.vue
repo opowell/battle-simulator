@@ -156,10 +156,14 @@ function replayTurn() {
   // Observer lock-step: stretch the replay across the round's real sim-duration
   // so it plays at natural speed; otherwise use the fixed re-watch speed.
   const spanMs = ((s.observerPaced && s.stepSimTime) ? s.stepSimTime * MS_PER_SIM_SECOND : REPLAY_MS_PER_FRAME * frames.length) / playbackSpeed.value;
-  const perFrame = Math.max(16, spanMs / frames.length);
+  const idealMs = spanMs / frames.length;
+  const perFrame = Math.max(16, idealMs);
+  // A timer can't tick faster than ~16ms, so past that point the high speeds are
+  // honoured by skipping frames rather than by an interval the browser won't keep.
+  const stride = Math.max(1, Math.round(perFrame / idealMs));
   replayTimer = setInterval(() => {
     if (!replayAnim.value) return;
-    const next = replayAnim.value.idx + 1;
+    const next = replayAnim.value.idx + stride;
     if (next >= replayAnim.value.frames.length) { stopReplay(); return; }
     replayAnim.value = { ...replayAnim.value, idx: next };
   }, perFrame);

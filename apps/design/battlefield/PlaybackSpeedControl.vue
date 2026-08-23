@@ -7,7 +7,9 @@ defineProps({
   speed: { type: Number, default: 1 },
 });
 defineEmits(['set-speed']);
-const SPEEDS = [0.5, 1, 1.5, 2, 4];
+// Sub-1 speeds are labelled as fractions ("1/16×"), which reads better than 0.0625×.
+const SPEEDS = [1 / 16, 1 / 8, 0.5, 1, 1.5, 2, 4, 8, 16];
+const label = (s) => (s < 1 ? `1/${Math.round(1 / s)}` : String(s));
 </script>
 
 <template>
@@ -15,7 +17,7 @@ const SPEEDS = [0.5, 1, 1.5, 2, 4];
     <BsIcon name="clock" :size="12" color="var(--faint)"/>
     <select class="psc-select mono" :value="speed"
             @change="$emit('set-speed', Number($event.target.value))">
-      <option v-for="s in SPEEDS" :key="s" :value="s">{{s}}×</option>
+      <option v-for="s in SPEEDS" :key="s" :value="s">{{label(s)}}×</option>
     </select>
   </label>
 </template>
