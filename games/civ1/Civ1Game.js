@@ -1101,8 +1101,32 @@ export const Civ1Game = {
     // so a single run of this shows how the AIs play; it does not measure which is
     // better.
     {
-      id: 'ai-exhibition',
-      name: 'AI Exhibition',
+      id: 'large-ai-exhibition',
+      name: 'Large AI Exhibition',
+      description: 'Watch two AIs play it out — Obscuro against the greedy baseline on a large world. No seat for you.',
+      config: {
+        players: [
+          { name: 'Obscuro 1', agent: 'obscuro' },
+          { name: 'Greedy 1', agent: 'greedy' },
+          { name: 'Obscuro 2', agent: 'obscuro' },
+          { name: 'Greedy 2', agent: 'greedy' },
+          { name: 'Obscuro 3', agent: 'obscuro' },
+          { name: 'Greedy 3', agent: 'greedy' },
+        ],
+        allowObservers: true,
+        fogOfWar: true,
+        width: 50,
+        height: 30,
+        // The form's own ceiling (the Max turns slider stops at 500), because a
+        // 200-turn cap parked this matchup at max-turns with one civ well ahead
+        // on cities but neither destroyed — the exhibition wants to run long
+        // enough to reach an actual conquest.
+        maxTurns: 500,
+      },
+    },
+    {
+      id: 'small-ai-exhibition',
+      name: 'Small AI Exhibition',
       description: 'Watch two AIs play it out — Obscuro against the greedy baseline on a small world. No seat for you.',
       config: {
         players: [{ name: 'Obscuro', agent: 'obscuro' }, { name: 'Greedy', agent: 'greedy' }],
