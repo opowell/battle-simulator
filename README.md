@@ -134,7 +134,8 @@ while (!engine.result) {
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `maxTurns` | `number` | `500` | Stop with a draw after this many turns |
+| `maxTurns` | `number` | *(none)* | Stop with a draw after this many turns. Optional — with no limit set, `run()` goes until the game ends itself |
+| `stepLimit` | `number` | derived from `maxTurns` | Hard cap on `run()`'s steps; the only bound on an unlimited game |
 | `rng` | `() => number` | `Math.random` | Seeded RNG for deterministic replays |
 | `fogOfWar` | `boolean` | `false` | Call `game.getVisibleState` per player before asking for actions |
 
@@ -246,6 +247,7 @@ Create a new game session.
 
 - `agent`: `"human"` (waits for API input) or `"random"` (auto-plays)
 - `players` defaults to both players as `"human"` if omitted
+- `config.maxTurns` is optional; omit it and the session has no turn limit
 
 Returns the full session object (201). The response includes `humanPlayers: string[]` — the IDs of all human-controlled players in this session.
 

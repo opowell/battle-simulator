@@ -1097,7 +1097,8 @@ async function createSession(cfg) {
   }));
   try {
     const opts    = cfg.gameOpts ?? {};
-    const created = await api.create({ game: cfg.game, players, config: { maxTurns: cfg.maxTurns ?? 500, fog: opts.fogOfWar ?? false, ...opts, scenario: cfg.scenario } });
+    // maxTurns is optional: the form leaves it null when the turn limit is off.
+    const created = await api.create({ game: cfg.game, players, config: { ...(cfg.maxTurns ? { maxTurns: cfg.maxTurns } : {}), fog: opts.fogOfWar ?? false, ...opts, scenario: cfg.scenario } });
     sessionMeta.value = { ...sessionMeta.value, [created.id]: players };
     await enterSession(created.id);
     refresh();

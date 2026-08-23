@@ -105,7 +105,9 @@ const players = [
   { id: 'player-2', name: 'The Horde', agent: agent2 },
 ];
 
-const engine = new GameEngine(DoomGame, players);
+// The engine has no turn limit of its own any more, so a demo that wants one
+// (a stalemate here would otherwise run forever) says so.
+const engine = new GameEngine(DoomGame, players, { maxTurns: 500 });
 
 if (isAuto) {
   console.log('Running Doom simulation...\n');

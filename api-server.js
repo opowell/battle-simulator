@@ -1251,7 +1251,8 @@ async function handleCreateSession(req, res) {
   const fogOfWar = config.fog ?? config.fogOfWar ?? false;
   // A game can declare engine-level defaults (e.g. CS runs in simultaneous "we-go"
   // mode). Request config still wins, so a session can override them.
-  const engine = new GameEngine(entry.game, players, { maxTurns: config.maxTurns ?? 500, ...entry.game.defaultConfig, ...config, fogOfWar });
+  // No maxTurns in the request means no turn limit — the game runs until it ends.
+  const engine = new GameEngine(entry.game, players, { ...entry.game.defaultConfig, ...config, fogOfWar });
   const id = randomUUID();
   const params = { game: gameName, players: defs, config };
   const session = new Session(id, gameName, engine, apiAgents, config.fog ?? config.fogOfWar ?? false, config.debugAI ?? false, params);

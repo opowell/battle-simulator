@@ -12,6 +12,10 @@ const props = defineProps({
 // what to do with it (start a session, open an analysis board, …).
 const emit = defineEmits(['update:config']);
 
+// The turn limit is optional and off by default: a game runs until it ends on
+// its own. `maxTurns` is only the slider's remembered value — what the form
+// emits is null unless `turnsLimited` is on.
+const turnsLimited = ref(false);
 const maxTurns = ref(300);
 const gameOpts = ref({});
 const slots    = ref([]);
@@ -21,6 +25,7 @@ const slots    = ref([]);
 // than carrying it into the next one.
 function applyScenario(sc) {
   const ov = gameDefaults.scenarioOverrides(sc);
+  turnsLimited.value = ov.maxTurns != null;
   maxTurns.value = ov.maxTurns ?? 300;
   gameOpts.value = { ...gameOpts.value, ...ov.config };
   // A scenario may seat the table itself — e.g. two AIs and no human seat, for a
@@ -32,6 +37,7 @@ function applyScenario(sc) {
 watch(() => props.game, (g) => {
   if (!g) return;
   gameOpts.value = gameDefaults.initGameOpts(g);
+  turnsLimited.value = false;
   maxTurns.value = 300;
   applyScenario(g.scenarios?.find(s => s.id === props.scenario));
 }, { immediate: true });
@@ -42,12 +48,12 @@ watch(() => props.scenario, () => {
   applyScenario(props.game.scenarios?.find(s => s.id === props.scenario));
 });
 
-watch([maxTurns, gameOpts, slots, () => props.scenario], () => {
+watch([turnsLimited, maxTurns, gameOpts, slots, () => props.scenario], () => {
   if (!props.game) return;
   emit('update:config', {
     game:     props.game.name,
     gameOpts: { ...gameOpts.value },
-    maxTurns: maxTurns.value,
+    maxTurns: turnsLimited.value ? maxTurns.value : null,
     scenario: props.scenario || undefined,
     players:  slots.value,
   });
@@ -143,6 +149,13 @@ function cycleColor(i) {
           v-model:mode="gameOpts[opt.id + 'Mode']"/>
       </template>
       <div class="field">
+        <label>Turn limit</label>
+        <div class="seg gsf-seg">
+          <button :class="{on: !turnsLimited}" @click="turnsLimited = false" class="gsf-seg-btn">Off</button>
+          <button :class="{on:  turnsLimited}" @click="turnsLimited = true"  class="gsf-seg-btn">On</button>
+        </div>
+      </div>
+      <div v-if="turnsLimited" class="field">
         <label>Max turns · {{maxTurns}}</label>
         <input type="range" min="50" max="500" step="10" v-model.number="maxTurns"/>
       </div>

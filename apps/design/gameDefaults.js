@@ -50,12 +50,13 @@ function initGameOpts(g) {
 // plain option defaults — so a scenario can set up any session the Configure
 // screen itself could, and the observer still sees each value in its own control.
 function scenarioOverrides(sc) {
-  if (!sc) return { maxTurns: 300, players: null, config: {} };
+  if (!sc) return { maxTurns: null, players: null, config: {} };
   const { players = null, maxTurns, fog, fogOfWar, ...rest } = sc.config ?? {};
   // `fog` and `fogOfWar` are the same switch under two names (create() sends both).
   const f = fog ?? fogOfWar;
   return {
-    maxTurns: maxTurns ?? 300,
+    // Null = no turn limit; only a scenario that asks for one gets one.
+    maxTurns: maxTurns ?? null,
     players,
     config: { ...rest, ...(f != null ? { fogOfWar: f } : {}) },
   };

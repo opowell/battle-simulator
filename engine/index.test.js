@@ -167,6 +167,27 @@ test('maxTurns config terminates game with draw', async () => {
   assert.equal(result.reason, 'max-turns');
 });
 
+test('no maxTurns means no turn limit: a long game runs to its own ending', async () => {
+  // Ends itself well past the 500 turns that used to be the implicit default.
+  const LongGame = {
+    ...MockGame,
+    getResult: (s) => s.turnNumber > 600
+      ? { outcome: 'draw', winnerId: null, reason: 'test-over' } : null,
+  };
+  const engine = new GameEngine(LongGame, makePlayers(['a', 'b']));
+  const { result } = await engine.run();
+  assert.equal(result.reason, 'test-over');
+  assert.ok(engine.state.turnNumber > 500, 'ran past the old default cap');
+});
+
+test('stepLimit still bounds a run with no turn limit', async () => {
+  const EndlessGame = { ...MockGame, getResult: () => null };
+  const engine = new GameEngine(EndlessGame, makePlayers(['a', 'b']), { stepLimit: 20 });
+  const { result, log } = await engine.run();
+  assert.equal(result.reason, 'step-limit');
+  assert.equal(log.length, 20);
+});
+
 test('multiple activePlayers all act in one step', async () => {
   const SimGame = {
     name: 'sim',

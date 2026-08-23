@@ -42,7 +42,7 @@ export class GameEngine {
    * @param {import('../games/types.js').GameDefinition} game
    * @param {import('../games/types.js').Player[]} players
    * @param {object} [config]
-   * @param {number} [config.maxTurns]
+   * @param {number} [config.maxTurns]  Draw after this many turns. Optional — omit (or 0/null) and the game runs until it ends on its own.
    * @param {() => number} [config.rng]
    * @param {boolean} [config.fogOfWar]
    * @param {boolean} [config.simultaneousTurns]  All players plan a full turn at once, then orders resolve together (discrete time only).
@@ -404,7 +404,7 @@ export class GameEngine {
     this._log.push({ turnNumber, phase: currentPhase, playerActions: windowOrders, clock: turnEndTime });
 
     const maxSimTime = this.config.maxSimTime
-      ?? (this.config.maxTurns ?? 500) * turnDuration;
+      ?? (this.config.maxTurns ? this.config.maxTurns * turnDuration : Infinity);
     if (this._clock > maxSimTime) {
       this._result = { outcome: 'draw', winnerId: null, reason: 'max-turns' };
       return { done: true, result: this._result };
@@ -433,10 +433,13 @@ export class GameEngine {
    */
   async run() {
     this._init();
-    const maxTurns = this.config.maxTurns ?? 500;
-    const stepLimit = this.config.stepLimit ?? (this.timeType === 'continuous'
-      ? maxTurns
-      : maxTurns * Math.max(this.players.length, 2) * 20);
+    const maxTurns = this.config.maxTurns;
+    // No turn limit means no step budget either: run() goes until the game ends
+    // itself. Pass an explicit `stepLimit` to bound such a run.
+    const stepLimit = this.config.stepLimit ?? (!maxTurns ? Infinity
+      : this.timeType === 'continuous'
+        ? maxTurns
+        : maxTurns * Math.max(this.players.length, 2) * 20);
     let steps = 0;
     while (steps++ < stepLimit) {
       const { done } = await this.step();
