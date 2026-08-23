@@ -11,7 +11,7 @@ import { TECHS, researchableTechs, techCost } from './tech.js';
 import { IMPROVEMENTS, WONDERS, SPACESHIP, SPACESHIP_MIN, wonderEffectsFor, wonderBuiltInWorld } from './improvements.js';
 import { GOVERNMENTS, availableGovernments } from './governments.js';
 import { foodBox, computeCity, FAT_CROSS, workedTileYield } from './city.js';
-import { newCivState, buildOwnerCtx, buildableForCity, buildCost, processOwnerEconomy, DEFAULT_PRODUCTION } from './economy.js';
+import { newCivState, buildOwnerCtx, buildableForCity, canProduce, buildCost, processOwnerEconomy, DEFAULT_PRODUCTION } from './economy.js';
 import { DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, resolveRules } from './difficulty.js';
 import {
   BARBARIAN_ID, BARBARIAN_TEAM, BARBARIAN_LEVELS, BARBARIAN_LEVEL_IDS,
@@ -122,6 +122,10 @@ function getLegalActions(state, playerId) {
   const { units, cities, board } = state;
   const myUnits = units.filter(u => u.alive && u.ownerId === playerId);
   const actions = [];
+  // This player's advances, read once for the whole enumeration. The barbarians own
+  // units but keep no ledger (barbarians.js), so an empty set stands in for them —
+  // which is also the right answer, since they research nothing.
+  const ownerTechs = new Set(state.gameSpecific.civ?.[playerId]?.techs ?? []);
 
   for (const unit of myUnits) {
     const stats = UNITS[unit.type];
@@ -158,8 +162,19 @@ function getLegalActions(state, playerId) {
       const k = `${unit.position.x},${unit.position.y}`;
       const tile = board.tiles[k];
       const isLand = tile && tile.terrain !== 'ocean';
-      if (stats.special.includes('build-road') && isLand && !tile.hasRoad) {
+      // Bridge Building is what a river square costs: the original will not let
+      // Settlers road across running water until the civ knows how to bridge it.
+      // Dry land needs no advance at all.
+      if (stats.special.includes('build-road') && isLand && !tile.hasRoad
+          && (!tile.hasRiver || ownerTechs.has('bridge-building'))) {
         actions.push({ type: 'build-road', unitId: unit.id });
+      }
+      // Railroads go on top of an existing road once Railroad is in, and are the
+      // advance's whole point: free movement along them (moveCost below) and half
+      // again the shields off the square (workedTileYield in city.js).
+      if (stats.special.includes('build-road') && isLand && tile.hasRoad && !tile.hasRail
+          && ownerTechs.has('railroad')) {
+        actions.push({ type: 'build-railroad', unitId: unit.id });
       }
       if (stats.special.includes('irrigate') && isLand && !tile.irrigated && IRRIGABLE_TERRAIN.has(tile.terrain)) {
         actions.push({ type: 'irrigate', unitId: unit.id });
@@ -169,6 +184,18 @@ function getLegalActions(state, playerId) {
       }
       if (stats.special.includes('irrigate') && isLand && (tile.terrain === 'forest' || tile.terrain === 'jungle' || tile.terrain === 'swamp')) {
         actions.push({ type: 'clear-terrain', unitId: unit.id });
+      }
+
+      // Caravan: deliver its shields into a Wonder under construction in one of the
+      // owner's own cities. This is Trade's payoff — the advance otherwise only leads
+      // elsewhere in the tree — and the original's standard way to finish a Wonder
+      // that a single city could never out-produce on its own.
+      if (stats.special.includes('help-build-wonder')) {
+        const here = cities.find(c => c.ownerId === playerId
+          && c.position.x === unit.position.x && c.position.y === unit.position.y);
+        if (here && WONDERS[here.production]) {
+          actions.push({ type: 'help-build-wonder', unitId: unit.id, cityId: here.id });
+        }
       }
 
       actions.push({ type: 'skip-unit', unitId: unit.id });
@@ -275,6 +302,7 @@ function spaceshipTravelTime(ship) {
 // the tile actually landed on, not the accumulated path.
 function moveCost(unit, tile) {
   if (UNITS[unit.type].domain === 'air') return 1;
+  if (tile?.hasRail) return 0;          // railroads are free to travel, as in the original
   if (tile?.hasRoad) return 1 / 3;
   return (tile ? TERRAIN[tile.terrain]?.moveCost : null) ?? 1;
 }
@@ -407,6 +435,10 @@ function applyActions(state, playerActions, rng = Math.random) {
     cities = eco.cities;
     nextId = eco.nextId;
     const civ = { ...state.gameSpecific.civ, [playerId]: eco.civ };
+    // Facts the turn established about the WORLD rather than about this civ — right
+    // now only who took the world-first Philosophy bonus, which has to be recorded
+    // globally or every civ in turn would claim it (see processOwnerEconomy).
+    const worldPatch = eco.worldPatch ?? {};
 
     // Hand over to the next civ that still exists. An eliminated one is skipped
     // rather than being asked for orders it has no pieces to give; the turn counter
@@ -431,7 +463,7 @@ function applyActions(state, playerActions, rng = Math.random) {
     // as finished off.
     if (newTurn > state.turnNumber) {
       const barb = barbarianPhase(
-        { ...state, units, cities, turnNumber: newTurn, gameSpecific: { ...state.gameSpecific, nextId, civ } },
+        { ...state, units, cities, turnNumber: newTurn, gameSpecific: { ...state.gameSpecific, ...worldPatch, nextId, civ } },
         rng, BARBARIAN_DEPS);
       units = barb.units;
       cities = barb.cities;
@@ -469,7 +501,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       activePlayers: [nextPlayerId],
       turnNumber: newTurn,
       lastActions: playerActions,
-      gameSpecific: { ...state.gameSpecific, nextId, civ },
+      gameSpecific: { ...state.gameSpecific, ...worldPatch, nextId, civ },
     };
   }
 
@@ -546,7 +578,17 @@ function applyActions(state, playerActions, rng = Math.random) {
   }
 
   // ── set-production ────────────────────────────────────────────────────────
+  // The action names a build id, so the item has to be re-checked here rather than
+  // trusted: getLegalActions only *lists* what the city may build, and nothing stops a
+  // client (or a search agent replaying a stale action list) from posting an id that
+  // is not on that list. Without the canProduce guard the whole tech tree is advisory
+  // — a civ on turn 3 could set a city to Battleship and get one.
   if (action.type === 'set-production') {
+    const target = cities.find(c => c.id === action.cityId && c.ownerId === playerId);
+    const ctx = target && state.gameSpecific.civ?.[playerId] ? buildOwnerCtx(state, playerId) : null;
+    if (!target || !canProduce(state, target, action.item, ctx)) {
+      return { ...state, lastActions: playerActions };
+    }
     cities = cities.map(c =>
       c.id === action.cityId && c.ownerId === playerId
         ? { ...c, production: action.item, productionSetTurn: state.turnNumber }
@@ -580,16 +622,34 @@ function applyActions(state, playerActions, rng = Math.random) {
     };
   }
 
+  // ── help-build-wonder (caravan) ─────────────────────────────────────────────
+  // The caravan is spent and its full build cost lands in the city's shield box. The
+  // city may finish the Wonder the same turn if that tips it over the cost — the
+  // end-of-turn Production block reads `shields` and doesn't care where they came from.
+  if (action.type === 'help-build-wonder') {
+    const unit = units.find(u => u.id === action.unitId);
+    const city = cities.find(c => c.id === action.cityId && c.ownerId === playerId);
+    if (!unit || !city || !WONDERS[city.production]) return { ...state, lastActions: playerActions };
+    cities = cities.map(c => c.id === city.id
+      ? { ...c, shields: c.shields + buildCost(unit.type) }
+      : c);
+    units = units.filter(u => u.id !== action.unitId);
+    return { ...state, units, cities, lastActions: playerActions };
+  }
+
   // ── terrain improvements (settlers) ─────────────────────────────────────────
-  if (action.type === 'build-road' || action.type === 'irrigate' || action.type === 'build-mine' || action.type === 'clear-terrain') {
+  if (action.type === 'build-road' || action.type === 'build-railroad' || action.type === 'irrigate' || action.type === 'build-mine' || action.type === 'clear-terrain') {
     const unit = units.find(u => u.id === action.unitId);
     const k = `${unit.position.x},${unit.position.y}`;
     const tile = board.tiles[k];
     let patch;
     if (action.type === 'build-road') patch = { hasRoad: true };
+    else if (action.type === 'build-railroad') patch = { hasRoad: true, hasRail: true };
     else if (action.type === 'irrigate') patch = { irrigated: true, mined: false };
     else if (action.type === 'build-mine') patch = { mined: true, irrigated: false };
-    else patch = { terrain: CLEARS_TO[tile.terrain] ?? 'plains', irrigated: false, mined: false };
+    // Clearing forest/jungle/swamp remakes the square; a railroad laid on it does not
+    // survive the terraforming, and neither does the road it sat on.
+    else patch = { terrain: CLEARS_TO[tile.terrain] ?? 'plains', irrigated: false, mined: false, hasRail: false };
     const newTiles = { ...board.tiles, [k]: { ...tile, ...patch } };
     units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } } : u);
     return { ...state, units, board: { ...board, tiles: newTiles }, lastActions: playerActions };
@@ -940,7 +1000,8 @@ function terrainInfo(tile, x = null, y = null) {
   if (t.defBonus) parts.push(`+${Math.round(t.defBonus * 100)}% defense`);
   if (tile?.irrigated) parts.push('irrigated');
   if (tile?.mined) parts.push('mine');
-  if (tile?.hasRoad) parts.push('road');
+  if (tile?.hasRail) parts.push('railroad');
+  else if (tile?.hasRoad) parts.push('road');
   if (tile?.hasRiver) parts.push('river');
   return { name, description: parts.join(' · ') };
 }
@@ -1041,11 +1102,12 @@ export const Civ1Game = {
       directionPan: true,
       bindings: [
         { key: 'b', action: 'found-city',                  label: 'Found new city',                     group: 'Unit orders' },
-        { key: 'r', action: 'build-road',                  label: 'Build road',                         group: 'Unit orders' },
+        { key: 'r', action: ['build-road', 'build-railroad'], label: 'Build road, or railroad over one',  group: 'Unit orders' },
         // I is the original's one "agricultural improvement" key: irrigate where that's
         // possible, otherwise clear the forest/jungle/swamp standing on the square.
         { key: 'i', action: ['irrigate', 'clear-terrain'], label: 'Irrigate, or clear forest / swamp',  group: 'Unit orders' },
         { key: 'm', action: 'build-mine',                  label: 'Build mine',                         group: 'Unit orders' },
+        { key: 'h', action: 'help-build-wonder',           label: 'Caravan: help build Wonder',         group: 'Unit orders' },
         { key: 'f', action: 'fortify',                     label: 'Fortify',                            group: 'Unit orders' },
         { key: 's', action: 'sentry',                      label: 'Sentry (wake when an enemy shows)',  group: 'Unit orders' },
         { key: ' ', action: 'skip-unit',                   label: 'No orders — this unit is done',      group: 'Unit orders' },
@@ -1219,11 +1281,19 @@ export const Civ1Game = {
     // an unconnected road draws nothing, as in the game.
     const ROAD_DIRS = [['n',0,-1],['ne',1,-1],['e',1,0],['se',1,1],['s',0,1],['sw',-1,1],['w',-1,0],['nw',-1,-1]];
     const hasRoad = (x, y) => !!tiles[`${wrapX(x, width)},${y}`]?.hasRoad;
+    const hasRail = (x, y) => !!tiles[`${wrapX(x, width)},${y}`]?.hasRail;
+    // A railroaded square draws rail segments to its railroaded neighbours and plain
+    // road segments to the merely roaded ones, so track visibly ends where the line
+    // ends instead of the whole road turning into railway. rail_* is the road art
+    // recoloured — see images/make-rail-sprites.mjs.
     const roadSprites = (x, y) => {
       if (!hasRoad(x, y)) return [];
+      const rail = hasRail(x, y);
       return ROAD_DIRS
         .filter(([, dx, dy]) => hasRoad(x + dx, y + dy))
-        .map(([d]) => `${BASE}/terrain/road_${d}`);
+        .map(([d, dx, dy]) => rail && hasRail(x + dx, y + dy)
+          ? `${BASE}/terrain/rail_${d}`
+          : `${BASE}/terrain/road_${d}`);
     };
 
     const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
@@ -1318,7 +1388,8 @@ export const Civ1Game = {
         // the Science overlay needs these pre-resolved rather than looking them up itself.
         researchName: c.research ? (TECHS[c.research]?.name ?? c.research) : null,
         researchedNames: c.techs.map(id => TECHS[id]?.name ?? id),
-        bulbs: c.bulbs, researchCost: c.research ? techCost(c.techs.length) : null,
+        bulbs: c.bulbs, researchCost: c.research ? techCost(c.techs.length + (c.futureTechs ?? 0)) : null,
+        futureTechs: c.futureTechs ?? 0,
         taxRate: c.taxRate, luxRate: c.luxRate, taxMax: GOVERNMENTS[c.government].taxMax,
         anarchyTurns: c.anarchyTurns,
       }]));

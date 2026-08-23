@@ -43,6 +43,11 @@ export function workedTileYield(tile, x, y, ctx) {
   if (tile.irrigated && IRRIGABLE.has(terrain)) food += 1;
   if (tile.mined && MINEABLE[terrain]) shields += MINEABLE[terrain];
   if (tile.hasRoad && ROAD_TRADE.has(terrain)) trade += 1;
+  // A railroad adds half again to the square's shields, rounded down — so it pays
+  // only where there were shields to begin with (a mined hill, a forest), exactly as
+  // in the original. This is the economic half of the Railroad advance; the free
+  // movement is the other half (moveCost in Civ1Game.js).
+  if (tile.hasRail) shields += Math.floor(shields / 2);
 
   // Despotism/Anarchy dock 1 from any yield of 3+ (the Pyramids cancel this).
   if (ctx.gov.despotismPenalty && !ctx.wonderEffects.has('negate-despotism-penalty')) {
@@ -79,7 +84,8 @@ function candidateTiles(city, ctx) {
     // turn 2, still size 1 with nothing built on turn 150, with no way back. Roughly half
     // of all starts landed in that state.
     const worked = center
-      ? { ...tile, hasRoad: true, irrigated: tile.irrigated || IRRIGABLE.has(tile.terrain) }
+      ? { ...tile, hasRoad: true, hasRail: tile.hasRail || ctx.techs.has('railroad'),
+          irrigated: tile.irrigated || IRRIGABLE.has(tile.terrain) }
       : tile;
     const y3 = workedTileYield(worked, x, y, ctx);
     out.push({ x, y, key, center, yield: y3 });

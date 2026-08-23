@@ -72,8 +72,8 @@ export const WONDERS = {
 // known; `cap` limits how many of each a complete ship needs.
 export const SPACESHIP = {
   'ss-structural': { name: 'Space Structural', cost: 80,  tech: 'space-flight',   part: 'structural', cap: 8 },
-  'ss-component':  { name: 'Space Component',  cost: 160, tech: 'superconductor', part: 'component',  cap: 6 },
-  'ss-module':     { name: 'Space Module',     cost: 320, tech: 'robotics',       part: 'module',     cap: 4 },
+  'ss-component':  { name: 'Space Component',  cost: 160, tech: 'plastics',       part: 'component',  cap: 6 },
+  'ss-module':     { name: 'Space Module',     cost: 320, tech: 'superconductor', part: 'module',     cap: 4 },
 };
 
 // Minimum parts a spaceship needs before it can be launched.

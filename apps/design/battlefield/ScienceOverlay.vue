@@ -7,6 +7,9 @@ import { computed } from 'vue';
 // client has no access to tech.js).
 const props = defineProps({
   show:             Boolean,
+  // civ carries researchName/researchedNames/bulbs/researchCost, plus futureTechs —
+  // the count of Future Tech completions, which never joins researchedNames because
+  // it is the one advance a civ researches more than once (see economy.js).
   civ:              { type: Object, default: null },
   researchActions:  { type: Array, default: () => [] },
 });
@@ -38,6 +41,12 @@ function pick(tech) {
             <span class="mono sc-val">{{civ.bulbs}}/{{civ.researchCost}}</span>
           </div>
           <div class="sc-track"><div class="sc-fill" :style="{ width: progressPct + '%' }"/></div>
+        </div>
+        <div v-if="civ?.futureTechs" class="sc-section">
+          <div class="sc-label">
+            <span>Future Tech</span>
+            <span class="mono sc-val">&times;{{civ.futureTechs}}</span>
+          </div>
         </div>
         <div v-if="civ?.researchedNames?.length" class="sc-section">
           <div class="sc-section-title">Researched ({{civ.researchedNames.length}})</div>

@@ -6,7 +6,10 @@
 // Grassland's `shields:1` is the table's base. The original then zeroes it on half of
 // grassland/river squares via a coordinate rule — see hasGrasslandShield in specials.js
 // — which is the familiar "shield grassland".
-// Civ 1 had no railroads — only roads reduce movement cost to 1/3
+// Movement: roads cut the cost to 1/3, railroads to nothing at all. Both live on the
+// tile (hasRoad / hasRail), not in this table — see moveCost in Civ1Game.js and the
+// matching flood in map.js. A railroad also adds half again to the square's shields
+// (workedTileYield in city.js); it is the Railroad advance's whole payoff.
 export const TERRAIN = {
   ocean:     { food:1, shields:0, trade:2, moveCost:1,  defBonus:0.00, passable:{land:false, sea:true,  air:true}, symbol:'~' },
   arctic:    { food:0, shields:0, trade:0, moveCost:2,  defBonus:0.00, passable:{land:true,  sea:false, air:true}, symbol:'^' },

@@ -86,6 +86,22 @@ export const TECHS = {
 
 export const ALL_TECH_IDS = Object.keys(TECHS);
 
+// The advances that unlock nothing on their own in the 1991 game — they exist purely
+// to connect other advances in the graph. Everything NOT in this set must enable at
+// least one unit, improvement, wonder, government, spaceship part, or engine rule;
+// tech.test.js asserts exactly that, so an advance can never quietly go dead again.
+//
+// Two of these are load-bearing in the original despite unlocking nothing buildable
+// and so are absent from the list: Philosophy (the first civ to discover it gets a
+// free advance, see economy.js) and Bridge Building (Settlers may road a river
+// square, see Civ1Game.js). Fusion Power's original effect — removing the Nuclear
+// Plant meltdown risk — has nothing to attach to here, since this engine models
+// neither pollution nor meltdowns, so it stays a connector.
+export const PURE_PREREQ = new Set([
+  'alphabet', 'medicine', 'engineering', 'physics', 'atomic-theory',
+  'electricity', 'chemistry', 'explosives', 'fusion-power',
+]);
+
 // A tech is researchable when every prerequisite is already known and it is not
 // already known. `known` is a Set of tech ids.
 export function isResearchable(id, known) {
@@ -106,6 +122,11 @@ export function researchableTechs(known) {
 // with how many advances the civ already has, so each is dearer than the last; this
 // is a compact version of that curve, kept low enough that a game actually moves
 // through the tree.
+//
+// `numKnown` counts repeats of Future Tech too (civ.futureTechs in economy.js). It has
+// to: Future Tech is the one advance that never enters the `known` Set a second time,
+// so counting the Set alone would leave a civ that has finished the tree buying an
+// endless run of advances at one frozen price.
 export function techCost(numKnown) {
   return 10 + numKnown * 8;
 }
