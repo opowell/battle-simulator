@@ -68,44 +68,6 @@ function wakeSentryUnits(units, playerId, boardWidth) {
   });
 }
 
-const UNIT_IMAGES = {
-  settlers:      `${BASE}/units/settlers`,
-  diplomat:      `${BASE}/units/diplomat`,
-  militia:       `${BASE}/units/warrior`,
-  phalanx:       `${BASE}/units/spearman`,
-  archers:       `${BASE}/units/swordman`,
-  legion:        `${BASE}/units/swordman`,
-  catapult:      `${BASE}/units/catapult`,
-  cavalry:       `${BASE}/units/horseman`,
-  chariot:       `${BASE}/units/chariot`,
-  knights:       `${BASE}/units/knight`,
-  crusaders:     `${BASE}/units/knight`,
-  musketeers:    `${BASE}/units/musketman`,
-  cannon:        `${BASE}/units/cannon`,
-  riflemen:      `${BASE}/units/rifleman`,
-  'cav-modern':  `${BASE}/units/horseman`,
-  artillery:     `${BASE}/units/artillery`,
-  infantry:      `${BASE}/units/combat_1`,
-  armor:         `${BASE}/units/tank`,
-  'mech-inf':    `${BASE}/units/mechanizedinfantry`,
-  paratroopers:  `${BASE}/units/combat_3`,
-  marines:       `${BASE}/units/combat_2`,
-  fighter:       `${BASE}/units/fighter`,
-  bomber:        `${BASE}/units/bomber`,
-  helicopter:    `${BASE}/units/combat_5`,
-  nuclear:       `${BASE}/units/nuclear`,
-  trireme:       `${BASE}/units/trireme`,
-  sail:          `${BASE}/units/sail`,
-  frigate:       `${BASE}/units/frigate`,
-  ironclad:      `${BASE}/units/ironclad`,
-  destroyer:     `${BASE}/units/combat_4`,
-  submarine:     `${BASE}/units/submarine`,
-  transport:     `${BASE}/units/transport`,
-  cruiser:       `${BASE}/units/cruiser`,
-  battleship:    `${BASE}/units/battleship`,
-  carrier:       `${BASE}/units/carrier`,
-};
-
 // ── City name pools ───────────────────────────────────────────────────────────
 
 const CITY_NAMES_P1 = [
@@ -1301,11 +1263,11 @@ export const Civ1Game = {
           // marines all start with 'm') — unitName carries the real type so the side
           // panel and roster show e.g. "militia" instead of a bare "M".
           unitName: u ? u.type : city ? city.name : undefined,
-          imagePath: city ? `${BASE}/map/city` : (u ? (UNIT_IMAGES[u.type] ?? null) : null),
+          imagePath: city ? `${BASE}/map/city` : (u ? `${BASE}/units/${u.type}` : null),
           // …but the panels that describe the *unit* (roster, selected-unit detail) keep
           // showing the unit: portraitPath wins over imagePath there, so a militia sitting
           // in a city is still a militia everywhere except on the map square itself.
-          portraitPath: (city && u) ? (UNIT_IMAGES[u.type] ?? null) : undefined,
+          portraitPath: (city && u) ? `${BASE}/units/${u.type}` : undefined,
           badge: city ? city.size : null,
           badgeLabel: city ? city.name : undefined,
           // Ocean draws no terrain sprite — coastSprite (below) supplies the real
