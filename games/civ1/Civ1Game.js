@@ -853,6 +853,32 @@ function createInitialState(players, config = {}) {
 
 // ── Fog of war ────────────────────────────────────────────────────────────────
 
+// Cities (bigger, garrisoned, elevated) see a little further than the module-level
+// UNIT_VISION units use (also shared with wakeSentryUnits above).
+const CITY_VISION = 2;
+
+// Every square `playerId` can see right now, as `"x,y"` keys: whatever lies within
+// sight of one of their units or cities, on a map that wraps east/west.
+//
+// A set rather than a per-position predicate because the caller asks about every
+// unit and city on the board, and the Obscuro search keys every node it builds off
+// getVisibleState — the unit-by-unit distance scan this replaces was quadratic in
+// the size of the war, on that hot path.
+function sightedTiles(state, playerId) {
+  const { width: W, height: H } = state.board;
+  const seen = new Set();
+  const add = (pos, r) => {
+    for (let dy = -r; dy <= r; dy++) {
+      const y = pos.y + dy;
+      if (y < 0 || y >= H) continue;                 // no wrap north/south, unlike east/west
+      for (let dx = -r; dx <= r; dx++) seen.add(`${wrapX(pos.x + dx, W)},${y}`);
+    }
+  };
+  for (const u of state.units)  if (u.alive && u.ownerId === playerId) add(u.position, UNIT_VISION);
+  for (const c of state.cities) if (c.ownerId === playerId)            add(c.position, CITY_VISION);
+  return seen;
+}
+
 function getVisibleState(state, playerId) {
   // With fog switched off there is nothing to hide, and hiding anyway is actively
   // wrong: the agents call this themselves (civ1SearchActions) rather than only
@@ -862,15 +888,8 @@ function getVisibleState(state, playerId) {
   // agent's own move out as illegal.
   if (state.gameSpecific?.fogOfWar === false) return state;
 
-  // Cities (bigger, garrisoned, elevated) see a little further than the module-level
-  // UNIT_VISION units use (also shared with wakeSentryUnits above).
-  const CITY_VISION = 2;
-  const myUnits  = state.units.filter(u => u.alive && u.ownerId === playerId);
-  const myCities = state.cities.filter(c => c.ownerId === playerId);
-  const W = state.board.width;
-  const canSee = pos =>
-    myUnits.some(m  => chebyshevWrapped(m.position, pos, W) <= UNIT_VISION) ||
-    myCities.some(c => chebyshevWrapped(c.position, pos, W) <= CITY_VISION);
+  const seen = sightedTiles(state, playerId);
+  const canSee = pos => seen.has(`${pos.x},${pos.y}`);
 
   // Wonder effects on vision: the Apollo Program lifts the fog entirely (the whole
   // map is known); Marco Polo's Embassy gives an embassy with every rival, so all
@@ -896,6 +915,95 @@ function getVisibleState(state, playerId) {
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
     cities: state.cities.filter(c => c.ownerId  === playerId || embassy || canSee(c.position)),
   };
+}
+
+// ── identityOf ────────────────────────────────────────────────────────────────
+//
+// Which part of a state makes two states the same information set for `playerId`.
+//
+// Without this hook the search fell back to naming `state.board` — the terrain.
+// Terrain is all but static, so every civ1 state at a given ply keyed into ONE
+// infoset: one strategy answered every position, and (because gtcfr.js chains the
+// opponent's observation-sequence key off this same identity) the opponent's
+// histories stopped being distinguishable too, which is the unsafe direction to
+// coarsen. The search's own diagnostic caught it and said so in the server log.
+//
+// This does NOT do any fog filtering of its own, and that is the whole design.
+// Obscuro calls it on two different things: on an OBSERVATION, to key infosets —
+// getVisibleState has already hidden what the player cannot see, for whichever
+// player is being keyed, including the opponent — and on a TRUE WORLD, to dedupe
+// carried tree nodes against fresh belief samples. Filter here as well and every
+// belief world collapses to one signature, because at the root they are all, by
+// construction, the same observation: the fresh samples would all dedupe away
+// against a single carried world and the belief would be one particle wide. So
+// name whatever is in the object handed over and let the caller decide what the
+// player can see.
+//
+// What varies here and belongs in the key:
+//   * units      — position, kind, damage, and for our own also the orders we can
+//                  still give them (moves left, fortify/sentry, queued waypoints).
+//                  Without those last, `fortify` and `skip-unit` produce identical
+//                  identities and the tree cannot tell the two apart. Someone
+//                  else's units are named by owner, kind and damage only: a belief
+//                  sampler invents their moves and orders, and a world must dedupe
+//                  against the real position it matches.
+//   * cities     — size, and for our own what they are building and how far along.
+//   * terrain    — only under our own units and cities. Terrain changes only where
+//                  a settler improves it, which is a square we occupy; a road built
+//                  elsewhere last turn is common to every world in the belief, and
+//                  naming the whole map would put 1500 constant entries in every
+//                  key on the hot path.
+//   * our ledger — treasury, rates, government, advances, spaceship. Half of civ1's
+//                  decisions (set-research, set-tax, change-government) move nothing
+//                  on the board at all and would otherwise be invisible here. Only
+//                  ours: getVisibleState redacts a rival's ledger to an empty one,
+//                  so naming theirs would just stop samples matching real worlds.
+//   * the phase and whose turn it is. `turnNumber` is in the key already — the docs
+//     are explicit that it must not be repeated here.
+//
+// Everything is flattened to strings on purpose. A map whose values carry `type` or
+// `ownerId` is read as a map of entities and stripped to exactly those two fields
+// (so a belief sampler's synthesized ids dedupe against real ones), which for a
+// unit would silently discard hp, moves and orders. Strings are compared whole.
+function identityOf(state, playerId) {
+  const out = {};
+
+  // Units, gathered per square first: civ1 stacks them, and a stack is one entry
+  // sorted into a fixed order so two spellings of the same stack agree.
+  const stacks = {};
+  for (const u of state.units) {
+    if (!u.alive) continue;
+    const orders = u.ownerId === playerId
+      ? `:${u.movesLeft}:${u.attrs?.fortified ? 'F' : ''}${u.attrs?.sentry ? 'S' : ''}:${u.queue?.length ?? 0}`
+      : '';
+    (stacks[`u:${u.position.x},${u.position.y}`] ??= []).push(`${u.ownerId}:${u.type}:${u.hp}${orders}`);
+  }
+  for (const [k, stack] of Object.entries(stacks)) out[k] = stack.sort().join('|');
+
+  for (const c of state.cities) {
+    out[`c:${c.position.x},${c.position.y}`] = c.ownerId === playerId
+      ? `${c.ownerId}:${c.size}:${c.production}:${c.shields}:${c.food}:${[...(c.buildings ?? [])].sort().join('+')}`
+      : `${c.ownerId}:${c.size}`;
+  }
+
+  const nameTile = (pos) => {
+    const t = state.board.tiles[`${pos.x},${pos.y}`];
+    if (!t) return;
+    out[`t:${pos.x},${pos.y}`] =
+      `${t.terrain}:${t.hasRoad ? 'r' : ''}${t.irrigated ? 'i' : ''}${t.mined ? 'm' : ''}${t.fortress ? 'f' : ''}`;
+  };
+  for (const u of state.units)  if (u.alive && u.ownerId === playerId) nameTile(u.position);
+  for (const c of state.cities) if (c.ownerId === playerId)            nameTile(c.position);
+
+  const civ = state.gameSpecific?.civ?.[playerId];
+  if (civ) {
+    const sp = civ.spaceship ?? {};
+    out['z:civ'] = `${civ.government}:${civ.anarchyTurns}:${civ.gold}:${civ.taxRate}:${civ.luxRate}:` +
+      `${civ.research ?? '-'}:${civ.bulbs}:${[...civ.techs].sort().join('+')}`;
+    out['z:ship'] = `${sp.structural ?? 0}:${sp.component ?? 0}:${sp.module ?? 0}:${sp.launched ? 1 : 0}:${sp.arrivesTurn ?? '-'}`;
+  }
+  out['z:phase'] = `${state.currentPhase ?? ''}:${(state.activePlayers ?? []).join('+')}`;
+  return out;
 }
 
 // Fog belief sampler for the generic ObscuroAgent: plausible full worlds with
@@ -1162,6 +1270,7 @@ export const Civ1Game = {
   getResult,
   renderState,
   getVisibleState,
+  identityOf,
   isActionLegal,
   sampleWorlds,
   getActionDuration,
