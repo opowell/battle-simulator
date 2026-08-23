@@ -10,6 +10,7 @@ import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
 import { TECHS, researchableTechs, techCost } from './tech.js';
 import { IMPROVEMENTS, WONDERS, SPACESHIP, SPACESHIP_MIN, wonderEffectsFor, wonderBuiltInWorld } from './improvements.js';
 import { GOVERNMENTS, availableGovernments } from './governments.js';
+import { CIVS, CIV_IDS, getCiv, nextCityName, pickCivs } from './civs.js';
 import { foodBox, computeCity, FAT_CROSS, workedTileYield } from './city.js';
 import { newCivState, buildOwnerCtx, buildableForCity, canProduce, buildCost, processOwnerEconomy, DEFAULT_PRODUCTION } from './economy.js';
 import { DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, resolveRules } from './difficulty.js';
@@ -68,23 +69,37 @@ function wakeSentryUnits(units, playerId, boardWidth) {
   });
 }
 
-// ── City name pools ───────────────────────────────────────────────────────────
+// ── Civilizations ─────────────────────────────────────────────────────────────
+//
+// Which of the original game's fourteen civs each seat is playing (civs.js). The
+// assignment is made once, in createInitialState, and lives in gameSpecific.tribes —
+// deliberately NOT inside gameSpecific.civ, which is the per-player economic ledger
+// that getVisibleState redacts for rivals. Who you are playing against is not secret
+// in Civ1 (the setup screen names them), so the identity has to sit outside the part
+// that gets hidden.
+//
+// Seats founded before this existed, and any state that arrives without the map, fall
+// back to the civ order of the original's own roster — seat 1 the Romans, seat 2 the
+// Babylonians, and so on.
+function tribeOf(state, playerId) {
+  const stored = state.gameSpecific?.tribes?.[playerId];
+  if (stored) return stored;
+  const seat = (state.players ?? []).findIndex(p => p.id === playerId);
+  return CIV_IDS[Math.max(0, seat) % CIV_IDS.length];
+}
 
-const CITY_NAMES_P1 = [
-  'Rome','Athens','Carthage','Alexandria','Babylon','Sparta','Troy',
-  'Corinth','Thebes','Syracuse','Sardis','Memphis','Persepolis','Nineveh',
-  'Ur','Tyre','Sidon','Antioch','Ephesus','Miletus',
-];
-const CITY_NAMES_P2 = [
-  'London','Paris','Berlin','Vienna','Madrid','Lisbon','Amsterdam',
-  'Brussels','Prague','Warsaw','Krakow','Stockholm','Oslo','Copenhagen',
-  'Dublin','Edinburgh','Geneva','Lyon','Marseille','Cologne',
-];
+// { playerId: civId } for a new game. The first seat gets the civ the setup menu
+// chose (the 'civ' game option — 'random' or absent means it is drawn like the rest),
+// and no two seats share one of the original's seven civ colours. See pickCivs.
+function assignTribes(players, rng, chosenCivId) {
+  const ids = pickCivs(players.length, rng, chosenCivId === 'random' ? null : chosenCivId);
+  return Object.fromEntries(players.map((p, i) => [p.id, ids[i]]));
+}
 
-function getNextCityName(cities, playerId) {
-  const pool = playerId.includes('2') ? CITY_NAMES_P2 : CITY_NAMES_P1;
-  const used = new Set(cities.map(c => c.name));
-  return pool.find(n => !used.has(n)) ?? `City${cities.length + 1}`;
+// The name a newly founded city takes. The used-name set is the whole world's, not
+// just this civ's: no two cities anywhere share a name (see nextCityName).
+function getNextCityName(state, cities, playerId) {
+  return nextCityName(tribeOf(state, playerId), new Set(cities.map(c => c.name)));
 }
 
 // ── Unit factory ──────────────────────────────────────────────────────────────
@@ -600,7 +615,7 @@ function applyActions(state, playerActions, rng = Math.random) {
   // ── found-city ────────────────────────────────────────────────────────────
   if (action.type === 'found-city') {
     const unit = units.find(u => u.id === action.unitId);
-    const name = getNextCityName(cities, playerId);
+    const name = getNextCityName(state, cities, playerId);
     // The owner's first city is the capital and comes with the Palace.
     const isFirst = !cities.some(c => c.ownerId === playerId);
     const newCity = {
@@ -769,7 +784,9 @@ function renderState(state) {
     const shipStr = ship && (ship.launched || ship.structural + ship.component + ship.module > 0)
       ? ` | spaceship ${ship.structural}S/${ship.component}C/${ship.module}M${ship.launched ? ` LAUNCHED→arrives T${ship.arrivesTurn}` : ''}`
       : '';
-    return `${pid}: cities=${cityStr}${econ}${shipStr}\n    units: ${unitStr}`;
+    // The barbarians hold no seat and so play no civ — they are named for what they are.
+    const who = pid === BARBARIAN_ID ? 'Barbarians' : getCiv(tribeOf(state, pid)).name;
+    return `${pid} (${who}): cities=${cityStr}${econ}${shipStr}\n    units: ${unitStr}`;
   };
 
   return [
@@ -817,6 +834,10 @@ function createFixedMapState(map, players, config) {
       spacetime: ST.resolveSpaceTime(Civ1Game, config),
       fogOfWar: config.fogOfWar ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
+      // Who each seat is (civs.js). A hand-built scenario is meant to replay the same
+      // way every time, so its civs are taken in the original's roster order rather
+      // than drawn at random — the seat still gets whatever the menu picked for it.
+      tribes: assignTribes(players, null, config.civ),
       rules: resolveRules(config),
       // Barbarian activity level (see barbarians.js). Only the id is stored — the
       // schedule it selects lives in the module, so it never has to survive a
@@ -895,6 +916,10 @@ function createInitialState(players, config = {}) {
       spacetime: ST.resolveSpaceTime(Civ1Game, config),
       fogOfWar: config.fogOfWar ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
+      // Who each seat is (civs.js). Drawn from the map's own rng, so a seed reproduces
+      // the rivals along with the world — and drawn AFTER the map and the starting
+      // positions, so an old seed still makes the same world it always did.
+      tribes: assignTribes(players, rng, config.civ),
       rules: resolveRules(config),
       // Barbarian activity level (see barbarians.js). Only the id is stored — the
       // schedule it selects lives in the module, so it never has to survive a
@@ -1320,6 +1345,12 @@ export const Civ1Game = {
   // every land colour here is that same green; ocean matches the real water tile.
   colors: { ocean: '#5046a0', coast: '#5046a0', plains: '#719230', grassland: '#719230', forest: '#719230', hills: '#719230', mountains: '#719230', desert: '#719230', tundra: '#719230', arctic: '#719230', jungle: '#719230', swamp: '#719230' },
   gameOptions: [
+    // Which of the original's fourteen civilizations the first seat plays (civs.js).
+    // A civ is a name, a leader and a list of city names and nothing else — the original
+    // gives them no differing traits either, so this changes no rule. The other seats
+    // draw from what is left, never two of the same original colour.
+    { id: 'civ', label: 'Your civilization', description: 'Your people, your leader, and the names your cities take — the rival seats draw from the rest', type: 'select', default: 'random',
+      options: [{ value: 'random', label: 'Random' }, ...CIVS.map(c => ({ value: c.id, label: `${c.name} — ${c.leader}` }))] },
     // Difficulty is a preset applied equally to BOTH civilizations (it never buffs the
     // AI — the AI only gets stronger or weaker from how much it is allowed to think).
     // Higher levels leave fewer citizens content, so cities fall into disorder sooner.
@@ -1616,13 +1647,19 @@ export const Civ1Game = {
     // strip (apps/design/battlefield/StatusChips.vue is a domain-agnostic renderer —
     // it has no idea what "gold" or "government" mean, only this game does).
     const statusChips = Object.fromEntries(
-      Object.entries(civ).map(([pid, c]) => [pid, [
-        { icon: 'zap', value: c.gold, title: 'Treasury' },
-        { value: c.government, title: 'Government' },
-        { value: `${c.taxRate}/${c.luxRate}/${100 - c.taxRate - c.luxRate}`, title: 'Tax / Luxury / Science' },
-        ...(c.researchName ? [{ value: c.researchName, title: 'Researching' }] : []),
-        ...(c.anarchyTurns ? [{ value: 'Anarchy', warn: true }] : []),
-      ]]));
+      Object.entries(civ).map(([pid, c]) => {
+        // Who this seat is. The seat's own name is whoever is playing it; this is the
+        // civilization, which is what the original's screens call a player by.
+        const tribe = getCiv(tribeOf(state, pid));
+        return [pid, [
+          { value: tribe.name, title: `${tribe.leader} of the ${tribe.name}` },
+          { icon: 'zap', value: c.gold, title: 'Treasury' },
+          { value: c.government, title: 'Government' },
+          { value: `${c.taxRate}/${c.luxRate}/${100 - c.taxRate - c.luxRate}`, title: 'Tax / Luxury / Science' },
+          ...(c.researchName ? [{ value: c.researchName, title: 'Researching' }] : []),
+          ...(c.anarchyTurns ? [{ value: 'Anarchy', warn: true }] : []),
+        ]];
+      }));
 
     // Factions that own pieces without occupying a seat. The client appends these
     // after the seat teams (apps/design/App.vue's buildField), which is what gives the

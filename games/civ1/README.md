@@ -12,6 +12,41 @@ Turn-based 4X strategy on a tile map. Build cities, produce units, and conquer y
 (3 and 4 player games are supported too. `barbarian` is **not** in this table and never
 is — see [Barbarians](#barbarians).)
 
+## Civilizations
+
+Each seat plays one of the original game's fourteen civilizations
+([civs.js](civs.js)). A civilization is a name, a leader and a list of sixteen city
+names — the original gives them no differing traits, so which one you are changes no
+rule. Pick yours in the setup menu ("Your civilization", default random); the rival
+seats draw from the rest.
+
+| Civilization | Leader | Colour | First cities |
+|---|---|---|---|
+| Romans | Caesar | white | Rome, Caesarea, Carthage, Nicopolis, … |
+| Babylonians | Hammurabi | green | Babylon, Sumer, Uruk, Ninevah, … |
+| Germans | Frederick | blue | Berlin, Leipzig, Hamburg, Bremen, … |
+| Egyptians | Ramesses | yellow | Thebes, Memphis, Oryx, Heliopolis, … |
+| Americans | Abe Lincoln | cyan | Washington, New York, Boston, Philadelphia, … |
+| Greeks | Alexander | purple | Athens, Sparta, Corinth, Delphi, … |
+| Indians | M.Gandhi | grey | Delhi, Bombay, Madras, Bangalore, … |
+| Russians | Stalin | white | Moscow, Leningrad, Kiev, Minsk, … |
+| Zulus | Shaka | green | Zimbabwe, Ulundi, Bapedi, Hlobane, … |
+| French | Napoleon | blue | Paris, Orleans, Lyons, Tours, … |
+| Aztecs | Montezuma | yellow | Tenochtitlan, Chiauhtia, Chapultapec, Coatepec, … |
+| Chinese | Mao Tse Tung | cyan | Peking, Shanghai, Canton, Nanking, … |
+| English | Elizabeth I | purple | London, Coventry, Birmingham, Dover, … |
+| Mongols | Genghis Khan | grey | Samarkand, Bokhara, Nishapur, Karakorum, … |
+
+The colours are the original's own: it has seven for fourteen civs, so each civ pairs
+with the one seven rows below it, and a single game never contains both halves of a
+pair (never Romans *and* Russians). Red is missing on purpose — it is the barbarians'.
+Seat colour on the map comes from the seat rather than from the civ, so this only
+constrains who shows up together.
+
+A city takes the first free name from its own civ's list, then from the 32 shared
+spares the original keeps in reserve (Mecca, Naples, Sidon, …), then any free name at
+all. No two cities in a world ever share a name, whoever founds them.
+
 ## Units
 
 All units have `firepower: 1` (damage per combat hit). Combat continues round-by-round until one side reaches 0 HP.
