@@ -77,6 +77,12 @@ export function makeGreedyAgent({ id = 'greedy' } = {}) {
       const attack = legalActions.find(a => a.type === 'attack');
       if (attack) return attack;
 
+      // A caravan sitting in a city that is building a Wonder: hand over the shields.
+      // Without this the caravan is just a defenceless unit and gets marched at the
+      // enemy with the rest of the army.
+      const help = legalActions.find(a => a.type === 'help-build-wonder');
+      if (help) return help;
+
       const found = legalActions.find(a => a.type === 'found-city');
       if (found) return found;
 
@@ -301,6 +307,10 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
           );
         }
       }
+
+      // ── Caravans deliver ────────────────────────────────────────────────
+      const help = legalActions.find(a => a.type === 'help-build-wonder');
+      if (help) return help;
 
       // ── Settle, but not on top of ourselves ─────────────────────────────
       const myCityPositions = myCities.map(c => c.position);

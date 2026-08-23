@@ -6,6 +6,10 @@
 //   (null = available from the start). Units the 1991 roster did not actually have
 //   (e.g. archers, marines) are gated at the nearest plausible advance so the tech
 //   progression stays sensible.
+//
+// The gate is enforced, not advisory: canProduce in economy.js is the single check,
+// and it runs on what a city is offered, on what set-production accepts, and on what
+// a city is still allowed to finish (see tech.test.js).
 
 export const UNITS = {
   // ── Terrain Improvement ──────────────────────────────────────────────────
@@ -13,6 +17,12 @@ export const UNITS = {
 
   // ── Diplomacy ────────────────────────────────────────────────────────────
   diplomat: { attack:0, defense:0, moves:2, hp:10, firepower:1, cost:30, domain:'land', tech:'writing', special:['diplomacy','bribe','sabotage'] },
+
+  // ── Trade ────────────────────────────────────────────────────────────────
+  // The Caravan carries its 50 shields to a city building a Wonder and pours them in
+  // (the 'help-build-wonder' action in Civ1Game.js), which is what makes Trade worth
+  // researching for its own sake rather than only as a prerequisite.
+  caravan:  { attack:0, defense:1, moves:1, hp:10, firepower:1, cost:50, domain:'land', tech:'trade',   special:['help-build-wonder'] },
 
   // ── Ancient Land ─────────────────────────────────────────────────────────
   militia:     { attack:1,  defense:1,  moves:1, hp:10, firepower:1, cost:10,  domain:'land', tech:null,               special:[] },

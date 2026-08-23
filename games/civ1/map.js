@@ -218,7 +218,7 @@ export function generateMap(width, height, rng, opts = {}) {
     for (let x = 0; x < width; x++) {
       tiles[`${x},${y}`] = {
         terrain: terr[idx(x, y)] ?? 'ocean',
-        hasRoad: false, hasRiver: false, fortress: false,
+        hasRoad: false, hasRail: false, hasRiver: false, fortress: false,
       };
     }
   }
@@ -348,10 +348,14 @@ export function getReachableTiles(unit, board, allUnits, playerId) {
       if (domain === 'land' && enemyPos.has(k)) continue;
       if (friendlyPos.has(k)) continue;
 
-      // Civ1: road=1/3, no railroads
+      // Civ1 movement costs: railroad is free, road is 1/3, otherwise the terrain's
+      // own cost. Must stay in step with moveCost in Civ1Game.js — this enumerates
+      // where a unit may go, that one charges for the step actually taken.
       let cost;
       if (domain === 'air') {
         cost = 1;
+      } else if (tile.hasRail) {
+        cost = 0;
       } else if (tile.hasRoad) {
         cost = 1 / 3;
       } else {

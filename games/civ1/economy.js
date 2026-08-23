@@ -8,7 +8,7 @@
 
 import { UNITS } from './units.js';
 import { TECHS, researchableTechs, techCost } from './tech.js';
-import { IMPROVEMENTS, WONDERS, SPACESHIP, improvementDef, wonderBuiltInWorld } from './improvements.js';
+import { IMPROVEMENTS, WONDERS, SPACESHIP, improvementDef } from './improvements.js';
 import { GOVERNMENTS } from './governments.js';
 import { computeCity, cityMaintenance, foodBox } from './city.js';
 import { findAdjacentFree } from './map.js';
@@ -20,6 +20,7 @@ export function newCivState() {
     government: 'despotism',
     anarchyTurns: 0,       // >0 while a revolution is in progress
     techs: [],             // researched advance ids
+    futureTechs: 0,        // completions of Future Tech, the one repeatable advance
     research: null,        // advance currently being researched
     bulbs: 0,              // accumulated science toward `research`
     gold: 0,
@@ -76,53 +77,96 @@ export function buildOwnerCtx(state, ownerId) {
   };
 }
 
-// Wonders already built (or under construction) anywhere in the world — one per world.
+// Wonders already built anywhere in the world — one per world. Handed back as a COPY:
+// processOwnerEconomy adds to it as cities finish wonders during the turn, and the
+// cached set below must not be mutated out from under the next caller.
 function claimedWonders(state) {
-  const claimed = new Set();
-  for (const c of state.cities) for (const b of c.buildings ?? []) if (WONDERS[b]) claimed.add(b);
-  return claimed;
+  return new Set(worldWonders(state).claimed);
 }
 
-// What a given city may be told to build right now: units and improvements/wonders
-// whose prerequisite advance the owner has, that the city doesn't already have, and
-// (for improvements) whose required prior improvement is present.
-export function buildableForCity(state, city, ctx = null) {
-  const known = ctx ? ctx.techs : new Set(state.gameSpecific.civ[city.ownerId].techs);
-  const has = new Set(city.buildings ?? []);
-  const manhattan = wonderBuiltInWorld(state.cities, 'manhattan');
-  const apollo = wonderBuiltInWorld(state.cities, 'apollo');
-  const ship = state.gameSpecific.civ[city.ownerId]?.spaceship;
-  const out = [];
-
-  for (const [id, u] of Object.entries(UNITS)) {
-    if (u.tech != null && !known.has(u.tech)) continue;
-    // The Nuclear missile also needs the Manhattan Project to exist somewhere.
-    if (u.special?.includes('nuclear') && !manhattan) continue;
-    out.push(id);
-  }
-  for (const [id, imp] of Object.entries(IMPROVEMENTS)) {
-    if (has.has(id)) continue;
-    if (imp.tech != null && !known.has(imp.tech)) continue;
-    if (imp.requires && !has.has(imp.requires)) continue;
-    if (id === 'palace') continue; // capital only; not a manual build here
-    out.push(id);
-  }
-  const claimed = claimedWonders(state);
-  for (const [id, w] of Object.entries(WONDERS)) {
-    if (has.has(id) || claimed.has(id)) continue;
-    if (w.tech != null && !known.has(w.tech)) continue;
-    out.push(id);
-  }
-  // Spaceship parts: need the Apollo Program built, the part's advance, and room left
-  // on the ship for another of that part.
-  if (apollo) {
-    for (const [id, p] of Object.entries(SPACESHIP)) {
-      if (p.tech != null && !known.has(p.tech)) continue;
-      if (ship && ship[p.part] >= p.cap) continue;
-      out.push(id);
-    }
-  }
+// Which wonders exist anywhere in the world, computed once per distinct `cities`
+// array rather than once per candidate build. canProduce asks three questions of the
+// world (is this wonder taken? does the Manhattan Project exist? the Apollo Program?)
+// and buildableForCity runs it across every unit, improvement, wonder and ship part,
+// so without this the AI search rescanned every city's building list ~90 times per
+// city per turn. `state.cities` is replaced wholesale on any change (the engine is
+// immutable throughout), so its identity is a sound cache key.
+const wonderCache = new WeakMap();
+function worldWonders(state) {
+  const hit = wonderCache.get(state.cities);
+  if (hit) return hit;
+  const claimed = new Set();
+  for (const c of state.cities) for (const b of c.buildings ?? []) if (WONDERS[b]) claimed.add(b);
+  const out = { claimed, manhattan: claimed.has('manhattan'), apollo: claimed.has('apollo') };
+  wonderCache.set(state.cities, out);
   return out;
+}
+
+// Whether `city` may build `id` right now — the ONE place the build rules live.
+//
+// Three callers share it and must agree, or the tech tree stops meaning anything:
+// buildableForCity below (what the UI offers), the set-production handler in
+// Civ1Game.js (what an action is allowed to set — a client posts the item id, so
+// listing the legal ones is not the same as enforcing them), and the end-of-turn
+// build in processOwnerEconomy (what a city is still allowed to FINISH — production
+// is chosen once and then sits on the city for many turns, and a captured city
+// arrives carrying whatever its old owner was building, on that owner's advances).
+//
+// `allowClaimedWonder` is the one deliberate split: a wonder someone else completed
+// after you started it can never be *chosen*, but the city keeps its shields banked
+// and goes on trying (see the Production block below), so the end-of-turn caller must
+// not treat that as an illegal build and reset the city.
+export function canProduce(state, city, id, ctx = null, { allowClaimedWonder = false } = {}) {
+  const known = ctx ? ctx.techs : new Set(state.gameSpecific.civ[city.ownerId]?.techs ?? []);
+  const has = new Set(city.buildings ?? []);
+
+  const u = UNITS[id];
+  if (u) {
+    if (u.tech != null && !known.has(u.tech)) return false;
+    // The Nuclear missile also needs the Manhattan Project to exist somewhere.
+    if (u.special?.includes('nuclear') && !worldWonders(state).manhattan) return false;
+    return true;
+  }
+
+  const imp = IMPROVEMENTS[id];
+  if (imp) {
+    if (id === 'palace') return false; // capital only; not a manual build here
+    if (has.has(id)) return false;
+    if (imp.tech != null && !known.has(imp.tech)) return false;
+    if (imp.requires && !has.has(imp.requires)) return false;
+    return true;
+  }
+
+  const w = WONDERS[id];
+  if (w) {
+    if (has.has(id)) return false;
+    if (w.tech != null && !known.has(w.tech)) return false;
+    if (!allowClaimedWonder && worldWonders(state).claimed.has(id)) return false;
+    return true;
+  }
+
+  const part = SPACESHIP[id];
+  if (part) {
+    if (!worldWonders(state).apollo) return false;
+    if (part.tech != null && !known.has(part.tech)) return false;
+    const ship = state.gameSpecific.civ[city.ownerId]?.spaceship;
+    if (ship && ship[part.part] >= part.cap) return false;
+    return true;
+  }
+
+  return false;
+}
+
+// Every id a city could ever be set to, in the order the UI lists them.
+const ALL_BUILDABLE_IDS = [
+  ...Object.keys(UNITS), ...Object.keys(IMPROVEMENTS),
+  ...Object.keys(WONDERS), ...Object.keys(SPACESHIP),
+];
+
+// What a given city may be told to build right now: every buildable id that passes
+// canProduce above.
+export function buildableForCity(state, city, ctx = null) {
+  return ALL_BUILDABLE_IDS.filter(id => canProduce(state, city, id, ctx));
 }
 
 // What a city falls back to when what it was building can never be built again (see
@@ -160,6 +204,9 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
   const wonderClaimed = claimedWonders(state);
   const spaceship = { ...civ.spaceship };
   const events = [];
+  // Set when this civ takes the world-first Philosophy bonus below; the caller writes
+  // it back into gameSpecific (via `worldPatch`) so no later civ can claim it too.
+  let philosophyClaimed = false;
 
   const ownerCityIds = new Set(state.cities.filter(c => c.ownerId === ownerId).map(c => c.id));
   const cities = state.cities.map(city => {
@@ -173,6 +220,23 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
     let { size, food, shields } = city;
     const buildings = (city.buildings ?? []).slice();
     let production = city.production;
+
+    // A city's production is chosen once and then sits there for many turns, so by
+    // the time the shields land it may no longer be something this owner can build.
+    // The reachable case is capture: a city taken from a more advanced civ arrives
+    // still set to Battleship, and nothing else re-reads that field — so a civ that
+    // has never heard of Steel would go on launching battleships out of it forever.
+    // Point it back at the starter; the owner's ordinary set-production picks up
+    // from there. A wonder claimed elsewhere is exempt (see canProduce) because the
+    // block below deliberately banks the shields and keeps trying instead.
+    if (!canProduce(state, city, production, ctx, { allowClaimedWonder: true })) {
+      // Cap the banked shields at what the starter costs. A city taken mid-Battleship
+      // can be sitting on 150 shields, and the Production block below only ever
+      // subtracts the finished item's cost — so carrying them over would turn one
+      // capture into fifteen free militia over the following turns.
+      production = DEFAULT_PRODUCTION;
+      shields = Math.min(shields, buildCost(DEFAULT_PRODUCTION));
+    }
 
     // ── Growth / starvation ──────────────────────────────────────────────────
     food += out.foodSurplus;
@@ -244,13 +308,34 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
   });
 
   // ── Research ───────────────────────────────────────────────────────────────
+  // `futureTechs` counts completions of Future Tech, the one repeatable advance.
+  // Adding it to a Set does nothing the second time, so without a separate tally a
+  // civ that finished the tree would buy Future Tech over and over at whatever price
+  // the last real advance cost — and every score that reads techs.length (see
+  // Civ1Game's evaluate) would stay frozen while it did.
+  let futureTechs = civ.futureTechs ?? 0;
+  const priceOfNext = () => techCost(known.size + futureTechs);
+
   if (!civ.research) civ.research = pickResearch(known);
   if (civ.research) {
-    const cost = techCost(known.size);
+    const cost = priceOfNext();
     if (bulbs >= cost) {
       bulbs -= cost;
-      known.add(civ.research);
-      events.push({ type: 'tech', tech: civ.research });
+      const learned = civ.research;
+      if (learned === 'future-tech') futureTechs += 1; else known.add(learned);
+      events.push({ type: 'tech', tech: learned });
+
+      // Philosophy: the first civ in the world to discover it gets an immediate free
+      // advance. It is the original's one research-order bonus, and the only reason
+      // to route through Philosophy rather than around it.
+      if (learned === 'philosophy' && !state.gameSpecific.philosophyClaimedBy) {
+        philosophyClaimed = true;
+        const free = pickResearch(known);
+        if (free && free !== 'future-tech') {
+          known.add(free);
+          events.push({ type: 'tech', tech: free, free: 'philosophy' });
+        }
+      }
       civ.research = pickResearch(known);
     }
   }
@@ -283,6 +368,7 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
   }
 
   civ.techs = [...known];
+  civ.futureTechs = futureTechs;
   civ.bulbs = Math.max(0, bulbs);
   civ.gold = Math.max(0, Math.round(gold));
   civ.spaceship = spaceship;
@@ -297,7 +383,10 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
   }
 
   const cleanCities = cities.map(({ _out, ...c }) => c);
-  return { cities: cleanCities, units, civ, nextId: idCounter, events };
+  // `worldPatch` is merged into state.gameSpecific by the caller — the few results of
+  // one civ's turn that are facts about the WORLD rather than about that civ.
+  const worldPatch = philosophyClaimed ? { philosophyClaimedBy: ownerId } : null;
+  return { cities: cleanCities, units, civ, nextId: idCounter, events, worldPatch };
 }
 
 // Successor unit for Leonardo's Workshop upgrades — old type -> the modern unit of the

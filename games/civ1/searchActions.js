@@ -277,8 +277,14 @@ function unitActions(legal, obs, playerId, unit) {
 
   // One terraforming order (the settler's alternative to walking further).
   const terraform = mine.find(a =>
-    a.type === 'irrigate' || a.type === 'build-mine' || a.type === 'build-road' || a.type === 'clear-terrain');
+    a.type === 'irrigate' || a.type === 'build-mine' || a.type === 'build-road'
+    || a.type === 'build-railroad' || a.type === 'clear-terrain');
   if (terraform) out.push(terraform);
+
+  // A caravan standing in a city that is building a Wonder has exactly one thing
+  // worth doing, and it is worth 50 shields — never prune it away.
+  const helpWonder = mine.find(a => a.type === 'help-build-wonder');
+  if (helpWonder) out.push(helpWonder);
 
   // Movement. Settlers look for somewhere worth living; everyone else closes on
   // the nearest thing worth taking, or explores outward when nothing is in sight.
