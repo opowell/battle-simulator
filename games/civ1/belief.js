@@ -176,6 +176,12 @@ export class Civ1Belief {
   }
 
   beginTurn(observation) {
+    // Take the freshest map we have. The board reaches us fogged now (Civ1Game's
+    // getVisibleState hides ground this player has never walked), and _expand floods a
+    // hidden enemy over whatever it reads as passable — so holding on to the board we
+    // were built with would keep spreading them across a world that was almost all
+    // dark at turn one, ocean included, long after we had walked the coast.
+    this.board = observation.board;
     if (observation.turnNumber !== this.lastTurn) {
       if (this.lastTurn !== null) this._expand();
       this.lastTurn = observation.turnNumber;
