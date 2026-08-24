@@ -19,7 +19,7 @@
 import { UNITS } from './units.js';
 import { mintId, takenIds } from './ids.js';
 import { TERRAIN } from './terrain.js';
-import { wrapX } from './map.js';
+import { wrapX, makeZoneOfControl } from './map.js';
 
 // The owner id barbarian pieces carry. Never a member of state.players — every
 // `ownerId !== playerId` test in the game already treats them as hostile to everyone,
@@ -280,12 +280,19 @@ function nextStep(unit, units, cities, board) {
   const goal = raidGoal(unit, units, cities, W);
   if (!goal) return null;
 
+  // Raiders are bound by zones of control like anyone else, so a line of defenders
+  // turns them aside instead of letting them stroll through. They are never sealed
+  // in by it: the raid attacks whatever is adjacent before it considers a step
+  // (barbarianPhase above), and a blockade is by definition standing next to them.
+  const zocBlocks = makeZoneOfControl(board, units, cities, BARBARIAN_ID);
+
   let best = null, bestD = dist(unit.position, goal, W);
   for (const [dx, dy] of DIRS) {
     const y = unit.position.y + dy;
     if (y < 0 || y >= board.height) continue;
     const to = { x: wrapX(unit.position.x + dx, W), y };
     if (!canEnter(to, units, board)) continue;
+    if (zocBlocks(unit, unit.position, to)) continue;
     const d = dist(to, goal, W);
     if (d < bestD) { bestD = d; best = to; }
   }

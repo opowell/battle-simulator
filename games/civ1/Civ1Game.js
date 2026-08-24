@@ -2,7 +2,7 @@ import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
-import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, wrapX } from './map.js';
+import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, makeZoneOfControl, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
 import { mintId, takenIds } from './ids.js';
@@ -149,7 +149,7 @@ function getLegalActions(state, playerId) {
 
     if (unit.movesLeft > 0) {
       // Movement
-      const reachable = getReachableTiles(unit, board, units, playerId);
+      const reachable = getReachableTiles(unit, board, units, playerId, cities);
       for (const to of reachable) {
         actions.push({ type: 'move', unitId: unit.id, from: unit.position, to });
       }
@@ -235,7 +235,7 @@ function getLegalActions(state, playerId) {
       // away (see games/moveQueue.js) — one queued waypoint per future turn, consumed
       // by runQueuedMoves in the 'end-turn' handling below.
       actions.push(...queueMoveActions(unit, playerId, stats.moves,
-        (virtualUnit, pid) => getReachableTiles(virtualUnit, board, units, pid)));
+        (virtualUnit, pid) => getReachableTiles(virtualUnit, board, units, pid, cities)));
     }
 
     const popAction = queuePopAction(unit);
@@ -346,9 +346,10 @@ function applyMove(units, cities, board, playerId, unit, to) {
 
 // Re-validates a queued waypoint at execution time (occupancy may have changed
 // since it was planned): still on the board, still passable for this unit's
-// domain, and not currently blocked by a friendly unit or (for land units) an
-// enemy one.
-function isMoveTargetLegal(to, board, units, playerId, domain) {
+// domain, and not currently blocked by a friendly unit, by (for land units) an
+// enemy one, or by a zone of control that has closed across the step since.
+function isMoveTargetLegal(to, board, units, cities, playerId, unit) {
+  const { domain } = UNITS[unit.type];
   const tile = board.tiles[`${to.x},${to.y}`];
   if (!tile) return false;
   const td = TERRAIN[tile.terrain];
@@ -358,6 +359,10 @@ function isMoveTargetLegal(to, board, units, playerId, domain) {
   const atTarget = u => u.alive && u.position.x === to.x && u.position.y === to.y;
   if (domain === 'land' && units.some(u => u.ownerId !== playerId && atTarget(u))) return false;
   if (units.some(u => u.ownerId === playerId && atTarget(u))) return false;
+  // A blockade that went up after the waypoint was planned stops it here, from
+  // wherever the unit actually stands now — the rest of the queue is left for a
+  // later turn, by which time the line may have moved on.
+  if (makeZoneOfControl(board, units, cities, playerId)(unit, unit.position, to)) return false;
   return true;
 }
 
@@ -400,8 +405,8 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
   return { units, cities };
 }
 
-const reaches = (unit, board, units, playerId, to) =>
-  getReachableTiles(unit, board, units, playerId).some(t => t.x === to.x && t.y === to.y);
+const reaches = (unit, board, units, cities, playerId, to) =>
+  getReachableTiles(unit, board, units, playerId, cities).some(t => t.x === to.x && t.y === to.y);
 
 /**
  * The one action the enumerated legal list can't cover (see engine/ActionValidator).
@@ -426,7 +431,7 @@ function isActionLegal(state, playerId, action) {
   const unit = state.units.find(u => u.id === action.unitId);
   if (!unit || !unit.alive || unit.ownerId !== playerId || unit.movesLeft <= 0) return false;
   const own = state.units.filter(u => u.ownerId === playerId);
-  return reaches(unit, state.board, own, playerId, action.to);
+  return reaches(unit, state.board, own, state.cities, playerId, action.to);
 }
 
 // ── Apply actions ─────────────────────────────────────────────────────────────
@@ -512,7 +517,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
     });
     units = wakeSentryUnits(units, nextPlayerId, board.width);
     units = runQueuedMoves(units, nextPlayerId,
-      (to, unit, pid, curUnits) => isMoveTargetLegal(to, board, curUnits, pid, UNITS[unit.type].domain),
+      (to, unit, pid, curUnits) => isMoveTargetLegal(to, board, curUnits, cities, pid, unit),
       (curUnits, pid, unit, to) => {
         const applied = applyMove(curUnits, cities, board, pid, unit, to);
         cities = applied.cities;
@@ -540,7 +545,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
     // keeps two hostile units off one square. Whatever was hiding is in plain sight
     // afterwards. A move the engine enumerated is reachable by construction, so this
     // never fires on the ordinary path.
-    if (!reaches(unit, board, units, playerId, action.to)) {
+    if (!reaches(unit, board, units, cities, playerId, action.to)) {
       units = units.map(u => u.id === action.unitId
         ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } }
         : u);

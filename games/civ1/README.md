@@ -138,13 +138,23 @@ All units have `firepower: 1` (damage per combat hit). Combat continues round-by
 
 Roads halve movement cost on the tile.
 
+### Zones of control
+
+Every unit projects a zone over the eight squares around it. A land unit may not step
+straight from one square an enemy covers to another square **that same enemy** covers,
+so two enemies standing side by side seal the lane between them — you attack through
+the line, walk around it, or duck into a city. Following the original: only land units
+are bound by it, Diplomats and Caravans ignore it, a city or ocean square at either end
+of the step lifts it, and attacking is never blocked (attacking is not a move). See
+`makeZoneOfControl` in [map.js](map.js).
+
 Roads add trade on desert/plains/grassland; irrigation adds +1 food; mines add shields on hills/mountains.
 
 ## Actions
 
 | Type | Notes |
 |---|---|
-| `move` | Move unit up to its movement range |
+| `move` | Move unit up to its movement range, subject to zones of control |
 | `attack` | Attack adjacent enemy unit; combat is probabilistic |
 | `found-city` | Settler founds a city at current position (first city gets the Palace) |
 | `build-road` / `irrigate` / `build-mine` / `clear-terrain` | Settler terrain improvements |

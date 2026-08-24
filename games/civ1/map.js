@@ -314,13 +314,104 @@ export function findAdjacentFree(pos, board, units) {
   return null;
 }
 
-export function getReachableTiles(unit, board, allUnits, playerId) {
+// ── Zones of control ─────────────────────────────────────────────────────────
+//
+// Civ1's blockade rule. Every unit projects a zone over the eight squares around
+// it, and a land unit may not step straight from one square an enemy covers to
+// another square *that same enemy* covers. Two enemies standing side by side
+// therefore seal the lane between them: to get past you attack through, walk
+// around, or duck into a city.
+//
+// The exact shape of the rule — including the quirks — follows the original, as
+// reproduced by CivOne (CC0) in BaseUnit.MoveTo:
+//   https://github.com/SWY1985/CivOne/blob/master/src/Units/BaseUnit.cs
+//
+//   * Only land units are bound by it. Ships and aircraft move as they please.
+//   * Diplomats and Caravans slip through — the 'ignore-zoc' tag in units.js,
+//     which is how any future unit joins them.
+//   * A city square at *either* end of the step lifts the rule, whoever owns it,
+//     and so does an ocean square — an amphibious landing is never blockaded.
+//   * It takes ONE enemy covering both squares. Stepping out of unit A's zone
+//     and into unit B's is legal, which is why a blockade needs a real line and
+//     not just scattered pickets.
+//   * Attacking is never blocked, because attacking is not a move — Civ1Game
+//     enumerates 'attack' separately and never consults this.
+//   * The projecting unit's own domain doesn't matter: a trireme lying offshore
+//     covers the coastal squares beside it, as in the original.
+//
+// Note this is about *enemies*: `playerId` is the mover's side, and everyone
+// else — rival civs and barbarians alike — projects against them.
+
+const ZOC_DIRS = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+
+/**
+ * Builds the zone-of-control test for one board position, with the enemy coverage
+ * stamped out once up front — this sits inside the movement flood fill, and the
+ * search calls that thousands of times a turn.
+ *
+ * @returns {(unit: object, from: {x:number,y:number}, to: {x:number,y:number}) => boolean}
+ *   true if the rule forbids `unit` stepping `from` → `to`.
+ */
+export function makeZoneOfControl(board, allUnits, cities, playerId) {
+  // tile key -> the enemy tile keys whose zone reaches it. Built by stamping each
+  // enemy's eight neighbours rather than by scanning tiles, so the cost is in the
+  // number of enemies on the board, not the size of the map.
+  const coverage = new Map();
+  for (const u of allUnits) {
+    if (!u.alive || u.ownerId === playerId) continue;
+    const src = `${u.position.x},${u.position.y}`;
+    for (const [dx, dy] of ZOC_DIRS) {
+      const ny = u.position.y + dy;
+      if (ny < 0 || ny >= board.height) continue;
+      const k = `${wrapX(u.position.x + dx, board.width)},${ny}`;
+      let at = coverage.get(k);
+      if (!at) coverage.set(k, at = new Set());
+      at.add(src);
+    }
+  }
+  if (coverage.size === 0) return () => false;   // nobody about: nothing to check
+
+  const cityPos = new Set((cities ?? []).map(c => `${c.position.x},${c.position.y}`));
+  // A square that lifts the rule for any step touching it.
+  const exempt = (k) => cityPos.has(k) || board.tiles[k]?.terrain === 'ocean';
+
+  return (unit, from, to) => {
+    const stats = UNITS[unit.type];
+    if (stats?.domain !== 'land') return false;
+    if (stats.special?.includes('ignore-zoc')) return false;
+
+    const toK = `${to.x},${to.y}`;
+    const covering = coverage.get(toK);
+    if (!covering) return false;                 // walking into open ground
+
+    const fromK = `${from.x},${from.y}`;
+    if (exempt(fromK) || exempt(toK)) return false;
+
+    const leaving = coverage.get(fromK);
+    if (!leaving) return false;                  // stepping *into* a zone is fine
+
+    for (const enemy of leaving) if (covering.has(enemy)) return true;
+    return false;
+  };
+}
+
+/**
+ * Every tile `unit` may move to this turn: a best-first flood fill over civ1's
+ * terrain/road move costs, routing around every unit on the board and obeying
+ * zones of control (makeZoneOfControl above) step by step.
+ *
+ * `cities` feeds the zone-of-control city exemption only; omitting it just means
+ * no square counts as a city, which is what the callers that have no city list
+ * (an agent reasoning over its own fogged view) want anyway.
+ */
+export function getReachableTiles(unit, board, allUnits, playerId, cities = []) {
   const stats = UNITS[unit.type];
   const { domain } = stats;
   const key = p => `${p.x},${p.y}`;
 
   const enemyPos = new Set(allUnits.filter(u => u.alive && u.ownerId !== playerId).map(u => key(u.position)));
   const friendlyPos = new Set(allUnits.filter(u => u.alive && u.ownerId === playerId && u.id !== unit.id).map(u => key(u.position)));
+  const zocBlocks = makeZoneOfControl(board, allUnits, cities, playerId);
 
   const best = new Map([[key(unit.position), unit.movesLeft]]);
   const queue = [{ pos: unit.position, ml: unit.movesLeft }];
@@ -355,6 +446,12 @@ export function getReachableTiles(unit, board, allUnits, playerId) {
 
       if (domain === 'land' && enemyPos.has(k)) continue;
       if (friendlyPos.has(k)) continue;
+
+      // Zones of control, applied to the step actually being taken (`pos` is the
+      // square the unit is standing on at this point in the fill, `next` the one
+      // it would step onto) — a blockade has to stop a long march at the line, not
+      // merely refuse its final destination.
+      if (zocBlocks(unit, pos, next)) continue;
 
       // Civ1 movement costs: railroad is free, road is 1/3, otherwise the terrain's
       // own cost. Must stay in step with moveCost in Civ1Game.js — this enumerates
