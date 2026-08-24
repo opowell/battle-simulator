@@ -22,4 +22,14 @@ export const TERRAIN = {
   mountains: { food:0, shields:1, trade:0, moveCost:3,  defBonus:2.00, passable:{land:true,  sea:false, air:true}, symbol:'A' },
   swamp:     { food:1, shields:0, trade:0, moveCost:2,  defBonus:0.50, passable:{land:true,  sea:false, air:true}, symbol:'s' },
   jungle:    { food:1, shields:0, trade:0, moveCost:2,  defBonus:0.50, passable:{land:true,  sea:false, air:true}, symbol:'j' },
+  // Not a terrain the map generator ever produces: the stand-in getVisibleState puts
+  // in squares this player has never had a unit or city near (see sightedTiles /
+  // gameSpecific.explored). It yields nothing, because a square you have not seen
+  // promises nothing — a settler must not rate the dark as good ground.
+  //
+  // It IS passable, and deliberately: the belief tracker places the enemies it cannot
+  // see by flooding over passable squares, and the unexplored map is exactly where
+  // they are. Move generation excludes it separately (getReachableTiles), so no agent
+  // ever proposes walking into the dark and has the move thrown out for being ocean.
+  unknown:   { food:0, shields:0, trade:0, moveCost:1,  defBonus:0.00, passable:{land:true,  sea:true,  air:true}, symbol:' ' },
 };

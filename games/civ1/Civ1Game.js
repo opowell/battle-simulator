@@ -5,6 +5,7 @@ import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
+import { mintId, takenIds } from './ids.js';
 import { specialAt, tileYield } from './specials.js';
 import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
 import { TECHS, researchableTechs, techCost } from './tech.js';
@@ -435,7 +436,15 @@ function isActionLegal(state, playerId, action) {
 // back (this one already imports it).
 const BARBARIAN_DEPS = { makeUnit, applyMove, resolveAttack };
 
+// One action, then the bookkeeping every action shares: whatever the mover can now
+// see is folded into the ground they have explored (markExplored). It has to happen
+// here rather than in each of the two dozen returns below — founding a city, building a
+// unit and walking a settler all change what its owner can see.
 function applyActions(state, playerActions, rng = Math.random) {
+  return markExplored(applyOneAction(state, playerActions, rng), playerActions[0].playerId);
+}
+
+function applyOneAction(state, playerActions, rng = Math.random) {
   const { playerId, action } = playerActions[0];
   let { units, cities, board } = state;
   let { nextId } = state.gameSpecific;
@@ -619,8 +628,10 @@ function applyActions(state, playerActions, rng = Math.random) {
     const name = getNextCityName(state, cities, playerId);
     // The owner's first city is the capital and comes with the Palace.
     const isFirst = !cities.some(c => c.ownerId === playerId);
+    const minted = mintId('city-', nextId, takenIds(units, cities));
+    nextId = minted.next;
     const newCity = {
-      id: `city-${nextId++}`,
+      id: minted.id,
       name,
       ownerId: playerId,
       position: { ...unit.position },
@@ -854,7 +865,13 @@ function createFixedMapState(map, players, config) {
 
 // ── createInitialState ────────────────────────────────────────────────────────
 
+// Every world starts with each seat having seen only what its opening units and
+// cities stand next to; the rest of the map is dark until somebody walks it.
 function createInitialState(players, config = {}) {
+  return seedExploration(buildInitialState(players, config));
+}
+
+function buildInitialState(players, config = {}) {
   const fixed = getFixedMap(config.scenario);
   if (fixed) return createFixedMapState(fixed, players, config);
 
@@ -965,6 +982,103 @@ function sightedTiles(state, playerId) {
   return seen;
 }
 
+// ── Explored ground ───────────────────────────────────────────────────────────
+//
+// What each player has ever laid eyes on, kept per seat in `gameSpecific.explored`
+// as one character per square, row-major, '1' for seen. Terrain, unlike units, is
+// never re-hidden once seen — the original blacks the map out at the start and you
+// keep every square you walk past — so this is a running union, and it is the only
+// part of the fog that cannot be recomputed from the current position.
+//
+// The alternative to storing it is what this game did until now: hand agents the
+// whole terrain map, so every AI planned its expansion on a world it had never
+// explored, picking good ground out of squares it had no business knowing about.
+//
+// A string rather than a Set because a state has to survive JSON (sessions, history,
+// the undo stack), and rather than a list of keys because at 1500 squares this stays
+// 1.5 KB and rewrites are rare — the string is only rebuilt on the turns something
+// new actually comes into view.
+const EXPLORED = '1';
+
+function exploredIndex(x, y, width) { return y * width + x; }
+
+// Seed every seat from wherever it starts. Called once, when the world is built.
+function seedExploration(state) {
+  const explored = {};
+  for (const p of state.players) explored[p.id] = '';
+  const seeded = { ...state, gameSpecific: { ...state.gameSpecific, explored } };
+  return state.players.reduce((acc, p) => markExplored(acc, p.id), seeded);
+}
+
+// Fold what `playerId` can see right now into what they have seen before. Returns the
+// same state object when nothing new came into view — the common case after the
+// opening turns, which keeps this off the hot path.
+function markExplored(state, playerId) {
+  const explored = state.gameSpecific?.explored;
+  if (!explored) return state;   // a hand-built state keeping no record: nothing to do
+  if (state.gameSpecific.observed) return state;   // somebody's view, not the world
+  const { width: W, height: H } = state.board;
+  const bits = explored[playerId] ?? '';
+  // Walked as boxes of indices rather than through sightedTiles' set of "x,y" keys:
+  // this runs on every node the search expands, and building a set of strings only to
+  // parse the numbers back out of them was most of the cost.
+  let out = null;
+  const mark = (pos, r) => {
+    for (let dy = -r; dy <= r; dy++) {
+      const y = pos.y + dy;
+      if (y < 0 || y >= H) continue;
+      for (let dx = -r; dx <= r; dx++) {
+        const i = exploredIndex(wrapX(pos.x + dx, W), y, W);
+        if ((out ?? bits)[i] === EXPLORED) continue;
+        if (!out) out = (bits.length === W * H ? bits : bits.padEnd(W * H, '0')).split('');
+        out[i] = EXPLORED;
+      }
+    }
+  };
+  for (const u of state.units)  if (u.alive && u.ownerId === playerId) mark(u.position, UNIT_VISION);
+  for (const c of state.cities) if (c.ownerId === playerId)            mark(c.position, CITY_VISION);
+  if (!out) return state;
+  return { ...state, gameSpecific: { ...state.gameSpecific, explored: { ...explored, [playerId]: out.join('') } } };
+}
+
+// The board as `playerId` knows it: real terrain where they have been, the `unknown`
+// stand-in (terrain.js) everywhere else.
+//
+// Memoized on (board, bits) because this sits on the search's hot path — obscuro keys
+// every node it builds off getVisibleState, and rebuilding 1500 tiles per node would
+// cost more than the rest of the search put together. Both halves of the key are
+// stable: the board object only changes identity when a settler improves a square, the
+// bits only when something new comes into view.
+const UNKNOWN_TILE = Object.freeze({ terrain: 'unknown', hasRoad: false, hasRiver: false, fortress: false });
+const knownBoards = new WeakMap();
+
+function knownBoard(board, bits, playerId) {
+  const { width: W, height: H } = board;
+  if (bits == null) return board;                                 // no record: nothing hidden
+  if (board.fogFor === playerId) return board;                    // already this player's view
+  if (bits.length === W * H && !bits.includes('0')) return board;  // the whole map walked
+
+  let byBits = knownBoards.get(board);
+  if (!byBits) knownBoards.set(board, byBits = new Map());
+  const hit = byBits.get(bits);
+  if (hit) return hit;
+
+  const tiles = {};
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const key = `${x},${y}`;
+      tiles[key] = bits[exploredIndex(x, y, W)] === EXPLORED ? board.tiles[key] : UNKNOWN_TILE;
+    }
+  }
+  const fogged = { ...board, tiles, fogFor: playerId };
+  // Bounded, oldest-out: the search asks about many bit patterns at once (siblings that
+  // each opened a different square), while old ones die with the turn that made them.
+  // Clearing the whole table instead made it rebuild boards it had just built.
+  if (byBits.size >= 64) byBits.delete(byBits.keys().next().value);
+  byBits.set(bits, fogged);
+  return fogged;
+}
+
 function getVisibleState(state, playerId) {
   // With fog switched off there is nothing to hide, and hiding anyway is actively
   // wrong: the agents call this themselves (civ1SearchActions) rather than only
@@ -1004,18 +1118,61 @@ function getVisibleState(state, playerId) {
   // where the LOG is served, never from this projection.
   const redacted = {
     ...state,
-    gameSpecific: { ...state.gameSpecific, civ },
+    gameSpecific: {
+      ...state.gameSpecific,
+      civ,
+      // Where a rival has WALKED is as much theirs as what they own: their explored
+      // map traces every march they have made since turn one. Only the viewer's own
+      // record survives into their observation.
+      explored: state.gameSpecific.explored ? { [playerId]: state.gameSpecific.explored[playerId] } : undefined,
+      // This state is somebody's view, not the world. Applying actions to it (which is
+      // what an agent does all through its search) must not pretend to explore: the
+      // record would grow inside the simulation, and every node that opened a square
+      // would need its own copy of the board (knownBoard) for no gain — an agent
+      // learns nothing from ground it has only imagined walking.
+      observed: true,
+    },
     lastActions: state.lastActions?.filter(pa => pa.playerId === playerId) ?? null,
   };
 
   // The Apollo Program reveals the whole map (terrain + positions) but not the ledger.
-  if (effects.has('reveal-map')) return redacted;
+  if (effects.has('reveal-map')) return withOwnCounter(redacted);
 
-  return {
+  return withOwnCounter({
     ...redacted,
+    // Anti-cheat, part four: terrain. Squares this player has never been near are the
+    // `unknown` stand-in, so an agent can no longer read the whole world map off its
+    // own observation and pick the good ground out of country it has never walked.
+    // The Apollo path above skips this deliberately — revealing the map is the wonder's
+    // entire effect.
+    board:  knownBoard(state.board, state.gameSpecific.explored?.[playerId], playerId),
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
     cities: state.cities.filter(c => c.ownerId  === playerId || embassy || canSee(c.position)),
+  });
+}
+
+// Anti-cheat, part three: `gameSpecific.nextId` is one counter shared by every
+// civilization, so its value is a running total of everything anyone has ever
+// built. Handed over as-is it answers a question the fog is supposed to keep open
+// — how big is their army, how many cities have they founded — without the player
+// ever laying eyes on any of it.
+//
+// The observation gets a counter derived only from what it already contains: the
+// ids of the units and cities in view, plus the opening roster, which is common
+// knowledge from the first turn (see startRoster). Minting steps over names
+// already in use (ids.js), so this floor cannot collide with the higher, real ids
+// the belief sampler gives remembered enemies in the worlds it draws.
+function withOwnCounter(obs) {
+  let hi = -1;
+  const bump = (id) => {
+    const n = Number.parseInt(String(id).replace(/^\D+/, ''), 10);
+    if (Number.isFinite(n) && n > hi) hi = n;
   };
+  for (const u of obs.units) bump(u.id);
+  for (const c of obs.cities) bump(c.id);
+  for (const u of obs.gameSpecific.startRoster?.units ?? []) bump(u.id);
+  for (const c of obs.gameSpecific.startRoster?.cities ?? []) bump(c.id);
+  return { ...obs, gameSpecific: { ...obs.gameSpecific, nextId: hi + 1 } };
 }
 
 // ── identityOf ────────────────────────────────────────────────────────────────
@@ -1139,6 +1296,9 @@ function getActionDuration(state, action) {
 // the way the original does ("Gold" rather than "Mountains") and adds its yield.
 function terrainInfo(tile, x = null, y = null) {
   const key = typeof tile === 'string' ? tile : tile?.terrain;
+  // Ground this viewer has never been near (getVisibleState). Naming its yields would
+  // be reporting on a square nobody has seen.
+  if (key === 'unknown') return { name: 'Unexplored', description: 'no unit of yours has been near this square' };
   const t = TERRAIN[key] ?? TERRAIN.plains;
   const special = (x != null && key) ? specialAt(x, y, key) : null;
   const y3 = (x != null && key) ? tileYield(t, key, x, y) : t;
@@ -1359,7 +1519,7 @@ export const Civ1Game = {
   // Recovered from the real game's art: Civ1 paints one green base under EVERY
   // land terrain (the terrain sprite supplies all the distinguishing texture), so
   // every land colour here is that same green; ocean matches the real water tile.
-  colors: { ocean: '#5046a0', coast: '#5046a0', plains: '#719230', grassland: '#719230', forest: '#719230', hills: '#719230', mountains: '#719230', desert: '#719230', tundra: '#719230', arctic: '#719230', jungle: '#719230', swamp: '#719230' },
+  colors: { unknown: '#000000', ocean: '#5046a0', coast: '#5046a0', plains: '#719230', grassland: '#719230', forest: '#719230', hills: '#719230', mountains: '#719230', desert: '#719230', tundra: '#719230', arctic: '#719230', jungle: '#719230', swamp: '#719230' },
   gameOptions: [
     // Which of the original's fourteen civilizations the first seat plays (civs.js).
     // A civ is a name, a leader and a list of city names and nothing else — the original
@@ -1522,7 +1682,8 @@ export const Civ1Game = {
           badgeLabel: city ? city.name : undefined,
           // Ocean draws no terrain sprite — coastSprite (below) supplies the real
           // ocean tile. Land draws its authentic tile, blended with like neighbours.
-          bgImage: tile.terrain === 'ocean' ? null : (tile.terrain ? terrainSprite(x, y, tile.terrain) : null),
+          bgImage: (tile.terrain === 'ocean' || tile.terrain === 'unknown') ? null
+            : (tile.terrain ? terrainSprite(x, y, tile.terrain) : null),
           coastSprite: tile.terrain === 'ocean' ? coastSprite(x, y) : null,
           // Rivers first, then any road segments, painted in order over the terrain.
           // Rivers, then road segments, then this square's special resource (if any) —
@@ -1610,7 +1771,8 @@ export const Civ1Game = {
           return {
             x: rx, y: ry, dx, dy, center,
             terrain: tile.terrain,
-            sprite: tile.terrain === 'ocean' ? null : terrainSprite(rx, ry, tile.terrain),
+            sprite: (tile.terrain === 'ocean' || tile.terrain === 'unknown') ? null
+              : terrainSprite(rx, ry, tile.terrain),
             worked: workedKeys.has(key),
             claimedByOther: !center && !workedKeys.has(key) && ctx.takenTiles.has(key),
             yield: y3,

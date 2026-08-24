@@ -342,6 +342,14 @@ export function getReachableTiles(unit, board, allUnits, playerId) {
       const td = TERRAIN[tile.terrain];
       if (!td) continue;
 
+      // Never route through the dark. On the true board there is no such square; on an
+      // agent's own observation (civ1SearchActions calls this with the fogged board)
+      // it is ground the mover has never seen, and a move onto what turns out to be
+      // ocean would be thrown out by the engine as illegal — a plan silently replaced
+      // by a fallback. Single steps are unaffected, since a unit sees all eight of its
+      // neighbours, so exploration still walks the map open one square at a time.
+      if (tile.terrain === 'unknown') continue;
+
       if (domain === 'land' && !td.passable.land) continue;
       if (domain === 'sea'  && !td.passable.sea)  continue;
 

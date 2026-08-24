@@ -17,6 +17,7 @@
 // nowhere else. This engine has no huts, so that setting means no barbarians at all.
 
 import { UNITS } from './units.js';
+import { mintId, takenIds } from './ids.js';
 import { TERRAIN } from './terrain.js';
 import { wrapX } from './map.js';
 
@@ -161,9 +162,12 @@ function uprising(state, spec, rng, makeUnit, nextId) {
 
   const spots = spawnSpots(state, target.position);
   const count = Math.min(spec.band, spots.length);
+  const taken = takenIds(state.units, state.cities);
   for (let i = 0; i < count; i++) {
     const spot = spots.splice(Math.floor(rng() * spots.length), 1)[0];
-    units = [...units, makeUnit(`u${nextId++}`, BARBARIAN_ID, type, spot.x, spot.y, UNITS[type].moves)];
+    const minted = mintId('u', nextId, taken);
+    nextId = minted.next; taken.add(minted.id);
+    units = [...units, makeUnit(minted.id, BARBARIAN_ID, type, spot.x, spot.y, UNITS[type].moves)];
   }
   return { units, nextId };
 }
