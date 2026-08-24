@@ -290,7 +290,15 @@ export function getLegalActions(state, playerId) {
     }
 
     // ── Skip unit ─────────────────────────────────────────────────────────────
-    actions.push({ type: 'skip-unit', unitId: unit.id });
+    // Only while the unit still has something to give up. Skipping zeroes moves and
+    // attacks, so offering it to a unit already on zero is a legal action that leaves
+    // the state exactly as it was — and an agent that ranks it first will pick it
+    // again, and again, for as long as the turn is allowed to run. Every other action
+    // here either spends movement or flips the flag that offers it, so this was the
+    // one way to act without the game advancing.
+    if (unit.movesLeft > 0 || unit.attacksLeft > 0) {
+      actions.push({ type: 'skip-unit', unitId: unit.id });
+    }
   }
 
   // ── Building: set production ─────────────────────────────────────────────────
