@@ -50,7 +50,13 @@ const phaseLabel = computed(() => {
               @click="$emit('toggle-menu')">
         <BsIcon name="grid" :size="12" :color="showMenu ? 'var(--accent)' : 'var(--dim)'"/>
       </button>
-      <span class="mono gh-turn">Turn {{liveState?.turn ?? 0}}</span>
+      <!-- The turn counter, and beside it whatever the game calls that turn. civ1
+           supplies a calendar year ("3550 BC") and wants it visible at all times,
+           the way the original's map screen always shows the date; games that set no
+           turnLabel show the counter alone. -->
+      <span class="mono gh-turn">
+        Turn {{liveState?.turn ?? 0}}<template v-if="field?.turnLabel"> · <span class="gh-year">{{field.turnLabel}}</span></template>
+      </span>
     </div>
     <!-- The phase, for games that have several per turn (risk reinforces, attacks and
          fortifies inside one turn): which one you are in decides what a click does, so
@@ -88,7 +94,8 @@ const phaseLabel = computed(() => {
 .gh-help { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: rgba(66,198,230,.12); color: var(--accent); font-weight: 500; letter-spacing: .04em; }
 .gh-menu-btn { width: 22px; height: 22px; }
 .gh-menu-btn--on { border-color: var(--accent); }
-.gh-turn { font-size: 11px; color: var(--faint); margin-left: auto; }
+.gh-turn { font-size: 11px; color: var(--faint); margin-left: auto; white-space: nowrap; }
+.gh-year { color: var(--dim); }
 .gh-status { display: flex; }
 .gh-phase { display: flex; margin-bottom: 6px; }
 .gh-chip--phase { background: rgba(66,198,230,.12); color: var(--accent); font-weight: 700; letter-spacing: .08em; }

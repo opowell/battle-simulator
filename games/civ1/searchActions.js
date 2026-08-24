@@ -40,7 +40,10 @@
 
 import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
-import { killDesire, IMPROVEMENT_PRIORITY } from './ai.js';
+import { killDesire } from './ai.js';
+import {
+  productionContext, rankProductionActions, RESEARCH_PRIORITY,
+} from './production.js';
 
 // Horizontally-wrapped Chebyshev distance. Deliberately re-derived here rather
 // than imported from Civ1Game.js: this module is installed onto the game object
@@ -103,15 +106,6 @@ const topK = (scored, k) => scored
 
 // ── Empire-wide choices ──────────────────────────────────────────────────────
 
-// Research targets the search is allowed to consider, best first. Offering the
-// full researchable frontier would spend the whole branching budget on a
-// decision whose payoff is far beyond any reachable leaf.
-const RESEARCH_PRIORITY = [
-  'bronze-working', 'ceremonial-burial', 'code-of-laws', 'monarchy', 'pottery',
-  'currency', 'trade', 'writing', 'literacy', 'masonry', 'construction',
-  'iron-working', 'mathematics', 'the-wheel', 'the-republic',
-];
-
 // The empire sliders are a fixed policy rather than a searched decision, and the
 // phase is DECLINED (returns nothing) once the policy is already satisfied. That
 // second half matters more than it looks: getLegalActions only ever offers rates
@@ -127,6 +121,12 @@ function empireActions(legal, obs, playerId) {
 
   // Research: pick a target only when the current one isn't already on the
   // priority line — switching research part-way through throws away the progress.
+  // The order is RESEARCH_PRIORITY from production.js, shared with the heuristic
+  // agent; this module used to keep its own copy, fifteen entries long and silently
+  // different from ai.js's twenty-one — two agents steering by two different tech
+  // orders, both of them missing Horseback Riding entirely. Offering the whole
+  // researchable frontier instead would spend the branching budget on a decision
+  // whose payoff is far beyond any reachable leaf.
   const research = legal.filter(a => a.type === 'set-research');
   if (research.length && !RESEARCH_PRIORITY.includes(civ.research)) {
     const byTech = new Map(research.map(a => [a.tech, a]));
@@ -162,46 +162,9 @@ function empireActions(legal, obs, playerId) {
 
 // ── Production ───────────────────────────────────────────────────────────────
 
-// Same priorities as ai.js chooseProduction: cover the defenders first, then
-// expand, then invest, and only then shop for offense.
-function scoreProduction(item, ctx) {
-  const stats = UNITS[item];
-  if (!stats) {
-    // An improvement or wonder, ranked by ai.js's IMPROVEMENT_PRIORITY — civic
-    // staples first, wonders well down the list. Scoring every building the same
-    // (as this did at first) leaves the choice to sort order, and the agent
-    // committed its size-1 capital to the Colossus for the whole game.
-    const rank = IMPROVEMENT_PRIORITY.indexOf(item);
-    // Off the priority list entirely (barracks, most wonders): a shield sink, and
-    // scored low enough that a real defender still outbids it. Left above zero so
-    // it remains preferable to a unit the empire cannot support.
-    if (rank < 0) return 5;
-    return 55 - rank * 2 + Math.min(15, ctx.citySize * 3);
-  }
-  let score = 0;
-  if (!ctx.defended && stats.defense > 0 && item !== 'settlers') score += 100;
-  if (item === 'settlers') score += ctx.wantExpansion ? 90 : -20;
-  if (stats.attack > 0) score += 30 * (stats.attack * stats.moves) / Math.max(1, stats.cost);
-  // Units past what the cities can support are worse than useless: under Despotism
-  // a city supports `size` units free and pays a shield a turn for each one beyond
-  // that, out of a gross yield of about five. Every agent in this repo, this one
-  // included, used to march straight into that trap — six units homed on a size-2
-  // capital left it netting one shield and zero food surplus, frozen at size 2 with
-  // nothing finishable, for a hundred turns. Settlers are exempt: they cost food,
-  // but they turn into the cities that raise the ceiling.
-  if (ctx.overSupported && item !== 'settlers') score -= 70;
-  return score;
-}
-
-// How much better an alternative must be before the search is even shown it.
-// Without this the phase is a forced change — getLegalActions offers every item
-// EXCEPT the one being built, so "keep building what we are building" is not an
-// action and cannot be chosen. The first version of this file had no margin and
-// the agent re-tasked its capital every single turn, finishing nothing in 40
-// turns: barracks, then settlers, then barracks again, ending on a wonder it had
-// no hope of completing.
-const SWITCH_MARGIN = 15;
-
+// The production phase. Both the scoring and the leave-it-alone margin live in
+// production.js, shared with the heuristic agent — see that module's header for the
+// model (effective defence points, nearby reinforcements, and time-to-build).
 function productionActions(legal, obs, playerId) {
   const prod = legal.filter(a => a.type === 'set-production');
   if (!prod.length) return [];
@@ -213,30 +176,8 @@ function productionActions(legal, obs, playerId) {
   const city = obs.cities.find(c => c.id === cityId);
   if (!city) return acts.slice(0, K_PRODUCTION);
 
-  const defended = obs.units.some(u =>
-    u.alive && u.ownerId === playerId && u.type !== 'settlers' && (UNITS[u.type]?.defense ?? 0) > 0 &&
-    u.position.x === city.position.x && u.position.y === city.position.y);
-  const myCities = obs.cities.filter(c => c.ownerId === playerId).length;
-  const settlersOut = obs.units.filter(u => u.alive && u.ownerId === playerId && u.type === 'settlers').length;
-  // Free unit support across the empire is the sum of city sizes (Despotism and
-  // Monarchy support `size` units per city at no cost — see city.js shieldUpkeep).
-  const supportCap = obs.cities.filter(c => c.ownerId === playerId)
-    .reduce((n, c) => n + (c.size ?? 1), 0);
-  const myUnits = obs.units.filter(u => u.alive && u.ownerId === playerId).length;
-
-  const ctx = {
-    defended,
-    citySize: city.size ?? 1,
-    wantExpansion: myCities + settlersOut < CITY_TARGET && (city.size ?? 1) >= 2,
-    overSupported: myUnits >= supportCap,
-  };
-
-  const current = city.production ? scoreProduction(city.production, ctx) : -Infinity;
-  const scored = acts
-    .map(a => ({ action: a, score: scoreProduction(a.item, ctx) }))
-    .filter(s => s.score > current + SWITCH_MARGIN);
-  if (!scored.length) return [];
-  return topK(scored, K_PRODUCTION);
+  const ctx = productionContext(obs, city, playerId, { cityTarget: CITY_TARGET });
+  return rankProductionActions(acts, ctx, city.production, K_PRODUCTION);
 }
 
 // ── Unit orders ──────────────────────────────────────────────────────────────

@@ -814,6 +814,10 @@ function buildField(g, s) {
     // (see StatusChips.vue) — a game's toGrid may set this; the design app has no
     // idea what the chips mean, it just renders whatever the game hands it.
     statusChips: g.statusChips ?? null,
+    // Optional per-turn label a game may set beside the turn counter in the header —
+    // civ1 puts the calendar year there ("3550 BC"). Absent for games where a turn
+    // is just a turn.
+    turnLabel: g.turnLabel ?? null,
   };
 }
 
