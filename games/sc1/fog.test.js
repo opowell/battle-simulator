@@ -110,10 +110,15 @@ test('sc1 fog: witnessed building destruction is not resurrected', () => {
   }
 });
 
+// Six turns, matching the cs fog test, because that is all this assertion needs: a
+// search agent takes about a second per order in sc1, and the run costs a minute at
+// six turns against nearly seven at thirty. Six is already past the first units
+// coming out of the production queues, and neither length ever ends in a win — both
+// run out of turns — so the extra twenty-four bought repetition rather than reach.
 test('sc1 fog: Obscuro plays a fog game to completion', async () => {
   const ps = players().map((p, i) => ({
     ...p, agent: i === 0 ? new ObscuroAgent(Sc1Game, { particles: 3, iters: 40 }) : RandomAgent,
   }));
-  const { result } = await new GameEngine(Sc1Game, ps, { maxTurns: 30, fogOfWar: true }).run();
+  const { result } = await new GameEngine(Sc1Game, ps, { maxTurns: 6, fogOfWar: true }).run();
   assert.ok(result && typeof result.outcome === 'string');
 });
