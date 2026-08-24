@@ -5,6 +5,7 @@ import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
+import { mintId, takenIds } from './ids.js';
 import { specialAt, tileYield } from './specials.js';
 import { FIXED_MAPS, parseFixedMap, getFixedMap } from './fixedMaps.js';
 import { TECHS, researchableTechs, techCost } from './tech.js';
@@ -619,8 +620,10 @@ function applyActions(state, playerActions, rng = Math.random) {
     const name = getNextCityName(state, cities, playerId);
     // The owner's first city is the capital and comes with the Palace.
     const isFirst = !cities.some(c => c.ownerId === playerId);
+    const minted = mintId('city-', nextId, takenIds(units, cities));
+    nextId = minted.next;
     const newCity = {
-      id: `city-${nextId++}`,
+      id: minted.id,
       name,
       ownerId: playerId,
       position: { ...unit.position },
@@ -1009,13 +1012,37 @@ function getVisibleState(state, playerId) {
   };
 
   // The Apollo Program reveals the whole map (terrain + positions) but not the ledger.
-  if (effects.has('reveal-map')) return redacted;
+  if (effects.has('reveal-map')) return withOwnCounter(redacted);
 
-  return {
+  return withOwnCounter({
     ...redacted,
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
     cities: state.cities.filter(c => c.ownerId  === playerId || embassy || canSee(c.position)),
+  });
+}
+
+// Anti-cheat, part three: `gameSpecific.nextId` is one counter shared by every
+// civilization, so its value is a running total of everything anyone has ever
+// built. Handed over as-is it answers a question the fog is supposed to keep open
+// — how big is their army, how many cities have they founded — without the player
+// ever laying eyes on any of it.
+//
+// The observation gets a counter derived only from what it already contains: the
+// ids of the units and cities in view, plus the opening roster, which is common
+// knowledge from the first turn (see startRoster). Minting steps over names
+// already in use (ids.js), so this floor cannot collide with the higher, real ids
+// the belief sampler gives remembered enemies in the worlds it draws.
+function withOwnCounter(obs) {
+  let hi = -1;
+  const bump = (id) => {
+    const n = Number.parseInt(String(id).replace(/^\D+/, ''), 10);
+    if (Number.isFinite(n) && n > hi) hi = n;
   };
+  for (const u of obs.units) bump(u.id);
+  for (const c of obs.cities) bump(c.id);
+  for (const u of obs.gameSpecific.startRoster?.units ?? []) bump(u.id);
+  for (const c of obs.gameSpecific.startRoster?.cities ?? []) bump(c.id);
+  return { ...obs, gameSpecific: { ...obs.gameSpecific, nextId: hi + 1 } };
 }
 
 // ── identityOf ────────────────────────────────────────────────────────────────

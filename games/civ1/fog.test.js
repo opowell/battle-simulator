@@ -47,6 +47,22 @@ test("civ1 fog: the Apollo Program reveals the map, not the enemy's move", () =>
   assert.deepEqual(view.lastActions, [], 'their move is not');
 });
 
+test("civ1 fog: the observation's id counter says nothing about rival production", () => {
+  const s = Civ1Game.createInitialState(players(), { fogOfWar: true });
+  const before = Civ1Game.getVisibleState(s, 'p1').gameSpecific.nextId;
+  // p2 quietly builds an army on the far side of the map. The shared counter in the
+  // true state climbs with every one of them; ours must not.
+  const busy = {
+    ...s,
+    units: [...s.units, ...Array.from({ length: 12 }, (_, i) => ({
+      ...s.units.find(u => u.ownerId === 'p2'), id: `u${50 + i}`, position: { x: 25, y: 15 },
+    }))],
+    gameSpecific: { ...s.gameSpecific, nextId: s.gameSpecific.nextId + 12 },
+  };
+  assert.equal(Civ1Game.getVisibleState(busy, 'p1').gameSpecific.nextId, before, 'their build queue is not our business');
+  assert.notEqual(busy.gameSpecific.nextId, before, 'the true counter did move');
+});
+
 test('civ1 fog: with fog off the last move is public', () => {
   const s = Civ1Game.createInitialState(players(), { fogOfWar: false });
   const played = { ...s, lastActions: [{ playerId: 'p2', action: { type: 'skip-unit', unitId: 'u0' } }] };

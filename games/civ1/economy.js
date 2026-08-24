@@ -9,6 +9,7 @@
 import { UNITS } from './units.js';
 import { TECHS, researchableTechs, techCost } from './tech.js';
 import { IMPROVEMENTS, WONDERS, SPACESHIP, improvementDef } from './improvements.js';
+import { mintId, takenIds } from './ids.js';
 import { GOVERNMENTS } from './governments.js';
 import { computeCity, cityMaintenance, foodBox } from './city.js';
 import { findAdjacentFree } from './map.js';
@@ -198,6 +199,9 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
   const known = new Set(civ.techs);
   let units = state.units.slice();
   let idCounter = nextId;
+  // Names already in use in THIS world — see ids.js for why the counter alone is
+  // not enough once an agent is simulating on a sampled world.
+  const taken = takenIds(state.units, state.cities);
   let gold = civ.gold;
   let bulbs = civ.bulbs;
 
@@ -293,7 +297,9 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
       } else if (UNITS[production]) {
         const spawn = findAdjacentFree(city.position, state.board, units);
         if (spawn) {
-          const u = { ...makeUnit(`u${idCounter++}`, ownerId, production, spawn.x, spawn.y, 0), homeCityId: city.id };
+          const minted = mintId('u', idCounter, taken);
+          idCounter = minted.next; taken.add(minted.id);
+          const u = { ...makeUnit(minted.id, ownerId, production, spawn.x, spawn.y, 0), homeCityId: city.id };
           // Barracks make every unit a veteran; the Lighthouse does the same for ships.
           if (buildings.includes('barracks') || (UNITS[production].domain === 'sea' && ctx.wonderEffects.has('naval-veteran'))) {
             u.attrs = { ...u.attrs, veteran: true };
