@@ -16,6 +16,43 @@ test('civ1 fog: getVisibleState hides distant enemies and stores a unit roster',
   assert.equal(s.gameSpecific.startRoster.units.length, s.units.length, 'startRoster is common knowledge');
 });
 
+test("civ1 fog: the observation never spells out the enemy's last move", () => {
+  const s = Civ1Game.createInitialState(players(), { fogOfWar: true });
+  // p2 starts an advance — a move that leaves no trace on the map at all, and is a
+  // ledger secret besides.
+  const played = {
+    ...s,
+    lastActions: [
+      { playerId: 'p2', action: { type: 'set-research', tech: 'bronze-working' } },
+      { playerId: 'p1', action: { type: 'skip-unit', unitId: s.units[0].id } },
+    ],
+  };
+  const view = Civ1Game.getVisibleState(played, 'p1');
+  assert.deepEqual(view.lastActions.map(pa => pa.playerId), ['p1'], 'only our own moves survive');
+  assert.ok(!JSON.stringify(view).includes('bronze-working'), 'their research is nowhere in the observation');
+});
+
+test("civ1 fog: the Apollo Program reveals the map, not the enemy's move", () => {
+  const s = Civ1Game.createInitialState(players(), { fogOfWar: true });
+  // Apollo takes the reveal-map early return, which skips the unit/city filtering
+  // below it — the projection has to happen before that, not after.
+  const withApollo = {
+    ...s,
+    cities: [{ id: 'c1', ownerId: 'p1', name: 'Rome', position: { x: 1, y: 1 }, size: 1,
+               shields: 0, food: 0, production: 'militia', buildings: ['apollo'] }],
+    lastActions: [{ playerId: 'p2', action: { type: 'set-research', tech: 'bronze-working' } }],
+  };
+  const view = Civ1Game.getVisibleState(withApollo, 'p1');
+  assert.equal(view.units.length, s.units.length, 'the map really is revealed');
+  assert.deepEqual(view.lastActions, [], 'their move is not');
+});
+
+test('civ1 fog: with fog off the last move is public', () => {
+  const s = Civ1Game.createInitialState(players(), { fogOfWar: false });
+  const played = { ...s, lastActions: [{ playerId: 'p2', action: { type: 'skip-unit', unitId: 'u0' } }] };
+  assert.deepEqual(Civ1Game.getVisibleState(played, 'p1').lastActions, played.lastActions);
+});
+
 test('civ1 fog: sampleWorlds places in-bounds, hidden enemies', () => {
   const s = Civ1Game.createInitialState(players(), { fogOfWar: true });
   const view = Civ1Game.getVisibleState(s, 'p1');

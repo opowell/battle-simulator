@@ -990,7 +990,22 @@ function getVisibleState(state, playerId) {
   for (const [pid, c] of Object.entries(state.gameSpecific.civ ?? {})) {
     civ[pid] = pid === playerId ? c : { ...newCivState(), government: c.government };
   }
-  const redacted = { ...state, gameSpecific: { ...state.gameSpecific, civ } };
+  // Anti-cheat, part two: `lastActions` names the move the previous player just
+  // made — unit id, from, to, the city they set producing, the advance they started
+  // researching — and it rode along in the spread above, spelling out in plain text
+  // the very move the fog below is busy hiding. It is stripped down to this player's
+  // own actions, the same projection ChessGame makes and for the same reason. Note
+  // it matters on the reveal-map path too: the Apollo Program shows you the map, not
+  // your rival's research plan, and `set-research` leaves no trace on the map at all.
+  //
+  // The browser is unaffected: api-server.js filters its own copy of lastActions out
+  // of the raw state before serving it, and debugAI's move-log reveal is applied
+  // where the LOG is served, never from this projection.
+  const redacted = {
+    ...state,
+    gameSpecific: { ...state.gameSpecific, civ },
+    lastActions: state.lastActions?.filter(pa => pa.playerId === playerId) ?? null,
+  };
 
   // The Apollo Program reveals the whole map (terrain + positions) but not the ledger.
   if (effects.has('reveal-map')) return redacted;
