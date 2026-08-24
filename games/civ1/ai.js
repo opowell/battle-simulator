@@ -13,6 +13,14 @@
 import { UNITS } from './units.js';
 import { getCombatStrengths } from './combat.js';
 import { chebyshevWrapped, BUILDABLE } from './Civ1Game.js';
+import {
+  productionContext, chooseProductionAction, defenceStrength, RESEARCH_PRIORITY,
+} from './production.js';
+
+// Both priority lists and the production scorer live in production.js, shared with
+// the search's pruner (searchActions.js) so the two agents cannot drift apart.
+// Re-exported here because this module was their original home.
+export { IMPROVEMENT_PRIORITY, RESEARCH_PRIORITY } from './production.js';
 
 // Freeciv README.AI: amortize(benefit, delay) = benefit * ((MORT-1)/MORT)^delay,
 // discounting a future payoff to its present value (MORT=24 ~ 4.3% per turn).
@@ -130,73 +138,44 @@ const CITY_TARGET = 6;
 // capital's doorstep add nothing; Civ1's workable radius is ~2 tiles either way.
 const MIN_CITY_SPACING = 4;
 
+// Most defenders any one city pins, and how far a second one may be summoned from.
+// Together they stop a frightened city from recalling the whole army.
+const MAX_GARRISON = 2;
+const RECALL_RANGE = 4;
+
 /**
- * Production choice, in the shape of Freeciv's military_advisor_choose_build:
- * cover the defenders first, and only shop for offense once home is safe. The
- * attacker pick uses their first-approximation heuristic, attack_power * speed,
- * per shield spent.
+ * Production choice for one city, delegated to the shared scorer in production.js
+ * (see that module's header for the model). This used to be a fixed cascade —
+ * defender, settler, first affordable improvement, best attacker per shield — and
+ * each rung of it was wrong in a way the scorer fixes: the defender rung took the
+ * cheapest body regardless of how good a defender it was, and the attacker rung
+ * ranked by attack*moves/cost, which ties a militia with a legion.
+ *
+ * It also had no notion of what the city is already building. getLegalActions only
+ * ever offers items OTHER than the current one, so a cascade that always returns
+ * something can never leave a city alone: this agent walked its capital from
+ * militia to phalanx to militia, one re-task per turn, finishing neither. The
+ * shared chooseProductionAction returns null unless a candidate clears the current
+ * build by SWITCH_MARGIN.
  */
-// Economic buildings and wonders worth queueing once expansion is under way, best
-// first. The agent builds the first of these the city can build and does not already
-// have. Wonders are interleaved after the cheap staples: they are dear, so only a city
-// with spare production and the right advance ever reaches them.
-export const IMPROVEMENT_PRIORITY = [
-  'temple', 'granary', 'marketplace', 'library',
-  'pyramids', 'hanging-gardens', 'great-library',
-  'aqueduct', 'bank', 'university', 'copernicus', 'michelangelo',
-  'city-walls', 'colosseum', 'factory',
-  // Endgame: race to build and stock the spaceship once Apollo is up.
-  'apollo', 'ss-structural', 'ss-component', 'ss-module',
-];
-
 function chooseProduction(state, myId, city, prodActions, cityTarget) {
-  const items = new Set(prodActions.map(a => a.item));
-  const pick = id => prodActions.find(a => a.item === id) ?? null;
-
-  // Cover the defenders first: is a real defensive unit standing on the city?
-  const defended = state.units.some(
-    u => u.alive && u.ownerId === myId && u.type !== 'settlers' && (UNITS[u.type]?.defense ?? 0) > 0 &&
-      u.position.x === city.position.x && u.position.y === city.position.y
-  );
-  if (!defended) {
-    for (const d of ['musketeers', 'phalanx', 'militia']) if (items.has(d)) return pick(d);
-  }
-
-  // Expand while below the city target (only worth a settler once the city can spare
-  // the population).
-  const myCities = state.cities.filter(c => c.ownerId === myId).length;
-  const settlersOut = state.units.filter(u => u.alive && u.ownerId === myId && u.type === 'settlers').length;
-  if (myCities + settlersOut < cityTarget && items.has('settlers') && city.size >= 2) return pick('settlers');
-
-  // Invest surplus production in the best economic building the city still lacks.
-  for (const b of IMPROVEMENT_PRIORITY) {
-    if (b === 'temple' && city.size < 3) continue;
-    if (b === 'aqueduct' && city.size < 6) continue;
-    if (items.has(b)) return pick(b);
-  }
-
-  // Otherwise the best attacker available: attack_power * speed, per shield.
-  let best = null, bestScore = -Infinity;
-  for (const item of items) {
-    const s = UNITS[item];
-    if (!s || s.attack <= 0) continue;
-    const score = (s.attack * s.moves) / s.cost;
-    if (score > bestScore) { bestScore = score; best = item; }
-  }
-  return best ? pick(best) : null;
+  const ctx = productionContext(state, city, myId, { cityTarget });
+  return chooseProductionAction(prodActions, ctx, city.production);
 }
 
-// Advances the agent steers toward, in order: an economy-and-government backbone
-// followed by the ancient military line. Anything not listed is picked only once
-// these are exhausted.
-const RESEARCH_PRIORITY = [
-  'bronze-working', 'ceremonial-burial', 'code-of-laws', 'monarchy', 'pottery',
-  'currency', 'trade', 'writing', 'literacy', 'masonry', 'construction',
-  'iron-working', 'mathematics', 'the-wheel', 'the-republic', 'philosophy',
-  'university', 'banking', 'the-corporation', 'gunpowder', 'invention',
-];
-
-function chooseResearch(researchActions) {
+/**
+ * The next advance to steer toward, or null to leave the current one alone.
+ *
+ * The null matters as much as the pick. getLegalActions offers every advance
+ * EXCEPT the one being researched, so a chooser that always returns something can
+ * never leave a target alone: this agent spent a decision every single turn
+ * flipping between the top two entries of RESEARCH_PRIORITY — bronze-working on
+ * odd turns, horseback-riding on even ones, for a hundred and fifty turns — which
+ * is the same trap searchActions.js's empireActions guards against, and the same
+ * one SWITCH_MARGIN guards against on the production side.
+ */
+function chooseResearch(researchActions, current) {
+  if (RESEARCH_PRIORITY.includes(current)) return null;
   const byTech = new Map(researchActions.map(a => [a.tech, a]));
   for (const t of RESEARCH_PRIORITY) if (byTech.has(t)) return byTech.get(t);
   return researchActions[0] ?? null;
@@ -217,7 +196,9 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
       // ── Empire management: research target, government, tax rate ─────────
       // Each of these is offered at most once per turn (the game caps it), so
       // returning one here just spends one decision; it does not loop.
-      const research = chooseResearch(legalActions.filter(a => a.type === 'set-research'));
+      const research = chooseResearch(
+        legalActions.filter(a => a.type === 'set-research'),
+        state.gameSpecific?.civ?.[myId]?.research);
       if (research) return research;
 
       // Move up to Monarchy (then the Republic) as soon as it is available — a big
@@ -274,22 +255,43 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
       }
       if (bestAttack) return bestAttack;
 
-      // ── Garrison: one unit per city, and it stays there ──────────────────
-      // Production asks for a defender whenever a city is empty, so if every unit
-      // marches on the enemy the city is permanently undefended and the build queue
-      // never gets past defenders. Pin one unit per city before anything else moves.
+      // ── Garrison: hold each city to the strength production asks for ────
+      // Production asks for a defender whenever a city is under-covered, so if every
+      // unit marches on the enemy the city is permanently undefended and the build
+      // queue never gets past defenders.
+      //
+      // The rule used to be "pin exactly one unit per city", and one unit is not what
+      // the production scorer asks for — it asks for `defenceTarget` effective points
+      // (production.js), which a lone militia does not meet. The two then fought each
+      // other in a loop that ran for entire games: the city bought a militia, this
+      // block pinned one defender and marched the new one off to the front, the city
+      // found itself under-covered again and bought another. That is most of the
+      // answer to "why is my empire nothing but militia" — the garrison was a sieve,
+      // and the granary underneath it never finished.
+      //
+      // So hold to the same number the scorer uses. Capped at MAX_GARRISON, and only
+      // the first defender is recalled from any distance: without that cap a
+      // threatened city (whose target rises with what it can see) would summon the
+      // entire field army home and the war would stop.
       const myCities = state.cities.filter(c => c.ownerId === myId);
       const myUnits = state.units.filter(u => u.alive && u.ownerId === myId);
       const garrison = new Map(); // unitId -> city position it is holding
       const claimed = new Set();
       for (const city of myCities) {
-        const onTile = myUnits.find(
-          u => !claimed.has(u.id) && u.position.x === city.position.x && u.position.y === city.position.y
-        );
-        const holder = onTile ?? myUnits
-          .filter(u => !claimed.has(u.id) && u.type !== 'settlers' && (UNITS[u.type]?.defense ?? 0) > 0)
-          .sort((a, b) => chebyshevWrapped(a.position, city.position, W) - chebyshevWrapped(b.position, city.position, W))[0];
-        if (holder) { garrison.set(holder.id, city.position); claimed.add(holder.id); }
+        const ctx = productionContext(state, city, myId, { cityTarget });
+        const candidates = myUnits
+          .filter(u => !claimed.has(u.id) && u.type !== 'settlers' && defenceStrength(u.type) > 0)
+          .sort((a, b) => chebyshevWrapped(a.position, city.position, W) - chebyshevWrapped(b.position, city.position, W));
+        let held = 0, pinned = 0;
+        for (const u of candidates) {
+          if (held >= ctx.defenceTarget || pinned >= MAX_GARRISON) break;
+          const dist = chebyshevWrapped(u.position, city.position, W);
+          if (pinned > 0 && dist > RECALL_RANGE) break; // don't strip the front line
+          garrison.set(u.id, city.position);
+          claimed.add(u.id);
+          held += defenceStrength(u.type) * ctx.defenceFactor;
+          pinned += 1;
+        }
       }
       for (const [unitId, cityPos] of garrison) {
         const unit = unitById.get(unitId);

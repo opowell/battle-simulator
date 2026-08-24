@@ -279,6 +279,71 @@ games that decisive outcomes carry the signal. This is the civ1 half of the "tru
 problem in [LEARNED-EVAL-PLAN.md:121](../../agents/LEARNED-EVAL-PLAN.md#L121), and it is no
 longer deferrable.
 
+## Production scoring (2026-08-24): why every empire was made of militia
+
+Both agents here — the heuristic one in [ai.js](ai.js) and the search's pruner in
+[searchActions.js](searchActions.js) — used to keep their own copy of a production
+scorer whose defensive term was a boolean: `+100` for any unit with `defense > 0`.
+A militia therefore outbid a phalanx 103 to 101.5, and the switch margin then hid
+the phalanx from the search entirely. The offensive term, Freeciv's
+`attack_power × speed` per shield, gave militia, archers, legion and catapult the
+identical score of 0.1 and broke the tie on key order in `UNITS` — militia again.
+Three militia lose to one legion, so that is the wrong objective: Civ1 combat is
+one-on-one, and concentration is what wins it.
+
+Both are now one shared module, [production.js](production.js), scoring in
+**effective defence points** — `defence × hp/10`, times veteran/fortify, times the
+city's own multiplier (terrain, the city's +50%, ×3 for Walls, all from
+[combat.js](combat.js)) — against a target that is a peacetime floor plus the
+attack strength of whatever the player can actually see approaching. Both sides of
+that comparison are in the same currency, which is what makes "how much garrison
+does this city want" answerable at all.
+
+Two things the old scorer had no notion of:
+
+- **Time.** Every defensive score is divided by `1 + turns/PATIENCE`, and anything
+  that cannot finish before the nearest visible attacker arrives is cut to a third.
+  A phalanx is the better unit and usually wins the pick; a militia wins it exactly
+  when a militia is the right answer — something is coming, and it is the only
+  thing that can be standing there in time.
+- **Reinforcements.** Freeciv's own README.AI lists "city danger assessment ignores
+  units already en route to defend" as a known defect, and this codebase had
+  inherited it: cover counted only what stood on the city tile *this instant*. It
+  now counts our nearby defenders too, discounted by their ETA, and skips any unit
+  already garrisoning another city — pulling that one out just moves the hole.
+
+The garrison rule in [ai.js](ai.js) had to move with it. It pinned exactly one unit
+per city while production asked for a full `defenceTarget`, and the two spent whole
+games fighting: the city bought a militia, the mover marched it to the front, the
+city found itself uncovered and bought another. That loop — not the tech tree — is
+where most of the militia came from. Both now hold to the same number.
+
+Research order was the third of the three causes. `horseback-riding` was missing
+from both priority lists outright and `iron-working` sat twelfth, so for a dozen
+advances the only attacker any agent could build was a militia; and ai.js's research
+chooser, which always returned something, flipped between the top two entries every
+single turn for the whole game (the same forced-change trap `SWITCH_MARGIN` exists
+to stop on the production side).
+
+### Measured
+
+Heuristic agent vs the greedy baseline, 30 games at 150 turns and 20 at 400, seeds
+fixed and **seats swapped in pairs** (civ1's seat-1 advantage is large enough that
+unpaired games say nothing). The greedy baseline never sets production at all, so
+only one seat exercises the scorer.
+
+| 400-turn games | before | after |
+| --- | --- | --- |
+| avg cities | 1.75 | **2.95** |
+| avg advances | 12.5 | **18.1** |
+| avg `evaluateState` | 425 | **722** |
+| army size | 8.8 | 8.5 |
+| militia share of units built | 80% | **55%** |
+
+Same army, nearly twice the empire. No decisive results either way at these lengths
+— greedy holds a city and the games time out — so the win rate is still untested;
+that needs longer games or a stronger opponent.
+
 ## Revised order
 
 The original plan had `set-production` last, as an unlock for the personality material. That

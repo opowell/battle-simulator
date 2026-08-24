@@ -12,6 +12,7 @@ import { IMPROVEMENTS, WONDERS, SPACESHIP, SPACESHIP_MIN, wonderEffectsFor, wond
 import { GOVERNMENTS, availableGovernments } from './governments.js';
 import { CIVS, CIV_IDS, getCiv, nextCityName, pickCivs } from './civs.js';
 import { foodBox, computeCity, FAT_CROSS, workedTileYield } from './city.js';
+import { yearLabel } from './year.js';
 import { newCivState, buildOwnerCtx, buildableForCity, canProduce, buildCost, processOwnerEconomy, DEFAULT_PRODUCTION } from './economy.js';
 import { DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, resolveRules } from './difficulty.js';
 import {
@@ -1686,6 +1687,13 @@ export const Civ1Game = {
     // wrap: true tells the client the map is a horizontal cylinder (see wrapX above) —
     // Battlefield's click-to-pan centres on any column instead of clamping near the
     // east/west seam, and HtmlLayer draws duplicate columns there so panning stays seamless.
-    return { width, height, cells, wrap: true, civ, cities: citiesOut, military, statusChips, extraTeams };
+    // turnLabel: the date this turn happens on. Civ1 is a game about history, and
+    // the original never showed a bare turn number — the year is on screen at all
+    // times, next to the turn counter (GameHeader.vue). Computed per snapshot from
+    // state.turnNumber, so scrubbing the history timeline moves the calendar too.
+    return {
+      width, height, cells, wrap: true, civ, cities: citiesOut, military, statusChips, extraTeams,
+      turnLabel: yearLabel(state.turnNumber),
+    };
   },
 };
