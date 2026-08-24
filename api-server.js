@@ -58,7 +58,11 @@ import { Memoir44Game }      from './games/memoir44/index.js';
 const ROOT_DIR = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const APPS_DIR = resolve(ROOT_DIR, 'apps');
 const GAMES_DIR = resolve(ROOT_DIR, 'games');
-const SESSIONS_DIR = resolve(ROOT_DIR, 'sessions');
+// Where game recordings are written. Overridable so a test run (see
+// api-server.test.js) keeps its sessions out of the real directory.
+const SESSIONS_DIR = process.env.BATTLE_SIM_SESSIONS_DIR
+  ? resolve(process.env.BATTLE_SIM_SESSIONS_DIR)
+  : resolve(ROOT_DIR, 'sessions');
 const SERVER_PATH = resolve(ROOT_DIR, 'api-server.js');
 
 /** Filesystem-safe local datetime for recording filenames, e.g. 2026-07-12T14-16-03. */
@@ -288,6 +292,12 @@ const sessions = new Map();
 // server, not just the one that grew it — within seconds to a couple minutes.
 const MAX_GRID_HISTORY = 600;
 
+// Cap on how many engine steps one observer update may bundle (see _runBatch).
+// A safety rail rather than a tuning knob: batching ends at a turn boundary, so a
+// game whose turn number never moved would otherwise run the whole match inside
+// one batch and never show the observer a frame.
+const MAX_BATCH_STEPS = 400;
+
 // `state.players[i].agent` is the live agent instance the engine actually calls
 // to choose that seat's moves (e.g. a ChessObscuroAgent) — never meant to leave
 // the server, and not always even serializable: Obscuro lazily attaches
@@ -357,6 +367,13 @@ class Session {
     this._seq = 0;
     this._awaitingAdvance = false;
     this._stepSimTime = null;
+    // Observer-paced only: the frozen capture of the update the observer is
+    // CURRENTLY watching. The run loop computes the next one behind it (see _run's
+    // run-ahead), so the live engine position is a step ahead of what's on screen —
+    // toJSON must describe THIS, not the engine, or a watcher would see the future
+    // and the ack handshake would be acking a position nobody was shown. Null in
+    // every other mode, where the live engine state is the truth.
+    this._shown = null;
     this._sawHumanPending = false;
     this.createdAt = new Date();
     this.status = 'active';
@@ -407,7 +424,9 @@ class Session {
    * next loop iteration. Returns the applied values.
    */
   setControl({ paused, aiDelay, advance } = {}) {
+    let changed = false;
     if (typeof paused === 'boolean') {
+      changed ||= this.paused !== paused;
       this.paused = paused;
       if (!paused) {
         const waiters = this._resumeWaiters;
@@ -416,11 +435,20 @@ class Session {
       }
     }
     if (aiDelay != null && Number.isFinite(Number(aiDelay))) {
-      this.aiDelay = Math.max(0, Number(aiDelay));
+      const ms = Math.max(0, Number(aiDelay));
+      changed ||= this.aiDelay !== ms;
+      this.aiDelay = ms;
     }
     // `advance: true` acks the current step; `advance: <seq>` acks a specific one.
     if (advance != null) this._advance(advance === true ? this._seq : Number(advance));
-    this._broadcast();
+    // Broadcast only when a control actually MOVED, so the other clients learn about
+    // it. A bare `advance` ack changes nothing anyone needs pushed — the acking
+    // client already knows it acked, and the step it releases broadcasts itself the
+    // moment it lands. Re-broadcasting on the ack doubled the snapshots a watched
+    // game pushes (measured: exactly 2.00 messages and ~950 KB per civ1 step, half
+    // of it this echo), which the browser then has to parse and re-render for
+    // nothing. The HTTP response below still reports the applied values either way.
+    if (changed) this._broadcast();
     return { paused: this.paused, aiDelay: this.aiDelay, seq: this._seq, awaitingAdvance: this._awaitingAdvance };
   }
 
@@ -503,11 +531,10 @@ class Session {
     // Observers default to the full, fog-bypassing view; if they pick a player
     // perspective (`viewAs`), they instead get that player's own fog-filtered
     // snapshot — still held back by observerDelay like any observer payload.
-    const payload = client.observer
-      ? (client.viewAs
-          ? JSON.stringify(this.toJSON(client.viewAs))
-          : JSON.stringify(this.toJSON(null, { observer: true })))
-      : JSON.stringify(this.toJSON(client.playerId));
+    const full = client.observer
+      ? (client.viewAs ? this.toJSON(client.viewAs) : this.toJSON(null, { observer: true }))
+      : this.toJSON(client.playerId);
+    const payload = JSON.stringify(this._deltaFor(client, full));
     const delay = client.observer ? this.observerDelay : 0;
     if (delay > 0) {
       setTimeout(() => {
@@ -517,6 +544,59 @@ class Session {
     } else {
       try { client.ws.send(payload); } catch {}
     }
+  }
+
+  /**
+   * Reduce a snapshot to what CHANGED since the last one this client was sent.
+   *
+   * The board and the move log are almost all of a snapshot's weight — a civ1 grid
+   * is ~460 KB and the log passes 280 KB by turn 80 and keeps growing — and both are
+   * re-sent whole on every update even though a turn moves a handful of cells and
+   * only ever APPENDS log entries. So: send changed cells as `gridPatch` ([index,
+   * cell] pairs against the previous `grid.cells`) and new entries as `logTail`, and
+   * let the client rebuild the snapshot (see apps/design/api.js subscribeSession).
+   *
+   * Only for full-information observers — the exact case a watched AI game is, and
+   * the only one where both halves are safely incremental. A fog seat's `log` is a
+   * FILTERED view that isn't a plain append of the engine's, and a `viewAs` board is
+   * re-derived from a moving visibility set rather than edited in place; those keep
+   * getting whole snapshots, as does every REST caller (which has no per-connection
+   * base to diff against). `delta.baseSeq` lets the client notice it is holding a
+   * different base — from a REST poll during a socket drop, say — and refetch rather
+   * than paint a patch onto the wrong board.
+   */
+  _deltaFor(client, full) {
+    const cells = full.grid?.cells;
+    if (!client.observer || client.viewAs || !Array.isArray(cells) || !Array.isArray(full.log)) {
+      client._base = null;
+      return full;
+    }
+    const cellJson = cells.map(c => JSON.stringify(c));
+    const base = client._base;
+    const rebase = () => { client._base = { seq: full.seq, cellJson, logLen: full.log.length }; };
+    // No base yet, a board that changed shape, or a log that got SHORTER (a take-back
+    // — see rewindTo) — nothing to diff against, so send the whole thing and rebase.
+    if (!base || base.cellJson.length !== cellJson.length || full.log.length < base.logLen) {
+      rebase();
+      return full;
+    }
+    const patch = [];
+    for (let i = 0; i < cellJson.length; i++) {
+      if (cellJson[i] !== base.cellJson[i]) patch.push([i, cells[i]]);
+    }
+    // A board that changed more than half over is not worth patching: the pairs carry
+    // an index each, so past that point the "diff" is bigger than the board it saves.
+    if (patch.length * 2 > cellJson.length) { rebase(); return full; }
+    const delta = {
+      ...full,
+      grid: { ...full.grid, cells: undefined },
+      gridPatch: patch,
+      log: undefined,
+      logTail: full.log.slice(base.logLen),
+      delta: { baseSeq: base.seq },
+    };
+    rebase();
+    return delta;
   }
 
   /** Pull the latest decision record off each AI agent that just moved. */
@@ -647,6 +727,97 @@ class Session {
     }
   }
 
+  /**
+   * Run ONE observer update's worth of the game and capture how it looks, WITHOUT
+   * publishing it. Returns { done, capture } — or { aborted: true } if a take-back
+   * cancelled the step it was waiting on.
+   *
+   * TURN BATCHING. An update is a whole TURN wherever the game numbers its turns,
+   * not a single engine step. civ1's step is one unit action, so a mid-game turn is
+   * ~22 of them across four civs: showing each one separately meant ~22 round trips
+   * and ~22 full board snapshots per turn (measured at ~475 KB each — around 20 MB
+   * a turn for the browser to parse and re-render) to animate a turn the client
+   * already knows how to play back as one bundle, from the run of log entries it
+   * receives. Games that expose no turn number, and every non-observer-paced
+   * session, still publish one step at a time exactly as before.
+   *
+   * Nothing here touches `status`, `result`, `_seq` or `_shown`: a batch computed by
+   * run-ahead must not become visible — or end the game — until _publish shows it.
+   */
+  async _runBatch() {
+    const startTurn = this.engine.state?.turnNumber ?? null;
+    const batching = this.observerPaced && startTurn != null;
+    let simTime = 0, done = false, steps = 0;
+    while (true) {
+      const preState = this.engine.state; // pre-step state, for sim-time timing below
+      let r;
+      try {
+        r = await this.engine.step();
+      } catch (err) {
+        // Moves were taken back while this step was waiting on the human whose
+        // turn no longer exists (rewindTo aborts the pending agent to get here).
+        // The step never happened, so nothing below it should run.
+        if (!this._rewinding) throw err;
+        this._rewinding = false;
+        return { aborted: true };
+      }
+      done = r.done;
+      steps++;
+      // How much game-time this update represents, so an observer can play it back
+      // at real sim-speed (e.g. csmini's 5-second turn takes 5 seconds on screen)
+      // instead of instantly. A we-go round carries its own resolved duration; a
+      // single sequential action is priced by the game's getActionDuration on the
+      // PRE-step state (post-step the unit has already moved, so distance — and
+      // duration — would read as 0). A batched turn is the sum of its steps.
+      simTime += this._computeStepSimTime(preState) ?? 0;
+      this._collectAnalysis();
+      this._recordCasualties(preState);
+      this._pushGridHistory(this._captureGrid());
+      if (done || !batching) break;
+      if (steps >= MAX_BATCH_STEPS) break;
+      if (this._sawHumanPending || this.status !== 'active') break;
+      if ((this.engine.state?.turnNumber ?? null) !== startTurn) break;
+    }
+    return { done, capture: this._capture(simTime || null, done) };
+  }
+
+  /**
+   * Freeze how the game looks right now, so the run loop can move past it. Engine
+   * states are REPLACED rather than mutated on each step (engine/StateManager.js
+   * freeze — the same guarantee _recordCasualties already relies on to diff against
+   * a pre-step state), so holding this position costs one reference; the log and the
+   * two running tallies are copied because they are appended to in place.
+   */
+  _capture(stepSimTime, done) {
+    return {
+      state: this.engine.state,
+      log: this.engine.log.slice(),
+      playback: this.engine.playback ?? null,
+      casualties: this.casualties.slice(),
+      aiAnalysis: { ...this.aiAnalysis },
+      result: done ? this.engine.result : null,
+      stepSimTime,
+      done,
+    };
+  }
+
+  /** Make a computed batch the update everyone sees, and push it. */
+  _publish(batch) {
+    this._seq++;
+    this._stepSimTime = batch.capture.stepSimTime;
+    // Only observer-paced sessions run ahead, so only they need the frozen view;
+    // everywhere else toJSON keeps reading the live engine position.
+    this._shown = this.observerPaced ? batch.capture : null;
+    if (batch.done) {
+      this.status = 'done';
+      this.result = batch.capture.result ?? this.engine.result;
+    }
+    // Tell observer-paced clients an update is on screen awaiting their ack.
+    this._awaitingAdvance = this.observerPaced && !batch.done;
+    this._persist();
+    this._broadcast();
+  }
+
   // `init: false` resumes a session that already has a position — used after
   // moves are taken back, where re-initialising would throw the game away.
   async _run({ init = true } = {}) {
@@ -657,46 +828,36 @@ class Session {
         this._pushGridHistory(this._captureGrid());
         this._broadcast();
       }
+      // RUN-AHEAD (observer-paced): the update the observer is watching has already
+      // been captured and published, so the engine is free to compute the NEXT one
+      // while they animate this one. `ahead` is that in-flight batch. It turns the
+      // AI's thinking time from a delay the watcher sits through into work that
+      // happens under the animation — measured on civ1, ~0.7s a turn that used to
+      // be added to every turn's wall clock and now costs nothing until the AI is
+      // slower than the animation itself.
+      let ahead = null;
       while (this.status === 'active') {
         await this._waitWhilePaused();
         if (this.status !== 'active') break;
         this._sawHumanPending = false;
-        const preState = this.engine.state; // pre-step state, for sim-time timing below
-        let done;
-        try {
-          ({ done } = await this.engine.step());
-        } catch (err) {
-          // Moves were taken back while this step was waiting on the human whose
-          // turn no longer exists (rewindTo aborts the pending agent to get here).
-          // The step never happened, so nothing below it should run — just ask
-          // again, now from the position the rewind left behind.
-          if (!this._rewinding) throw err;
-          this._rewinding = false;
-          continue;
-        }
-        this._seq++;
-        // How much game-time this step represents, so an observer can play it back
-        // at real sim-speed (e.g. csmini's 5-second turn takes 5 seconds on screen)
-        // instead of instantly. A we-go round carries its own resolved duration;
-        // a single sequential action is priced by the game's getActionDuration on
-        // the PRE-step state (post-step the unit has already moved, so distance —
-        // and duration — would read as 0).
-        this._stepSimTime = this._computeStepSimTime(preState);
-        this._collectAnalysis();
-        this._recordCasualties(preState);
-        this._pushGridHistory(this._captureGrid());
-        if (done) {
-          this.status = 'done';
-          this.result = this.engine.result;
-        }
-        // Tell observer-paced clients a step is on screen awaiting their ack.
-        this._awaitingAdvance = this.observerPaced && !done;
-        this._persist();
-        this._broadcast();
-        if (done) break;
+        // Take the run-ahead batch if one is in flight, else compute one now.
+        let batch;
+        if (ahead) { const p = ahead; ahead = null; batch = await p; }
+        else batch = await this._runBatch();
+        // The batch was thrown away by a take-back mid-step — ask again from the
+        // position the rewind left behind (see _runBatch).
+        if (batch.aborted) continue;
+        this._publish(batch);
+        if (batch.done) break;
         if (this.observerPaced) {
-          // Lock-step: don't compute the next step until the observer has
-          // finished animating this one and acked it (see _advance).
+          // Start the next update BEFORE parking, so it computes during the wait.
+          ahead = this._runBatch();
+          // The park below (or the next iteration) awaits this and lets any error
+          // reach the catch outside the loop; this handler only stops an error that
+          // lands while nothing is awaiting it yet from tripping unhandledRejection.
+          ahead.catch(() => {});
+          // Lock-step: don't SHOW the next update until the observer has finished
+          // animating this one and acked it (see _advance).
           await this._waitForAdvance();
         } else if (!this._sawHumanPending && this.aiDelay > 0) {
           // Pace pure-AI advancement so a watcher can follow it; a step that
@@ -761,6 +922,13 @@ class Session {
     this.aiAnalysis = {};
     this._stepSimTime = 0;
     this._awaitingAdvance = false;
+    // The frozen "what the observer is watching" capture describes a position that
+    // no longer exists — drop it so toJSON goes back to reading the live engine.
+    this._shown = null;
+    // Same for every observer's delta base: the log did not just get shorter, it got
+    // REWRITTEN, so no patch against the old one means anything. Everyone gets a
+    // whole snapshot next (see _deltaFor).
+    for (const client of this.wsClients) client._base = null;
 
     // Belief trackers (what the analysis panel reasons with under fog) only ever
     // move FORWARD: they advance a turn at a time and filter against what has been
@@ -861,7 +1029,16 @@ class Session {
     // In a simultaneous planning window each player is shown their own plan state
     // (turn start + their queued orders) instead of the authoritative state.
     // Observers never get a private plan state — they watch the authoritative game.
-    const rawState = (!observer && playerId && this.engine.planState?.(playerId)) || this.engine.state;
+    // What this snapshot DESCRIBES. Normally the live engine position; in
+    // observer-paced mode the frozen capture of the update currently on screen,
+    // because the run loop is already computing the next one behind it (see _run's
+    // run-ahead). Reading the engine here instead would show a watcher a position
+    // ahead of the one they are animating — and would ack a step nobody was shown.
+    // A human seat's private plan state still wins, as before; observer-paced
+    // sessions have no human seats, so the two never collide.
+    const shown = this._shown;
+    const rawState = (!observer && playerId && this.engine.planState?.(playerId))
+      || (shown ? shown.state : this.engine.state);
     // The board is ALWAYS fog-filtered for the requesting player — debugAI never reveals
     // it (it only reveals the move log below). A playerless fog request therefore cannot
     // be given any board/log state; we return session metadata only (so a client can
@@ -872,7 +1049,7 @@ class Session {
       : rawState;
     const pending = this.pendingFor(playerId);
     const summary = (this.status === 'done' && rawState && game.getBattleSummary)
-      ? game.getBattleSummary(rawState, this.engine.log)
+      ? game.getBattleSummary(rawState, shown ? shown.log : this.engine.log)
       : null;
     // In fog mode (without debugAI) hide the opponent's move from log and lastActions.
     const humanIds = new Set(this.apiAgents.keys());
@@ -880,16 +1057,17 @@ class Session {
     const lastActions = fogNoPlayer ? null : fogFilter
       ? (rawState?.lastActions?.filter(pa => pa.playerId === playerId) ?? null)
       : (rawState?.lastActions ?? null);
+    const fullLog = shown ? shown.log : this.engine.log;
     const log = fogNoPlayer ? [] : fogFilter
-      ? this.engine.log.filter(e => e.playerActions?.every(pa => humanIds.has(pa.playerId)))
-      : this.engine.log;
+      ? fullLog.filter(e => e.playerActions?.every(pa => humanIds.has(pa.playerId)))
+      : fullLog;
     // Sampled position frames of the last resolved simultaneous round, for the
     // client's replay-turn feature. Under fog, frames are trimmed to the units
     // currently visible to the viewer (an approximation — true per-frame
     // visibility would need the game's vision model at every sample instant).
-    let playback = fogNoPlayer ? null : (this.engine.playback ?? null);
+    let playback = fogNoPlayer ? null : ((shown ? shown.playback : this.engine.playback) ?? null);
     if (playback && fog && playerId && game.getVisibleState) {
-      const visible = new Set(((game.getVisibleState(this.engine.state, playerId).units) ?? []).map(u => u.id));
+      const visible = new Set(((game.getVisibleState(rawState, playerId).units) ?? []).map(u => u.id));
       playback = { ...playback, frames: playback.frames.map(f => ({ ...f, units: f.units.filter(u => visible.has(u.id)) })) };
     }
     return {
@@ -944,7 +1122,7 @@ class Session {
       // _recordCasualties. Observers and non-fog games get the whole list
       // unconditionally (nothing to hide); a fog player gets their own losses
       // always, plus only the enemy deaths their witnessedBy actually includes.
-      confirmedCaptures: fogNoPlayer ? [] : this.casualties.filter(c =>
+      confirmedCaptures: fogNoPlayer ? [] : (shown ? shown.casualties : this.casualties).filter(c =>
         observer || !this.fog || c.witnessedBy.includes(playerId)),
       lastActions,
       log,
@@ -952,7 +1130,8 @@ class Session {
       // AI deliberation (candidate moves + rankings). In fog it can leak the AI's
       // own move, so it is only revealed with debugAI on; with full information it
       // is always shown (both sides see the board anyway).
-      aiAnalysis: fogNoPlayer ? null : ((this.debugAI || !fog) ? this.aiAnalysis : null),
+      aiAnalysis: fogNoPlayer ? null
+        : ((this.debugAI || !fog) ? (shown ? shown.aiAnalysis : this.aiAnalysis) : null),
     };
   }
 
@@ -2106,6 +2285,13 @@ function handleUpgrade(req, socket, head, prefix = '') {
     // round-trip (observers get the delayed, full-information view via _sendTo).
     session._sendTo(client);
     const drop = () => session.wsClients.delete(client);
+    // The only thing a client may say on this socket: "I can't apply your deltas,
+    // start me over" (see _deltaFor / apps/design/api.js rehydrate). Dropping the
+    // base makes the next send a whole snapshot, which re-aligns both ends.
+    ws.on('message', (raw) => {
+      let msg; try { msg = JSON.parse(raw); } catch { return; }
+      if (msg?.resync) { client._base = null; session._sendTo(client); }
+    });
     ws.on('close', drop);
     ws.on('error', drop);
   });

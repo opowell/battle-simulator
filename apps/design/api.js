@@ -141,6 +141,28 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
   const wsUrl = _WS_BASE + '/sessions/' + id + '/ws' + query;
   let ws = null, closed = false, pollTimer = null, retryTimer = null, backoff = 1000;
 
+  // Last full snapshot handed to onUpdate — the base the server's deltas patch
+  // against (see api-server.js _deltaFor). A message carrying `delta` is the
+  // changed cells and the new log entries only; rebuild the whole snapshot here so
+  // every consumer downstream keeps receiving exactly what it always did.
+  let base = null;
+  function rehydrate(msg) {
+    if (!msg?.delta) { base = msg; return msg; }
+    // A delta against a base we don't have (a REST poll landed in between, or this
+    // is the first message after a reconnect) can't be applied — asking for a whole
+    // snapshot re-syncs us, and the server rebases off whatever it sends next.
+    if (!base || base.seq !== msg.delta.baseSeq) return null;
+    // A NEW cells array, never a mutation of the old one: the App's animation
+    // watcher compares the incoming board against the previous one cell by cell, so
+    // patching in place would leave it diffing an array against itself.
+    const cells = (base.grid?.cells ?? []).slice();
+    for (const [i, cell] of msg.gridPatch ?? []) cells[i] = cell;
+    const full = { ...msg, grid: { ...msg.grid, cells }, log: (base.log ?? []).concat(msg.logTail ?? []) };
+    delete full.delta; delete full.gridPatch; delete full.logTail;
+    base = full;
+    return full;
+  }
+
   function startPoll() {
     if (pollTimer || closed) return;
     // Observers poll the full-information observer snapshot (fog bypassed); other
@@ -150,10 +172,21 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
       ? () => window.api.sessionObserver(id, viewAs)
       : () => window.api.session(id, playerId);
     pollTimer = setInterval(async () => {
-      try { onUpdate(await fetchSnapshot()); } catch {}
+      // REST snapshots are always whole, so this doubles as re-establishing the
+      // delta base for whenever the socket comes back.
+      try { onUpdate(rehydrate(await fetchSnapshot())); } catch {}
     }, 2000);
   }
   function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+  // Recover from a delta we have no base for by asking the SERVER to forget its
+  // base and re-send a whole snapshot. Refetching over REST instead would not fix
+  // it: the server rebases on every send, so our REST snapshot and its base would
+  // still be different positions and the very next delta would fail the same way.
+  function resync() {
+    if (closed || !ws || ws.readyState !== 1) return; // socket down: the poll covers us
+    try { ws.send(JSON.stringify({ resync: true })); } catch {}
+  }
 
   function scheduleRetry() {
     if (closed || retryTimer) return;
@@ -166,7 +199,16 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
     try { ws = new WebSocket(wsUrl); }
     catch { startPoll(); scheduleRetry(); return; }
     ws.onopen    = () => { backoff = 1000; stopPoll(); };
-    ws.onmessage = (ev) => { try { onUpdate(JSON.parse(ev.data)); } catch {} };
+    ws.onmessage = (ev) => {
+      try {
+        const full = rehydrate(JSON.parse(ev.data));
+        // rehydrate() returns null when it was handed a delta it has no base for.
+        // Ask for a whole snapshot rather than paint a patch onto the wrong board;
+        // the socket stays up throughout, so nothing else is interrupted.
+        if (full) onUpdate(full);
+        else resync();
+      } catch {}
+    };
     ws.onclose   = () => {
       ws = null;
       if (closed) return;

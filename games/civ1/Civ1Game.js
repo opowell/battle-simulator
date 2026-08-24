@@ -1573,6 +1573,16 @@ export const Civ1Game = {
   sampleWorlds,
   getActionDuration,
 
+  // Watch-pace: how much wall-clock an observer spends per unit of the game's own
+  // sim-time (see api-server.js toJSON's stepSimTime). civ1 prices EVERY unit action
+  // at one sim-second (getActionDuration above), and a mid-game turn is ~22 of them
+  // across four civs — so at the literal 1:1 rate a watched game crawls along at
+  // twenty-two real seconds a turn, which is where "watching a game is very slow"
+  // came from. A quarter-rate makes a turn ~5s at 1x and a fraction of a second at
+  // the top of the speed control, without touching what an action COSTS the game.
+  // (csmini sets this above 1 for the opposite reason — see CsMiniGame.js.)
+  replayPaceMultiplier: 0.25,
+
   toGrid(state) {
     const { board, units = [], cities = [] } = state;
     const { width, height, tiles } = board;

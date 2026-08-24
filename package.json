@@ -55,7 +55,7 @@
     "demo:kdice:3p": "node demo/kdice-demo.js --auto --players=3",
     "demo:kdice:4p": "node demo/kdice-demo.js --auto --players=4",
     "build-release": "node scripts/build-release.mjs",
-    "test": "node --test $(find games engine apps -name '*.test.js')",
+    "test": "node --test $(find games engine apps -name '*.test.js') $(find . -maxdepth 1 -name '*.test.js')",
     "kill:port:3333": "lsof -i tcp:3333 | awk 'NR!=1 {print $2}' | xargs kill -9"
   },
   "dependencies": {

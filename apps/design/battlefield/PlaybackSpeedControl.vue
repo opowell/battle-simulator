@@ -8,7 +8,10 @@ defineProps({
 });
 defineEmits(['set-speed']);
 // Sub-1 speeds are labelled as fractions ("1/16×"), which reads better than 0.0625×.
-const SPEEDS = [1 / 16, 1 / 8, 0.5, 1, 1.5, 2, 4, 8, 16];
+// The top of the range matters for long AI games: a civ1 match is hundreds of turns,
+// and even at its watch-pace (Civ1Game's replayPaceMultiplier) 16x was the ceiling on
+// how fast an observer could get through one.
+const SPEEDS = [1 / 16, 1 / 8, 0.5, 1, 1.5, 2, 4, 8, 16, 32, 64];
 const label = (s) => (s < 1 ? `1/${Math.round(1 / s)}` : String(s));
 </script>
 
