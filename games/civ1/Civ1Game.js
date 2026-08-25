@@ -850,6 +850,10 @@ function createFixedMapState(map, players, config) {
       // dist/speed cooldown from this same spec. See games/spacetime.js.
       spacetime: ST.resolveSpaceTime(Civ1Game, config),
       fogOfWar: config.fogOfWar ?? true,
+      // Whether a turn you have played ends itself once nothing wants orders (the
+      // gameOptions toggle below). Kept on the state so it survives a reload and
+      // reaches the client through toGrid's `ui` override rather than the static ui.
+      autoEndTurn: config.autoEndTurn ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
       // Who each seat is (civs.js). A hand-built scenario is meant to replay the same
       // way every time, so its civs are taken in the original's roster order rather
@@ -938,6 +942,10 @@ function buildInitialState(players, config = {}) {
       // dist/speed cooldown from this same spec. See games/spacetime.js.
       spacetime: ST.resolveSpaceTime(Civ1Game, config),
       fogOfWar: config.fogOfWar ?? true,
+      // Whether a turn you have played ends itself once nothing wants orders (the
+      // gameOptions toggle below). Kept on the state so it survives a reload and
+      // reaches the client through toGrid's `ui` override rather than the static ui.
+      autoEndTurn: config.autoEndTurn ?? true,
       civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
       // Who each seat is (civs.js). Drawn from the map's own rng, so a seed reproduces
       // the rivals along with the world — and drawn AFTER the map and the starting
@@ -1384,6 +1392,8 @@ export const Civ1Game = {
     // Only after the player has done something this turn, though: a turn arriving with
     // nothing to give orders to (every unit fortified) would otherwise end itself, and
     // the empire would run off without them. See Battlefield.vue's autoEndTurnAction.
+    // The default only: the "Auto-advance turn if action made" setup option decides it
+    // per session, and toGrid re-states the answer in its own `ui` (which wins).
     autoEndTurn: true,
     // Health bars read as clutter on a strategy map at this zoom — off by default,
     // toggleable from the menu's settings overlay (see games/civ1/gameOptions).
@@ -1563,6 +1573,11 @@ export const Civ1Game = {
         // menu promising something it can't deliver.
         label: BARBARIAN_LEVELS[id].band === 0 ? `${BARBARIAN_LEVELS[id].name} (no barbarians)` : BARBARIAN_LEVELS[id].name,
       })) },
+    // Not a rule — how the turn is handed back to you. The original never asked you to
+    // end a turn; it ended once every unit had its orders. Off puts the turn back in
+    // your hands (Enter / the End Turn button), which is what a player who likes to
+    // look the board over after their last move wants.
+    { id: 'autoEndTurn', label: 'Auto-advance turn if action made', description: 'Once you have given an order this turn, end it as soon as no unit is left wanting orders — as the original did', type: 'boolean', default: true },
     { id: 'width',  label: 'Map width',  description: 'Number of tiles across', type: 'range', min: 20, max: 100, step: 5, default: 50 },
     { id: 'height', label: 'Map height', description: 'Number of tiles down',   type: 'range', min: 10, max: 60,  step: 5, default: 30 },
     { id: 'land',    label: 'Land mass',   description: 'How much of the world is land', type: 'select', default: 1, options: [
@@ -1890,6 +1905,9 @@ export const Civ1Game = {
     return {
       width, height, cells, wrap: true, civ, cities: citiesOut, military, statusChips, extraTeams,
       turnLabel: yearLabel(state.turnNumber),
+      // Per-session view settings, layered over the static `ui` above (see App.vue's
+      // buildField): whether a played turn ends itself, as the setup form asked.
+      ui: { autoEndTurn: state.gameSpecific?.autoEndTurn !== false },
     };
   },
 };
