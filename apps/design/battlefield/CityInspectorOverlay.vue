@@ -1,27 +1,37 @@
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 // The civ1 "city screen" — like the original game, clicking a city pops this instead
 // of the thin generic unit sidebar (see Battlefield.vue's selectedCity). `city` is one
 // entry from Civ1Game.toGrid's `cities` field, already carrying the full per-turn
-// breakdown (computeCity(), called read-only there — see the comment by cityDetail).
+// breakdown (computeCity(), called read-only there — see the comment by cityDetail),
+// the garrison, and the display form of every item this city may build (buildOptions).
 // `productionActions` is this city's set-production options for the current turn,
 // filtered from displayedActions the same way Rates/Science filter their own actions.
+//
+// The layout follows the original's: a title bar carrying the name and population and
+// the citizens, the resource boxes down the left, the city map as the centrepiece, and
+// the buildings and the production box down the right. The pieces are their own small
+// components (see ./city/) — this file is only the arrangement.
+import { ref, watch, onMounted, onUnmounted } from 'vue';
+import CityRadiusMap from './city/CityRadiusMap.vue';
+import CityProductionBox from './city/CityProductionBox.vue';
+import CityIconStrip from './city/CityIconStrip.vue';
+
 const props = defineProps({
   show:             Boolean,
   city:             { type: Object, default: null },
   productionActions: { type: Array, default: () => [] },
+  team:             { type: Object, default: null },   // the city owner's team (colour)
+  recolor:          Boolean,                           // field.ui.recolorTeamSprites
 });
 const emit = defineEmits(['close', 'submit']);
 const imgSrc = window.api.imgSrc;
-const ICON = '/images/civ1/city';
+const teamSpriteHref = window.teamSpriteHref;
 
 const showProdPicker = ref(false);
-function pick(item) {
-  const action = props.productionActions.find(a => a.item === item);
-  if (action) emit('submit', action);
+function pick(action) {
+  emit('submit', action);
   showProdPicker.value = false;
 }
-const prodLocked = computed(() => !props.productionActions.length);
 
 // ── keyboard ──────────────────────────────────────────────────
 // A screen this deep in the game has to be usable without a mouse (the original's own
@@ -36,7 +46,7 @@ function onKeyDown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   const consume = () => { e.preventDefault(); e.stopPropagation(); };
   if (e.key === 'Escape' && showProdPicker.value) { showProdPicker.value = false; consume(); return; }
-  if (e.key.toLowerCase() === 'c' && !prodLocked.value) {
+  if (e.key.toLowerCase() === 'c' && props.productionActions.length) {
     showProdPicker.value = !showProdPicker.value;
     consume();
     return;
@@ -45,7 +55,7 @@ function onKeyDown(e) {
   // pick one directly — no highlight to walk through first.
   if (showProdPicker.value && /^[1-9]$/.test(e.key)) {
     const action = props.productionActions[Number(e.key) - 1];
-    if (action) pick(action.item);
+    if (action) pick(action);
     consume();
   }
 }
@@ -56,45 +66,6 @@ watch(() => [props.show, props.city?.id], () => { showProdPicker.value = false; 
 
 onMounted(() => window.addEventListener('keydown', onKeyDown, true));
 onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
-
-// The 21-square "fat cross" (see Civ1Game.toGrid's `radius` field, itself mirroring
-// city.js's FAT_CROSS) minus the 4 excluded corners — a plain 5x5 CSS grid with those
-// corner cells simply never populated reproduces the cross shape without needing a
-// non-rectangular layout.
-const radiusTiles = computed(() =>
-  (props.city?.radius ?? []).filter(t => !(Math.abs(t.dx) === 2 && Math.abs(t.dy) === 2)));
-
-function tileTitle(t) {
-  if (t.offBoard) return '';
-  if (t.center) return `${props.city.name} (city centre)`;
-  if (t.claimedByOther) return `${t.terrain} — worked by another city`;
-  return `${t.terrain} — food ${t.yield.food} · shields ${t.yield.shields} · trade ${t.yield.trade}`;
-}
-
-// The original city screen marks a worked tile with the resource icons it's
-// actually yielding (food/shields/trade), not a citizen — citizens are their own
-// row (the Citizens section above, by mood). One icon per point, same as the
-// original — a food-2/shield-1 tile shows two food icons and one shield icon.
-const RES_ICON = { food: 'food', shields: 'production', trade: 'trade' };
-function tileResources(t) {
-  if (!t.yield) return [];
-  const out = [];
-  for (const [k, icon] of Object.entries(RES_ICON)) {
-    for (let i = 0; i < t.yield[k]; i++) out.push(icon);
-  }
-  return out;
-}
-
-// Capacity bars (food box, production box) as a strip of the resource's own icon —
-// one lit per point filled, one dim per point still empty — the same convention the
-// original city screen uses instead of a plain progress bar.
-function capacityIcons(filled, total) {
-  const f = Math.max(0, Math.min(filled, total));
-  return [
-    ...Array(f).fill(true),
-    ...Array(Math.max(0, total - f)).fill(false),
-  ];
-}
 </script>
 
 <template>
@@ -102,105 +73,101 @@ function capacityIcons(filled, total) {
     <div v-if="show && city" class="ci-scrim" @click.self="$emit('close')">
       <div class="ci-panel">
         <div class="ci-head">
-          <span class="ci-title">{{city.name}}</span>
-          <span class="mono ci-size">size {{city.size}}</span>
+          <div class="ci-title">
+            {{city.name}}
+            <span class="mono ci-pop" v-if="city.population">(pop {{city.population.toLocaleString()}})</span>
+            <span class="mono ci-pop" v-else>size {{city.size}}</span>
+          </div>
+          <div class="ci-people">
+            <img v-for="(face, i) in (city.citizens ?? [])" :key="i" :src="imgSrc(face)"
+                 class="ci-face" draggable="false"/>
+          </div>
           <button class="ci-close" @click="$emit('close')">×</button>
         </div>
 
-        <div v-if="city.disorder" class="ci-disorder">⚠ Civil disorder — no output this turn</div>
+        <div v-if="city.disorder" class="ci-disorder">⚠ Civil disorder — this city produces nothing</div>
 
-        <div v-if="radiusTiles.length" class="ci-section">
-          <div class="ci-section-title">City Radius</div>
-          <div class="ci-radius">
-            <div v-for="t in radiusTiles" :key="t.dx + ',' + t.dy"
-                 class="ci-rtile"
-                 :class="{ 'ci-rtile--worked': t.worked, 'ci-rtile--claimed': t.claimedByOther, 'ci-rtile--off': t.offBoard, 'ci-rtile--center': t.center }"
-                 :style="{ gridColumn: String(t.dx + 3), gridRow: String(t.dy + 3),
-                           background: t.terrain === 'ocean' ? '#5046a0' : undefined }"
-                 :title="tileTitle(t)">
-              <img v-if="t.sprite" :src="imgSrc(t.sprite)" class="ci-rtile-img" draggable="false"/>
-              <span v-if="t.center" class="ci-rtile-mark">★</span>
-              <div v-else-if="t.worked" class="ci-rtile-res">
-                <img v-for="(icon, ri) in tileResources(t)" :key="ri"
-                     :src="imgSrc(`${ICON}/${icon}`)" class="ci-rtile-res-icon" draggable="false"/>
+        <div class="ci-body">
+          <div class="ci-col">
+            <section class="ci-box">
+              <h4 class="ci-box-t">City Resources</h4>
+              <div class="ci-res">
+                <span class="ci-res-k">Food</span>
+                <CityIconStrip :icon="city.icons?.food" :filled="Math.abs(city.foodSurplus ?? 0)"/>
+                <span class="mono ci-res-v" :class="{ 'ci-res-v--bad': city.foodSurplus < 0 }">
+                  {{city.foodSurplus > 0 ? '+' : ''}}{{city.foodSurplus ?? 0}}
+                </span>
               </div>
-            </div>
-          </div>
-          <div class="mono ci-radius-legend">★ city · icons = resources worked · dim = claimed by another city</div>
-        </div>
+              <div class="ci-res">
+                <span class="ci-res-k">Shields</span>
+                <CityIconStrip :icon="city.icons?.shields" :filled="city.shieldsPerTurn ?? 0"/>
+                <span class="mono ci-res-v">{{city.shieldsPerTurn ?? 0}}</span>
+              </div>
+              <div class="ci-res">
+                <span class="ci-res-k">Trade</span>
+                <CityIconStrip :icon="city.icons?.trade" :filled="city.trade ?? 0"/>
+                <span class="mono ci-res-v">{{city.trade ?? 0}}</span>
+              </div>
+              <div class="ci-res">
+                <span class="ci-res-k">Taxes</span>
+                <CityIconStrip :icon="city.icons?.gold" :filled="city.gold ?? 0"/>
+                <span class="mono ci-res-v">{{city.gold ?? 0}}</span>
+              </div>
+              <div class="ci-res">
+                <span class="ci-res-k">Luxuries</span>
+                <CityIconStrip :icon="city.icons?.luxury" :filled="city.luxury ?? 0"/>
+                <span class="mono ci-res-v">{{city.luxury ?? 0}}</span>
+              </div>
+              <div class="ci-res">
+                <span class="ci-res-k">Science</span>
+                <CityIconStrip :icon="city.icons?.science" :filled="city.science ?? 0"/>
+                <span class="mono ci-res-v">{{city.science ?? 0}}</span>
+              </div>
+            </section>
 
-        <div class="ci-section">
-          <div class="ci-section-title">Citizens</div>
-          <div class="ci-citizens">
-            <span v-if="city.happy" class="ci-cit ci-cit--happy">
-              <img :src="imgSrc(`${ICON}/people_happy_m`)" class="ci-cit-icon"/>×{{city.happy}}
-            </span>
-            <span v-if="city.content" class="ci-cit">
-              <img :src="imgSrc(`${ICON}/people_content_m`)" class="ci-cit-icon"/>×{{city.content}}
-            </span>
-            <span v-if="city.unhappy" class="ci-cit ci-cit--unhappy">
-              <img :src="imgSrc(`${ICON}/people_unhappy_m`)" class="ci-cit-icon"/>×{{city.unhappy}}
-            </span>
-          </div>
-        </div>
+            <section class="ci-box">
+              <h4 class="ci-box-t">
+                Food Storage
+                <span class="mono ci-box-v">
+                  {{city.food}}/{{city.foodBox}}
+                  <template v-if="city.growthTurns"> · grows in {{city.growthTurns}}</template>
+                  <template v-else-if="city.foodSurplus < 0"> · starving</template>
+                </span>
+              </h4>
+              <CityIconStrip :icon="city.icons?.food" :filled="city.food" :total="city.foodBox" :size="16"/>
+            </section>
 
-        <div class="ci-section">
-          <div class="ci-label">
-            <span class="ci-label-k">Food</span>
-            <span class="mono ci-val">
-              {{city.food}}/{{city.foodBox}}
-              <template v-if="city.foodSurplus > 0"> · grows in {{city.growthTurns}}</template>
-              <template v-else-if="city.foodSurplus < 0"> · starving</template>
-            </span>
+            <section class="ci-box">
+              <h4 class="ci-box-t">Units in City</h4>
+              <div v-if="city.garrison?.length" class="ci-garrison">
+                <img v-for="u in city.garrison" :key="u.id"
+                     :src="teamSpriteHref(u.image, team?.raw, recolor)"
+                     class="ci-unit" :title="u.type" draggable="false"/>
+              </div>
+              <div v-else class="ci-none">undefended</div>
+            </section>
           </div>
-          <div class="ci-capacity">
-            <img v-for="(lit, fi) in capacityIcons(city.food, city.foodBox)" :key="fi"
-                 :src="imgSrc(`${ICON}/food`)" class="ci-icon" :class="{ 'ci-icon--dim': !lit }"/>
-          </div>
-        </div>
 
-        <div class="ci-section">
-          <div class="ci-label">
-            <span class="ci-label-k">Building {{city.productionName}}</span>
-            <span class="mono ci-val">
-              {{city.shields}}/{{city.buildCost}}▪
-              <template v-if="city.buildTurnsLeft != null"> · {{city.buildTurnsLeft}}t</template>
-            </span>
+          <div class="ci-col ci-col--map">
+            <CityRadiusMap v-if="city.radius" :city="city" :team="team"/>
           </div>
-          <div class="ci-capacity">
-            <img v-for="(lit, si) in capacityIcons(city.shields, city.buildCost)" :key="si"
-                 :src="imgSrc(`${ICON}/production`)" class="ci-icon" :class="{ 'ci-icon--dim': !lit }"/>
-          </div>
-          <button class="btn btn-ghost ci-change" :disabled="prodLocked" @click="showProdPicker = !showProdPicker">
-            {{prodLocked ? 'Production set this turn' : 'Change production… (C)'}}
-          </button>
-          <!-- Numbered because the number keys pick straight off this list (see onKeyDown). -->
-          <div v-if="showProdPicker && !prodLocked" class="ci-picker">
-            <button v-for="(a, i) in productionActions" :key="a.item" class="action-btn ci-picker-btn" @click="pick(a.item)">
-              <span class="mono ci-picker-key">{{i + 1}}</span>{{a.item}}
-            </button>
-          </div>
-        </div>
 
-        <div class="ci-section">
-          <div class="ci-section-title">Trade ({{city.trade}})</div>
-          <div class="ci-trade">
-            <div class="ci-trade-row">
-              <img v-for="i in city.gold" :key="'g'+i" :src="imgSrc(`${ICON}/gold`)" class="ci-icon"/>
-            </div>
-            <div class="ci-trade-row">
-              <img v-for="i in city.luxury" :key="'l'+i" :src="imgSrc(`${ICON}/luxury`)" class="ci-icon"/>
-            </div>
-            <div class="ci-trade-row">
-              <img v-for="i in city.science" :key="'s'+i" :src="imgSrc(`${ICON}/bulb`)" class="ci-icon"/>
-            </div>
-          </div>
-        </div>
+          <div class="ci-col">
+            <section class="ci-box">
+              <h4 class="ci-box-t">Buildings</h4>
+              <div v-if="city.buildings.length" class="ci-chips">
+                <span v-for="b in city.buildings" :key="b" class="ci-chip">{{b}}</span>
+              </div>
+              <div v-else class="ci-none">none</div>
+            </section>
 
-        <div v-if="city.buildings.length" class="ci-section">
-          <div class="ci-section-title">Buildings</div>
-          <div class="ci-chips">
-            <span v-for="b in city.buildings" :key="b" class="ci-chip">{{b}}</span>
+            <section class="ci-box">
+              <h4 class="ci-box-t">Producing</h4>
+              <CityProductionBox :city="city" :productionActions="productionActions"
+                                 :team="team" :recolor="recolor"
+                                 :open="showProdPicker" @update:open="showProdPicker = $event"
+                                 @pick="pick"/>
+            </section>
           </div>
         </div>
       </div>
@@ -210,40 +177,33 @@ function capacityIcons(filled, total) {
 
 <style scoped>
 .ci-scrim { position: fixed; inset: 0; z-index: 1002; background: rgba(4,7,10,.82); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-.ci-panel { background: var(--bg1); border: 1px solid var(--line2); border-radius: var(--r2); width: 340px; max-width: 92vw; max-height: 85vh; overflow-y: auto; padding: 16px 18px; box-shadow: 0 24px 64px -12px rgba(0,0,0,.85); }
-.ci-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.ci-title { font-weight: 700; font-size: 14px; }
-.ci-size { font-size: 10px; color: var(--faint); flex: 1; }
-.ci-close { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--line2); border-radius: var(--r); background: var(--bg2); color: var(--dim); font-size: 15px; cursor: pointer; line-height: 1; }
-.ci-disorder { font-size: 11px; color: #ff5f56; background: rgba(255,95,86,.1); border: 1px solid rgba(255,95,86,.25); border-radius: var(--r); padding: 6px 9px; margin-bottom: 12px; }
-.ci-section { margin-bottom: 14px; }
-.ci-section-title { font-size: 9px; color: var(--faint); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
-.ci-radius { display: grid; grid-template-columns: repeat(5, 28px); grid-template-rows: repeat(5, 28px); gap: 1px; justify-content: center; background: var(--bg3); padding: 1px; border-radius: 4px; }
-.ci-rtile { position: relative; background: var(--bg2); display: grid; place-items: center; overflow: hidden; }
-.ci-rtile--off { visibility: hidden; }
-.ci-rtile-img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
-.ci-rtile--claimed .ci-rtile-img { opacity: .35; }
-.ci-rtile-mark { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.9); pointer-events: none; }
-.ci-rtile-res { position: absolute; inset: 0; display: flex; flex-wrap: wrap; align-content: center; align-items: center; justify-content: center; gap: 1px; background: rgba(0,0,0,.4); pointer-events: none; }
-.ci-rtile-res-icon { width: 8px; height: 8px; object-fit: contain; image-rendering: pixelated; flex: none; }
-.ci-radius-legend { font-size: 9px; color: var(--faint); margin-top: 5px; }
-.ci-citizens { display: flex; flex-wrap: wrap; gap: 8px; }
-.ci-cit { display: flex; align-items: center; gap: 3px; font-size: 11px; font-family: var(--mono); color: var(--dim); }
-.ci-cit--happy { color: var(--ok); }
-.ci-cit--unhappy { color: #ff5f56; }
-.ci-cit-icon { width: 16px; height: 16px; object-fit: contain; image-rendering: pixelated; }
-.ci-label { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--dim); margin-bottom: 5px; }
-.ci-label-k { display: flex; align-items: center; gap: 5px; color: var(--txt); }
-.ci-icon { width: 14px; height: 14px; object-fit: contain; image-rendering: pixelated; }
-.ci-icon--dim { opacity: .2; }
-.ci-val { color: var(--dim); }
-.ci-capacity { display: flex; flex-wrap: wrap; gap: 2px; background: var(--bg3); border-radius: 3px; padding: 3px; }
-.ci-change { width: 100%; justify-content: center; margin-top: 6px; font-size: 10px; }
-.ci-picker { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; max-height: 160px; overflow-y: auto; }
-.ci-picker-btn { font-size: 10px; font-family: var(--mono); }
-.ci-picker-key { color: var(--accent); margin-right: 7px; }
-.ci-trade { display: flex; flex-direction: column; gap: 3px; }
-.ci-trade-row { display: flex; flex-wrap: wrap; gap: 2px; min-height: 12px; background: var(--bg3); border-radius: 3px; padding: 2px 3px; }
-.ci-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.ci-chip { font-size: 9px; padding: 2px 6px; border-radius: 3px; background: var(--bg3); color: var(--dim); }
+.ci-panel { background: var(--bg1); border: 1px solid var(--line2); border-radius: var(--r2); width: 1120px; max-width: 96vw; max-height: 92vh; overflow-y: auto; padding: 16px 20px 20px; box-shadow: 0 24px 64px -12px rgba(0,0,0,.85); }
+
+.ci-head { display: flex; align-items: center; gap: 14px; padding-bottom: 10px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.ci-title { font-weight: 700; font-size: 22px; letter-spacing: .5px; flex: none; }
+.ci-pop { font-size: 12px; color: var(--faint); font-weight: 400; margin-left: 6px; }
+.ci-people { display: flex; flex-wrap: wrap; gap: 1px; flex: 1; }
+.ci-face { width: 30px; height: 30px; object-fit: contain; image-rendering: pixelated; }
+.ci-close { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line2); border-radius: var(--r); background: var(--bg2); color: var(--dim); font-size: 20px; cursor: pointer; line-height: 1; }
+.ci-disorder { font-size: 13px; color: #ff5f56; background: rgba(255,95,86,.1); border: 1px solid rgba(255,95,86,.25); border-radius: var(--r); padding: 8px 12px; margin-bottom: 14px; }
+
+.ci-body { display: grid; grid-template-columns: 260px 1fr 300px; gap: 16px; align-items: start; }
+.ci-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.ci-col--map { align-items: center; }
+
+.ci-box { background: var(--bg2); border: 1px solid var(--line2); border-radius: var(--r); padding: 10px 12px 12px; }
+.ci-box-t { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .8px; }
+.ci-box-v { font-size: 11px; color: var(--faint); text-transform: none; letter-spacing: 0; margin-left: auto; }
+.ci-none { font-size: 12px; color: var(--faint); }
+
+.ci-res { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.ci-res-k { flex: none; width: 62px; font-size: 12px; color: var(--txt); }
+.ci-res-v { flex: none; margin-left: auto; font-size: 12px; color: var(--dim); }
+.ci-res-v--bad { color: #ff5f56; }
+
+.ci-garrison { display: flex; flex-wrap: wrap; gap: 4px; }
+.ci-unit { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; background: var(--bg3); border: 1px solid var(--line); }
+
+.ci-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ci-chip { font-size: 12px; padding: 3px 8px; border-radius: 3px; background: var(--bg3); color: var(--txt); }
 </style>

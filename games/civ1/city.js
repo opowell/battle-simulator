@@ -248,3 +248,8 @@ export function cityMaintenance(city) {
 
 // Food box that must fill to grow to the next size (Granary keeps half on growth).
 export function foodBox(size) { return (size + 1) * 10; }
+
+// The population number the original prints in the city screen's title bar: the
+// triangular series 10,000 · 30,000 · 60,000 · … for sizes 1, 2, 3 — i.e. 10,000
+// citizens per size step, accumulated. Display only; nothing in the rules reads it.
+export function population(size) { return 10000 * (size * (size + 1)) / 2; }

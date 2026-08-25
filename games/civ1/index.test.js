@@ -144,6 +144,48 @@ test('civ1: a garrisoned city square is drawn as the city, not as its garrison',
   assert.equal(cell.fixture, true, 'the square is a fixture — the art is the city\'s, not the unit\'s');
 });
 
+// The city screen (apps/design/battlefield/CityInspectorOverlay.vue) draws pictures —
+// of the garrison, and of every item the city could build — but apps/design has no
+// access to UNITS/IMPROVEMENTS/WONDERS, so all of that has to ride the grid payload.
+test('civ1: a city carries what its city screen draws — population, garrison, build options', () => {
+  const state = Civ1Game.createInitialState(players());
+  const unit = state.units.find(u => u.ownerId === 'p1');
+  const withCity = {
+    ...state,
+    cities: [...(state.cities ?? []), {
+      id: 'city-test', name: 'Testopolis', ownerId: 'p1',
+      position: { ...unit.position }, size: 3, shields: 0, food: 0,
+      production: 'militia', buildings: [],
+    }],
+  };
+  const city = Civ1Game.toGrid(withCity).cities.find(c => c.id === 'city-test');
+
+  assert.equal(city.population, 60000, 'size 3 is 60,000 people, as the original titles it');
+  assert.deepEqual(city.garrison.map(g => g.type), [unit.type], 'the units-in-city box');
+  assert.match(city.garrison[0].image, /units\//, 'each garrison unit brings its sprite');
+
+  // apps/design is game-agnostic by rule, so every picture the screen draws has to be
+  // named in the payload — icons included, not built from paths on the client.
+  assert.match(city.icons.food, /city\/food$/);
+  assert.match(city.icons.shields, /city\/production$/);
+  assert.match(city.sprite, /map\/city$/, 'the city plaque\'s own art');
+  assert.equal(city.citizens.length, city.size, 'one face per citizen');
+  const workedTile = city.radius.find(t => t.worked && !t.center);
+  if (workedTile) assert.equal(workedTile.icons.length,
+    workedTile.yield.food + workedTile.yield.shields + workedTile.yield.trade,
+    'a worked square is marked with one icon per point it yields');
+
+  const militia = city.buildOptions.militia;
+  assert.ok(militia, 'what it is building is always among the options it can draw');
+  assert.equal(militia.kind, 'unit');
+  assert.equal(militia.cost, 10);
+  assert.match(militia.image, /units\/militia$/, 'units are drawn with their own art');
+  // Improvements have no art of their own, so they fall back to the shield icon the
+  // production box is already made of — a missing image would draw a broken tile.
+  const palace = city.buildOptions.palace;
+  if (palace) assert.match(palace.image, /city\/production$/);
+});
+
 // ---------------------------------------------------------------------------
 // Self-play
 // ---------------------------------------------------------------------------

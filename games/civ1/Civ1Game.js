@@ -12,7 +12,7 @@ import { TECHS, researchableTechs, techCost } from './tech.js';
 import { IMPROVEMENTS, WONDERS, SPACESHIP, SPACESHIP_MIN, wonderEffectsFor, wonderBuiltInWorld } from './improvements.js';
 import { GOVERNMENTS, availableGovernments } from './governments.js';
 import { CIVS, CIV_IDS, getCiv, nextCityName, pickCivs } from './civs.js';
-import { foodBox, computeCity, FAT_CROSS, workedTileYield } from './city.js';
+import { foodBox, computeCity, FAT_CROSS, workedTileYield, population } from './city.js';
 import { yearLabel } from './year.js';
 import { newCivState, buildOwnerCtx, buildableForCity, canProduce, buildCost, processOwnerEconomy, DEFAULT_PRODUCTION } from './economy.js';
 import { DIFFICULTIES, DIFFICULTY_IDS, DEFAULT_DIFFICULTY, resolveRules } from './difficulty.js';
@@ -24,6 +24,54 @@ import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint,
 import * as ST from '../spacetime.js';
 
 const BASE = '/images/civ1';
+
+// Every picture the city screen is made of. The client (apps/design) is game-agnostic
+// by rule — it knows nothing of civ1's art or its tables — so the screen's icons ride
+// the grid payload the same way unit sprites and terrain tiles already do.
+const CITY_ICONS = {
+  food:    `${BASE}/city/food`,
+  shields: `${BASE}/city/production`,
+  trade:   `${BASE}/city/trade`,
+  gold:    `${BASE}/city/gold`,
+  luxury:  `${BASE}/city/luxury`,
+  science: `${BASE}/city/bulb`,
+};
+const CITIZEN_ICON = {
+  happy:   `${BASE}/city/people_happy_m`,
+  content: `${BASE}/city/people_content_m`,
+  unhappy: `${BASE}/city/people_unhappy_m`,
+};
+
+// A worked square is marked with the resource icons it is actually yielding — one icon
+// per point, the original's own notation (a food-2/shield-1 square shows two food icons
+// and one shield).
+function yieldIcons(y3) {
+  const out = [];
+  for (const k of ['food', 'shields', 'trade']) {
+    for (let i = 0; i < (y3?.[k] ?? 0); i++) out.push(CITY_ICONS[k]);
+  }
+  return out;
+}
+
+// One production option as the city screen draws it: the picture the original shows
+// for the item, its shield cost, and a one-line summary of what it is. Units have
+// real art (images/civ1/units); improvements, wonders and spaceship parts have none,
+// so they fall back to the shield icon the production box is already made of.
+function buildOptionInfo(id, shieldsPerTurn) {
+  const u = UNITS[id], imp = IMPROVEMENTS[id], w = WONDERS[id], sp = SPACESHIP[id];
+  const cost = buildCost(id);
+  const kind = u ? 'unit' : w ? 'wonder' : sp ? 'spaceship' : 'improvement';
+  const stats = u ? `a${u.attack} d${u.defense} · ${u.moves} mv`
+    : imp ? (imp.maint ? `upkeep ${imp.maint}` : 'no upkeep')
+    : w ? 'wonder' : sp ? 'spaceship part' : '';
+  return {
+    item: id,
+    name: u ? id : (imp?.name ?? w?.name ?? sp?.name ?? id),
+    kind, cost, stats,
+    image: u ? `${BASE}/units/${id}` : `${BASE}/city/production`,
+    turns: shieldsPerTurn > 0 ? Math.ceil(cost / shieldsPerTurn) : null,
+  };
+}
 
 // ── The single movement spec (games/spacetime.js) ─────────────────────────────
 // civ1's one movement fact is a unit's `moves` (units.js). The framework turns it
@@ -1807,20 +1855,45 @@ export const Civ1Game = {
             terrain: tile.terrain,
             sprite: (tile.terrain === 'ocean' || tile.terrain === 'unknown') ? null
               : terrainSprite(rx, ry, tile.terrain),
+            // Same flat terrain colour the board paints under its tiles, so the city
+            // screen's oceans (which draw no sprite) match the map instead of guessing.
+            color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
             worked: workedKeys.has(key),
             claimedByOther: !center && !workedKeys.has(key) && ctx.takenTiles.has(key),
             yield: y3,
+            icons: workedKeys.has(key) && !center ? yieldIcons(y3) : [],
           };
         });
         for (const w of out.worked) ctx.takenTiles.add(`${w.x},${w.y}`);
 
+        // What this city may build right now, resolved to display form (name, cost,
+        // art, one-line stats) here rather than in the client: apps/design has no
+        // access to UNITS/IMPROVEMENTS/WONDERS, and the city screen has to draw the
+        // *picture* of every option — as the original's Change-production menu does.
+        const buildOptions = {};
+        for (const id of [...buildableForCity(state, c, ctx), c.production]) {
+          if (buildOptions[id]) continue;
+          buildOptions[id] = buildOptionInfo(id, out.shields);
+        }
+
         cityDetail[c.id] = {
+          buildOptions,
           foodSurplus: out.foodSurplus,
           growthTurns: out.foodSurplus > 0 ? Math.ceil((foodBox(c.size) - c.food) / out.foodSurplus) : null,
           shieldsPerTurn: out.shields,
-          buildTurnsLeft: out.shields > 0 ? Math.ceil((buildCost(c.production) - c.shields) / out.shields) : null,
+          // Never negative: a city whose unit has nowhere to spawn (findAdjacentFree
+          // in economy.js) keeps banking shields past the cost, and the raw subtraction
+          // then reads as "-30 turns left" on the city screen. Zero means "paid for".
+          buildTurnsLeft: out.shields > 0 ? Math.max(0, Math.ceil((buildCost(c.production) - c.shields) / out.shields)) : null,
           trade: out.trade, luxury: out.luxury, gold: out.gold, science: out.science,
           happy: out.happiness.happy, content: out.happiness.content, unhappy: out.happiness.unhappy,
+          // One face per citizen, by mood — the original's row of little people, which
+          // the title bar draws straight through without knowing what a mood is.
+          citizens: [
+            ...Array(out.happiness.happy).fill(CITIZEN_ICON.happy),
+            ...Array(out.happiness.content).fill(CITIZEN_ICON.content),
+            ...Array(out.happiness.unhappy).fill(CITIZEN_ICON.unhappy),
+          ],
           disorder: out.happiness.disorder,
           radius,
         };
@@ -1832,7 +1905,13 @@ export const Civ1Game = {
         : (IMPROVEMENTS[c.production]?.name ?? WONDERS[c.production]?.name ?? c.production);
       return {
         id: c.id, name: c.name, owner: c.ownerId, x: c.position.x, y: c.position.y,
-        size: c.size, food: c.food, foodBox: foodBox(c.size),
+        size: c.size, population: population(c.size), food: c.food, foodBox: foodBox(c.size),
+        icons: CITY_ICONS, sprite: `${BASE}/map/city`,
+        // The garrison box of the original's city screen. Built from the same
+        // (already fog-filtered) `units` the squares are, so a city seen through fog
+        // shows only the units this viewer can actually see.
+        garrison: units.filter(u => u.alive && u.position.x === c.position.x && u.position.y === c.position.y)
+          .map(u => ({ id: u.id, type: u.type, image: `${BASE}/units/${u.type}`, hp: u.hp, maxHp: u.maxHp })),
         production: c.production, productionName: prod,
         shields: c.shields, buildCost: buildCost(c.production),
         buildings: (c.buildings ?? []).map(id => IMPROVEMENTS[id]?.name ?? WONDERS[id]?.name ?? id),
