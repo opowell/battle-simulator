@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { connect } from 'node:net';
 import { readFile } from 'node:fs/promises';
 import { runInThisContext } from 'node:vm';
+import { applyGridFrame as applyFrame } from './engine/gridFrames.js';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const PORT = 4700 + Math.floor(Math.random() * 200);
@@ -225,6 +226,119 @@ test('acking a step does not push a second copy of it', async () => {
   // One message per update. The ack used to broadcast the whole snapshot straight
   // back — doubling everything a watched game pushes for no new information.
   assert.ok(msgs <= 7, `6 updates pushed ${msgs} messages; the ack is echoing again`);
+});
+
+/** Watch a civ1 game through to its end, acking every update, and return it. */
+async function playWatchedCiv1(maxTurns) {
+  const s = await post('/sessions', {
+    game: 'civ1',
+    players: Array.from({ length: 4 }, (_, i) => ({ id: 'p' + (i + 1), agent: 'random' })),
+    config: { fog: true, allowObservers: true, maxTurns },
+  });
+  await post(`/sessions/${s.id}/control`, { paused: false });
+  const done = new Promise((resolveDone) => {
+    const seen = new Set();
+    observe(s.id, async (msg) => {
+      if (msg.status !== 'active') return resolveDone();
+      if (!msg.awaitingAdvance || seen.has(msg.seq)) return;
+      seen.add(msg.seq);
+      await post(`/sessions/${s.id}/control`, { advance: msg.seq });
+    });
+  });
+  const dl = deadline(120000, 'playing a civ1 game out');
+  await Promise.race([done, dl.promise]); dl.clear();
+  return s;
+}
+
+test('the scrub timeline rebuilds to the boards the game passed through', async () => {
+  const api = await loadBrowserApi();
+  // Long enough to need more than one page, short enough that the timeline has not
+  // been thinned — while it is still sampling every position, the newest frame IS
+  // the final board, which is the one anchor to a source outside this machinery.
+  const s = await playWatchedCiv1(22);
+
+  const first = await get(`/sessions/${s.id}/history?from=0&limit=200`);
+  assert.ok(first.total > 200, `wanted a timeline long enough to page, got ${first.total}`);
+  assert.equal(first.revision, 0, `wanted an un-thinned timeline, got revision ${first.revision}`);
+  assert.equal(first.frames.length, 200, 'a page should be capped at the page size');
+  assert.ok(first.frames[0].full, 'every page must open on a whole board');
+  assert.ok(first.frames.slice(1).every(f => !f.full),
+    'the rest of a page should be diffs, not whole boards again');
+
+  // The shipped client pages through and rebuilds — the array App.vue consumes.
+  const grids = await api.history(s.id);
+  assert.equal(grids.length, first.total, 'the rebuilt timeline is short');
+
+  const live = await get(`/sessions/${s.id}?observer=1`);
+  assert.deepEqual(grids[grids.length - 1].cells, live.grid.cells,
+    'the last frame of the timeline is not the final position');
+
+  // Every frame must be a whole, well-formed board of its own.
+  const n = grids[0].cells.length;
+  for (let i = 0; i < grids.length; i++) {
+    assert.equal(grids[i].cells.length, n, `frame ${i} has the wrong number of cells`);
+    assert.ok(grids[i].cells.every(Boolean), `frame ${i} has a hole in it`);
+    if (i) assert.notEqual(grids[i].cells, grids[i - 1].cells, `frame ${i} aliases its predecessor`);
+  }
+});
+
+test('a long game keeps its timeline bounded and still rebuilds', async () => {
+  const api = await loadBrowserApi();
+  // Long enough to blow past MAX_GRID_HISTORY, so the timeline is thinned and frames
+  // are folded into their successors.
+  //
+  // No comparison against the live board here: once thinning has doubled the sampling
+  // stride, the last position only lands on the timeline if it falls on that stride,
+  // so the newest frame legitimately trails the final board by a step. That is how
+  // this has always sampled — unmodified main does the same, measured over repeated
+  // runs — and it is not what these frames are for. Whether the DIFFS themselves
+  // survive thinning is settled deterministically in engine/gridFrames.test.js, which
+  // drives a timeline past its cap many times over and checks every surviving frame
+  // against the board that produced it.
+  const s = await playWatchedCiv1(70);
+  const page = await get(`/sessions/${s.id}/history?from=0&limit=200`);
+  // Bounded is the claim that always holds; whether THIS game happened to run long
+  // enough to thin depends on how many actions its random seats took, so asserting it
+  // would just be flaky.
+  assert.ok(page.total < 600, `timeline should stay bounded, got ${page.total} frames`);
+
+  const grids = await api.history(s.id);
+  assert.equal(grids.length, page.total, 'the rebuilt timeline is short');
+  const n = grids[0].cells.length;
+  for (let i = 0; i < grids.length; i++) {
+    assert.equal(grids[i].cells.length, n, `frame ${i} has the wrong number of cells`);
+    assert.ok(grids[i].cells.every(Boolean), `frame ${i} has a hole in it`);
+    if (i) assert.notEqual(grids[i].cells, grids[i - 1].cells, `frame ${i} aliases its predecessor`);
+  }
+});
+
+test('history paging covers the timeline exactly once', async () => {
+  const s = await playWatchedCiv1(12);
+  const total = (await get(`/sessions/${s.id}/history?from=0&limit=1`)).total;
+  // Walk it in small pages and rebuild each independently — pages are self-contained,
+  // so page N must not need page N-1 to make sense.
+  const seen = [];
+  for (let from = 0; from < total; from += 37) {
+    const page = await get(`/sessions/${s.id}/history?from=${from}&limit=37`);
+    assert.equal(page.from, from);
+    assert.ok(page.frames[0].full, `page at ${from} does not open on a whole board`);
+    let cur = null;
+    for (const f of page.frames) { cur = applyFrame(cur, f); seen.push(cur); }
+  }
+  assert.equal(seen.length, total, 'paging did not cover the timeline exactly once');
+
+  // Independently-paged frames must match the ones read in one go.
+  const whole = [];
+  let cur = null;
+  for (let from = 0; from < total; from += 200) {
+    const page = await get(`/sessions/${s.id}/history?from=${from}&limit=200`);
+    cur = null;
+    for (const f of page.frames) { cur = applyFrame(cur, f); whole.push(cur); }
+  }
+  assert.equal(seen.length, whole.length);
+  for (let i = 0; i < seen.length; i++) {
+    assert.deepEqual(seen[i].cells, whole[i].cells, `frame ${i} differs between page sizes`);
+  }
 });
 
 test('a fog player seat is never sent deltas', async () => {

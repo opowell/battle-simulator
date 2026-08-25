@@ -20,6 +20,7 @@ import { fileURLToPath }         from 'node:url';
 
 
 import { WebSocketServer } from './vendor/ws/wrapper.mjs';
+import { GridTimeline } from './engine/gridFrames.js';
 
 import { GameEngine } from './engine/index.js';
 import { validate as validateAction } from './engine/ActionValidator.js';
@@ -292,6 +293,11 @@ const sessions = new Map();
 // server, not just the one that grew it — within seconds to a couple minutes.
 const MAX_GRID_HISTORY = 600;
 
+// Frames per page of GET /sessions/:id/history. Each page opens with a whole grid
+// and continues in diffs (see readGridHistory), so this trades a keyframe's worth
+// of bytes per page against how big a single response can get.
+const HISTORY_PAGE_SIZE = 200;
+
 // Cap on how many engine steps one observer update may bundle (see _runBatch).
 // A safety rail rather than a tuning knob: batching ends at a turn boundary, so a
 // game whose turn number never moved would otherwise run the whole match inside
@@ -379,12 +385,14 @@ class Session {
     this.status = 'active';
     this.result = null;
     this.error = null;
-    this.gridHistory = [];
-    // See _pushGridHistory: once gridHistory hits MAX_GRID_HISTORY it's thinned
-    // to every other frame and _gridStride doubles, so retained frames stay
-    // spread across the whole game instead of memory growing without bound.
-    this._gridStride = 1;
-    this._gridStepCount = 0;
+    // The scrub-bar timeline, stored as DIFFS (engine/gridFrames.js): frame 0 carries a
+    // whole grid, every frame after it only the cells (and any other grid fields) that
+    // changed since the one before. Holding them whole cost ~460 KB EACH on civ1 —
+    // ~275 MB a session, never released until the session is explicitly deleted, on a
+    // dev server several agents share. A civ1 turn moves ~14 of 1500 cells, so the
+    // diffs are a rounding error by comparison, and the timeline keeps its per-action
+    // granularity rather than being thinned harder to buy the memory back.
+    this.gridTimeline = new GridTimeline({ max: MAX_GRID_HISTORY });
     // Every unit lost so far, generic across every game (see _recordCasualties):
     // { id, ownerId, type, name, imagePath, ply, witnessedBy }. witnessedBy is the
     // list of player ids who had this unit in their fog-filtered view the instant
@@ -672,22 +680,16 @@ class Session {
   }
 
   /**
-   * Append a captured grid to gridHistory, keeping the array bounded to
-   * MAX_GRID_HISTORY frames regardless of how long the session runs. Frames are
-   * sampled at `_gridStride` (starting at 1, i.e. every frame); once the cap is
-   * hit the buffer is thinned to every other frame and the stride doubles, so
-   * long games keep frames evenly spread across their whole length rather than
-   * losing the earliest or latest part of the timeline.
+   * Record a position on the scrub-bar timeline. Sampling, diffing and the bound on
+   * how much is kept all live in engine/gridFrames.js's GridTimeline.
    */
   _pushGridHistory(g) {
-    if (!g) return;
-    this._gridStepCount++;
-    if ((this._gridStepCount - 1) % this._gridStride !== 0) return;
-    this.gridHistory.push(g);
-    if (this.gridHistory.length >= MAX_GRID_HISTORY) {
-      this.gridHistory = this.gridHistory.filter((_, i) => i % 2 === 0);
-      this._gridStride *= 2;
-    }
+    this.gridTimeline.push(g);
+  }
+
+  /** One page of the scrub-bar timeline — see GridTimeline.read. */
+  readGridHistory(from = 0, limit = HISTORY_PAGE_SIZE) {
+    return this.gridTimeline.read(from, limit);
   }
 
   /**
@@ -913,9 +915,7 @@ class Session {
     // Re-render the timeline from the log that survived, through the same
     // sampling/thinning as live play (see _pushGridHistory).
     const { game } = GAMES[this.gameName];
-    this.gridHistory = [];
-    this._gridStepCount = 0;
-    this._gridStride = 1;
+    this.gridTimeline.reset();
     for (const state of replayStatesToPly(game, this, this.engine.log.length))
       this._pushGridHistory(this._captureGrid(state));
 
@@ -2016,10 +2016,18 @@ async function handleGetLog(res, id) {
   send(res, 200, session.engine.log);
 }
 
-async function handleGetHistory(res, id) {
+// One page of the scrub-bar timeline: ?from=<frame>&limit=<n>. Paged because the
+// whole thing used to go out in a single response — hundreds of megabytes on a long
+// civ1 game, which is a cliff for both ends. Frames come back diff-encoded (see
+// Session.readGridHistory); apps/design/api.js pages through and rebuilds them.
+async function handleGetHistory(res, id, url) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
-  send(res, 200, session.gridHistory);
+  const from = Number(url.searchParams.get('from')) || 0;
+  const limitRaw = Number(url.searchParams.get('limit'));
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0
+    ? Math.min(limitRaw, HISTORY_PAGE_SIZE) : HISTORY_PAGE_SIZE;
+  send(res, 200, session.readGridHistory(from, limit));
 }
 
 async function handleDeleteSession(res, id) {
@@ -2166,7 +2174,7 @@ async function handleRequest(req, res) {
 
     // GET /sessions/:id/history
     if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'history')
-      return await handleGetHistory(res, parts[1]);
+      return await handleGetHistory(res, parts[1], url);
 
     // GET /sessions/:id/playback-frame?t=<fraction 0..1> — the exact resolved state
     // at an off-sample mid-turn time, for a scrub paused between playback frames.

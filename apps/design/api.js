@@ -28,6 +28,50 @@ function imgSrc(path) {
   return path && path.startsWith('/') ? _BASE_PATH + path : path;
 }
 
+/**
+ * Rebuild the grid a history frame describes, given the one before it — the mirror
+ * of api-server.js's applyGridFrame. A new object every time: each frame becomes its
+ * own board in the scrub bar, and aliasing two of them would show the same position
+ * twice.
+ */
+function applyGridFrame(prev, frame) {
+  if (!frame) return prev;
+  if (frame.full) return frame.full;
+  const cells = (prev?.cells ?? []).slice();
+  for (const [i, cell] of frame.patch ?? []) cells[i] = cell;
+  const next = { ...(prev ?? {}), ...(frame.rest ?? {}), cells };
+  for (const k of frame.removed ?? []) delete next[k];
+  return next;
+}
+
+/**
+ * Page through GET /sessions/:id/history and rebuild every frame.
+ *
+ * A live game can thin its timeline (dropping every other frame) between our
+ * requests, which re-indexes everything we have already asked for — the server says
+ * so with `revision`, and we start over. Bounded, so a game thinning faster than we
+ * can read cannot spin here for ever; it gives up with an empty timeline instead,
+ * which callers already handle (the scrub bar simply has no history to seed from,
+ * and fills up again from the live game as it plays on).
+ */
+async function _fetchHistory(id, attempts = 4) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const grids = [];
+    let from = 0, revision = null, restart = false;
+    for (;;) {
+      const page = await _req('/sessions/' + id + '/history?from=' + from + '&limit=200');
+      if (revision !== null && page.revision !== revision) { restart = true; break; }
+      revision = page.revision;
+      let cur = null;
+      for (const frame of page.frames ?? []) { cur = applyGridFrame(cur, frame); grids.push(cur); }
+      from += page.frames?.length ?? 0;
+      if (!page.frames?.length || from >= page.total) break;
+    }
+    if (!restart) return grids;
+  }
+  return [];
+}
+
 window.api = {
   basePath: _BASE_PATH,
   imgSrc,
@@ -39,7 +83,11 @@ window.api = {
   // the socket can't connect (e.g. behind a proxy that drops upgrades). `viewAs`
   // narrows it to one player's fog-limited view instead.
   sessionObserver: (id, viewAs) => _req('/sessions/' + id + '?observer=1' + (viewAs ? '&viewAs=' + encodeURIComponent(viewAs) : '')),
-  history:  (id)                    => _req('/sessions/' + id + '/history'),
+  // The whole scrub-bar timeline, as an array of grids — the same thing callers
+  // always got back, assembled here. The endpoint pages (it used to hand over
+  // hundreds of megabytes in one response on a long civ1 game) and diff-encodes:
+  // each page opens with a whole grid and continues in changed cells only.
+  history:  (id)                    => _fetchHistory(id),
   // The EXACT resolved state at fraction `t` (0..1) of the last simultaneous round —
   // requested when a mid-turn scrub is PAUSED between the sampled playback frames, so
   // the board shows the server's true analytic state rather than a client-side lerp
