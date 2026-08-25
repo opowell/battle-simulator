@@ -1588,6 +1588,10 @@ const selectedCity = computed(() => {
   const x = Math.floor(u.x), y = Math.floor(u.y);
   return (props.field.cities ?? []).find(c => c.x === x && c.y === y) ?? null;
 });
+// The city screen paints the city and its units in their owner's colour, the same way
+// the board does (see teamSprite.js) — team ids are player ids (App.vue's buildField).
+const selectedCityTeam = computed(() =>
+  props.field.teams?.find(t => t.id === selectedCity.value?.owner) ?? null);
 const cityProductionActions = computed(() => {
   if (!selectedCity.value) return [];
   return displayedActions.value.filter(a => a.type === 'set-production' && a.cityId === selectedCity.value.id);
@@ -2161,6 +2165,7 @@ onUnmounted(() => {
     @surrender="confirmSurrender"/>
 
   <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
+    :team="selectedCityTeam" :recolor="field.ui?.recolorTeamSprites"
     @close="selectedId = null" @submit="submitAction"/>
 
   <GameOverOverlay
