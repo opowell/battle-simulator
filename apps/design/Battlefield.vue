@@ -1740,6 +1740,50 @@ const openPanel = ref(null);
 const overlayOpen = computed(() => !!(showMenu.value || showHelp.value || infoUnit.value
   || infoAbility.value || openPanel.value || selectedCity.value));
 
+// ── auto end turn ─────────────────────────────────────────────
+// Civ1 never had an "end turn" key: the turn ended by itself once every unit had its
+// orders. So does this, opt-in via ui.autoEndTurn — but only once you have actually
+// DONE something this turn. Without that guard a turn nobody has any orders to give
+// (an empire sitting fortified) would end the instant it arrived, and the game would
+// play itself out at a turn a frame; with it, a turn you want to spend doing nothing
+// still ends the explicit way (Enter / the End Turn button), and that pass is the
+// signal that you meant it.
+//
+// "Acted this turn" is read off the move log rather than tracked here, so a reload
+// mid-turn doesn't forget it. Under fog a seat's own entries are always in the log it
+// is served (see api-server's fogFilter), which is all this needs.
+const actedThisTurn = computed(() => {
+  const turn = props.liveState?.turn;
+  const me = pendingPlayerId.value;
+  if (turn == null || !me) return false;
+  return (props.liveState?.log ?? []).some(e => e.turnNumber === turn
+    && (e.playerActions ?? []).some(pa => pa.playerId === me));
+});
+
+// The end-turn action to fire, or null while anything still wants doing. Waits for a
+// clear board — an overlay open (the city screen, an advisor) is someone reading, and
+// pulling the turn out from under them lands their next click in the next turn — and
+// for playback to settle, so a turn never ends over the top of its own animation.
+const autoEndTurnAction = computed(() => {
+  if (!ui.value.autoEndTurn || !isPending.value || !atLatest.value || forking.value) return null;
+  if (!actedThisTurn.value || props.animating || overlayOpen.value) return null;
+  const wanting = displayUnits.value.some(u => !u.dead && u.badge == null
+    && u.team === pendingPlayerId.value && u.needsOrders);
+  if (wanting) return null;
+  return legalActions.value.find(a => a.type === 'end-turn') ?? null;
+});
+
+// One auto-end per turn: the submitted action only leaves legalActions once the server
+// answers, and until it does this would otherwise re-fire on every unrelated update.
+const autoEndedTurn = ref(null);
+watch(autoEndTurnAction, (action) => {
+  if (!action) return;
+  const key = `${pendingPlayerId.value}:${props.liveState?.turn}`;
+  if (autoEndedTurn.value === key) return;
+  autoEndedTurn.value = key;
+  submitAction(action);
+}, { flush: 'post' });
+
 // Submit the first available action among `types` (a binding may name several, e.g.
 // civ1's I = irrigate here, clear the forest there) for the selected unit, or the
 // player-level ones like end-turn. getLegalActions stays the only authority: a key
