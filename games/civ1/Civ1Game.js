@@ -1380,6 +1380,11 @@ export const Civ1Game = {
     // standing fortify/sentry order — see toGrid's `needsOrders`), jump selection to
     // another of the player's units that still wants orders (see Battlefield.vue).
     autoAdvanceUnit: true,
+    // ...and once no unit wants orders at all, end the turn — the original never asked.
+    // Only after the player has done something this turn, though: a turn arriving with
+    // nothing to give orders to (every unit fortified) would otherwise end itself, and
+    // the empire would run off without them. See Battlefield.vue's autoEndTurnAction.
+    autoEndTurn: true,
     // Health bars read as clutter on a strategy map at this zoom — off by default,
     // toggleable from the menu's settings overlay (see games/civ1/gameOptions).
     showHpBars: false,
@@ -1416,7 +1421,9 @@ export const Civ1Game = {
     // city), U (unload), P/Shift+P (pollution, pillage), Shift+D (disband) and G (goto,
     // which here is the click-driven move queue) have no action to fire, so they are
     // deliberately absent rather than bound to nothing. Enter for end-turn is the one
-    // key the original never needed — it ended the turn once nothing wanted orders.
+    // key the original never needed — it ended the turn once nothing wanted orders, as
+    // ui.autoEndTurn above now does; Enter is what passes a turn you did nothing in,
+    // which is the one case the auto-end deliberately leaves alone.
     keys: {
       directionMove: true,
       directionPan: true,
@@ -1433,7 +1440,7 @@ export const Civ1Game = {
         { key: ' ', action: 'skip-unit',                   label: 'No orders — this unit is done',      group: 'Unit orders' },
         { key: 'w', command: 'next-unit',                  label: 'Wait — go to the next unit',         group: 'Unit orders' },
         { key: 'Backspace', action: 'queue-pop',           label: 'Undo the last queued move',          group: 'Unit orders' },
-        { key: 'Enter', action: 'end-turn',                label: 'End turn',                           group: 'Unit orders' },
+        { key: 'Enter', action: 'end-turn',                label: 'End turn (it ends itself once every unit has orders)', group: 'Unit orders' },
         { key: 'c', command: 'center',                     label: 'Centre the map on the active unit',  group: 'Map & view' },
         // The original reached the city screen by clicking the city; with no cursor to
         // click with, stepping through your own cities is the keyboard's way in. N is
