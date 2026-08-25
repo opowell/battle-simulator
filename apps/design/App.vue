@@ -399,25 +399,10 @@ watch(liveState, (newState, oldState) => {
   const halfW = newState.grid.wrap ? (newState.grid.width ?? 0) / 2 : Infinity;
 
   // Net position changes A→B (a unit moved twice in a bundle collapses to one hop —
-  // matching the pre-sequencing behaviour). Each is claimed by the beat it belongs to.
-  const moved = new Map(); // unitId -> { from, to }
-  if (continuous) {
-    const oldUnits = new Map((oldState.grid.units ?? []).map(u => [u.id, u]));
-    for (const nu of newState.grid.units ?? []) {
-      const ou = oldUnits.get(nu.id);
-      if (!ou) continue;
-      const from = { x: Number(ou.x), y: Number(ou.y) }, to = { x: Number(nu.x), y: Number(nu.y) };
-      if (from.x === to.x && from.y === to.y) continue;
-      moved.set(nu.id, { from, to });
-    }
-  } else {
-    for (const newCell of newState.grid.cells) {
-      if (!newCell.unitId) continue;
-      const oldCell = oldState.grid.cells.find(c => c.unitId === newCell.unitId);
-      if (!oldCell || (oldCell.x === newCell.x && oldCell.y === newCell.y)) continue;
-      moved.set(newCell.unitId, { from: { x: oldCell.x, y: oldCell.y }, to: { x: newCell.x, y: newCell.y } });
-    }
-  }
+  // matching the pre-sequencing behaviour), unitId -> { from, to }. Each is claimed by
+  // the beat it belongs to. A token that is drawn as a board fixture — civ1's city
+  // sprite, which carries its garrison's id — is not in here: see boardMoves.js.
+  const moved = MOVES.movedTokens(oldState.grid, newState.grid);
 
   // Board point of a unit for a flash: its new point if still on the board, else its
   // last-seen point (a slain unit is gone from newState). Square-grid discrete units

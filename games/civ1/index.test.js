@@ -138,6 +138,10 @@ test('civ1: a garrisoned city square is drawn as the city, not as its garrison',
   assert.equal(cell.unitId, unit.id);
   assert.equal(cell.unitName, unit.type);
   assert.match(cell.portraitPath, /units\//, 'the roster/side panel keep the unit sprite');
+  // The square carries the garrison's id while drawing the city, so it has to say so:
+  // without this the move animation walks the city over to whichever unit just stepped
+  // into it (see apps/design/boardMoves.js).
+  assert.equal(cell.fixture, true, 'the square is a fixture — the art is the city\'s, not the unit\'s');
 });
 
 // ---------------------------------------------------------------------------

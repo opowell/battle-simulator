@@ -1708,6 +1708,12 @@ export const Civ1Game = {
           portraitPath: (city && u) ? `${BASE}/units/${u.type}` : undefined,
           badge: city ? city.size : null,
           badgeLabel: city ? city.name : undefined,
+          // …and because the square's art is the CITY's while `unitId` above is the
+          // garrison's, the client must not treat this token as the piece that carries
+          // that id: a unit stepping into the city would otherwise animate the city
+          // walking to meet it. `fixture` says the art belongs to the square (see
+          // apps/design/boardMoves.js).
+          fixture: city ? true : undefined,
           // Ocean draws no terrain sprite — coastSprite (below) supplies the real
           // ocean tile. Land draws its authentic tile, blended with like neighbours.
           bgImage: (tile.terrain === 'ocean' || tile.terrain === 'unknown') ? null
