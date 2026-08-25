@@ -1365,6 +1365,12 @@ export const Civ1Game = {
     hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
     blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
     mapZoom: true, defaultTileSize: 40, moveQueue: true,
+    // Units glide from square to square instead of blinking between centres (see
+    // App.vue's startSlide). A civ1 move is one tile, so the default hop is a unit
+    // sitting still and then simply being somewhere else — with a whole empire
+    // moving a tile at a time, sliding is what makes it readable which unit moved
+    // and which way it went. Same pace as a hop: one step per square.
+    moveAnimation: 'slide',
     // Player colors, taken from the original game's civ palette. RED IS RESERVED FOR
     // THE BARBARIANS in Civ1 and never belongs to a civ, so it's absent here — a red
     // unit or city on this map means barbarians, whoever else is playing. The generic

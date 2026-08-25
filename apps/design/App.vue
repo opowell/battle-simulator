@@ -39,10 +39,14 @@ const sessionMeta = ref({});
 // computer's immediate reply). Each turn becomes one or more "beats" — a move
 // hop and/or a burst of combat flashes — queued and played in log order, so a
 // later turn never renders (or flashes) ahead of an earlier turn still playing.
-// Beats: { kind:'hop', unitId, steps:[{x,y}] } | { kind:'fx', flashes:[{unitId,fx}] }
+// Beats: { kind:'hop', unitId, steps:[{x,y}], slide } | { kind:'fx', flashes:[{unitId,fx}] }
 const HOP_STEP_MS = 220;
 const FX_BEAT_MS  = 400; // gap before the next beat; the numeral keeps rising into it
-const hopAnim  = ref(null);  // currently-playing hop { unitId, steps, step } (for pinning)
+// currently-playing hop (for pinning): { unitId, steps, step, frac, slide }. `step` is
+// the index of the square the unit is standing on; `frac` is how far it has travelled
+// from there toward steps[step + 1], and is always 0 for a hop — only a slide
+// (ui.moveAnimation: 'slide') puts a unit between two squares.
+const hopAnim  = ref(null);
 const animQueue = ref([]);   // pending beats, not yet started
 // True from the moment an 'fx' beat starts until its full delay (flashes + any
 // pause) has elapsed. Without this, a beat appended to animQueue mid-flight (the
@@ -304,8 +308,9 @@ function playNext() {
     animTimer = setTimeout(() => { fxBusy.value = false; playNext(); }, delay / playbackSpeed.value);
     return;
   }
-  hopAnim.value = { unitId: beat.unitId, steps: beat.steps, step: 0 };
-  animTimer = setTimeout(advanceHop, HOP_STEP_MS);
+  hopAnim.value = { unitId: beat.unitId, steps: beat.steps, step: 0, frac: 0, slide: beat.slide };
+  if (beat.slide) startSlide();
+  else animTimer = setTimeout(advanceHop, HOP_STEP_MS);
 }
 
 function advanceHop() {
@@ -314,6 +319,44 @@ function advanceHop() {
   if (next >= hopAnim.value.steps.length) { hopAnim.value = null; playNext(); return; }
   hopAnim.value = { ...hopAnim.value, step: next };
   animTimer = setTimeout(advanceHop, HOP_STEP_MS);
+}
+
+// A slide covers the same ground at the same pace as a hop — one HOP_STEP_MS per
+// square — but the unit is redrawn at a fractional position every animation frame
+// instead of landing square-centre to square-centre. It ends the moment it reaches
+// the last square, where a hop still holds that square for a final step.
+let slideRaf = 0, slideToken = 0;
+function startSlide() {
+  const segments = hopAnim.value.steps.length - 1;
+  // A single-square "path" is a snap with nothing to traverse (see pushHop's
+  // seam crossing) — there is no motion to draw, so don't hold the queue for it.
+  if (segments < 1) { hopAnim.value = null; playNext(); return; }
+  const token = ++slideToken;
+  const duration = Math.max(1, segments * HOP_STEP_MS / playbackSpeed.value);
+  const t0 = performance.now();
+  const frame = () => {
+    if (token !== slideToken || !hopAnim.value) return;
+    const p = Math.min(1, (performance.now() - t0) / duration);
+    if (p >= 1) { endSlide(token); return; }
+    const at = p * segments;
+    const step = Math.floor(at);
+    hopAnim.value = { ...hopAnim.value, step, frac: at - step };
+    slideRaf = requestAnimationFrame(frame);
+  };
+  // A hidden tab throttles requestAnimationFrame to nothing, which would park this
+  // beat — and behind it the whole queue, and an observer game's step ack — until
+  // the tab came back. The timer is the backstop that ends the slide regardless.
+  animTimer = setTimeout(() => endSlide(token), duration + 250);
+  slideRaf = requestAnimationFrame(frame);
+}
+
+function endSlide(token) {
+  if (token !== slideToken) return;
+  slideToken++;
+  cancelAnimationFrame(slideRaf);
+  clearTimeout(animTimer);
+  hopAnim.value = null;
+  playNext();
 }
 
 watch(liveState, (newState, oldState) => {
@@ -345,7 +388,15 @@ watch(liveState, (newState, oldState) => {
   // to hop across: a unit slides in a straight line to the exact point clicked. Their
   // per-unit positions travel in newState.grid.units (real points), not by cell index.
   const continuous = newState.grid.locationType === 'continuous';
-  const slide = continuous;
+  const straightPath = continuous;
+  // 'slide' plays the same path as a hop, but continuously — the unit glides across
+  // each square instead of blinking from centre to centre (civ1). See startSlide.
+  const smooth = (ui.moveAnimation ?? 'hop') === 'slide';
+  // Wrapping worlds (civ1's east/west seam — see the `world.wrap` in buildField): a
+  // move ACROSS the seam reads as a jump the whole width of the map, and animating it
+  // would walk the unit all the way back across every square it didn't cross. Snap it
+  // instead, exactly as Battlefield's playback tweening does with the same halfW test.
+  const halfW = newState.grid.wrap ? (newState.grid.width ?? 0) / 2 : Infinity;
 
   // Net position changes A→B (a unit moved twice in a bundle collapses to one hop —
   // matching the pre-sequencing behaviour). Each is claimed by the beat it belongs to.
@@ -476,8 +527,11 @@ watch(liveState, (newState, oldState) => {
   const claimed = new Set();
   const pushHop = (unitId) => {
     const { from, to } = moved.get(unitId);
-    beats.push({ kind: 'hop', unitId, steps: slide ? [from, to] : buildHopPath(from, to, diagonal) });
     claimed.add(unitId);
+    // Seam crossing: nothing to animate, the unit is simply already there.
+    if (Math.abs(to.x - from.x) > halfW) return;
+    const steps = straightPath ? [from, to] : buildHopPath(from, to, diagonal);
+    beats.push({ kind: 'hop', unitId, steps, slide: smooth });
   };
   for (const entry of newEntries) {
     const action = entry.playerActions?.[0]?.action;
@@ -851,8 +905,17 @@ const activeField = computed(() => {
   const off = field.locationType === 'continuous' ? 0 : 0.5;
   field.units = field.units.map(u => {
     if (hopAnim.value?.unitId === u.id) {
-      const { x, y } = hopAnim.value.steps[hopAnim.value.step];
-      return { ...u, path: [[x + off, y + off]] };
+      const { steps, step, frac } = hopAnim.value;
+      const a = steps[step], b = steps[step + 1] ?? a;
+      const dx = (b.x - a.x) * frac, dy = (b.y - a.y) * frac;
+      const unit = { ...u, path: [[a.x + off + dx, a.y + off + dy]] };
+      if (!dx && !dy) return unit;
+      // Mid-square, so the same two forms of the offset the history scrub carries (see
+      // Battlefield's renderUnits): the absolute renderers draw at the fractional point
+      // in `path`, while HtmlLayer files each unit into the CSS grid cell it is standing
+      // on and translates the sprite by tweenDx/tweenDy — without which the fraction is
+      // rounded away and the unit jumps a whole square at a time after all.
+      return { ...unit, baseX: a.x + off, baseY: a.y + off, tweenDx: dx, tweenDy: dy };
     }
     const queued = animQueue.value.find(q => q.kind === 'hop' && q.unitId === u.id);
     if (queued) {
