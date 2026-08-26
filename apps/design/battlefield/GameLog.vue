@@ -9,6 +9,10 @@ defineEmits(['seek']);
 
 function fmtAction(action) {
   const t = action.type ?? '';
+  // A game that knows how to say what one of its actions does says it, the same
+  // way it does for the buttons in ActionsPanel — nothing generic here can name a
+  // knight's chosen route or a piece being called off mid-journey.
+  if (action.label) return action.label;
   if (t === 'move') {
     if (typeof action.from === 'string' && typeof action.to === 'string')
       return action.from + ' → ' + action.to;

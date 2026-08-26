@@ -37,6 +37,12 @@
 // Coordinate transforms have sensible defaults (tile centre ↔ floor) that a game
 // may override in its spec (e.g. a hex game, or a game whose tile origin isn't a
 // corner).
+//
+// Not every game's movement is a distance budget, and those use this module for the
+// quadrant and the time arithmetic only. Chess is the example: what a piece may
+// reach is its move SHAPE, never how far it can travel, so games/chess/spacetime.js
+// enumerates its own destinations and asks only `resolveSpaceTime` which world it is
+// in — and then implements what that world does to a rook's move (see its header).
 
 import { movePointLattice } from './continuousMove.js';
 

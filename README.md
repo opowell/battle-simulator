@@ -6,7 +6,7 @@ A turn-based game engine for running and building strategy games in JavaScript (
 
 | Key | Game | Docs |
 |---|---|---|
-| `chess` | Chess | [games/chess/](games/chess/README.md) |
+| `chess` | Chess — plus fog of war and three (space x time) variants | [games/chess/](games/chess/README.md) |
 | `tactical` | Tactical grid combat | [games/tactical/](games/tactical/README.md) |
 | `cardbattle` | Card battle | [games/cardbattle/](games/cardbattle/README.md) |
 | `civ1` | Civilization 1 | [games/civ1/](games/civ1/README.md) |

@@ -716,7 +716,10 @@ function handleUnitClick(e, u) {
 
     <!-- Positioned units (field.positioned, e.g. csmini): absolutely-placed HTML tokens at
          their exact continuous point — which already carries any playback slide — each with
-         a CSS-rotated facing arrow. The token itself is the same HtmlUnit as the cell games. -->
+         a CSS-rotated facing arrow. The token itself is the same HtmlUnit as the cell games,
+         mousedown included: with ui.dragToMove on, handleUnitClick deliberately does
+         nothing because selection is supposed to have happened on mousedown, so a
+         positioned token without that handler cannot be selected at all. -->
     <template v-if="positioned">
       <div v-for="a in absUnits" :key="a.u.id" class="hl-abs-unit"
            :style="{ left: a.left+'px', top: a.top+'px', color: a.u.teamObj?.raw }">
@@ -731,7 +734,10 @@ function handleUnitClick(e, u) {
             :selected="a.u.id === selectedId"
             :hovered="a.u.id === hoveredId"
             :blink="a.u.id === blinkTargetId && !!field.ui?.blinkActiveUnit"
-            @click="handleUnitClick($event, a.u)"/>
+            :grab="dragToMove && !a.u.dead"
+            :dim="dragUnit?.id === a.u.id"
+            @click="handleUnitClick($event, a.u)"
+            @mousedown="handleUnitMousedown($event, a.u)"/>
         </div>
       </div>
     </template>

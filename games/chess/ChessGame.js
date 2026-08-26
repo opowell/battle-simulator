@@ -30,6 +30,11 @@ import {
 // Side effect only: points the vendored engine at this repo's warm evaluation
 // cache before anything can open it. See the file for why the cache stayed here.
 import './stockfish.js';
+// The other three quadrants of the (space x time) plane — pieces that hop square
+// by square on a clock, or slide as bodies through continuous space. Standard and
+// fog chess (discrete/discrete) are this file's own code below; anything else is
+// delegated wholesale to that module. See games/spacetime.js for the quadrants.
+import * as ST from './spacetime.js';
 
 // ---------------------------------------------------------------------------
 // Initial board setup
@@ -196,18 +201,95 @@ function updateCastlingRights(rights, unit, square) {
 // GameDefinition
 // ---------------------------------------------------------------------------
 
+// Both analysis agents are Stockfish-backed searches over a board of squares and
+// atomic alternating moves. Neither survives a position where a piece is halfway
+// through a move — the position isn't a board, and the "moves" are orders that
+// resolve later — so an analysis request for one of the other quadrants is refused
+// rather than handed a board that is `undefined`. The client keeps the panel shut
+// there too (Battlefield.vue's analysisEnabled), so this is the backstop, not the
+// gate.
+const standardOnly = (analyze) => (...args) => {
+  if (ST.isSpacetimeVariant(args[0]))
+    throw new Error('Move analysis is only available in discrete space and time (Standard / Fog of War).');
+  return analyze(...args);
+};
+
 export const ChessGame = {
   name: 'Chess',
   colors: { light: '#f0d9b5', dark: '#b58863' },
+
+  // The quadrant this game is played in unless a scenario or the Configure screen
+  // says otherwise (games/spacetime.js). Discrete space + discrete time +
+  // sequential IS chess; the other three are games/chess/spacetime.js.
+  spacetime: { space: 'discrete', time: 'discrete', play: 'sequential' },
+
+  // Five ways to play the same pieces. The first two are chess and fog chess as
+  // this file has always implemented them; the last three move the game into
+  // another quadrant of the (space x time) plane and hand it to spacetime.js.
+  //
+  // Each seats the table itself, because the right opponent differs per scenario:
+  // the Stockfish-backed agents only understand atomic alternating moves, so the
+  // real-time and sliding variants are played by the generic 1-ply greedy agent
+  // against `evaluateState` below.
+  scenarios: [
+    {
+      id: 'standard',
+      name: 'Standard',
+      description: 'Discrete time, discrete space, sequential moves. Chess.',
+      config: {
+        space: 'discrete', time: 'discrete', fogOfWar: false,
+        players: [{ name: 'You', agent: 'human' }, { name: 'CPU', agent: 'chess-ai' }],
+      },
+    },
+    {
+      id: 'fog',
+      name: 'Fog of War',
+      description: 'Chess, but you see only the squares your own pieces can reach. Won by capturing the king, not by mate.',
+      config: {
+        space: 'discrete', time: 'discrete', fogOfWar: true,
+        players: [{ name: 'You', agent: 'human' }, { name: 'CPU', agent: 'obscuro' }],
+      },
+    },
+    {
+      id: 'clockwork',
+      name: 'Clockwork',
+      description: 'Continuous time, discrete space. Order a piece to a square and it hops there one square at a time, resting between hops. Knights walk their L, and can be blocked on the way.',
+      config: {
+        space: 'discrete', time: 'continuous', fogOfWar: false,
+        showAnalysisPanel: false, maxTurns: 300,
+        players: [{ name: 'You', agent: 'human' }, { name: 'CPU', agent: 'greedy' }],
+      },
+    },
+    {
+      id: 'melee',
+      name: 'Melee',
+      description: 'Continuous time and space. Pieces slide across the board at once, on one clock. Bodies that overlap grind each other down until one is destroyed.',
+      config: {
+        space: 'continuous', time: 'continuous', fogOfWar: false,
+        showAnalysisPanel: false, maxTurns: 300,
+        players: [{ name: 'You', agent: 'human' }, { name: 'CPU', agent: 'greedy' }],
+      },
+    },
+    {
+      id: 'sliding',
+      name: 'Sliding',
+      description: 'Discrete time, continuous space. Take turns as usual, but a move is a slide: the piece travels the whole way, hurting every enemy it passes through.',
+      config: {
+        space: 'continuous', time: 'discrete', fogOfWar: false,
+        showAnalysisPanel: false, maxTurns: 200,
+        players: [{ name: 'You', agent: 'human' }, { name: 'CPU', agent: 'greedy' }],
+      },
+    },
+  ],
   agents: [
-    { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent, analyze: ChessAgent.analyze,
+    { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent, analyze: standardOnly(ChessAgent.analyze),
       // Lets the browser's analysis Web Worker (apps/design/analysis-worker.js —
       // generic, no game-specific code) run this same `analyze` function locally
       // instead of over SSE: it dynamically imports `module` from /lib/ and reads
       // `export` off the result (dot-path into the namespace). See `clientGame`
       // below for the matching legal-actions resolver.
       clientAnalyze: { module: 'games/chess/index.js', export: 'ChessAgent.analyze' } },
-    { id: 'obscuro',  name: 'Obscuro (CFR)', agent: ObscuroAgent, analyze: analyzeObscuro,
+    { id: 'obscuro',  name: 'Obscuro (CFR)', agent: ObscuroAgent, analyze: standardOnly(analyzeObscuro),
       clientAnalyze: { module: 'games/chess/index.js', export: 'analyzeObscuro' } },
   ],
   // Client-side analysis needs to derive legal actions itself (the server does
@@ -227,7 +309,15 @@ export const ChessGame = {
     label: 'Fog of War games', source: 'Chess.com Fog of War archives',
   },
   gameOptions: [
-    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach', type: 'boolean', default: false },
+    // The quadrant, pickable outside the scenario list too. Discrete/discrete is
+    // chess; every other combination is games/chess/spacetime.js, which drops
+    // check, castling and en passant (none of them survive a move that takes
+    // time) and wins on the king's destruction instead.
+    { id: 'space', label: 'Space', description: 'Discrete (pieces stand on squares) or continuous (pieces are bodies that slide between them)', type: 'select', default: 'discrete',
+      options: [{ value: 'discrete', label: 'Discrete (squares)' }, { value: 'continuous', label: 'Continuous (sliding bodies)' }] },
+    { id: 'time', label: 'Time', description: 'Discrete (a turn is one move) or continuous (one clock; moves take time and pieces rest between them)', type: 'select', default: 'discrete',
+      options: [{ value: 'discrete', label: 'Discrete (turns)' }, { value: 'continuous', label: 'Continuous (one clock)' }] },
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only squares their pieces can reach (discrete space and time only)', type: 'boolean', default: false },
     { id: 'debugAI',  label: 'Debug AI',   description: 'Show all AI-controlled pieces even through Fog of War', type: 'boolean', default: false },
     { id: 'initialMarkers', label: 'Initial piece markers', description: "Start with fog markers on every hidden enemy piece's opening square (Fog of War only)", type: 'boolean', default: false },
     { id: 'showAnalysisPanel', label: 'Analysis Panel', description: 'Show an AI move-analysis panel with board suggestions, live or during replay', type: 'boolean', default: true },
@@ -259,6 +349,12 @@ export const ChessGame = {
   },
 
   createInitialState(players, config = {}) {
+    // Which of the four quadrants this session is in. Only discrete/discrete is
+    // chess as the rest of this file understands it; the others are built,
+    // played and drawn by games/chess/spacetime.js from here on.
+    const st = ST.resolveVariant(ChessGame, config);
+    if (st.variant !== 'standard') return ST.createInitialState(players, config, st);
+
     const board = initialBoard();
     return {
       gameName: 'Chess',
@@ -294,6 +390,7 @@ export const ChessGame = {
   },
 
   getLegalActions(state, playerId) {
+    if (ST.isSpacetimeVariant(state)) return ST.getLegalActions(state, playerId);
     const moves = state.gameSpecific.fogOfWar
       ? getAllFogMoves(state.board, playerId, state.gameSpecific)
       : getAllLegalMoves(state.board, playerId, state.gameSpecific);
@@ -320,6 +417,7 @@ export const ChessGame = {
   // and CFR then keeps suicide moves out of both players' strategies.
 
   applyActions(state, playerActions) {
+    if (ST.isSpacetimeVariant(state)) return ST.applyActions(state, playerActions);
     const { playerId, action } = playerActions[0]; // chess: always 1 active player
     const opponent = playerId === 'white' ? 'black' : 'white';
     let board = { ...state.board };
@@ -438,6 +536,7 @@ export const ChessGame = {
   },
 
   getResult(state) {
+    if (ST.isSpacetimeVariant(state)) return ST.getResult(state);
     if (state.gameSpecific.fogOfWar) {
       // Win by capturing the king; no checkmate or stalemate
       const hasWhiteKing = state.units.some(u => u.ownerId === 'white' && u.type === 'king');
@@ -466,6 +565,7 @@ export const ChessGame = {
   },
 
   renderState(state) {
+    if (ST.isSpacetimeVariant(state)) return ST.renderState(state);
     const { turnNumber, activePlayers, gameSpecific } = state;
     const fogNote = gameSpecific.fogOfWar ? ' [Fog of War]' : '';
     const check = (!gameSpecific.fogOfWar && gameSpecific.inCheck) ? ' (CHECK)' : '';
@@ -476,6 +576,7 @@ export const ChessGame = {
   },
 
   getBattleSummary(finalState, _log) {
+    if (ST.isSpacetimeVariant(finalState)) return ST.getBattleSummary(finalState);
     const STARTING_PIECES = 16;
     return {
       turns: finalState.turnNumber,
@@ -492,8 +593,10 @@ export const ChessGame = {
   },
 
   getActionDuration(_state, action) {
-    // Speed in squares per second: faster pieces complete moves sooner.
-    const PIECE_SPEED = { queen: 5, rook: 4, bishop: 4, knight: 3, king: 2, pawn: 1 };
+    // Speed in squares per second: faster pieces complete moves sooner. The same
+    // one-number-per-piece spec the other quadrants derive everything from — kept
+    // in spacetime.js so there is one table, not two that can drift apart.
+    const { PIECE_SPEED } = ST;
     const from = action.from ?? action.rookFrom;
     const to   = action.to   ?? action.rookTo;
     if (!from || !to) return 1;
@@ -507,6 +610,10 @@ export const ChessGame = {
   },
 
   getVisibleState(state, playerId) {
+    // Fog needs a board of squares to walk and atomic alternating moves to keep a
+    // belief in step with; neither holds once a move takes time, so the other
+    // three quadrants are full-information (see spacetime.js createInitialState,
+    // which forces fogOfWar off there).
     if (!state.gameSpecific.fogOfWar) return state;
     // A player NEVER sees the board through the fog — every requester (human or AI)
     // gets only the squares its own pieces can see. Debug AI does not change this; it
@@ -566,12 +673,16 @@ export const ChessGame = {
   // sampler invents ids the engine would never produce, and without that a
   // sampled world would never dedupe against the identical carried position.
   identityOf(state) {
-    return state.board;
+    // The continuous-space quadrants have no board of squares to key on — a piece
+    // is a point, not an occupant — so the positioned pieces themselves are the
+    // position there.
+    return state.board ?? state.units;
   },
 
   // Heuristic leaf value of a position to `playerId` (white/black), reusing the
   // chess agent's material + piece-square evaluation.
   evaluateState(state, playerId) {
+    if (ST.isSpacetimeVariant(state)) return ST.evaluateState(state, playerId);
     return evaluate(state.board, playerId);
   },
 
@@ -579,6 +690,10 @@ export const ChessGame = {
   // sampled worlds maps to the same payoff-matrix column. from+to(+promotion) is
   // unique per move, including the king's two-square castling hop.
   actionKey(action) {
+    // The other quadrants add orders that from+to cannot tell apart: `wait`,
+    // `cancel`, and two knight routes to the same square.
+    if (action.type === 'wait' || action.type === 'cancel' || action.pathId != null)
+      return ST.actionKey(action);
     const promo = action.payload?.promote ? '=' + action.payload.promote[0] : '';
     return (action.from ?? '') + (action.to ?? '') + promo;
   },
@@ -773,6 +888,7 @@ export const ChessGame = {
   },
 
   toGrid(state) {
+    if (ST.isSpacetimeVariant(state)) return ST.toGrid(state, this.colors);
     const FILES = 'abcdefgh';
     const SYMS = { king: 'K', queen: 'Q', rook: 'R', bishop: 'B', knight: 'N', pawn: 'P' };
     const pidIdx = {};

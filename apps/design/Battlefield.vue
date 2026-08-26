@@ -310,10 +310,20 @@ const forking = computed(() => !!props.forkState);
 
 function exitFork() { emit('exit-fork'); }
 
+// Position analysis and an opening book both assume the position IS a board and a
+// move is atomic — one side plays, the other answers. Neither holds in a game
+// played on a clock or in continuous space (chess's own other quadrants, see
+// games/chess/spacetime.js), where a piece can be halfway through a move and both
+// sides can be moving at once, so both panels stay shut there. Read off the axes
+// toGrid already stamps, so it holds for any game that grows such a mode.
+const atomicMoves = computed(() =>
+  (props.field?.spaceType ?? 'discrete') === 'discrete'
+  && (props.field?.timeType ?? 'discrete') === 'discrete');
 // The `showAnalysisPanel` game option (default true for chess, absent/false —
 // and so hidden — for every other game). Read from session config exactly
 // like the other opt-in panels above (zoomEnabled).
-const analysisEnabled = computed(() => props.liveState?.params?.config?.showAnalysisPanel ?? false);
+const analysisEnabled = computed(() =>
+  atomicMoves.value && (props.liveState?.params?.config?.showAnalysisPanel ?? false));
 // Analyze the position currently on screen: the live position while at the
 // latest ply (server resolves it from the authoritative session state), or
 // the exact historical ply being viewed while scrubbing replay — same
@@ -329,7 +339,8 @@ const hoveredSuggestion   = ref(null);
 // what the other side is doing; the server refuses such a session outright, and
 // the panel is not mounted for one either.
 const databaseHover = ref(null);
-const databaseShown = computed(() => isLive.value && (isDone.value || analysisBoard.value));
+const databaseShown = computed(() =>
+  atomicMoves.value && isLive.value && (isDone.value || analysisBoard.value));
 // Whether a move played away from the live position branches into the "what if"
 // sandbox instead of being refused. Either panel is reason enough: both of them
 // hand the board moves to try (a database row is clicked to play it), and a
@@ -1527,7 +1538,13 @@ function handleSqClick(col, row, x, y, mods) {
     // Games that list 'move' in field.ui.aimedActionTypes (CS) route this through the
     // explicit "Move…" button + aim overlay instead (see startAim/aiming above), so a
     // bare click on a selected unit's own square shouldn't also slide it.
-    if (props.field.locationType === 'continuous' && !ui.value.aimedActionTypes?.includes('move')
+    // `ui.gridDestinations` is the exception to that: a game whose UNITS live at
+    // exact points but whose DESTINATIONS are still squares (chess in continuous
+    // space — see games/chess/spacetime.js). A free point is not a legal order
+    // there, so such a click has to be matched against the enumerated list like
+    // any grid game's, even though the tokens are positioned continuously.
+    if (props.field.locationType === 'continuous' && !ui.value.gridDestinations
+        && !ui.value.aimedActionTypes?.includes('move')
         && x != null && y != null) {
       const u = displayUnits.value.find(un => un.id === selectedId.value);
       if (u && Math.hypot(x - u.x, y - u.y) <= (u.moveRange ?? Infinity)) {

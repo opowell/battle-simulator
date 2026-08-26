@@ -1,6 +1,8 @@
 # Chess
 
-Standard two-player chess with full rule support.
+Standard two-player chess with full rule support — and four other games made of
+the same pieces, chosen on the **Scenario** picker (see
+[Scenarios](#scenarios-the-five-ways-to-play) below).
 
 ## Players
 
@@ -28,6 +30,16 @@ Standard two-player chess with full rule support.
 | `castle` | `side`, `rookId`, `rookFrom`, `rookTo` | `side` is `kingside` or `queenside`; `rookFrom`/`rookTo` describe the rook's simultaneous move |
 | `end-turn` | — | Not used; turns advance automatically |
 
+The three non-standard scenarios replace all of that with journeys — see
+[Scenarios](#scenarios-the-five-ways-to-play):
+
+| Type | Fields | Notes |
+|---|---|---|
+| `order` | `unitId`, `from`, `to`, `path`, `pathId` | Continuous time: commit a piece to a destination and a route. Free — costs no clock |
+| `cancel` | `unitId` | Continuous time: call a committed piece off |
+| `wait` | — | Continuous time: done ordering this instant; once both sides wait, the clock runs |
+| `move` | `unitId`, `from`, `to`, `path`, `pathId` | Discrete time, continuous space: one slide, resolved to a standstill |
+
 ## Special mechanics
 
 - **Castling** — kingside and queenside; rights tracked in `gameSpecific.castlingRights`; king must not be in check and must not pass through an attacked square
@@ -47,9 +59,110 @@ Standard two-player chess with full rule support.
 ## Run
 
 ```sh
-npm run demo:chess          # you play White vs random AI
-npm run demo:chess:auto     # random vs random
+npm run demo:chess           # you play White vs random AI
+npm run demo:chess:auto      # random vs random
+npm run demo:chess:fog       # random vs random, fog of war
+npm run demo:chess:clockwork # greedy vs greedy, continuous time
+npm run demo:chess:melee     # greedy vs greedy, continuous time and space
+npm run demo:chess:sliding   # greedy vs greedy, sliding moves
 ```
+
+Any scenario runs from the demo with `--scenario=<id>`, with or without `--auto`.
+
+## Scenarios: the five ways to play
+
+The Scenario picker offers one human seat against one AI in each of five games.
+The first two are chess as described above. The other three take the same pieces
+into another quadrant of the (space × time) plane — the axes
+[games/spacetime.js](../spacetime.js) already names for every game in this repo —
+and are implemented in [games/chess/spacetime.js](spacetime.js), which
+`ChessGame` delegates to whenever the quadrant isn't discrete/discrete.
+
+| Scenario | Space | Time | What a move is | AI |
+|---|---|---|---|---|
+| **Standard** | discrete | discrete | one move, sequential | Chess AI |
+| **Fog of War** | discrete | discrete | one move, sequential; you see only what your pieces can reach | Obscuro |
+| **Clockwork** | discrete | **continuous** | a destination; the piece HOPS toward it one square per cooldown | greedy |
+| **Melee** | **continuous** | **continuous** | a destination; the piece SLIDES toward it, everyone at once | greedy |
+| **Sliding** | **continuous** | discrete | a destination; the piece slides the whole way, then the turn passes | greedy |
+
+The quadrant is also two ordinary game options (`space`, `time`), so any
+combination can be picked on the Configure screen without using a scenario.
+
+### What the three new quadrants have in common
+
+A move stops being a relocation and becomes a **journey**: it has a path, a speed
+(`PIECE_SPEED` — queen 5, rook/bishop 4, knight 3, king 2, pawn 1, in squares per
+turn window) and a duration. That one change forces the rest:
+
+- **Destinations are geometric.** They are every square the piece's move shape
+  reaches *on an empty board*, because the board will have changed by the time it
+  gets there. A rook may be aimed down a file that is currently full; a pawn may
+  be aimed at its capture diagonals with nothing on them yet. The one order the
+  legal list withholds is one whose *first* square is occupied by your own side —
+  that isn't an order, it's a bounce.
+- **A knight walks its L.** No jumping: the leap is three orthogonal single
+  squares, and which of the three orders it walks them in is part of the order
+  (`pathId`, shown in the log as "g1 → f3 via g2-f2"). The routes pass over
+  different squares, so they run into different things.
+- **No check, no checkmate, no stalemate, no castling, no en passant.** All of
+  them assume a move is atomic and that the opponent must answer it. The game is
+  won by **destroying the king**, as fog chess already is.
+- **No fog.** Fog needs a board of squares to walk and atomic alternating moves to
+  keep a belief in step with. These quadrants force `fogOfWar` off.
+
+### Clockwork — continuous time, discrete space
+
+Give a piece a destination and it hops there one square at a time, resting
+`stepLength / speed` between hops, so a queen crosses the board five times faster
+than a pawn and the two sides' moves interleave by speed rather than by turns.
+
+- Hopping onto an **enemy** takes it, and the journey continues — a rook aimed
+  down a file eats what stands in it, one hop at a time.
+- Hopping onto a **friend** calls the order off. The piece stays where it is and
+  still pays the cooldown, so a bounce costs the same time a hop would have.
+- A piece already under way can only be **called off**, not re-aimed.
+
+### Melee — continuous time and space
+
+The same, but pieces are **bodies**: a disk of radius 0.4 squares sliding along
+its route, drawn wherever it actually is. Two enemy disks that overlap grind each
+other down at a rate set by the attacker's power (a piece's hit points and its
+damage are both its classic material value), until one dies or they come apart.
+Contact and death times are solved in closed form, so a fast piece can never
+tunnel through a slow one between frames.
+
+The exchange keeps chess's material ordering: a pawn that walks into a queen dies
+in about 0.11 time units having taken roughly one point off her. Equal pieces
+that meet destroy each other — a trade is always mutual here. A sliding piece
+that touches a **friendly** body stops there and the order is called off.
+
+### Sliding — discrete time, continuous space
+
+Ordinary alternating turns; the difference is that a move is played out rather
+than applied. Order one piece and it slides the whole way, hurting every enemy
+body it passes through, and the turn does not pass until everything has come to
+rest — which means a piece that ends its slide still overlapping an enemy keeps
+grinding until one of them is destroyed.
+
+### How real-time play fits a turn-based interface
+
+The two continuous-time scenarios are real-time games driven through a turn-based
+client, so the clock is explicit:
+
+| Action | Meaning |
+|---|---|
+| `order` | commit a piece to a destination and a route. Free — costs no clock |
+| `cancel` | call a committed piece off |
+| `wait` | you are done ordering at this instant |
+
+Both sides order into the same instant and neither sees the other's orders before
+committing its own. Once both have played `wait`, the clock runs on to the next
+thing that actually happens — a hop coming due, a piece arriving, a contact, a
+death — and the instant reopens. Each piece gets **one decision per instant**,
+which is what guarantees the clock can always move: ordering and un-ordering are
+both free, so without that cap a player could fiddle for ever and time would
+never pass.
 
 ## The game database (fog opening explorer)
 
