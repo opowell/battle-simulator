@@ -81,10 +81,19 @@ only legal action there is, for a human and an AI alike.
 
 **Choosing the dice** — `getLegalActions` offers an `attack` per dice count, biggest
 first. The panel's dice picker (`ui.territoryPairVariant`) decides which one a click on
-the map takes; shift-click ignores the picker and rolls the most the territory allows.
-Fewer dice risk fewer armies per exchange — worth it when you want the territory but not
-the commitment, since with `postCaptureFortify` off the dice are also the occupying
-force.
+the map takes. Fewer dice risk fewer armies per exchange — worth it when you want the
+territory but not the commitment, since with `postCaptureFortify` off the dice are also
+the occupying force.
+
+**Shift-click is the committed assault** — it ignores the picker and rolls the most the
+territory allows, and if that takes the territory it answers the occupy question the
+same way, moving in every army the attacker can spare. A capture otherwise stops the
+game for a row of buttons, which is the wrong thing to put between a player and the
+attack they already said they were going all-in on. The mechanism is generic:
+`ui.territoryPairShiftFollowUp` names the follow-up type and the field to maximise
+(`{ type: 'occupy', field: 'armies' }`), and Battlefield.vue arms it for exactly one
+position after a shift-click — firing only when that follow-up is the *only* legal
+action, so a real choice is never answered on the player's behalf.
 
 ## Reinforcements
 

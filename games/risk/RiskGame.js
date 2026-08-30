@@ -792,6 +792,10 @@ export const RiskGame = {
     // dice are committed — and the dice are also the armies that occupy what you take.
     // The panel offers the choice; a click uses it, shift-click always uses the most.
     territoryPairVariant: { field: 'attackerDice', label: 'Dice', types: ['attack'] },
+    // ...and a capture asks a second question — how many more armies follow the dice in
+    // — which the same shift answers the same way: everything the attacker can spare.
+    // A committed assault is one gesture, not an attack followed by a form to fill in.
+    territoryPairShiftFollowUp: { type: 'occupy', field: 'armies' },
     // What to call a row of same-action-different-number buttons (the panel groups those
     // on its own; only the game knows what the number counts).
     actionGroupLabels: { occupy: 'Armies to move in' },
@@ -818,7 +822,7 @@ export const RiskGame = {
         },
         {
           heading: 'Taking a territory',
-          text: 'When the last defender falls you occupy the territory with exactly as many armies as you rolled dice — the rest stay behind. Clicking a neighbour always attacks with the most dice you are entitled to, so a capture normally moves 3 armies in; attacking from a territory holding only 2 or 3 armies rolls (and so moves) fewer.',
+          text: 'When the last defender falls, as many armies as you rolled dice move in straight away, and then you say how many MORE follow them — anything above the one army that has to stay and hold the territory you attacked from. How many dice a click commits is the panel\'s dice picker; shift-click ignores it and commits everything, rolling the most you can and moving in every army you can spare without stopping to ask.',
         },
         {
           heading: 'Cards',
@@ -828,7 +832,7 @@ export const RiskGame = {
     },
     phaseHints: {
       reinforce: 'Tap your territories to place armies — one per tap. The phase ends itself once the last one is down.',
-      attack: 'Click one of your territories, then a neighbour to attack it. The dice you commit are also the armies that move in if you take it — shift-click to always roll the most you can.',
+      attack: 'Click one of your territories, then a neighbour to attack it. The dice you commit are also the armies that move in if you take it — shift-click to commit everything: the most dice you can roll, and, if you take it, every army you can spare moving in after them.',
       occupy: 'Territory taken. Choose how many more armies follow the dice in — everything above the one army that has to hold the territory you attacked from.',
       fortify: 'Click one of your territories, then a connected one to move armies there. Or end your turn.',
     },

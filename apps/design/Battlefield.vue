@@ -1417,6 +1417,26 @@ watch(pairVariantValues, (vals) => {
   }
 });
 
+// A shift-click says "the most you can, and don't ask me anything else". Some pair
+// actions stop the game to ask a follow-up whose whole content is a number — Risk's
+// capture asks how many more armies follow the dice into the territory just taken —
+// and a player who already asked for the most means that answer too. The game names
+// the follow-up type and its number in ui.territoryPairShiftFollowUp; the flag below
+// is armed by one shift-click and spent on the very next position, so it is never a
+// standing order to stop asking.
+const shiftFollowUpSpec = computed(() => ui.value.territoryPairShiftFollowUp ?? null);
+const awaitingShiftFollowUp = ref(false);
+watch(legalActions, (actions) => {
+  if (!awaitingShiftFollowUp.value) return;
+  awaitingShiftFollowUp.value = false;
+  const spec = shiftFollowUpSpec.value;
+  if (!spec || !isPending.value || !actions.length) return;
+  // Only ever answers a question that has no other answer: if anything besides the
+  // follow-up is legal here, the position is a real choice and stays the player's.
+  if (!actions.every(a => a.type === spec.type)) return;
+  submitAction(actions.reduce((a, b) => ((b[spec.field] ?? 0) > (a[spec.field] ?? 0) ? b : a)));
+});
+
 // A click on a territory map means one of three things, in order: finish a pair
 // (something is selected and the pair is a legal from→to action — attack, or Risk's
 // fortify), act on the territory alone (a legal action naming just it — Risk's
@@ -1436,10 +1456,13 @@ function handleTerritoryClick(x, y, mods = {}) {
       pairTypes.includes(a.type) && a.from === selectedId.value && a.to === clickedId);
     // Several matches differ only in the variant field the game named (Risk's dice):
     // take the player's pick, or the most the pair allows when they picked more than
-    // this one can manage — and always the most when the click was shift-held.
+    // this one can manage — and always the most when the click was shift-held, which
+    // also arms the follow-up above so the shift carries through the question the
+    // action may ask next.
     const action = mods.shift ? matches[0] : pickPairVariant(matches);
     if (action) {
       submitAction(action);
+      if (mods.shift) awaitingShiftFollowUp.value = true;
       // Keep the source selected: after an attack that didn't take the territory, the
       // obvious next move is to attack again from the same place. A watcher below drops
       // the selection as soon as nothing can be done from there.
@@ -1692,6 +1715,9 @@ watch(() => props.liveState?.phase, (phase, prev) => {
 
 function submitAction(action) {
   if (ui.value.clearSelectedAtEndOfTurn) selectedId.value = null;
+  // Any deliberate action disarms the shift follow-up, so an armed flag that never
+  // met its question (the attack simply bounced) can't fire on a later, plain click.
+  awaitingShiftFollowUp.value = false;
   // Moving while browsing replay (or already inside a fork) explores a sandbox
   // instead of playing a real move — see forkPlayMove above.
   if (canExplore.value && (forking.value || !atLatest.value)) { forkPlayMove(action); return; }
