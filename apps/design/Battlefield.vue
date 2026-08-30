@@ -50,6 +50,10 @@ const props = defineProps({
   // App.vue's doForkMove). Non-null means the board is showing the sandbox.
   forkState:     { type: Object, default: null },
   forkError:     { type: String, default: '' },
+  // The ply this component last asked about (via `view-ply`), as the side to move
+  // there saw it: { ply, playerId, legalActions, field }. Null when there is
+  // nothing to review, or when the server refused (a live match).
+  plyView:       { type: Object, default: null },
   // Observer lock-step (App.vue owns the state): pause after each turn's playback
   // and wait for a manual "Next", and whether we're currently so parked.
   pauseAfterPlayback: { type: Boolean, default: true },
@@ -62,7 +66,7 @@ const props = defineProps({
   // non-live field playback) — App.vue owns it, the footer's speed control sets it.
   playbackSpeed:      { type: Number, default: 1 },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'resign', 'set-marker', 'new-game', 'fork-move', 'exit-fork', 'undo', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'resign', 'set-marker', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -433,12 +437,14 @@ const forkLength = computed(() => (forking.value ? props.forkState.line.length +
 // The frame under the cursor, or null at the branch point.
 const forkFrame = computed(() =>
   (forking.value && forkCursor.value > 0) ? props.forkState.frames[forkCursor.value - 1] : null);
-// The real game's board at the branch point, drawn from whichever source the
-// viewer is on (revealed history or their own fog snapshots).
+// The real game's board at the branch point: the revealed frame if the viewer is
+// revealing, otherwise the position as its own mover saw it (plyView), falling
+// back to this client's recorded frame while that is still in flight.
 const forkBaseField = computed(() => {
   const p = props.forkState?.basePly ?? 0;
-  const source = (revealAll.value && props.revealFields.length) ? props.revealFields : fieldHistory.value;
-  return source[Math.min(p, source.length - 1)] ?? props.field;
+  if (revealAll.value && props.revealFields.length)
+    return props.revealFields[Math.min(p, props.revealFields.length - 1)];
+  return plyView.value?.field ?? fieldHistory.value[Math.min(p, fieldHistory.value.length - 1)] ?? props.field;
 });
 
 // The playhead follows the line: opening one or playing into it lands on the new
@@ -460,6 +466,11 @@ const displayField = computed(() => {
   if (forking.value) return forkFrame.value?.field ?? forkBaseField.value;
   if (revealAll.value && props.revealFields.length)
     return props.revealFields[Math.min(histPos.value, props.revealFields.length - 1)];
+  // A reviewed ply is shown as its own mover saw it (App.vue's plyView), not as
+  // this client's recorded frame — those were each taken through one seat's eyes
+  // as that seat moved, so the side about to move is the one missing from them.
+  // The recorded frame stays as the fallback until the lookup lands.
+  if (!atLatest.value && plyView.value?.field) return plyView.value.field;
   // At the latest ply, follow the live reactive field rather than the frozen history
   // snapshot — the snapshot is captured once, at the instant a move lands, which for
   // games with a hop animation (see App.vue's hopAnim/hopQueue) is mid-animation, still
@@ -957,36 +968,31 @@ const isDone          = computed(() => isLive.value && props.liveState.status !=
 //   • a past ply being reviewed — that ply's mover's moves, fetched below, so a
 //     piece can be picked up and a line tried by hand;
 //   • otherwise the live game's pending player.
-const plyActions = ref({ ply: null, actions: [] });
+// The reviewed position, as the side to move there saw it — App.vue fetches it
+// (see its loadPlyView / GET /sessions/:id/position) whenever `view-ply` asks.
+// Only trusted when it is FOR the ply on screen: it arrives a round-trip late,
+// and a stale one would put another position's pieces under the cursor.
+const plyView = computed(() =>
+  (props.plyView && props.plyView.ply === viewedPly.value) ? props.plyView : null);
+
+// Which ply needs looking up: the one under the playhead while reviewing, or —
+// inside a line — the ply it branched from, which is the one position in the line
+// the fork responses do not describe (and the one you step back to in order to
+// try something else from the start).
+const viewedPly = computed(() => {
+  if (!isLive.value || !canExplore.value) return null;
+  if (forking.value) return props.forkState.basePly;
+  return atLatest.value ? null : histPos.value;
+});
+watch(viewedPly, (ply) => emit('view-ply', ply), { immediate: true });
+
 const legalActions = computed(() => {
-  // At a line's branch point the moves are the reviewed ply's, same as if the
-  // line had not been started yet — which is what makes "step back to the start
-  // of the line and try something else" work.
-  if (forking.value) {
-    if (forkFrame.value) return forkFrame.value.legalActions ?? [];
-    return plyActions.value.ply === props.forkState.basePly ? plyActions.value.actions : [];
-  }
-  if (!atLatest.value && plyActions.value.ply === histPos.value) return plyActions.value.actions;
-  if (!atLatest.value) return [];   // still fetching: better nothing than the wrong side's
+  // Inside a line, the frame under the cursor knows its own moves; at the branch
+  // point it is the reviewed ply's, same as if the line had not been started.
+  if (forking.value) return forkFrame.value?.legalActions ?? plyView.value?.legalActions ?? [];
+  if (!atLatest.value) return plyView.value?.legalActions ?? [];
   return props.liveState?.legalActions ?? [];
 });
-
-// Fetch the reviewed ply's moves whenever the playhead lands somewhere the viewer
-// is allowed to explore from. The server refuses this for a live match, so a
-// failure just leaves the board unmovable, which is the correct outcome there.
-watch(() => [props.liveState?.id, histPos.value, atLatest.value, forking.value, canExplore.value], async () => {
-  if (!isLive.value || !canExplore.value) return;
-  // Inside a line it is the BRANCH ply that needs its moves — that is the one
-  // position in the line the fork responses do not describe, and the one a viewer
-  // steps back to in order to try something else from the start.
-  const ply = forking.value ? props.forkState.basePly : (atLatest.value ? null : histPos.value);
-  if (ply == null) return;
-  const id = props.liveState.id;
-  try {
-    const res = await api.legalActionsAt(id, ply);
-    if (props.liveState?.id === id) plyActions.value = { ply, actions: res.legalActions ?? [] };
-  } catch { plyActions.value = { ply: null, actions: [] }; }
-}, { immediate: true });
 const pendingPlayerId = computed(() => props.liveState?.pendingPlayer ?? null);
 // Whose empire the left panel's overview screens describe (ActionsPanel's
 // overviewPlayerId). A seated player: null, so the panel follows the player to

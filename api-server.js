@@ -1976,18 +1976,22 @@ async function handleDatabase(req, res, id, url) {
   }
 }
 
-// GET /sessions/:id/legal-actions?ply= — what the side to move at `ply` may play.
+// GET /sessions/:id/position?ply= — a past position as the side to move there
+// saw it: their board, and the moves they could have played.
 //
-// This is what lets a viewer pick a piece up and try a move that never happened,
-// rather than only clicking moves a panel handed them: the board needs the
-// action set of the position being LOOKED at, and while browsing replay that is
-// not the live game's pending player.
+// Both halves are needed to let a viewer pick a piece up at a reviewed ply and
+// try something that never happened. The MOVES because the live game's pending
+// player is somebody else by then. The BOARD because a fog game has no single
+// picture of a position — the frames the client collected while playing are each
+// one seat's view, taken as that seat moved, so stepping back to a black-to-move
+// ply and finding black's pieces missing (they were hidden from white, who was
+// looking when the frame was taken) is exactly what used to happen.
 //
-// Same rule as the database (and for the same reason, doubled): under fog a
-// player's legal moves are exactly a restatement of what they can see, so
-// serving them for an arbitrary ply of a live match would hand out the opponent's
-// view. Replay and analysis boards only.
-async function handleLegalActions(res, id, url) {
+// Same rule as the database, and for the same reason doubled: under fog a
+// player's legal moves are a restatement of what they can see, so serving either
+// half for an arbitrary ply of a live match would hand out the opponent's view.
+// Replay and analysis boards only.
+async function handlePosition(res, id, url) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
   if (session.status === 'active' && !session.analysisBoard)
@@ -2004,9 +2008,15 @@ async function handleLegalActions(res, id, url) {
   if (!state) return err(res, 400, 'No position available yet');
 
   const playerId = state.activePlayers?.[0] ?? null;
+  // Fog-filtered for the mover, exactly as toJSON does for a live player — so the
+  // board that comes back is a view somebody actually had, not the true position.
+  const viewState = (session.fog && playerId && game.getVisibleState)
+    ? game.getVisibleState(state, playerId)
+    : state;
   send(res, 200, {
     ply, playerId,
     legalActions: playerId ? game.getLegalActions(state, playerId) : [],
+    grid: game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null,
   });
 }
 
@@ -2205,10 +2215,10 @@ async function handleRequest(req, res) {
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze')
       return await handleAnalyze(req, res, parts[1]);
 
-    // GET /sessions/:id/legal-actions?ply= — the moves available at a past ply, so
-    // one can be played into the "what if" sandbox (replay/analysis board only)
-    if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'legal-actions')
-      return await handleLegalActions(res, parts[1], url);
+    // GET /sessions/:id/position?ply= — a past position as its mover saw it, with
+    // their moves, so a line can be tried from there (replay/analysis board only)
+    if (method === 'GET' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'position')
+      return await handlePosition(res, parts[1], url);
 
     // GET  /sessions/:id/database?ply=            — recorded games from this position
     // POST /sessions/:id/database { ply, line }   — ...or from a fictional line off it

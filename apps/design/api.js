@@ -127,11 +127,12 @@ window.api = {
     (line?.length
       ? _req('/sessions/' + id + '/database', { method: 'POST', body: JSON.stringify({ ply, line }) })
       : _req('/sessions/' + id + '/database' + (ply != null ? '?ply=' + encodeURIComponent(ply) : ''))),
-  // What the side to move at `ply` may play — so a position being reviewed can be
+  // A past position as the side to move there saw it — their board (fog and all)
+  // and the moves they could have played — so a position being reviewed can be
   // picked up and moved by hand, not just clicked at through a panel. Replay or
   // analysis board only (the server refuses during a live match).
-  legalActionsAt: (id, ply) =>
-    _req('/sessions/' + id + '/legal-actions' + (ply != null ? '?ply=' + encodeURIComponent(ply) : '')),
+  positionAt: (id, ply) =>
+    _req('/sessions/' + id + '/position' + (ply != null ? '?ply=' + encodeURIComponent(ply) : '')),
   // Play a move into a throwaway sandbox branched off a live/historical position.
   // Pass `ply` to start a new fork from history, or `forkState` (the `state` a
   // prior forkMove call returned) to continue moving within the same fork.

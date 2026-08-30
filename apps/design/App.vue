@@ -1262,6 +1262,34 @@ async function setMarker({ playerId, col, row, type }) {
   } catch (e) { serverErr.value = e.message; }
 }
 
+// ── the position being reviewed ─────────────────────────────────
+// A past ply as the side to move there saw it: their board and their moves (see
+// api-server.js's GET /sessions/:id/position). Battlefield asks for one whenever
+// the playhead lands somewhere explorable and renders it instead of its own
+// recorded frame — which is one seat's view, taken as that seat moved, and so is
+// missing the pieces of whoever moves NEXT. Without this you could step back to a
+// black-to-move ply and find no black piece to pick up.
+//
+// Built here rather than there because turning a raw grid into a display field
+// needs App-scoped context (apiGames/sessionMeta), same as activeField.
+const plyView = ref(null);
+let plyViewSeq = 0;
+
+async function loadPlyView(ply) {
+  const id = liveState.value?.id;
+  const mine = ++plyViewSeq;
+  if (!id || ply == null) { plyView.value = null; return; }
+  try {
+    const res = await api.positionAt(id, ply);
+    if (mine !== plyViewSeq || liveState.value?.id !== id) return;
+    plyView.value = { ...res, field: buildField(res.grid, liveState.value) };
+  } catch {
+    // Refused (a live match) or failed: no position to explore from, which the
+    // board reads as "not movable here" — the right outcome either way.
+    if (mine === plyViewSeq) plyView.value = null;
+  }
+}
+
 // ── analysis-panel replay forking ───────────────────────────────
 // A "what if" line branched off a live/historical position (Battlefield.vue's
 // fork-move emit, AnalysisPanel.vue's select-move — see api-server.js's
@@ -1428,6 +1456,7 @@ async function restartGame() {
                    :server-err="serverErr"
                    :fork-state="forkState"
                    :fork-error="forkError"
+                   :ply-view="plyView"
                    :pause-after-playback="pauseAfterPlayback"
                    :awaiting-step="awaitingStep"
                    :animating="animatingNow"
@@ -1446,6 +1475,7 @@ async function restartGame() {
                    @stop-replay="stopReplay"
                    @fork-move="doForkMove"
                    @exit-fork="exitFork"
+                   @view-ply="loadPlyView"
                    @undo="undoMoves"
                    @set-playback-speed="setPlaybackSpeed"/>
       <div v-else class="app-loading">
