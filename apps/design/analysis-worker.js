@@ -19,6 +19,25 @@
 // to check (whenever the agent's search polls isCancelled between steps).
 let currentReqId = 0;
 
+// The last stopped walk, kept so Pause can be a pause rather than an
+// abandonment: 'cancel' only bumps currentReqId, it deliberately does NOT clear
+// this, so a later 'analyze' for the SAME position can hand the agent its own
+// accumulator back (as `resumeState`) and continue instead of re-scoring every
+// belief world from zero. Only agents that support it call `saveWalkState` —
+// for anything else this stays null and nothing changes.
+//
+// One entry, not a cache: the walk being resumed is always the one just paused.
+let lastWalk = null; // { key, state }
+
+// Fingerprints the position a walk belongs to. A different board, side, session
+// or agent is a different walk, and its accumulator must not be resumed into
+// this one — the agent double-checks the shape it can (population size, ladder
+// height), but only the caller knows the position actually changed.
+function walkKey(sessionId, color, clientAnalyze, state) {
+  return `${sessionId}|${color}|${clientAnalyze.module}.${clientAnalyze.export}|` +
+    JSON.stringify({ b: state.board, g: state.gameSpecific, a: state.activePlayers, t: state.turnNumber });
+}
+
 // Resolves a dot-path ("Foo.bar") into an imported module namespace.
 function resolveExport(mod, exportPath) {
   return exportPath.split('.').reduce((o, k) => o?.[k], mod);
@@ -67,11 +86,14 @@ self.onmessage = async (e) => {
       return;
     }
 
+    const key = walkKey(sessionId, color, clientAnalyze, state);
     const result = await analyze(state, legalActions, {
       color, isCancelled,
       // `color` on every frame: the panel labels suggestions that are for a side
       // other than the viewer's own (see AnalysisPanel.vue).
       onProgress: (info) => { if (!isCancelled()) self.postMessage({ type: 'progress', reqId, color, ...info }); },
+      resumeState: lastWalk?.key === key ? lastWalk.state : undefined,
+      saveWalkState: (walkState) => { lastWalk = { key, state: walkState }; },
     });
     if (!isCancelled()) self.postMessage({ type: 'done', reqId, color, ...(result ?? { candidates: [] }) });
   } catch (err) {

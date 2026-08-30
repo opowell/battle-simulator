@@ -1788,6 +1788,23 @@ async function handleAnalyze(req, res, id) {
 // and closes the connection — the client doesn't need to know which agent
 // supports progress ticks vs. answers in one shot, it just renders whatever
 // arrives.
+// The last stopped analysis walk per session, so that closing a stream (the
+// panel's Pause, or simply navigating away and back) doesn't throw away the
+// belief-population walk it had already paid for — the resumed call continues
+// from its cursor and running sums instead of re-scoring every world. Keyed by
+// session and cleared when the session goes, so this can't outlive it.
+//
+// `posKey` fingerprints the position the accumulator belongs to; a stream for
+// anything else starts fresh rather than resuming into a different position.
+// The agent re-checks the shape it can see (population size, ladder height),
+// but only this layer knows the position itself moved.
+const analysisWalks = new Map(); // sessionId|player|agent -> { posKey, walkState }
+
+const analysisPosKey = (ctx) => JSON.stringify({
+  b: ctx.viewState.board, g: ctx.viewState.gameSpecific,
+  a: ctx.viewState.activePlayers, t: ctx.viewState.turnNumber, c: ctx.color,
+});
+
 async function handleAnalyzeStream(req, res, id, url) {
   const session = sessions.get(id);
   const playerId = url.searchParams.get('playerId');
@@ -1811,9 +1828,17 @@ async function handleAnalyzeStream(req, res, id, url) {
   try { ctx = resolveAnalysisContext(session, { playerId, agentId, ply }); }
   catch (e) { emit({ error: e.message, done: true }); return res.end(); }
 
+  const walkKey = `${id}|${playerId}|${agentId}`;
+  const posKey = analysisPosKey(ctx);
+  const saved = analysisWalks.get(walkKey);
+
   try {
     const result = await ctx.rosterEntry.analyze(ctx.viewState, ctx.legalActions, {
       game: ctx.game, color: ctx.color,
+      // Continue the walk this position stopped in the middle of, if it is
+      // still the same position (see analysisWalks above).
+      resumeState: saved?.posKey === posKey ? saved.walkState : undefined,
+      saveWalkState: (walkState) => { analysisWalks.set(walkKey, { posKey, walkState }); },
       // `color` rides along on every frame: which side is being analyzed is not
       // always the viewer's own (see resolveAnalysisContext), and suggestions
       // for a side the viewer didn't ask about are misleading unless labelled.
@@ -1825,6 +1850,9 @@ async function handleAnalyzeStream(req, res, id, url) {
       // isCancelled-driven progressive mode in vendor/obscuro-chess/src/ObscuroAgent.js.
       isCancelled: () => closed,
     });
+    // A finished (exhaustive) walk has nothing left to resume into, and keeping
+    // it would hand a later stream a completed accumulator to sit on.
+    if (result?.exhaustive) analysisWalks.delete(walkKey);
     emit({ ...result, ply, color: ctx.color, done: true });
   } catch (e) {
     emit({ error: `Analysis failed: ${e.message}`, done: true });
@@ -2045,6 +2073,12 @@ async function handleDeleteSession(res, id) {
   if (!session) return err(res, 404, 'Session not found');
   session.close();
   sessions.delete(id);
+  // Any paused analysis walk belonged to a position in this session, and a
+  // saved belief-population accumulator is not small — nothing can resume into
+  // it once the session is gone (see analysisWalks).
+  for (const key of analysisWalks.keys()) {
+    if (key.startsWith(`${id}|`)) analysisWalks.delete(key);
+  }
   send(res, 200, { ok: true });
 }
 

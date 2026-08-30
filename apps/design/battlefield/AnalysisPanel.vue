@@ -174,15 +174,13 @@ function stopAnalysis() {
 
 function runAnalysis() {
   stopAnalysis();
-  // Stale suggestions (from whatever position/engine the previous stream was
-  // for) must never linger on screen once a new position/engine is up for
-  // analysis — a suggestion arrow pointing at a move for a position that just
-  // changed underneath it (e.g. right after playing a move) is actively
-  // misleading, not just out of date.
-  candidates.value = [];
-  belief.value = null;
-  progress.value = null;
-  analyzedSide.value = null;
+  // Deliberately does NOT clear candidates/belief/progress: the target watcher
+  // below does that whenever the position or engine actually changes, which is
+  // the case where a lingering suggestion would be misleading. Resume is not
+  // that case — it re-requests the SAME position, so the suggestions the panel
+  // already had are still the right ones and come straight back the moment the
+  // "Paused" placeholder goes, instead of the panel blanking to "No
+  // suggestions." and refilling with the answer it had all along.
   if (!props.enabled || !panelOn.value || paused.value) return;
   if (!props.sessionId || !props.playerId || !selectedAgentId.value) return;
 
@@ -236,8 +234,13 @@ onUnmounted(() => {
   emit('belief-world', null); // never leave a guessed board painted over the fog
 });
 
+// A real change of what is being analyzed — new position, different engine,
+// panel switched off. Deliberately does NOT depend on `paused`: toggling
+// Pause/Resume must not blow away the suggestions on screen or the walk behind
+// them (see the dedicated paused watcher below); only an actual change of the
+// thing being analyzed should.
 watch(
-  () => [props.enabled, props.sessionId, props.playerId, props.ply, props.logRevision, selectedAgentId.value, panelOn.value, paused.value],
+  () => [props.enabled, props.sessionId, props.playerId, props.ply, props.logRevision, selectedAgentId.value, panelOn.value],
   () => {
     // Clear stale suggestions immediately (not just once the debounced fetch
     // below actually lands) — the position/engine already changed, so
@@ -252,6 +255,18 @@ watch(
   },
   { immediate: true },
 );
+
+// Pause/Resume: stop or restart the walk WITHOUT touching what is on screen.
+// Pause just stops spending on it — the last suggestions stay put, no spinner —
+// and Resume re-requests the SAME position, which the worker and the server
+// both recognise and continue from the saved cursor and running sums rather
+// than restarting the belief walk at 0 (see analysis-worker.js's lastWalk and
+// api-server.js's analysisWalks).
+watch(paused, (isPaused) => {
+  if (!props.enabled || !panelOn.value) return;
+  if (isPaused) { stopAnalysis(); loading.value = false; }
+  else scheduleAnalysis();
+});
 
 function onHover(i) { hoveredIdx.value = i; emit('hover-move', i >= 0 ? (candidates.value[i]?.move ?? null) : null); }
 function onSelect(i) { emit('select-move', candidates.value[i]?.move ?? null); }
@@ -291,7 +306,9 @@ watch(beliefShown, (on) => { if (!on) emit('belief-world', null); });
       <!-- Own full-width row: the belief walk reports two axes at once
            ("Depth 12/30 · 1,024 worlds"), which does not fit beside the
            On/Off buttons in the header. -->
-      <div v-if="progress" class="an-progress mono">{{ progress }}</div>
+      <!-- Hidden while paused: the walk is stopped, and a progress count frozen
+           beside a "Paused" message reads as one that is still running. -->
+      <div v-if="progress && !paused" class="an-progress mono">{{ progress }}</div>
 
       <!-- Suggestions for somebody other than the viewer (a historical ply where
            the opponent is to move, or a full-information game mid-opponent-turn).
