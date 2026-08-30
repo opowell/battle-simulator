@@ -112,6 +112,8 @@ test('sc2 fog: Obscuro plays a fog game to completion', async () => {
   const ps = players().map((p, i) => ({
     ...p, agent: i === 0 ? new ObscuroAgent(Sc2Game, { particles: 3, iters: 40 }) : RandomAgent,
   }));
-  const { result } = await new GameEngine(Sc2Game, ps, { maxTurns: 30, fogOfWar: true }).run();
+  // Six turns, matching games/sc1/fog.test.js: what this asserts is that the search
+  // gets through fog turns at all, and at 30 it was three minutes of the suite.
+  const { result } = await new GameEngine(Sc2Game, ps, { maxTurns: 6, fogOfWar: true }).run();
   assert.ok(result && typeof result.outcome === 'string');
 });

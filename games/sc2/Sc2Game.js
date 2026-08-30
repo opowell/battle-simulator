@@ -440,7 +440,14 @@ export function getLegalActions(state, playerId) {
     }
 
     // ── Skip unit ─────────────────────────────────────────────────────────────
-    actions.push({ type: 'skip-unit', unitId: unit.id });
+    // Only for a unit that still has something to give up. Offered unconditionally,
+    // skip-unit on an already-spent unit returns a byte-identical state while staying
+    // legal — an always-available no-op, and a turn here ends only when a player picks
+    // 'end-turn'. A search agent ranks that no-op first and repeats it until the
+    // engine's step budget runs out.
+    if (unit.movesLeft > 0 || unit.attacksLeft > 0) {
+      actions.push({ type: 'skip-unit', unitId: unit.id });
+    }
   }
 
   // ── Building: set production ──────────────────────────────────────────────
