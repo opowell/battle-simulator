@@ -234,8 +234,13 @@ test('civ1: a sentry wears an S, and a fresh order takes the mark off', () => {
 
   // Moving is a fresh order, so it drops the standing one — mark and all.
   const refreshed = endTurn(endTurn(watching, 'p1'), 'p2');
+  // Onto empty ground: friendly units stack (see stack.test.js), and a step onto the
+  // square our other unit is standing on would put this one under it — where the
+  // square's token, and so this square's marks, belong to the unit on top.
+  const ours = new Set(refreshed.units.filter(u => u.ownerId === 'p1' && u.id !== unit.id)
+    .map(u => `${u.position.x},${u.position.y}`));
   const move = Civ1Game.getLegalActions(refreshed, 'p1')
-    .find(a => a.type === 'move' && a.unitId === unit.id);
+    .find(a => a.type === 'move' && a.unitId === unit.id && !ours.has(`${a.to.x},${a.to.y}`));
   const moved = Civ1Game.applyActions(refreshed, [{ playerId: 'p1', action: move }]);
   assert.equal(cellOf(moved).statusMark, undefined, 'a moving unit has no standing order');
   assert.deepEqual(cellOf(moved).statusEffects, []);

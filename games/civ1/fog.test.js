@@ -135,8 +135,12 @@ test('civ1 fog: the map is dark until somebody walks it', () => {
 test('civ1 fog: ground stays known once walked, and each seat keeps its own record', () => {
   const s = Civ1Game.createInitialState(players(), { width: 30, height: 20, seed: 7, fogOfWar: true });
   const mine = s.units.find(u => u.ownerId === 'p1' && u.type === 'militia');
+  // A step that actually goes somewhere new: friendly units stack (see map.js), so the
+  // first enumerated move is a step onto our own settler standing next to us, which
+  // reveals nothing and leaves the explored record exactly as it was.
+  const ours = new Set(s.units.filter(u => u.ownerId === 'p1').map(u => `${u.position.x},${u.position.y}`));
   const step = Civ1Game.getLegalActions(s, 'p1')
-    .find(a => a.type === 'move' && a.unitId === mine.id);
+    .find(a => a.type === 'move' && a.unitId === mine.id && !ours.has(`${a.to.x},${a.to.y}`));
   assert.ok(step, 'expected somewhere to walk');
 
   const after = Civ1Game.applyActions(s, [{ playerId: 'p1', action: step }]);

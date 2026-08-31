@@ -208,6 +208,11 @@ export class Civ1Belief {
 
     if (hidden.length === 0 && hiddenCities.length === 0) return [];
 
+    // One hidden unit to a square. Squares I can see something on are out (that is what
+    // seeing them means), and two hidden units never share one here — the rules do allow
+    // an enemy stack (see Civ1Game's toGrid), so this narrows the worlds drawn rather
+    // than being exact; a sampler that stacked them would need a count per square, not a
+    // set, and the search gains nothing from the extra shapes.
     const occupiedBase = new Set(observation.units.filter(u => u.alive).map(u => k(u.position.x, u.position.y)));
     const worlds = [];
 

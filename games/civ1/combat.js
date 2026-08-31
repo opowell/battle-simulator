@@ -38,6 +38,28 @@ export function getCombatStrengths(attacker, defender, state) {
   return { att, def };
 }
 
+/**
+ * Who meets the attack. Civ1 stacks units on a square, and an attack is aimed at the
+ * SQUARE, not at a unit inside it: the stack's strongest defender fights, so hiding a
+ * settler behind a phalanx works and sniping the settler out from under it does not.
+ * Strength is the full modified defence (terrain, city walls, fortify, veteran — see
+ * getCombatStrengths), because that is what the attacker actually has to beat; ties go
+ * to the healthier unit, then to the lower id so the pick is deterministic.
+ *
+ * @param {object[]} defenders every alive unit standing on the attacked square
+ */
+export function pickDefender(attacker, defenders, state) {
+  let best = null, bestDef = -Infinity;
+  for (const d of defenders) {
+    const { def } = getCombatStrengths(attacker, d, state);
+    if (def > bestDef
+        || (def === bestDef && (d.hp > best.hp || (d.hp === best.hp && String(d.id) < String(best.id))))) {
+      best = d; bestDef = def;
+    }
+  }
+  return best;
+}
+
 // Round-by-round combat: each round attacker wins with prob=att/(att+def).
 // Loser takes firepower damage (all Civ1 units have firepower=1).
 export function resolveCombat(attacker, defender, state, rng) {

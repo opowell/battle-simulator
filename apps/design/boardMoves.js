@@ -49,14 +49,22 @@
       return moved;
     }
 
+    // Every piece a cell stands for: the one it draws, plus any sharing the square
+    // under it (civ1 stacks units — see Civ1Game's toGrid `stack`, and buildField,
+    // which gives each of those a token too). Without the stack a unit that steps
+    // under an escort, or out from under one, would arrive with no hop at all.
+    const tokens = (grid) => (grid.cells ?? []).flatMap(c => [
+      ...(c.stack ?? []).map(s => ({ id: s.unitId, x: c.x, y: c.y, fixture: false })),
+      ...(c.unitId ? [{ id: c.unitId, x: c.x, y: c.y, fixture: !!c.fixture }] : []),
+    ]);
+
     const oldByUnit = new Map();
-    for (const c of oldGrid.cells ?? []) if (c.unitId && !oldByUnit.has(c.unitId)) oldByUnit.set(c.unitId, c);
-    for (const newCell of newGrid.cells ?? []) {
-      if (!newCell.unitId) continue;
-      if (newCell.fixture) continue;
-      const oldCell = oldByUnit.get(newCell.unitId);
-      if (!oldCell || (oldCell.x === newCell.x && oldCell.y === newCell.y)) continue;
-      moved.set(newCell.unitId, { from: { x: oldCell.x, y: oldCell.y }, to: { x: newCell.x, y: newCell.y } });
+    for (const t of tokens(oldGrid)) if (!oldByUnit.has(t.id)) oldByUnit.set(t.id, t);
+    for (const t of tokens(newGrid)) {
+      if (t.fixture) continue;
+      const was = oldByUnit.get(t.id);
+      if (!was || (was.x === t.x && was.y === t.y)) continue;
+      moved.set(t.id, { from: { x: was.x, y: was.y }, to: { x: t.x, y: t.y } });
     }
     return moved;
   }
