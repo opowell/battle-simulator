@@ -1277,6 +1277,20 @@ export function toGrid(state, colors) {
       // teleports (ChessGame.ui.moveAnimation 'none'), and that override has to be
       // undone here or a slide arrives with no journey.
       moveAnimation: rt.space === 'continuous' ? 'slide' : 'hop',
+      // On one clock everything that moves between two states moved AT THE SAME
+      // TIME — both sides order into the same instant, and the clock then runs for
+      // every piece at once. The client plays such an advance as a single beat
+      // instead of one piece after another (App.vue's beat builder): played in
+      // sequence, an exchange reads as one piece waiting politely for the other to
+      // finish crossing the board. Discrete time is ordinary alternating play, one
+      // mover at a time, and has nothing to group.
+      simultaneousMotion: rt.time === 'continuous',
+      // A turn in continuous time is a whole clock window — a dozen orders and the
+      // advance they buy — so the bottom bar's progress track has a run of plies to
+      // show and to scrub. Standard chess opts out (ChessGame.ui.hideTurnTimeline)
+      // because a turn there is one move each way; that override has to be undone
+      // here or these quadrants get no timeline at all.
+      hideTurnTimeline: rt.time !== 'continuous',
       // Destinations are grid squares picked from the legal list, not free points
       // (see Battlefield.vue handleSqClick).
       gridDestinations: true,

@@ -408,6 +408,32 @@ test('melee: a delayed piece does not move until its hold is up', () => {
   assert.ok(Math.abs(moved - 0.5) < 1e-6, `held half the window, then moved (got ${moved})`);
 });
 
+// One clock advance moves everything that is under way, at once — which is why the
+// board is told to animate the whole advance as a single instant (ui.simultaneousMotion)
+// rather than one piece after another, and why a turn there is worth a scrub track.
+test('one clock advance moves every piece under way, and says so to the board', () => {
+  for (const variant of ['clockwork', 'melee']) {
+    let s = start(variant);
+    for (const to of ['a4', 'd4', 'h4']) {
+      s = apply(s, 'white', find(s, 'white', (a) => a.type === 'order' && a.to === to));
+    }
+    const before = ChessGame.toGrid(s).units.map((u) => `${u.id}@${u.x},${u.y}`);
+    s = runClock(s);
+    const after = ChessGame.toGrid(s).units.map((u) => `${u.id}@${u.x},${u.y}`);
+    const movers = after.filter((u, i) => u !== before[i]).length;
+    assert.ok(movers >= 3, `${variant}: three ordered pieces move in the same instant (got ${movers})`);
+
+    const ui = ChessGame.toGrid(s).ui;
+    assert.equal(ui.simultaneousMotion, true, `${variant} animates an advance as one instant`);
+    assert.equal(ui.hideTurnTimeline, false, `${variant} keeps the turn's progress track`);
+  }
+  // Turn-based play has one mover per turn: nothing to group, and a turn too short
+  // to be worth a track (standard chess's own setting stands).
+  const ui = ChessGame.toGrid(start('sliding')).ui;
+  assert.equal(ui.simultaneousMotion, false);
+  assert.equal(ui.hideTurnTimeline, true);
+});
+
 test('delays are a continuous-time thing; a turn-based variant offers none', () => {
   assert.equal(legal(start('sliding'), 'white').some((a) => a.type === 'delay'), false);
   assert.ok(legal(start('clockwork'), 'white').some((a) => a.type === 'delay'));

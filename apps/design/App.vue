@@ -39,14 +39,33 @@ const sessionMeta = ref({});
 // computer's immediate reply). Each turn becomes one or more "beats" — a move
 // hop and/or a burst of combat flashes — queued and played in log order, so a
 // later turn never renders (or flashes) ahead of an earlier turn still playing.
-// Beats: { kind:'hop', unitId, steps:[{x,y}], slide } | { kind:'fx', flashes:[{unitId,fx}] }
+// Beats: { kind:'hop', hops:[{unitId, steps:[{x,y}]}], slide, durationMs? }
+//      | { kind:'fx', flashes:[{unitId,fx}] }
+//
+// A hop beat carries a LIST of movers, not one, because a beat is an instant and
+// some games move more than one piece in it. A turn-based game gives every mover a
+// beat of its own, so they play one after another; a game whose moves all run on
+// one clock (ui.simultaneousMotion — chess's continuous-time quadrants, where both
+// sides order into the same instant and the clock then runs for everyone at once)
+// puts the whole instant in ONE beat, so the pieces travel together on screen the
+// way they travelled together in the game.
 const HOP_STEP_MS = 220;
 const FX_BEAT_MS  = 400; // gap before the next beat; the numeral keeps rising into it
-// currently-playing hop (for pinning): { unitId, steps, step, frac, slide }. `step` is
-// the index of the square the unit is standing on; `frac` is how far it has travelled
-// from there toward steps[step + 1], and is always 0 for a hop — only a slide
-// (ui.moveAnimation: 'slide') puts a unit between two squares.
+// currently-playing hop (for pinning): { hops, step, frac, slide }. `step` is the
+// index of the square a unit is standing on — shared by every mover in the beat, and
+// clamped per unit to its own path's last square — and `frac` is how far it has
+// travelled from there toward steps[step + 1], and is always 0 for a hop: only a
+// slide (ui.moveAnimation: 'slide') puts a unit between two squares.
 const hopAnim  = ref(null);
+// A mover's pose within the beat on screen: the square it is standing on, the one it
+// is heading for, and how far along it is. A path shorter than the beat's longest
+// simply parks on its final square.
+function hopPose(hop, anim) {
+  const last = hop.steps.length - 1;
+  const step = Math.min(anim.step, last);
+  return { a: hop.steps[step], b: hop.steps[step + 1] ?? hop.steps[step], frac: step === anim.step ? anim.frac : 0 };
+}
+const hopFor = (beat, unitId) => beat?.hops.find(h => h.unitId === unitId) ?? null;
 const animQueue = ref([]);   // pending beats, not yet started
 // True from the moment an 'fx' beat starts until its full delay (flashes + any
 // pause) has elapsed. Without this, a beat appended to animQueue mid-flight (the
@@ -308,15 +327,19 @@ function playNext() {
     animTimer = setTimeout(() => { fxBusy.value = false; playNext(); }, delay / playbackSpeed.value);
     return;
   }
-  hopAnim.value = { unitId: beat.unitId, steps: beat.steps, step: 0, frac: 0, slide: beat.slide };
+  hopAnim.value = { hops: beat.hops, step: 0, frac: 0, slide: beat.slide, durationMs: beat.durationMs };
   if (beat.slide) startSlide();
   else animTimer = setTimeout(advanceHop, HOP_STEP_MS);
 }
 
+// The squares the longest path in a beat has to walk through — what paces the beat.
+// Movers with a shorter path arrive first and hold their last square (see hopPose).
+const beatSegments = (anim) => Math.max(...anim.hops.map(h => h.steps.length - 1), 0);
+
 function advanceHop() {
   if (!hopAnim.value) return;
   const next = hopAnim.value.step + 1;
-  if (next >= hopAnim.value.steps.length) { hopAnim.value = null; playNext(); return; }
+  if (next > beatSegments(hopAnim.value)) { hopAnim.value = null; playNext(); return; }
   hopAnim.value = { ...hopAnim.value, step: next };
   animTimer = setTimeout(advanceHop, HOP_STEP_MS);
 }
@@ -327,12 +350,16 @@ function advanceHop() {
 // the last square, where a hop still holds that square for a final step.
 let slideRaf = 0, slideToken = 0;
 function startSlide() {
-  const segments = hopAnim.value.steps.length - 1;
+  const segments = beatSegments(hopAnim.value);
   // A single-square "path" is a snap with nothing to traverse (see pushHop's
   // seam crossing) — there is no motion to draw, so don't hold the queue for it.
   if (segments < 1) { hopAnim.value = null; playNext(); return; }
   const token = ++slideToken;
-  const duration = Math.max(1, segments * HOP_STEP_MS / playbackSpeed.value);
+  // A beat that knows how long its instant lasted (a clock game — see the watcher's
+  // `spanMs`) is played out over that, so every mover in it covers its own distance
+  // in the same wall time and the fast pieces visibly outrun the slow ones. Otherwise
+  // it is paced by distance, at one square per HOP_STEP_MS.
+  const duration = Math.max(1, (hopAnim.value.durationMs ?? segments * HOP_STEP_MS) / playbackSpeed.value);
   const t0 = performance.now();
   const frame = () => {
     if (token !== slideToken || !hopAnim.value) return;
@@ -392,6 +419,18 @@ watch(liveState, (newState, oldState) => {
   // 'slide' plays the same path as a hop, but continuously — the unit glides across
   // each square instead of blinking from centre to centre (civ1). See startSlide.
   const smooth = (ui.moveAnimation ?? 'hop') === 'slide';
+  // Games played on one clock (ui.simultaneousMotion — chess's continuous-time
+  // quadrants): everything that moved between these two states moved AT THE SAME
+  // INSTANT, so it belongs in one beat rather than a queue of them. Playing it as a
+  // queue is a straight misreading of the position — it shows an exchange as one
+  // piece politely waiting for the other to finish crossing the board.
+  const together = !!ui.simultaneousMotion;
+  // How long that instant lasted, in game time, so the beat can be played out over
+  // it (see startSlide): a piece covers as much ground on screen as it covered on
+  // the clock, and the whole advance takes the same wall time whatever moved in it.
+  const clockSpan = (newState.grid.clock ?? 0) - (oldState.grid.clock ?? 0);
+  const spanMs = together && clockSpan > 0
+    ? Math.min(4000, Math.max(200, clockSpan * MS_PER_SIM_SECOND)) : undefined;
   // Wrapping worlds (civ1's east/west seam — see the `world.wrap` in buildField): a
   // move ACROSS the seam reads as a jump the whole width of the map, and animating it
   // would walk the unit all the way back across every square it didn't cross. Snap it
@@ -513,14 +552,24 @@ watch(liveState, (newState, oldState) => {
   const beats = [];
   const tapFlashes = [];   // territories to blink right away, outside the beat queue
   const claimed = new Set();
+  // On one clock every mover shares a single beat, which leads the queue: the pieces
+  // travel, and whatever the travelling cost them flashes after (see `together`).
+  const groupBeat = together ? { kind: 'hop', hops: [], slide: smooth, durationMs: spanMs } : null;
   const pushHop = (unitId) => {
     const { from, to } = moved.get(unitId);
     claimed.add(unitId);
     // Seam crossing: nothing to animate, the unit is simply already there.
     if (Math.abs(to.x - from.x) > halfW) return;
     const steps = straightPath ? [from, to] : buildHopPath(from, to, diagonal);
-    beats.push({ kind: 'hop', unitId, steps, slide: smooth });
+    if (groupBeat) {
+      if (!groupBeat.hops.length) beats.push(groupBeat);
+      groupBeat.hops.push({ unitId, steps });
+    } else beats.push({ kind: 'hop', hops: [{ unitId, steps }], slide: smooth });
   };
+  // A clock advance is not attributed to the piece that moved — the action that ran
+  // the clock is somebody's `wait` — so on one clock the movers are collected up
+  // front, ahead of the entry loop, instead of trailing after its flashes.
+  if (hopsOn && together) for (const unitId of moved.keys()) pushHop(unitId);
   for (const entry of newEntries) {
     const action = entry.playerActions?.[0]?.action;
     if (hopsOn && action?.unitId && moved.has(action.unitId) && !claimed.has(action.unitId)) pushHop(action.unitId);
@@ -908,9 +957,9 @@ const activeField = computed(() => {
   // exact board points (see the move watcher above), so no offset.
   const off = field.locationType === 'continuous' ? 0 : 0.5;
   field.units = field.units.map(u => {
-    if (hopAnim.value?.unitId === u.id) {
-      const { steps, step, frac } = hopAnim.value;
-      const a = steps[step], b = steps[step + 1] ?? a;
+    const moving = hopFor(hopAnim.value, u.id);
+    if (moving) {
+      const { a, b, frac } = hopPose(moving, hopAnim.value);
       const dx = (b.x - a.x) * frac, dy = (b.y - a.y) * frac;
       const unit = { ...u, path: [[a.x + off + dx, a.y + off + dy]] };
       if (!dx && !dy) return unit;
@@ -921,9 +970,9 @@ const activeField = computed(() => {
       // rounded away and the unit jumps a whole square at a time after all.
       return { ...unit, baseX: a.x + off, baseY: a.y + off, tweenDx: dx, tweenDy: dy };
     }
-    const queued = animQueue.value.find(q => q.kind === 'hop' && q.unitId === u.id);
+    const queued = animQueue.value.find(q => q.kind === 'hop' && hopFor(q, u.id));
     if (queued) {
-      const { x, y } = queued.steps[0];
+      const { x, y } = hopFor(queued, u.id).steps[0];
       return { ...u, path: [[x + off, y + off]] };
     }
     return u;
