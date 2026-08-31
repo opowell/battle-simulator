@@ -27,6 +27,11 @@ export function newCivState() {
     gold: 0,
     taxRate: 50,           // % of trade to the treasury
     luxRate: 0,            // % of trade to luxuries; science gets the rest
+    // Has this civ ever held a city? A civ with no cities is destroyed (see
+    // isCivAlive in Civ1Game), and this is what keeps that from firing on turn 1,
+    // when nobody has founded anything yet. Set by markCityHolders the moment the
+    // civ first owns a city, whether founded or taken.
+    hadCity: false,
     // Space race: parts accumulate here; once launched the ship travels to Alpha
     // Centauri and its owner wins on arrival (see getResult in Civ1Game).
     spaceship: { structural: 0, component: 0, module: 0, launched: false, arrivesTurn: null },
