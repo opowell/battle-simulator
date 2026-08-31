@@ -115,3 +115,96 @@ test('city centre: land that irrigation cannot help is still not inert', () => {
   // Forest takes no irrigation, but the centre's minimum-1 rule still applies.
   assert.ok(cityOn('forest').shields >= 1);
 });
+
+// ── Losing the last city ends the civilization ───────────────────────────────
+//
+// The original's rule, and the one the engine now enforces: your empire is your
+// cities. An army still in the field does not keep a cityless civ alive — but the
+// opening does not count, since on turn 1 nobody has founded anything yet.
+
+// Give `pids` a city each and mark them as having held one, the way markCityHolders
+// does the moment a city is founded or taken.
+const withCities = (state, pids) => ({
+  ...state,
+  cities: pids.map((pid, i) => ({
+    id: `c-${pid}`, name: `City ${i}`, ownerId: pid,
+    position: { x: 2 + i * 5, y: 2 }, size: 1, shields: 0, food: 0,
+    production: 'militia', buildings: ['palace'],
+  })),
+  gameSpecific: {
+    ...state.gameSpecific,
+    civ: Object.fromEntries(Object.entries(state.gameSpecific.civ)
+      .map(([pid, c]) => [pid, pids.includes(pid) ? { ...c, hadCity: true } : c])),
+  },
+});
+
+test('elimination: a civ that has never founded a city is not destroyed', () => {
+  const state = newGame(2);
+  assert.equal(state.cities.length, 0, 'the opening really does start city-less');
+  assert.equal(Civ1Game.getResult(state), null);
+});
+
+test('elimination: losing your last city destroys the civ even with units in the field', () => {
+  const state = withCities(newGame(2), ['p1', 'p2']);
+  // p2 is sacked. Its settler and militia are untouched and still on the map.
+  const sacked = { ...state, cities: state.cities.filter(c => c.ownerId !== 'p2') };
+  assert.ok(sacked.units.some(u => u.alive && u.ownerId === 'p2'), 'p2 still has an army');
+  const r = Civ1Game.getResult(sacked);
+  assert.equal(r?.outcome, 'win');
+  assert.equal(r.winnerId, 'p1');
+  assert.equal(r.reason, 'civilization-destroyed');
+});
+
+test('elimination: the units of a destroyed civ are taken off the board', () => {
+  const state = { ...withCities(newGame(3), ['p1', 'p2', 'p3']), activePlayers: ['p1'] };
+  const sacked = { ...state, cities: state.cities.filter(c => c.ownerId !== 'p2') };
+  const next = Civ1Game.applyActions(sacked, [{ playerId: 'p1', action: { type: 'end-turn', unitId: '__player__' } }]);
+  assert.equal(next.units.filter(u => u.alive && u.ownerId === 'p2').length, 0,
+    "a destroyed civ's army stayed on the map");
+  assert.ok(next.units.some(u => u.alive && u.ownerId === 'p3'), 'the living civs were left alone');
+});
+
+test('elimination: the rotation skips a civ that has lost its last city', () => {
+  const state = { ...withCities(newGame(3), ['p1', 'p2', 'p3']), activePlayers: ['p1'] };
+  const sacked = { ...state, cities: state.cities.filter(c => c.ownerId !== 'p2') };
+  const next = Civ1Game.applyActions(sacked, [{ playerId: 'p1', action: { type: 'end-turn', unitId: '__player__' } }]);
+  assert.deepEqual(next.activePlayers, ['p3']);
+});
+
+test('elimination: three civs holding cities, one sacked — the game goes on', () => {
+  const state = withCities(newGame(3), ['p1', 'p2', 'p3']);
+  assert.equal(Civ1Game.getResult({ ...state, cities: state.cities.filter(c => c.ownerId !== 'p2') }), null);
+});
+
+test('elimination: founding a city is what arms the rule', () => {
+  const state = newGame(2);
+  const found = Civ1Game.getLegalActions(state, 'p1').find(a => a.type === 'found-city');
+  assert.ok(found, 'p1 cannot found a city on its start square');
+  const next = Civ1Game.applyActions(state, [{ playerId: 'p1', action: found }]);
+  assert.equal(next.gameSpecific.civ.p1.hadCity, true);
+  assert.equal(next.gameSpecific.civ.p2.hadCity, false, 'p2 has founded nothing');
+  // Razing that one city now ends p1, even though its militia is still standing.
+  const razed = { ...next, cities: [] };
+  assert.equal(Civ1Game.getResult(razed)?.winnerId, 'p2');
+});
+
+// An observation hides a rival's cities, so isCivAlive must not read "no cities" off
+// one and pronounce a rival destroyed while its army stands in plain view. What stops
+// it is getVisibleState blanking the rival's ledger, hadCity included — in a view a
+// rival is only ever counted out the old way, by having nothing visible left at all.
+test('elimination: a rival whose cities are merely out of sight is not counted out', () => {
+  const state = withCities(newGame(2, { fogOfWar: true }), ['p1', 'p2']);
+  // Walk a p2 militia up next to a p1 unit so it is inside p1's vision, while p2's
+  // city stays far away in the dark.
+  const eye = state.units.find(u => u.ownerId === 'p1');
+  const scout = state.units.find(u => u.ownerId === 'p2' && u.type === 'militia');
+  const seen = {
+    ...state,
+    units: state.units.map(u => u.id === scout.id
+      ? { ...u, position: { x: eye.position.x + 1, y: eye.position.y } } : u),
+  };
+  const view = Civ1Game.getVisibleState(seen, 'p1');
+  assert.equal(view.cities.filter(c => c.ownerId === 'p2').length, 0, "p2's city is hidden");
+  assert.ok(view.units.some(u => u.alive && u.ownerId === 'p2'), "p2's scout is in plain sight");
+  assert.equal(Civ1Game.getResult(view), null, 'the fog handed p1 a win it had not won');
+});

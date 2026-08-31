@@ -180,6 +180,7 @@ Data lives in `tech.js`, `improvements.js`, `governments.js`; the per-turn maths
 - **Combat** — round-by-round; attacker wins each round with `P = ATK / (ATK + DEF × terrainBonus)`; loser takes 1 HP per round; fight ends at 0 HP. Defending a city gives +50% DEF; City Walls / Great Wall add more.
 - **Nuclear weapons** — once the Manhattan Project exists, any civ can build the Nuclear missile. A strike wipes out every unit on the target tile and the eight around it and halves the target city; SDI Defense in the blast intercepts it. The missile is single-use.
 - **Space race** — after the Apollo Program is built, cities produce spaceship parts (Structural / Component / Module) that accumulate on the civ's ship. With the minimum parts it can be launched; it reaches Alpha Centauri after a travel time (shorter with more parts) and its owner wins on arrival — unless the capital is lost first, which destroys the ship.
+- **Conquest** — your empire is your cities. A civ that loses its last one is destroyed on the spot and its surviving units go down with it, however large the army still in the field; the turn rotation then skips it. The opening is the one exception: nobody has founded anything yet on turn 1, so the rule only arms for a civ once it has actually held a city (`hadCity` on its civ record, set by `markCityHolders`).
 - **Fog of war** — vision radius 2; `getVisibleState` hides unseen tiles and enemy units.
 - **Barbarians** — periodic uprisings that raid the world's cities. See below.
 
@@ -239,7 +240,7 @@ research, spaceship) so an agent choosing a move cannot read it.
 
 | Outcome | Reason |
 |---|---|
-| Win | `civilization-destroyed` — all opponent cities and units destroyed |
+| Win | `civilization-destroyed` — every rival has lost its last city (see below) |
 | Win | `space-race` — your spaceship reaches Alpha Centauri |
 | Draw | `max-turns` |
 

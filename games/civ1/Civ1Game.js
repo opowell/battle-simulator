@@ -494,7 +494,62 @@ const BARBARIAN_DEPS = { makeUnit, applyMove, resolveAttack };
 // here rather than in each of the two dozen returns below — founding a city, building a
 // unit and walking a settler all change what its owner can see.
 function applyActions(state, playerActions, rng = Math.random) {
-  return markExplored(applyOneAction(state, playerActions, rng), playerActions[0].playerId);
+  const next = markExplored(applyOneAction(state, playerActions, rng), playerActions[0].playerId);
+  // One choke point for the two bookkeeping steps behind "a civ with no cities is
+  // destroyed": record who holds a city, then finish off whoever no longer does.
+  // Cities change hands in half a dozen places (founding, a captured square, a
+  // sacked capital, the barbarian phase inside end-turn) — running it here means
+  // none of them has to remember.
+  return killOffLostCivs(markCityHolders(next));
+}
+
+// Every civ that owns a city is marked as having held one, for good. Only seated
+// players are marked: the barbarians hold cities but keep no ledger to mark.
+function markCityHolders(state) {
+  const civ = state.gameSpecific?.civ;
+  if (!civ) return state;
+  let patch = null;
+  for (const c of state.cities) {
+    const rec = civ[c.ownerId];
+    if (!rec || rec.hadCity || patch?.[c.ownerId]) continue;
+    (patch ??= {})[c.ownerId] = { ...rec, hadCity: true };
+  }
+  if (!patch) return state;
+  return { ...state, gameSpecific: { ...state.gameSpecific, civ: { ...civ, ...patch } } };
+}
+
+// A civilization that has lost its last city is gone, and its units in the field go
+// with it — an army with nothing left to come home to. Without this they would stand
+// on the map forever: never asked for orders (the rotation skips a destroyed civ),
+// never moving, and never dying, an immortal obstacle in a game their owner has lost.
+function killOffLostCivs(state) {
+  const civ = state.gameSpecific?.civ;
+  if (!civ) return state;
+  let doomed = null;
+  for (const p of state.players) {
+    if (!civ[p.id]?.hadCity || state.cities.some(c => c.ownerId === p.id)) continue;
+    if (!state.units.some(u => u.alive && u.ownerId === p.id)) continue;
+    (doomed ??= new Set()).add(p.id);
+  }
+  if (!doomed) return state;
+  return {
+    ...state,
+    units: state.units.map(u =>
+      u.alive && doomed.has(u.ownerId) ? { ...u, alive: false, hp: 0, movesLeft: 0 } : u),
+  };
+}
+
+// Whether a civ is still in the game. Holding a city is what keeps you in it: lose
+// the last one and the civilization is destroyed, however many units are still in
+// the field (killOffLostCivs then takes them off the board). The exception is the
+// opening, before anyone has founded anything — `hadCity` says this civ once held a
+// city, so the settlers walking out of turn 1 are not counted as a dead empire.
+// `cities`/`units` are overridable so a turn half-resolved can be asked the question
+// with the pieces as they stand rather than as they were.
+function isCivAlive(state, pid, cities = state.cities, units = state.units) {
+  if (cities.some(c => c.ownerId === pid)) return true;
+  if (state.gameSpecific?.civ?.[pid]?.hadCity) return false;
+  return units.some(u => u.alive && u.ownerId === pid);
 }
 
 function applyOneAction(state, playerActions, rng = Math.random) {
@@ -522,15 +577,14 @@ function applyOneAction(state, playerActions, rng = Math.random) {
     // rather than being asked for orders it has no pieces to give; the turn counter
     // still advances whenever the rotation passes seat 0, so wrapping past a dead
     // leading seat does not stall the clock.
-    const isAlive = pid =>
-      cities.some(c => c.ownerId === pid) || units.some(u => u.alive && u.ownerId === pid);
+    const isAlive = pid => isCivAlive(state, pid, cities, units);
     let nextIdx = (currentIdx + 1) % playerIds.length;
     let newTurn = nextIdx === 0 ? state.turnNumber + 1 : state.turnNumber;
     for (let hops = 0; hops < playerIds.length - 1 && !isAlive(playerIds[nextIdx]); hops++) {
       nextIdx = (nextIdx + 1) % playerIds.length;
       if (nextIdx === 0) newTurn = state.turnNumber + 1;
     }
-    const nextPlayerId = playerIds[nextIdx];
+    let nextPlayerId = playerIds[nextIdx];
 
     // Barbarians. Once the rotation has been all the way round, the uncivilised
     // tribes take their own turn: any uprising due rises up, and every raider already
@@ -546,6 +600,14 @@ function applyOneAction(state, playerActions, rng = Math.random) {
       units = barb.units;
       cities = barb.cities;
       nextId = barb.nextId;
+      // The rotation above was decided before the raiders moved, and they may have
+      // just sacked the last city of the very civ it picked. Hop on again rather
+      // than handing the turn to an empire that no longer exists. The turn counter
+      // has already advanced for this lap, so it is not touched again.
+      for (let hops = 0; hops < playerIds.length - 1 && !isAlive(playerIds[nextIdx]); hops++) {
+        nextIdx = (nextIdx + 1) % playerIds.length;
+      }
+      nextPlayerId = playerIds[nextIdx];
     }
 
     // Refresh the next player's units. Magellan's Expedition grants +2 movement to
@@ -819,13 +881,11 @@ function getResult(state) {
     }
   }
 
-  // Conquest. A civ with neither a city nor a living unit is eliminated, but that
+  // Conquest. A civ that has lost its last city is eliminated (isCivAlive), but that
   // only ENDS the game once a single civ is left standing — with three or more
   // players the first elimination used to hand the win to whichever rival happened
   // to come first in the player list, while the others were still fighting over it.
-  const alive = playerIds.filter(pid =>
-    state.cities.some(c => c.ownerId === pid) ||
-    state.units.some(u => u.alive && u.ownerId === pid));
+  const alive = playerIds.filter(pid => isCivAlive(state, pid));
 
   if (alive.length === 1) return { outcome: 'win', winnerId: alive[0], reason: 'civilization-destroyed' };
   // Everyone wiped out on the same turn (mutual destruction) — nobody wins.
@@ -1162,6 +1222,11 @@ function getVisibleState(state, playerId) {
   // spaceship) to the agent choosing this player's move. Their civ record is replaced
   // with an empty one; only this player sees their own. This holds even for the
   // reveal-map case below, so map vision and intelligence stay separate.
+  // A rival's blank record also arrives with hadCity false, and that is deliberate:
+  // isCivAlive would otherwise read "no cities" off a board whose cities are simply
+  // out of sight and pronounce a rival — whose units the agent can see standing
+  // right there — destroyed. In an observation a rival is only ever counted out the
+  // old way, by having nothing visible left at all.
   const civ = {};
   for (const [pid, c] of Object.entries(state.gameSpecific.civ ?? {})) {
     civ[pid] = pid === playerId ? c : { ...newCivState(), government: c.government };
