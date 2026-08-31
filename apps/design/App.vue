@@ -415,8 +415,11 @@ watch(liveState, (newState, oldState) => {
              ?? (oldState.grid.units ?? []).find(u => u.id === id);
       return u ? { x: Number(u.x), y: Number(u.y) } : {};
     }
-    const c = newState.grid.cells.find(c => c.unitId === id)
-           ?? oldState.grid.cells.find(c => c.unitId === id);
+    // The square a piece is on — its own cell, or the cell it is stacked in when
+    // something else is drawn on top of it (see buildField's `stack`).
+    const cellOf = (grid) => grid.cells.find(c =>
+      c.unitId === id || (c.stack ?? []).some(s => s.unitId === id));
+    const c = cellOf(newState.grid) ?? cellOf(oldState.grid);
     const offset = newState.grid.grid === 'hexagon' ? 0 : 0.5;
     return c ? { x: c.x + offset, y: c.y + offset } : {};
   };
@@ -687,7 +690,18 @@ function buildField(g, s) {
   const positionedOffset = (boardType === 'grid' && spaceType === 'discrete' && g.grid !== 'hexagon') ? 0.5 : 0;
   const unitSource = locationType === 'continuous'
     ? (g.units ?? []).map(u => ({ src: u, x: Number(u.x) + positionedOffset, y: Number(u.y) + positionedOffset, id: u.id }))
-    : g.cells.filter(c => c.glyph).map(c => ({ src: c, x: c.x + cellCenterOffset, y: c.y + cellCenterOffset, id: c.unitId ?? `u_${c.x}_${c.y}` }));
+    // A square may hold more than one piece (civ1 stacks units on it). The cell names
+    // the top of the stack — the piece the board draws — and carries the rest in
+    // `stack`, each with the same token fields; they become tokens of their own in the
+    // same square, listed BEFORE it so the renderer draws them underneath (a cell's
+    // children all share one grid area, see HtmlLayer's .hl-cell) and the top of the
+    // stack keeps the square's clicks. Everything else — the roster, the keyboard's
+    // next-unit key, auto-advance, the actions panel — then reaches them by id like any
+    // other unit, which is what stops a piece under an escort from vanishing from the UI.
+    : g.cells.filter(c => c.glyph).flatMap(c => [
+        ...(c.stack ?? []).map(s => ({ src: s, x: c.x + cellCenterOffset, y: c.y + cellCenterOffset, id: s.unitId })),
+        { src: c, x: c.x + cellCenterOffset, y: c.y + cellCenterOffset, id: c.unitId ?? `u_${c.x}_${c.y}` },
+      ]);
 
   const units = unitSource
     .map(({ src: c, x, y, id }) => ({

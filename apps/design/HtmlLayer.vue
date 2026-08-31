@@ -333,6 +333,16 @@ const cells = computed(() => {
     if (!unitsAt.has(k)) unitsAt.set(k, []);
     unitsAt.get(k).push(u);
   }
+  // A square may hold several pieces stacked on one another (civ1) — they all share the
+  // cell's one grid area (see .hl-cell), so the last one listed is the one on top and
+  // the one a click on the square lands on. The piece in hand goes last, so a selection
+  // is never buried under the rest of its stack.
+  if (props.selectedId) for (const list of unitsAt.values()) {
+    if (list.length > 1 && list.some(u => u.id === props.selectedId)) {
+      list.sort((a, b) => (a.id === props.selectedId ? 1 : 0) - (b.id === props.selectedId ? 1 : 0));
+    }
+  }
+
   const markers = new Map();
   for (const m of displayMarkers.value) markers.set(`${m.col},${m.row}`, m);
   const beliefs = new Map();

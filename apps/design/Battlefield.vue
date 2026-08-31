@@ -916,7 +916,10 @@ function centerOn(x, y) {
 // carries the GARRISON's id — so "select the city at x,y" can't just build the
 // synthetic id and hope.
 function tokenIdAt(x, y) {
-  const token = displayUnits.value.find(u => !u.dead && Math.floor(u.x) === x && Math.floor(u.y) === y);
+  // findLast, not find: a square may hold a stack, and buildField lists the piece the
+  // board actually draws last (the others are underneath it) — that top piece is the
+  // one a click on the square means.
+  const token = displayUnits.value.findLast(u => !u.dead && Math.floor(u.x) === x && Math.floor(u.y) === y);
   return token?.id ?? `u_${x}_${y}`;
 }
 

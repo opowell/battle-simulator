@@ -397,8 +397,8 @@ export function makeZoneOfControl(board, allUnits, cities, playerId) {
 
 /**
  * Every tile `unit` may move to this turn: a best-first flood fill over civ1's
- * terrain/road move costs, routing around every unit on the board and obeying
- * zones of control (makeZoneOfControl above) step by step.
+ * terrain/road move costs, routing around ENEMY units (friendly ones stack — see
+ * below) and obeying zones of control (makeZoneOfControl above) step by step.
  *
  * `cities` feeds the zone-of-control city exemption only; omitting it just means
  * no square counts as a city, which is what the callers that have no city list
@@ -410,7 +410,6 @@ export function getReachableTiles(unit, board, allUnits, playerId, cities = []) 
   const key = p => `${p.x},${p.y}`;
 
   const enemyPos = new Set(allUnits.filter(u => u.alive && u.ownerId !== playerId).map(u => key(u.position)));
-  const friendlyPos = new Set(allUnits.filter(u => u.alive && u.ownerId === playerId && u.id !== unit.id).map(u => key(u.position)));
   const zocBlocks = makeZoneOfControl(board, allUnits, cities, playerId);
 
   const best = new Map([[key(unit.position), unit.movesLeft]]);
@@ -445,7 +444,9 @@ export function getReachableTiles(unit, board, allUnits, playerId, cities = []) 
       if (domain === 'sea'  && !td.passable.sea)  continue;
 
       if (domain === 'land' && enemyPos.has(k)) continue;
-      if (friendlyPos.has(k)) continue;
+      // Your own units do NOT block you: civ1 stacks friendly units on a square with
+      // no limit, which is how a settler travels with an escort. Only the enemy is in
+      // the way — you attack that rather than walking through it.
 
       // Zones of control, applied to the step actually being taken (`pos` is the
       // square the unit is standing on at this point in the fill, `next` the one

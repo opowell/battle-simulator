@@ -1,7 +1,7 @@
 import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
-import { resolveCombat } from './combat.js';
+import { resolveCombat, pickDefender } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, makeZoneOfControl, renderMap, wrapX } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
@@ -202,14 +202,27 @@ function getLegalActions(state, playerId) {
         actions.push({ type: 'move', unitId: unit.id, from: unit.position, to });
       }
 
-      // Attack: enemies in adjacent squares (Chebyshev distance ≤ 1)
+      // Attack: enemy-held squares next door (Chebyshev distance ≤ 1). One action per
+      // SQUARE rather than per enemy unit, because civ1 stacks them and an attack is
+      // aimed at the square: whatever defends it best meets the blow (pickDefender),
+      // so a stack cannot be picked apart by naming its weakest member. `targetId` is
+      // that defender, which is also what an agent weighs its odds against (ai.js) —
+      // and resolveAttack re-picks it at resolution time anyway, so an action planned
+      // against a stale stack still hits whoever is actually holding the square.
       if (stats.attack > 0) {
-        for (const enemy of units.filter(u => u.alive && u.ownerId !== playerId)) {
+        const squares = new Map();   // "x,y" -> the enemies standing there
+        for (const enemy of units) {
+          if (!enemy.alive || enemy.ownerId === playerId) continue;
           const dx = wrapDX(enemy.position.x, unit.position.x, board.width);
           const dy = Math.abs(enemy.position.y - unit.position.y);
-          if (dx <= 1 && dy <= 1 && (dx + dy) > 0) {
-            actions.push({ type: 'attack', unitId: unit.id, targetId: enemy.id });
-          }
+          if (dx > 1 || dy > 1 || (dx + dy) === 0) continue;
+          const k = `${enemy.position.x},${enemy.position.y}`;
+          if (!squares.has(k)) squares.set(k, []);
+          squares.get(k).push(enemy);
+        }
+        for (const defenders of squares.values()) {
+          const target = pickDefender(unit, defenders, state);
+          actions.push({ type: 'attack', unitId: unit.id, targetId: target.id });
         }
       }
 
@@ -394,8 +407,9 @@ function applyMove(units, cities, board, playerId, unit, to) {
 
 // Re-validates a queued waypoint at execution time (occupancy may have changed
 // since it was planned): still on the board, still passable for this unit's
-// domain, and not currently blocked by a friendly unit, by (for land units) an
-// enemy one, or by a zone of control that has closed across the step since.
+// domain, and not currently blocked by (for land units) an enemy unit or by a zone
+// of control that has closed across the step since. Friendly units never block —
+// civ1 stacks them (see map.js getReachableTiles).
 function isMoveTargetLegal(to, board, units, cities, playerId, unit) {
   const { domain } = UNITS[unit.type];
   const tile = board.tiles[`${to.x},${to.y}`];
@@ -406,7 +420,6 @@ function isMoveTargetLegal(to, board, units, cities, playerId, unit) {
   if (domain === 'sea' && !td.passable.sea) return false;
   const atTarget = u => u.alive && u.position.x === to.x && u.position.y === to.y;
   if (domain === 'land' && units.some(u => u.ownerId !== playerId && atTarget(u))) return false;
-  if (units.some(u => u.ownerId === playerId && atTarget(u))) return false;
   // A blockade that went up after the waypoint was planned stops it here, from
   // wherever the unit actually stands now — the rest of the queue is left for a
   // later turn, by which time the line may have moved on.
@@ -414,15 +427,25 @@ function isMoveTargetLegal(to, board, units, cities, playerId, unit) {
   return true;
 }
 
-// One unit-vs-unit attack: the combat rounds, the casualties, the capture of any city
+// One attack on one square: the combat rounds, the casualties, the capture of any city
 // the defender was holding, and the winner's advance onto the emptied square. Shared
 // by the 'attack' action below and by the barbarian phase (barbarians.js), which
 // raids by exactly these rules — `units`/`cities` are passed in (rather than read off
 // `state`) because the raid resolves several fights inside one phase.
+//
+// `targetId` names a square rather than a victim: whoever is standing there defends it
+// best takes the blow (pickDefender), which is the rule that makes stacking mean
+// anything. Callers may name any unit on the square — a stale action, a barbarian's
+// pick, an agent planning under fog — and the square answers with its real defender.
 function resolveAttack(state, units, cities, attackerId, targetId, rng) {
   const attacker = units.find(u => u.id === attackerId);
-  const defender = units.find(u => u.id === targetId);
-  if (!attacker || !defender) return { units, cities };
+  const named = units.find(u => u.id === targetId);
+  if (!attacker || !named) return { units, cities };
+  const at = (u, pos) => u.alive && u.position.x === pos.x && u.position.y === pos.y;
+  const defender = pickDefender(attacker, units.filter(u => at(u, named.position) && u.ownerId === named.ownerId),
+                                { ...state, units, cities });
+  if (!defender) return { units, cities };
+  targetId = defender.id;
 
   const result = resolveCombat(attacker, defender, { ...state, units, cities }, rng);
 
@@ -440,12 +463,24 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
 
   if (result.attackerSurvived) {
     const defPos = defender.position;
-    const capturedCity = cities.find(c => c.position.x === defPos.x && c.position.y === defPos.y);
+    // Stack death, as in the original: lose the defence of an open square and every
+    // unit on it dies with the defender. A city (in the original, a fortress too — this
+    // game has none) is the exception: only the loser dies there, so a garrison has to
+    // be killed off one unit at a time and the city falls with its last defender.
+    const inCity = cities.some(c => c.position.x === defPos.x && c.position.y === defPos.y);
+    if (!inCity) {
+      units = units.map(u => (u.id !== attackerId && at(u, defPos)) ? { ...u, alive: false, hp: 0 } : u);
+    }
+
+    const stillHeld = units.some(u => u.id !== attackerId && at(u, defPos));
+    // The city falls when nothing is left standing in it — killing one unit out of a
+    // three-unit garrison takes the square's defence down a notch, not the city.
+    const capturedCity = stillHeld ? null
+      : cities.find(c => c.position.x === defPos.x && c.position.y === defPos.y);
     if (capturedCity) {
       cities = cities.map(c => c.id === capturedCity.id ? { ...c, ownerId: attacker.ownerId } : c);
     }
-    const occupiedAfter = new Set(units.filter(u => u.alive && u.id !== attackerId).map(u => `${u.position.x},${u.position.y}`));
-    if (!occupiedAfter.has(`${defPos.x},${defPos.y}`)) {
+    if (!stillHeld) {
       units = units.map(u => u.id === attackerId ? { ...u, position: defPos } : u);
     }
   }
@@ -1693,8 +1728,50 @@ export const Civ1Game = {
     // this method. Without it their raiders would fall through to owner 0, which the
     // client reads as "the first team" and would paint them in player 1's colours.
     pidIdx[BARBARIAN_ID] = (state.players ?? []).length + 1;
-    const umap = {}, cmap = {};
-    for (const u of units) if (u.alive) umap[`${u.position.x},${u.position.y}`] = u;
+    // Units by square. Civ1 stacks them, so a square holds a list, sorted into the order
+    // the player wants to meet them: whoever still owes the turn an order first (so the
+    // square hands over the unit that is waiting, and the next one once that is done —
+    // see `needsOrders` below and Battlefield.vue's auto-advance), then whoever defends
+    // the square best (the unit an attack would actually meet — see combat.js's
+    // pickDefender; terrain and city bonuses are common to everyone standing here, so
+    // ranking on the unit's own modifiers puts them in the same order), then by id so
+    // the pick never wobbles between two identical units.
+    const wantsOrders = u => u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.sentry;
+    const defenceRank = u => UNITS[u.type].defense
+      * (u.attrs?.fortified ? 1.5 : 1) * (u.attrs?.veteran ? 1.5 : 1);
+    const cmap = {};
+    const stackAt = {};
+    for (const u of units) {
+      if (!u.alive) continue;
+      (stackAt[`${u.position.x},${u.position.y}`] ??= []).push(u);
+    }
+    for (const stack of Object.values(stackAt)) {
+      stack.sort((a, b) => (Number(wantsOrders(b)) - Number(wantsOrders(a)))
+        || (defenceRank(b) - defenceRank(a))
+        || String(a.id).localeCompare(String(b.id)));
+    }
+    const umap = Object.fromEntries(Object.entries(stackAt).map(([k, stack]) => [k, stack[0]]));
+
+    // Standing-order tags for the side panel, plus — when this unit is sharing its
+    // square — how many are standing there, since only the top of a stack is visible
+    // on the board.
+    const statusTags = (u, stackSize) => [
+      ...(u.attrs?.fortified ? ['fortified'] : []),
+      ...(u.attrs?.sentry ? ['sentry'] : []),
+      ...(stackSize > 1 ? [`stack of ${stackSize}`] : []),
+    ];
+    // One unit as the client's token fields (the same channels a cell carries for the
+    // unit standing on it) — used for the units UNDER the top of a stack, which get
+    // tokens of their own in the same square.
+    const unitToken = (u, stackSize) => ({
+      unitId: u.id, glyph: u.type[0].toUpperCase(), unitName: u.type,
+      imagePath: `${BASE}/units/${u.type}`,
+      owner: pidIdx[u.ownerId] ?? 0,
+      hp: u.hp, maxHp: u.maxHp, mp: u.movesLeft, maxMp: UNITS[u.type].moves,
+      queue: u.queue?.length ? u.queue : null,
+      statusEffects: statusTags(u, stackSize),
+      needsOrders: wantsOrders(u),
+    });
     for (const c of cities) cmap[`${c.position.x},${c.position.y}`] = c;
 
     // River overlay: pick a directional sprite (river_<nesw>) from which screen
@@ -1770,6 +1847,7 @@ export const Civ1Game = {
         const tile = tiles[`${x},${y}`] ?? {};
         const u = umap[`${x},${y}`];
         const city = cmap[`${x},${y}`];
+        const here = stackAt[`${x},${y}`] ?? [];
         cells.push({
           x, y,
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
@@ -1830,7 +1908,15 @@ export const Civ1Game = {
           queue: u?.queue?.length ? u.queue : null,
           // Standing-order tags shown in the side panel (generic apps/design display
           // channel — see SelectedUnitDetail.vue's statusEffects tags).
-          statusEffects: u ? [...(u.attrs?.fortified ? ['fortified'] : []), ...(u.attrs?.sentry ? ['sentry'] : [])] : undefined,
+          statusEffects: u ? statusTags(u, here.length) : undefined,
+          // The rest of the stack (civ1 puts no limit on units per square). The square's
+          // token is the top of it — the unit still owed orders, else the best defender
+          // (see the sort above) — and these ride along as tokens of their own drawn in
+          // the same cell under it (apps/design/App.vue's buildField), so a settler under
+          // its escort is still selectable, still in the roster, and still gets handed
+          // the turn. A city square is the exception: the city wins the square there and
+          // its garrison is picked out of the city screen's own box (`garrison` below).
+          stack: (!city && here.length > 1) ? here.slice(1).map(su => unitToken(su, here.length)) : undefined,
           // Whether this unit still wants orders this turn: has moves left and isn't
           // parked on a standing order. Drives the generic auto-advance-to-next-unit
           // UI feature (ui.autoAdvanceUnit below, see Battlefield.vue) — most games
