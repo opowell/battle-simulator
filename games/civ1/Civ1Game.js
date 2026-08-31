@@ -1434,9 +1434,12 @@ export const Civ1Game = {
     // unit or city on this map means barbarians, whoever else is playing. The generic
     // engine palette (apps/design/gameDefaults.js) hands seat 2 red, hence this override.
     teamColors: ['#4058c8', '#d8c038', '#38a038', '#9058b8', '#48b8b8', '#d87830', '#e8e8e8'],
-    // Once the selected unit runs out of orders (moves used up, or it's been given a
-    // standing fortify/sentry order — see toGrid's `needsOrders`), jump selection to
-    // another of the player's units that still wants orders (see Battlefield.vue).
+    // Selection follows the units that still want orders, at both ends of a unit's
+    // turn: a new turn opens with the player's first such unit already picked and
+    // centred, and once the selected unit runs out of orders (moves used up, or it's
+    // been given a standing fortify/sentry order — see toGrid's `needsOrders`),
+    // selection jumps on to the next one that wants them (see Battlefield.vue). That
+    // hand-me-the-next-unit cycle is how the original game is played.
     autoAdvanceUnit: true,
     // ...and once no unit wants orders at all, end the turn — the original never asked.
     // Only after the player has done something this turn, though: a turn arriving with
