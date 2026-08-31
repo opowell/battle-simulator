@@ -953,20 +953,23 @@ let _sub = null;
 
 function stopPoll() { if (_sub) { _sub.close(); _sub = null; } }
 
-// Player to view/subscribe as. Fog needs it so the server can filter the board;
-// simultaneous-turns needs it so the server can render this player's private
-// plan state (their queued orders) during the planning window.
-// Which seat we watch the game through. In a hotseat game (every seat human) this
-// follows whoever is on the clock, so the board, the fog and the analysis panel all
-// belong to the player actually being asked to move — previously it was pinned to
-// the first human seat, so on the other seat's turn you were shown one player's fog
-// while being advised about the other's position. With a single human seat (the
-// ordinary case) it resolves to that seat either way.
+// Which seat we watch the game through — every snapshot is fetched and every
+// subscription opened as somebody, whenever there is a human seat to be. Fog needs
+// it so the server can filter the board; simultaneous turns needs it so the server
+// can render this player's private plan state (their queued orders) during the
+// planning window; and a queued future move (games/planQueue.js) needs it in games
+// with neither, because a plan is private to its owner and the server serves it
+// only to the seat that asks as itself — a snapshot fetched as nobody comes back
+// with `plan: null`, and the board silently has nothing to queue onto.
+// In a hotseat game (every seat human) this follows whoever is on the clock, so the
+// board, the fog and the analysis panel all belong to the player actually being
+// asked to move — previously it was pinned to the first human seat, so on the other
+// seat's turn you were shown one player's fog while being advised about the other's
+// position. With a single human seat (the ordinary case) it resolves to that seat
+// either way, and with none (a game we only observe) to nobody, as before.
 function viewAsId(s) {
-  const simultaneous = !!s?.params?.config?.simultaneousTurns;
-  if (!(s?.fog || simultaneous)) return null;
-  const humans = s.humanPlayers ?? [];
-  const pending = s.pendingPlayer;
+  const humans = s?.humanPlayers ?? [];
+  const pending = s?.pendingPlayer;
   if (pending && humans.includes(pending)) return pending;
   return humans[0] ?? null;
 }
@@ -1262,6 +1265,16 @@ async function setMarker({ playerId, col, row, type }) {
   } catch (e) { serverErr.value = e.message; }
 }
 
+// Replace a player's queued future moves (games/planQueue.js). Same out-of-band
+// channel as a fog marker, and for the same reason: it isn't a move, it doesn't
+// consume a turn, and it has to work while the other side is thinking.
+async function setPlan({ playerId, moves }) {
+  if (!liveState.value) return;
+  try {
+    liveState.value = await api.setPlan(liveState.value.id, playerId, moves);
+  } catch (e) { serverErr.value = e.message; }
+}
+
 // ── the position being reviewed ─────────────────────────────────
 // A past ply as the side to move there saw it: their board and their moves (see
 // api-server.js's GET /sessions/:id/position). Battlefield asks for one whenever
@@ -1467,6 +1480,7 @@ async function restartGame() {
                    @submit-action="submitAction"
                    @resign="resign"
                    @set-marker="setMarker"
+                   @set-plan="setPlan"
                    @set-paused="p => setControl({ paused: p })"
                    @set-ai-delay="ms => setControl({ aiDelay: ms })"
                    @set-pause-after-playback="setPauseAfterPlayback"

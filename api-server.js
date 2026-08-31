@@ -1044,9 +1044,18 @@ class Session {
     // be given any board/log state; we return session metadata only (so a client can
     // discover the human player and re-request with it) and withhold everything secret.
     const fogNoPlayer = fog && !playerId;
-    const viewState = (fog && playerId && game.getVisibleState)
+    const viewStateRaw = (fog && playerId && game.getVisibleState)
       ? game.getVisibleState(rawState, playerId)
       : rawState;
+    // Whose eyes this board is drawn through, stamped on the state itself so
+    // `toGrid` can leave out what this viewer isn't entitled to see. Fog already
+    // filters the BOARD; this is for the things that are private without being
+    // hidden — a player's queued future moves (games/planQueue.js), which the
+    // opponent must not read off the board even in a game with no fog at all. An
+    // observer (no playerId) is a viewer with no side, and sees no one's plans.
+    const viewState = viewStateRaw && playerId
+      ? { ...viewStateRaw, viewerId: playerId }
+      : viewStateRaw;
     const pending = this.pendingFor(playerId);
     const summary = (this.status === 'done' && rawState && game.getBattleSummary)
       ? game.getBattleSummary(rawState, shown ? shown.log : this.engine.log)
@@ -1116,6 +1125,13 @@ class Session {
       // All humans currently waited on (simultaneous mode can have several at once).
       pendingPlayers: [...this.apiAgents.entries()].filter(([, a]) => a.pending).map(([id]) => id),
       legalActions: pending?.legalActions ?? null,
+      // The seat's own queued future moves, and the moves that could be added to
+      // the end of them (games/planQueue.js). Both are `null` for a game with no
+      // such mechanic and for an observer, who has no plan to hold.
+      plan: (!fogNoPlayer && playerId && game.planFrontier && rawState)
+        ? (rawState.gameSpecific?.plan?.[playerId] ?? []) : null,
+      planActions: (!fogNoPlayer && playerId && game.planFrontier && rawState)
+        ? game.planFrontier(rawState, playerId) : null,
       rendered: fogNoPlayer ? null : (rawState ? game.renderState(viewState) : null),
       grid: fogNoPlayer ? null : (viewState && game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null),
       // Every unit lost so far that this viewer is entitled to know about — see
@@ -1627,6 +1643,40 @@ async function handleControl(req, res, id) {
 // doesn't advance the engine — it patches persisted UI metadata directly so a guess
 // survives a reload and updates immediately for the player who set it (and anyone else
 // watching, via the broadcast below).
+/**
+ * Replace a player's queued future moves (games/planQueue.js). Deliberately NOT a
+ * turn action and deliberately not gated on whose turn it is: the moment to plan
+ * your next move is while the opponent is still thinking about theirs, and a
+ * queued move that fires the instant your turn opens is only safe if you can call
+ * it off at any time. Same out-of-band channel as /marker, for the same reason.
+ */
+async function handleSetPlan(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+  if (session.status !== 'active') return err(res, 409, `Session is ${session.status}`);
+
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+
+  const { playerId, moves } = body;
+  if (!playerId) return err(res, 400, 'Missing playerId');
+  if (!session.apiAgents.has(playerId)) return err(res, 400, `Player ${playerId} is not a human player in this session`);
+  if (!Array.isArray(moves)) return err(res, 400, 'Missing moves (an array, possibly empty)');
+
+  const { game } = GAMES[session.gameName];
+  if (!game.setPlan) return err(res, 400, `${session.gameName} does not support queued moves`);
+
+  // setPlan validates the whole plan against the real position and throws on the
+  // first move that isn't playable there, so a rejected plan leaves the old one
+  // untouched rather than half-replaced.
+  try {
+    session.engine.patchState(state => game.setPlan(state, playerId, moves));
+  } catch (e) { return err(res, 400, e.message); }
+  session._broadcast();
+  send(res, 200, session.toJSON(playerId));
+}
+
 async function handleSetMarker(req, res, id) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
@@ -2240,6 +2290,10 @@ async function handleRequest(req, res) {
     // POST /sessions/:id/marker
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'marker')
       return await handleSetMarker(req, res, parts[1]);
+
+    // POST /sessions/:id/plan — queue future moves (any time, not just your turn)
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'plan')
+      return await handleSetPlan(req, res, parts[1]);
 
     // POST /sessions/:id/control — pause/resume + AI pacing delay
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'control')

@@ -111,6 +111,12 @@ window.api = {
   // regardless of whose turn it is or which game this session is running.
   resign:   (id, playerId)          => _req('/sessions/' + id + '/resign', { method: 'POST', body: JSON.stringify({ playerId }) }),
   setMarker: (id, playerId, col, row, type) => _req('/sessions/' + id + '/marker', { method: 'POST', body: JSON.stringify({ playerId, col, row, type }) }),
+  // Replace a player's queued future moves (games/planQueue.js). Not a turn action
+  // and not gated on whose turn it is — a plan is made, and called off, while the
+  // opponent is still thinking. `moves` is the whole plan, thin descriptors
+  // ({unitId, from, to, payload, pathId}); the server validates it end to end and
+  // refuses the lot rather than storing half of it.
+  setPlan:  (id, playerId, moves)   => _req('/sessions/' + id + '/plan', { method: 'POST', body: JSON.stringify({ playerId, moves }) }),
   // Live playback controls: { paused?, aiDelay? }. Pauses/resumes the run loop and
   // sets the delay (ms) the engine waits between AI moves. Returns the applied values.
   control:  (id, body)              => _req('/sessions/' + id + '/control', { method: 'POST', body: JSON.stringify(body) }),

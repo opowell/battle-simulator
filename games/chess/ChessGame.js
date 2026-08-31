@@ -35,6 +35,10 @@ import './stockfish.js';
 // fog chess (discrete/discrete) are this file's own code below; anything else is
 // delegated wholesale to that module. See games/spacetime.js for the quadrants.
 import * as ST from './spacetime.js';
+// The player-level move queue — moves committed for FUTURE turns. Out-of-band
+// state rather than a game action, for the reasons its header sets out; the
+// adapter that teaches it chess is `PLAN` below.
+import * as PQ from '../planQueue.js';
 
 // ---------------------------------------------------------------------------
 // Initial board setup
@@ -200,6 +204,69 @@ function updateCastlingRights(rights, unit, square) {
 // ---------------------------------------------------------------------------
 // GameDefinition
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// The player-level move queue (games/planQueue.js)
+// ---------------------------------------------------------------------------
+
+/** The plain move list for a position — what a plan is built and checked against. */
+function baseMoves(state, playerId) {
+  if (ST.isSpacetimeVariant(state)) return ST.getLegalActions(state, playerId).filter(a => a.type === 'move');
+  const moves = state.gameSpecific.fogOfWar
+    ? getAllFogMoves(state.board, playerId, state.gameSpecific)
+    : getAllLegalMoves(state.board, playerId, state.gameSpecific);
+  return moves.map(a => ({
+    ...a,
+    gridFrom: a.from ? squareToGrid(a.from) : undefined,
+    gridTo:   a.to   ? squareToGrid(a.to)   : undefined,
+  }));
+}
+
+/** Teaches games/planQueue.js what a chess move is. See its `PlanAdapter` typedef. */
+const PLAN = {
+  baseActions: baseMoves,
+  applyOne(state, playerId, action) {
+    const next = ChessGame.applyActions(state, [{ playerId, action }]);
+    return {
+      ...next,
+      // A plan is a line the planner plays alone, so the turn never leaves them…
+      activePlayers: [playerId],
+      gameSpecific: {
+        ...next.gameSpecific,
+        // …and the en-passant window their double push opens belongs to a reply
+        // that, in this line, nobody is going to make.
+        enPassantTarget: null,
+      },
+    };
+  },
+  sameMove: (a, b) => ChessGame.actionKey(a) === ChessGame.actionKey(b),
+};
+
+/** Is a plan even a thing in this quadrant? Continuous time queues per PIECE instead. */
+const planningIsTurnBased = (state) => state.gameSpecific.rt?.time !== 'continuous';
+
+const emptyPlans = () => ({ white: [], black: [] });
+
+/**
+ * Both sides' plans, one move later: the mover's advances if they played its head
+ * and is abandoned if they played anything else, and the player whose turn is
+ * arriving keeps theirs only while its head is still legal in the position that
+ * has actually come about.
+ */
+function advancePlans(next, mover, action) {
+  const plan = next.gameSpecific.plan;
+  if (!plan || !planningIsTurnBased(next)) return next;
+  const other = mover === 'white' ? 'black' : 'white';
+  const advanced = {
+    [mover]: PQ.afterMove(plan[mover], action, PLAN.sameMove),
+    [other]: PQ.pruneForTurn(next, other, plan[other], PLAN),
+  };
+  // Untouched plans keep their identity, so a board diff sees no change.
+  const changed = advanced[mover] !== plan[mover] || advanced[other] !== plan[other];
+  return changed
+    ? { ...next, gameSpecific: { ...next.gameSpecific, plan: advanced } }
+    : next;
+}
 
 // Both analysis agents are Stockfish-backed searches over a board of squares and
 // atomic alternating moves. Neither survives a position where a piece is halfway
@@ -385,21 +452,40 @@ export const ChessGame = {
         markers: config.fogOfWar
           ? (config.initialMarkers ? seedMarkers(board) : { white: {}, black: {} })
           : undefined,
+        // Each side's queued future moves (games/planQueue.js). Never an action:
+        // see `setPlan`.
+        plan: emptyPlans(),
       },
     };
   },
 
+  // Note what is NOT in here: the player's queued future moves. A plan is set
+  // through its own channel (`setPlan`) precisely so that it never becomes an
+  // action — it can be built and called off while the opponent is thinking, which
+  // is when a plan is worth making, and no agent has to reason about a move that
+  // changes nothing it can see. See games/planQueue.js.
   getLegalActions(state, playerId) {
     if (ST.isSpacetimeVariant(state)) return ST.getLegalActions(state, playerId);
-    const moves = state.gameSpecific.fogOfWar
-      ? getAllFogMoves(state.board, playerId, state.gameSpecific)
-      : getAllLegalMoves(state.board, playerId, state.gameSpecific);
-    // Annotate with display-grid coordinates so the UI works generically without parsing algebraic notation.
-    return moves.map(a => ({
-      ...a,
-      gridFrom: a.from ? squareToGrid(a.from) : undefined,
-      gridTo:   a.to   ? squareToGrid(a.to)   : undefined,
-    }));
+    // Annotated with display-grid coordinates so the UI works generically without
+    // parsing algebraic notation.
+    return baseMoves(state, playerId);
+  },
+
+  /**
+   * The action set a SEARCH reasons over. For standard and fog chess this is
+   * `getLegalActions` verbatim — see the long note below on why the fog tree must
+   * use the real move set and nothing else. The other quadrants add planning
+   * orders (queueing behind a busy piece, taking a queued order back), and those
+   * are dropped: they are a convenience for a player who wants to commit now and
+   * stop watching, so to a one-ply agent they are moves that change nothing it
+   * can see — the exact shape of thing that makes an agent loop instead of play
+   * (see games/sc1's skip-unit). Deterministic in (state, player), as the search
+   * requires: it is a filter over a deterministic list.
+   */
+  getSearchActions(state, playerId) {
+    return ST.isSpacetimeVariant(state)
+      ? ST.getSearchActions(state, playerId)
+      : ChessGame.getLegalActions(state, playerId);
   },
 
   // NOTE: there is deliberately NO getSearchLegalActions here. The search tree
@@ -417,7 +503,10 @@ export const ChessGame = {
   // and CFR then keeps suicide moves out of both players' strategies.
 
   applyActions(state, playerActions) {
-    if (ST.isSpacetimeVariant(state)) return ST.applyActions(state, playerActions);
+    if (ST.isSpacetimeVariant(state)) {
+      const next = ST.applyActions(state, playerActions);
+      return advancePlans(next, playerActions[0].playerId, playerActions[0].action);
+    }
     const { playerId, action } = playerActions[0]; // chess: always 1 active player
     const opponent = playerId === 'white' ? 'black' : 'white';
     let board = { ...state.board };
@@ -499,7 +588,7 @@ export const ChessGame = {
       ? updateMarkers(state.gameSpecific.markers, state.board, board, moved)
       : undefined;
 
-    return {
+    return advancePlans({
       ...state,
       board,
       units: boardToUnits(board),
@@ -513,8 +602,50 @@ export const ChessGame = {
         difficulty:  state.gameSpecific.difficulty,
         aiTimeMs:    state.gameSpecific.aiTimeMs, // carry the per-move time limit forward
         markers,
+        plan:        state.gameSpecific.plan ?? emptyPlans(),
+      },
+    }, playerId, action);
+  },
+
+  /**
+   * Replace a player's queued future moves. Like `setManualMarker` below this is
+   * NOT a game action: it doesn't touch the board, doesn't consume a turn, and
+   * doesn't require it to be that player's turn — which is the whole point, since
+   * the moment to plan your next move is while the opponent is still thinking
+   * about theirs. The engine applies it through `patchState`.
+   *
+   * `wanted` is a list of thin move descriptors (from/to, and `payload.promote`
+   * or `pathId` where those distinguish two moves); each is matched against the
+   * real legal move at that point in the plan, so a client can never smuggle in a
+   * move that isn't playable there. Throws if any of them can't be — a plan is
+   * validated whole, because half a plan is worse than none.
+   *
+   * Continuous time has no use for this: there a player may act at any instant,
+   * so planning is just ordering, and every PIECE carries its own queue instead
+   * (games/chess/spacetime.js).
+   */
+  setPlan(state, playerId, wanted) {
+    if (!planningIsTurnBased(state))
+      throw new Error('This variant queues orders per piece, not per player');
+    const plan = PQ.buildPlan(state, playerId, wanted, PLAN);
+    return {
+      ...state,
+      gameSpecific: {
+        ...state.gameSpecific,
+        plan: { ...(state.gameSpecific.plan ?? emptyPlans()), [playerId]: plan },
       },
     };
+  },
+
+  /**
+   * The moves that could be added to the END of a player's plan — the legal moves
+   * of the position their plan leaves behind, with the opponent standing still.
+   * Served alongside `legalActions` so the client can highlight them exactly as it
+   * highlights real ones. Empty when the plan is full or has gone stale.
+   */
+  planFrontier(state, playerId) {
+    if (!planningIsTurnBased(state)) return [];
+    return PQ.planFrontier(state, playerId, state.gameSpecific.plan?.[playerId] ?? [], PLAN);
   },
 
   // Record or clear a player's fog-square marker. This is UI metadata, not a game action:
@@ -640,6 +771,13 @@ export const ChessGame = {
       ...state,
       board: filteredBoard,
       units: boardToUnits(filteredBoard),
+      // A plan is the planner's own business — under fog it is also a running
+      // commentary on what they think the board looks like, which is the single
+      // most valuable thing they hold.
+      gameSpecific: {
+        ...state.gameSpecific,
+        plan: { ...emptyPlans(), [playerId]: state.gameSpecific.plan?.[playerId] ?? [] },
+      },
       // The opponent's last move is exactly the thing fog is hiding, so it cannot
       // ride along in the state we hand out — spelling out the from/to square of a
       // move whose piece we just stripped from the board would undo the filtering
@@ -889,6 +1027,13 @@ export const ChessGame = {
 
   toGrid(state) {
     if (ST.isSpacetimeVariant(state)) return ST.toGrid(state, this.colors);
+    // Only the viewer's own plan is drawn, and only when there IS a viewer: a
+    // spectator of a live game is quite possibly a player's second screen, and
+    // the whole value of a queued move is that the other side cannot see it
+    // coming. (api-server stamps `viewerId` on the state it renders for a seat.)
+    const routes = state.viewerId
+      ? ST.planWaypoints(state.gameSpecific.plan?.[state.viewerId])
+      : new Map();
     const FILES = 'abcdefgh';
     const SYMS = { king: 'K', queen: 'Q', rook: 'R', bishop: 'B', knight: 'N', pawn: 'P' };
     const pidIdx = {};
@@ -919,6 +1064,9 @@ export const ChessGame = {
           color: this.colors[sq] ?? '#808070',
           unitId: piece?.id,
           imagePath: piece ? `/images/chess/${piece.ownerId === 'white' ? 'w' : 'b'}${sym}` : null,
+          // Queued future moves, in the shape the generic goto-queue overlay
+          // already draws (games/moveQueue.js): a dashed, numbered route per piece.
+          queue: routes.get(algSq),
         });
         if (visSet && visSet.has(algSq)) visible.push([fi, 8 - rank]);
       }

@@ -66,7 +66,7 @@ const props = defineProps({
   // non-live field playback) — App.vue owns it, the footer's speed control sets it.
   playbackSpeed:      { type: Number, default: 1 },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'resign', 'set-marker', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'resign', 'set-marker', 'set-plan', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -1280,9 +1280,41 @@ function actionGridCoord(action, field) {
   return null;
 }
 
+// ── queued future moves (the player-level plan, games/planQueue.js) ───────────
+// Moves this seat has committed to for its NEXT turns, and the moves that could be
+// added behind them — both served by the session (see api-server's toJSON). Unlike
+// everything else the board interacts with, these are not legal ACTIONS: a plan is
+// edited through its own channel at any time, which is what makes it safe for the
+// head to fire the moment the turn opens (see planWatch below).
+const plannedMoves = computed(() => (atLatest.value && !forking.value)
+  ? (props.liveState?.plan ?? []) : []);
+const planActions  = computed(() => (atLatest.value && !forking.value)
+  ? (props.liveState?.planActions ?? []) : []);
+// The board is taking PLAN clicks rather than move clicks: it isn't this seat's
+// turn, but the game will let them say what they intend to do when it is.
+const planning = computed(() =>
+  !isPending.value && !isDone.value && !!humanPlayerId.value && planActions.value.length > 0);
+
+// Two moves are the same move: from/to, plus whatever else distinguishes two moves
+// between the same squares (a promotion choice; a knight's chosen route in chess's
+// continuous-space variants).
+const sameMove = (a, b) => a && b && a.from === b.from && a.to === b.to
+  && (a.payload?.promote ?? null) === (b.payload?.promote ?? null)
+  && (a.pathId ?? null) === (b.pathId ?? null);
+// A plan travels as thin descriptors; the server matches each against the real
+// legal move at that point in the plan.
+const thin = (a) => ({ unitId: a.unitId, from: a.from, to: a.to, payload: a.payload, pathId: a.pathId });
+function sendPlan(moves) {
+  if (!humanPlayerId.value) return;
+  emit('set-plan', { playerId: humanPlayerId.value, moves: moves.map(thin) });
+}
+
 const unitMoves = computed(() => {
-  if (!canMove.value || !moveUnitId.value) return [];
-  return legalActions.value
+  if (!moveUnitId.value) return [];
+  // Your turn: where this piece can actually go. Not your turn: where it could go
+  // next in the plan — the same highlight, the same click, a different commitment.
+  const source = planning.value ? planActions.value : (canMove.value ? legalActions.value : []);
+  return source
     .filter(a => a.unitId === moveUnitId.value)
     .map(a => actionGridCoord(a, 'to'))
     .filter(Boolean);
@@ -1295,6 +1327,7 @@ const unitMoves = computed(() => {
 // not any per-game stat field — games use `mp`/`maxMp` for different things (civ1:
 // movement points; FFTA: real magic points), so type is the only universal signal.
 const queuingMoves = computed(() => {
+  if (planning.value) return true;
   if (!moveUnitId.value || ui.value.moveQueue === false) return false;
   const acts = legalActions.value.filter(a => a.unitId === moveUnitId.value && actionGridCoord(a, 'to'));
   return acts.length > 0 && acts.every(a => a.type === 'queue-move');
@@ -1557,7 +1590,7 @@ function handleSqClick(col, row, x, y, mods) {
     aiming.value = null;
     return;
   }
-  if (canMove.value && moveUnitId.value) {
+  if ((canMove.value || planning.value) && moveUnitId.value) {
     // Continuous-location maps (see games/coord.js): movement is a straight-line slide to
     // the exact point clicked — no grid to snap to. The server (each game's isActionLegal)
     // is the real authority on walls/occupancy/cost; here we only gate on the unit's move
@@ -1582,12 +1615,17 @@ function handleSqClick(col, row, x, y, mods) {
         return;
       }
     } else {
-      const action = legalActions.value.find(a => {
+      const source = planning.value ? planActions.value : legalActions.value;
+      const action = source.find(a => {
         if (a.unitId !== moveUnitId.value) return false;
         const coords = actionGridCoord(a, 'to');
         return coords && coords[0] === col && coords[1] === row;
       });
-      if (action) { submitAction(action); selectedSquare.value = null; selectedShape.value = null; return; }
+      if (action) {
+        if (planning.value) sendPlan([...plannedMoves.value, action]);
+        else submitAction(action);
+        selectedSquare.value = null; selectedShape.value = null; return;
+      }
     }
   }
   // A plain click (not armed via "Inspect terrain…") never selects terrain — it just
@@ -1717,6 +1755,24 @@ const displayedActions = computed(() => {
 // Same opt-in as the end-of-turn clear.
 watch(() => props.liveState?.phase, (phase, prev) => {
   if (prev != null && phase !== prev && ui.value.clearSelectedAtEndOfTurn) selectedId.value = null;
+});
+
+// A queued move fires the moment its turn opens — that is what makes it a QUEUE
+// rather than a list of suggestions. It is only fair because the plan can be
+// called off at any time, including while the opponent is thinking (it lives
+// out-of-band, see plannedMoves above); a plan you could not cancel would be a
+// blunder you had to watch yourself commit.
+//
+// Keyed on the false→true edge of isPending, so it fires once per turn and never
+// while reviewing history or exploring a fork (both make plannedMoves empty). If
+// the head is no longer legal the server has already dropped the whole plan
+// (planQueue's pruneForTurn), so there is nothing here to re-check.
+watch(isPending, (now, was) => {
+  if (!now || was || ui.value.autoPlayPlan === false) return;
+  const head = plannedMoves.value[0];
+  if (!head) return;
+  const match = legalActions.value.find(a => sameMove(a, head));
+  if (match) submitAction(match);
 });
 
 function submitAction(action) {
@@ -1974,9 +2030,16 @@ function onKeyDown(e) {
   if (e.key === 'ArrowLeft')  goBack();
   else if (e.key === 'ArrowRight') goForward();
   else if (e.key === 'Backspace') {
-    // Undoes the most recently queued move for the selected unit (the generic
-    // goto-queue mechanic, games/moveQueue.js — see ActionsPanel's "Undo last queued
-    // move" button, the mouse equivalent). ui.moveQueue defaults true.
+    // Drops the last queued move. Two mechanics land here, because to the player
+    // they are one gesture: the player-level plan while waiting for a turn
+    // (games/planQueue.js), and the selected unit's own goto queue on it
+    // (games/moveQueue.js — see ActionsPanel's "Undo last queued move" button, the
+    // mouse equivalent). ui.moveQueue defaults true.
+    if (planning.value && plannedMoves.value.length) {
+      e.preventDefault();
+      sendPlan(plannedMoves.value.slice(0, -1));
+      return;
+    }
     if (!isPending.value || !selectedId.value || ui.value.moveQueue === false) return;
     const action = legalActions.value.find(a => a.type === 'queue-pop' && a.unitId === selectedId.value);
     if (action) { e.preventDefault(); submitAction(action); }

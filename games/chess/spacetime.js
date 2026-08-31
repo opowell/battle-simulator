@@ -99,6 +99,26 @@ const IDLE_TICK = TURN_DURATION;
 /** Consecutive idle advances tolerated before the game is called a draw. */
 const MAX_IDLE_TICKS = 40;
 
+/**
+ * How many orders a piece may have lined up at once — the one it is carrying out
+ * plus what is queued behind it.
+ *
+ * A cap, rather than no cap, is what keeps the clock able to move at all. Giving
+ * an order costs no clock, so the only thing stopping a player (or an agent)
+ * queueing for ever at a single instant is that each order strictly fills the
+ * queue and the queue is finite. The matching half of that rule is `rt.locked`:
+ * TAKING an order back is the one queue edit that doesn't shrink the space of
+ * further edits, so it locks the piece for the rest of the instant.
+ */
+export const MAX_ORDERS = 4;
+
+/**
+ * Delays a piece can be told to hold for, in turn windows. A delay is how you say
+ * "go, but not yet" — the thing continuous time makes possible and discrete time
+ * cannot express, since there a turn is the smallest unit of waiting there is.
+ */
+export const DELAYS = [0.5, 1, 2];
+
 const EPS = 1e-9;
 const FILES = 'abcdefgh';
 
@@ -326,24 +346,33 @@ export function createInitialState(players, config, st) {
       aiTimeMs: typeof config.aiTimeMs === 'number' ? config.aiTimeMs : null,
       difficulty: typeof config.aiTimeMs === 'number' ? null : (config.difficulty ?? 25),
       markers: undefined,
+      // Each side's queued future moves (games/planQueue.js). Only meaningful in
+      // discrete time — see ChessGame's `planningIsTurnBased`.
+      plan: { white: [], black: [] },
       rt: {
         variant: st.variant,
         space: st.space,
         time: st.time,
         turnDuration: st.turnDuration ?? TURN_DURATION,
         clock: 0,
-        // unitId → { path, idx, pathId }: the journey a piece is committed to.
-        orders: {},
-        // unitId → clock time the piece may hop again (discrete space only).
+        // unitId → the piece's order queue, oldest first. The HEAD is what it is
+        // doing now; the rest is what it will do next, without being asked again.
+        // An entry is either
+        //   { kind: 'move',  path, idx, pathId }  a journey, `idx` steps in
+        //   { kind: 'delay', duration }           hold here for that long
+        // Empty queues are deleted rather than left as [], so "does this piece
+        // have anything to do" is one property lookup everywhere below.
+        queues: {},
+        // unitId → clock time the piece may next act. Written by a hop's cooldown
+        // and by a delay alike: to the rest of the machinery a delay simply IS a
+        // cooldown the player asked for.
         ready: {},
         // Who has finished giving orders at the CURRENT instant (continuous time).
         passed: { white: false, black: false },
-        // Pieces already ordered (or called off) at the current instant. Giving an
-        // order costs no clock, so without this the instant need never end: a
-        // player could order a piece, call it off, order it again, and the clock
-        // would stand still while they did. One decision per piece per instant
-        // makes the action list shrink monotonically, so `wait` is always reached.
-        touched: [],
+        // Pieces whose queue has been shortened at the current instant, and which
+        // therefore get no further say until the clock moves. See MAX_ORDERS for
+        // why one of the two queue edits has to be the one that locks.
+        locked: [],
         idleTicks: 0,
         // Human-readable trace of what the last clock advance did, for renderState.
         events: [],
@@ -364,6 +393,22 @@ function withGrid(action, from, to) {
   return { ...action, gridFrom: [from.x, from.y], gridTo: [to.x, to.y] };
 }
 
+/** The queue a piece is working through (empty array if it has nothing to do). */
+export const queueOf = (rt, id) => rt.queues[id] ?? [];
+
+/**
+ * Where a piece will be standing once it has worked through its whole queue —
+ * which is where the NEXT order it is given has to start from. With an empty
+ * queue that is simply where it stands now.
+ */
+export function tailCell(rt, unit) {
+  const q = queueOf(rt, unit.id);
+  for (let i = q.length - 1; i >= 0; i--) {
+    if (q[i].kind === 'move') return { ...q[i].path[q[i].path.length - 1] };
+  }
+  return { ...unitCell(unit) };
+}
+
 /**
  * Orders available to `playerId`.
  *
@@ -373,6 +418,14 @@ function withGrid(action, from, to) {
  * opponent and — once both have waited — lets the clock run to the next thing
  * that actually happens. Discrete time (`sliding`) is ordinary alternating play:
  * one order, resolved, turn over.
+ *
+ * A piece is never limited to the order it is carrying out. It has a QUEUE, and
+ * an order given to a busy piece joins the back of it — enumerated from where the
+ * queue leaves the piece standing (`tailCell`), not from where it is now, so a
+ * plan chains: knight to f3, then f3 to g5, then hold half a turn, all committed
+ * at one instant. `delay` is a first-class entry in that queue rather than an
+ * afterthought: continuous time is the only quadrant in which "not yet" is a
+ * thing a player can say at all.
  */
 export function getLegalActions(state, playerId) {
   const { rt } = state.gameSpecific;
@@ -383,23 +436,36 @@ export function getLegalActions(state, playerId) {
   // piece's own square is in here too, harmlessly: a route's first step is always
   // a square away from where the piece stands.
   const friends = new Set(mine.map((f) => { const c = unitCell(f); return `${c.x},${c.y}`; }));
+  const continuous = rt.time === 'continuous';
 
   for (const u of mine) {
-    const from = unitCell(u);
-    if (rt.time === 'continuous') {
-      // One decision per piece per instant (see `touched`).
-      if (rt.touched.includes(u.id)) continue;
-      // A piece already on a journey is committed until it arrives or is called
-      // off; a piece still cooling down from its last hop cannot be re-aimed.
-      if (rt.orders[u.id]) {
+    const queue = continuous ? queueOf(rt, u.id) : [];
+    const queued = queue.length > 0;
+
+    if (continuous) {
+      // A piece whose queue has already been shortened this instant is done
+      // being fiddled with until the clock moves (see MAX_ORDERS).
+      if (rt.locked.includes(u.id)) continue;
+      if (queued) {
         actions.push({
-          type: 'cancel', unitId: u.id, gridFrom: [from.x, from.y],
+          type: 'cancel', unitId: u.id, gridFrom: [unitCell(u).x, unitCell(u).y],
           label: `Call off ${u.id}`,
         });
-        continue;
+        if (queue.length > 1)
+          actions.push({ type: 'queue-pop', unitId: u.id, label: `Drop ${u.id}'s last queued order` });
       }
-      if ((rt.ready[u.id] ?? 0) > rt.clock + EPS) continue;
+      if (queue.length >= MAX_ORDERS) continue;
+      for (const d of DELAYS) {
+        actions.push({
+          type: queued ? 'queue-delay' : 'delay', unitId: u.id, duration: d,
+          label: `${queued ? 'Then hold' : 'Hold'} ${d} turn${d === 1 ? '' : 's'}`,
+        });
+      }
     }
+
+    // Where this order starts: where the piece stands, or — for one joining a
+    // queue — where the queue will have left it.
+    const from = continuous ? tailCell(rt, u) : unitCell(u);
     for (const m of geometricMoves(u, from)) {
       // A route whose very first square is one of our own is not an order, it is
       // a bounce: the piece would set off and be stopped where it stands. Leaving
@@ -407,19 +473,22 @@ export function getLegalActions(state, playerId) {
       // is free — lets an agent re-aim the same piece at the same wall of its own
       // pawns every instant, which is how the opening position stops the clock
       // dead. Blockers FURTHER along the route stay in, because by the time the
-      // piece gets there they may well have moved.
+      // piece gets there they may well have moved. A QUEUED order is not filtered
+      // this way at all: it starts from a square the piece has yet to reach, in a
+      // position nobody can predict, so there is no "right now" to test against.
       const first = m.path[0];
-      if (friends.has(`${first.x},${first.y}`)) continue;
+      if (!queued && friends.has(`${first.x},${first.y}`)) continue;
       const via = m.path.length > 1 && u.type === 'knight'
         ? ` via ${m.path.slice(0, -1).map((c) => sqOf(c.x, c.y)).join('-')}` : '';
+      const label = `${queued ? 'Then ' : ''}${sqOf(from.x, from.y)} → ${sqOf(m.to.x, m.to.y)}${via}`;
       actions.push(withGrid({
-        type: rt.time === 'continuous' ? 'order' : 'move',
+        type: continuous ? (queued ? 'queue-order' : 'order') : 'move',
         unitId: u.id,
         from: sqOf(from.x, from.y),
         to: sqOf(m.to.x, m.to.y),
         path: m.path,
         pathId: m.pathId,
-        label: `${sqOf(from.x, from.y)} → ${sqOf(m.to.x, m.to.y)}${via}`,
+        label,
       }, from, m.to));
     }
   }
@@ -427,20 +496,44 @@ export function getLegalActions(state, playerId) {
   // `__player__` is the client's marker for an order that belongs to the side
   // rather than to a piece, so the panel offers it whatever is selected (see
   // Battlefield.vue's displayedActions under ui.freeSelection).
-  if (rt.time === 'continuous')
+  if (continuous)
     actions.push({ type: 'wait', unitId: '__player__', label: 'Wait — let the clock run' });
   return actions;
+}
+
+/**
+ * The subset of the above a search agent should reason over: everything except
+ * the PLANNING affordances. Queueing behind a busy piece is a convenience for a
+ * player who wants to commit now and stop watching — it can always be replaced by
+ * giving the same order later, so to a one-ply agent it is a move that changes
+ * nothing it can see, which is exactly the shape of thing that makes an agent
+ * loop instead of playing (see games/sc1's skip-unit). Taking an order back is
+ * dropped for the same reason. What stays is every order that actually does
+ * something now: `order`, `delay`, `cancel`, `move`, `wait`.
+ */
+const PLANNING_ACTIONS = new Set(['queue-order', 'queue-delay', 'queue-pop', 'queue-move']);
+export const isPlanningAction = (a) => PLANNING_ACTIONS.has(a.type);
+export function getSearchActions(state, playerId) {
+  return getLegalActions(state, playerId).filter((a) => !isPlanningAction(a));
 }
 
 // ── Applying an action ───────────────────────────────────────────────────────
 
 export function applyActions(state, playerActions) {
   const { playerId, action } = playerActions[0];
-  if (action.type === 'order') return placeOrder(state, playerId, action);
-  if (action.type === 'cancel') return cancelOrder(state, playerId, action);
-  if (action.type === 'wait') return waitOut(state, playerId, action);
-  if (action.type === 'move') return resolveSingleMove(state, playerId, action);
-  return state;
+  switch (action.type) {
+    case 'order':
+    case 'queue-order':
+      return pushOrder(state, playerId, action, { kind: 'move', path: action.path, idx: 0, pathId: action.pathId ?? 0 });
+    case 'delay':
+    case 'queue-delay':
+      return pushOrder(state, playerId, action, { kind: 'delay', duration: action.duration });
+    case 'cancel':    return editQueue(state, playerId, action, () => []);
+    case 'queue-pop': return editQueue(state, playerId, action, (q) => q.slice(0, -1));
+    case 'wait':      return waitOut(state, playerId, action);
+    case 'move':      return resolveSingleMove(state, playerId, action);
+    default:          return state;
+  }
 }
 
 const withRt = (state, patch, extra = {}) => ({
@@ -449,24 +542,43 @@ const withRt = (state, patch, extra = {}) => ({
   gameSpecific: { ...state.gameSpecific, rt: { ...state.gameSpecific.rt, ...patch } },
 });
 
-function placeOrder(state, playerId, action) {
+/** Replace one piece's queue, dropping the entry entirely when it empties. */
+function setQueue(queues, id, next) {
+  const out = { ...queues };
+  if (next.length) out[id] = next; else delete out[id];
+  return out;
+}
+
+/** Append an order to the back of a piece's queue (starting it if it was idle). */
+function pushOrder(state, playerId, action, entry) {
   const rt = state.gameSpecific.rt;
   // The passes are deliberately NOT reset. Both sides order into the same
   // instant, and neither gets to see the other's orders before committing its
   // own — that is what makes this simultaneous play rather than a very fast
   // alternating game.
   return withRt(state, {
-    orders: { ...rt.orders, [action.unitId]: { path: action.path, idx: 0, pathId: action.pathId ?? 0 } },
-    touched: [...rt.touched, action.unitId],
+    queues: setQueue(rt.queues, action.unitId, [...queueOf(rt, action.unitId), entry]),
   }, { lastActions: [{ playerId, action }] });
 }
 
-function cancelOrder(state, playerId, action) {
+/**
+ * Shorten a piece's queue, and lock it for the rest of the instant. Shortening is
+ * the edit that would otherwise let a player undo their way round in a circle
+ * while the clock stood still (see MAX_ORDERS), so it is the one that costs the
+ * piece its say.
+ */
+function editQueue(state, playerId, action, edit) {
   const rt = state.gameSpecific.rt;
-  const orders = { ...rt.orders };
-  delete orders[action.unitId];
-  return withRt(state, { orders, touched: [...rt.touched, action.unitId] },
-    { lastActions: [{ playerId, action }] });
+  const next = edit(queueOf(rt, action.unitId));
+  const ready = { ...rt.ready };
+  // A piece called off mid-delay is free again the moment it is called off; one
+  // called off mid-hop keeps whatever cooldown that hop bought.
+  if (!next.length && rt.space === 'continuous') delete ready[action.unitId];
+  return withRt(state, {
+    queues: setQueue(rt.queues, action.unitId, next),
+    ready,
+    locked: [...rt.locked, action.unitId],
+  }, { lastActions: [{ playerId, action }] });
 }
 
 /**
@@ -500,7 +612,7 @@ function advanceClock(state) {
     turnNumber,
     gameSpecific: {
       ...next.gameSpecific,
-      rt: { ...next.gameSpecific.rt, passed: { white: false, black: false }, touched: [] },
+      rt: { ...next.gameSpecific.rt, passed: { white: false, black: false }, locked: [] },
     },
   };
 }
@@ -508,28 +620,34 @@ function advanceClock(state) {
 // ── Clockwork: discrete space, continuous time — hop, cool down, hop again ───
 
 /**
- * One hop of every piece that is due one, at the earliest time any piece is due.
+ * One step of every piece that is due one, at the earliest time any piece is due.
  *
- * A hop lands on the next square of the piece's route:
+ * "A step" is whatever the head of that piece's queue asks for. A DELAY is
+ * consumed the moment it comes up: it sets the piece's ready time and leaves the
+ * queue, because to everything downstream a delay is just a cooldown the player
+ * asked for rather than one a hop imposed. A MOVE lands on the next square of the
+ * route:
  *   • empty          → it lands and cools down for stepLength/speed.
  *   • enemy piece    → that piece is taken, and the journey CONTINUES; a slider
  *                      aimed down a file eats what stands in it, one hop at a time.
  *   • friendly piece → the order is called off and the piece stays put. This is
  *                      what keeps a route honest without pre-filtering it.
+ * When a route runs out, the next order in the queue takes over with no gap and
+ * without anyone being asked again.
  */
 function advanceHops(state) {
   const rt = state.gameSpecific.rt;
-  const ordered = Object.keys(rt.orders);
-  if (ordered.length === 0) return idleAdvance(state);
+  const busy = Object.keys(rt.queues);
+  if (busy.length === 0) return idleAdvance(state);
 
   const units = state.units.map((u) => ({ ...u, cell: { ...u.cell } }));
   const byId = new Map(units.map((u) => [u.id, u]));
-  const orders = { ...rt.orders };
+  let queues = { ...rt.queues };
   const ready = { ...rt.ready };
 
-  // The next moment a hop is due. A freshly-given order is due immediately.
+  // The next moment a piece is due. A freshly-given order is due immediately.
   let t = Infinity;
-  for (const id of ordered) {
+  for (const id of busy) {
     if (!byId.get(id)?.alive) continue;
     t = Math.min(t, Math.max(ready[id] ?? 0, rt.clock));
   }
@@ -538,15 +656,24 @@ function advanceHops(state) {
   const events = [];
   // Deterministic order when several pieces are due at the same instant: the
   // first to land owns the square, and the rest meet it there.
-  const due = ordered.filter((id) => byId.get(id)?.alive && Math.max(ready[id] ?? 0, rt.clock) <= t + EPS).sort();
+  const due = busy.filter((id) => byId.get(id)?.alive && Math.max(ready[id] ?? 0, rt.clock) <= t + EPS).sort();
 
   const occupant = (cell) => units.find((u) => u.alive && sameCell(u.cell, cell));
+  const shift = (id) => { queues = setQueue(queues, id, (queues[id] ?? []).slice(1)); };
 
   for (const id of due) {
     const u = byId.get(id);
     if (!u?.alive) continue;
-    const order = orders[id];
+    const order = (queues[id] ?? [])[0];
     if (!order) continue;
+
+    if (order.kind === 'delay') {
+      ready[id] = t + order.duration;
+      shift(id);
+      events.push(`${u.id} holds until t=${(t + order.duration).toFixed(2)}`);
+      continue;
+    }
+
     const target = order.path[order.idx];
     const blocker = occupant(target);
 
@@ -554,8 +681,10 @@ function advanceHops(state) {
       // The hop is spent even though the piece doesn't move: it costs the same
       // cooldown as if it had landed. Without that the clock would stand still —
       // a piece could be re-aimed at the same friend and bounce off it forever
-      // at zero cost, and nothing else would ever come due.
-      delete orders[id];
+      // at zero cost, and nothing else would ever come due. The rest of the queue
+      // goes with it: every order behind this one was planned from a square this
+      // piece is now never going to reach.
+      queues = setQueue(queues, id, []);
       ready[id] = t + dist(u.cell, target) / speedOf(u);
       events.push(`${u.id} blocked at ${sqOf(target.x, target.y)}`);
       continue;
@@ -563,7 +692,7 @@ function advanceHops(state) {
     if (blocker) {
       blocker.alive = false;
       blocker.hp = 0;
-      delete orders[blocker.id];   // a taken piece is not still on its way somewhere
+      queues = setQueue(queues, blocker.id, []);   // a taken piece has no plans
       events.push(`${u.id} takes ${blocker.id} on ${sqOf(target.x, target.y)}`);
     }
 
@@ -573,8 +702,8 @@ function advanceHops(state) {
     if (promotesAt(u, target)) { u.type = 'queen'; u.maxHp = maxHpOf('queen'); u.hp = u.maxHp; events.push(`${u.id} promotes`); }
 
     const nextIdx = order.idx + 1;
-    if (nextIdx >= order.path.length) delete orders[id];
-    else orders[id] = { ...order, idx: nextIdx };
+    if (nextIdx >= order.path.length) shift(id);
+    else queues = setQueue(queues, id, [{ ...order, idx: nextIdx }, ...(queues[id] ?? []).slice(1)]);
     ready[id] = t + step / speedOf(u);
   }
 
@@ -584,7 +713,7 @@ function advanceHops(state) {
     board: boardFromUnits(units),
     gameSpecific: {
       ...state.gameSpecific,
-      rt: { ...rt, clock: t, orders, ready, idleTicks: 0, events },
+      rt: { ...rt, clock: t, queues, ready, idleTicks: 0, events },
     },
   };
 }
@@ -635,9 +764,15 @@ export function contactWindow(dp, dv, R) {
   return { enter: (-b - s) / (2 * a), exit: (-b + s) / (2 * a) };
 }
 
-/** Current velocity of a unit under its order (zero if it has none). */
-function velocityOf(u, order) {
-  if (!order || !u.alive) return { x: 0, y: 0, arrive: Infinity };
+/**
+ * Current velocity of a unit under the head of its queue. Zero for a piece with
+ * nothing to do, for one whose head is a delay, and for one still holding out a
+ * delay it was given earlier (`ready`) — all three are the same fact to the
+ * integrator: this body is not going anywhere yet.
+ */
+function velocityOf(u, order, holdingUntil = 0, now = 0) {
+  if (!order || !u.alive || order.kind === 'delay') return { x: 0, y: 0, arrive: Infinity };
+  if (holdingUntil > now + EPS) return { x: 0, y: 0, arrive: Infinity };
   const target = centreOf(order.path[order.idx]);
   const d = dist(u.position, target);
   if (d < EPS) return { x: 0, y: 0, arrive: 0 };
@@ -673,31 +808,50 @@ function velocityOf(u, order) {
  * what a discrete-time turn (`sliding`) wants: one order, resolved to a
  * standstill, then the turn passes.
  */
-function integrate(unitsIn, ordersIn, t0, span) {
+function integrate(unitsIn, queuesIn, readyIn, t0, span) {
   const units = unitsIn.map((u) => ({ ...u, position: { ...u.position } }));
-  const orders = { ...ordersIn };
+  let queues = { ...queuesIn };
+  const ready = { ...readyIn };
   const events = [];
   const deadline = span === Infinity ? Infinity : t0 + span;
   const TOUCH = 2 * HITBOX_R;
   let t = t0;
+  const head = (id) => (queues[id] ?? [])[0];
+  const shift = (id) => { queues = setQueue(queues, id, (queues[id] ?? []).slice(1)); };
+  const velOf = (u) => velocityOf(u, head(u.id), ready[u.id] ?? 0, t);
 
   for (let guard = 0; guard < 5000; guard++) {
     const alive = units.filter((u) => u.alive);
     let interrupted = false;
 
+    // A delay at the head of a queue is consumed the moment it comes up: it sets
+    // the piece's ready time and leaves, so from here down "waiting" and "cooling
+    // down" are the same state and only `ready` has to be consulted.
+    let consumed = false;
+    for (const u of alive) {
+      const h = head(u.id);
+      if (h?.kind !== 'delay') continue;
+      ready[u.id] = t + h.duration;
+      shift(u.id);
+      events.push(`${u.id} holds until t=${(t + h.duration).toFixed(2)}`);
+      consumed = true;
+    }
+    if (consumed) continue;
+
     // A piece that is already touching a friend and is pointed at it never gets
     // to move: its order is off before the step, so nothing interpenetrates.
     let blocked = false;
     for (const u of alive) {
-      const order = orders[u.id];
-      if (!order) continue;
-      const v = velocityOf(u, order);
+      if (!head(u.id)) continue;
+      const v = velOf(u);
       if (!v.x && !v.y) continue;
       const hit = alive.find((o) => o !== u && o.ownerId === u.ownerId
         && dist(o.position, u.position) <= TOUCH + 1e-7
         && (o.position.x - u.position.x) * v.x + (o.position.y - u.position.y) * v.y > 0);
       if (hit) {
-        delete orders[u.id];
+        // The rest of the queue goes too: everything behind this order was
+        // planned from a square the piece is now never going to stand on.
+        queues = setQueue(queues, u.id, []);
         events.push(`${u.id} blocked by ${hit.id}`);
         blocked = true;
       }
@@ -707,14 +861,19 @@ function integrate(unitsIn, ordersIn, t0, span) {
       // hands control back — a piece stopped by its own side wants new orders,
       // and making it stand there until the next arrival wastes it. Only once the
       // clock has actually moved, though: returning at the caller's own clock
-      // would clear `touched` and let the same piece be re-aimed at the same
+      // would clear `locked` and let the same piece be re-aimed at the same
       // friend forever.
       if (span !== Infinity && t > t0 + EPS) break;
       continue;
     }
 
-    const vel = new Map(alive.map((u) => [u.id, velocityOf(u, orders[u.id])]));
+    const vel = new Map(alive.map((u) => [u.id, velOf(u)]));
     const moving = alive.some((u) => vel.get(u.id).x || vel.get(u.id).y);
+    // A piece holding out a delay is going nowhere, but the moment it comes free
+    // IS an event — otherwise a world in which nothing else is happening would
+    // read as settled and the delay would never end.
+    const nextFree = Math.min(...alive.map((u) => (
+      queues[u.id] && (ready[u.id] ?? 0) > t + EPS ? ready[u.id] : Infinity)));
 
     // Every pair's separation as a function of the step: dp + dv·τ. FRIENDLY
     // pairs are in here too, and have to be: their contact is what stops a slide,
@@ -735,7 +894,8 @@ function integrate(unitsIn, ordersIn, t0, span) {
     const overlapAt = (tau) => pairs.filter((p) => p.foe
       && Math.hypot(p.dp.x + p.dv.x * tau, p.dp.y + p.dv.y * tau) < TOUCH);
 
-    if (!moving && overlapAt(0).length === 0) return { units, orders, t, events, settled: true };
+    if (!moving && overlapAt(0).length === 0 && !Number.isFinite(nextFree))
+      return { units, queues, ready, t, events, settled: true };
 
     // How far can the step run before the pieces' arrangement changes?
     let dt = deadline - t;
@@ -744,6 +904,7 @@ function integrate(unitsIn, ordersIn, t0, span) {
       const arrive = vel.get(u.id).arrive;
       if (Number.isFinite(arrive)) consider(arrive);
     }
+    if (Number.isFinite(nextFree)) consider(nextFree - t);
     for (const p of pairs) {
       const w = contactWindow(p.dp, p.dv, TOUCH);
       if (!w) continue;
@@ -767,7 +928,7 @@ function integrate(unitsIn, ordersIn, t0, span) {
       const r = rate.get(u.id);
       if (r > 0) consider(u.hp / r);
     }
-    if (!Number.isFinite(dt)) return { units, orders, t, events, settled: true };
+    if (!Number.isFinite(dt)) return { units, queues, ready, t, events, settled: true };
     if (dt <= EPS) break;
 
     for (const u of alive) {
@@ -782,22 +943,23 @@ function integrate(unitsIn, ordersIn, t0, span) {
       if (u.alive && u.hp <= EPS) {
         u.alive = false;
         u.hp = 0;
-        delete orders[u.id];
+        queues = setQueue(queues, u.id, []);
         events.push(`${u.id} destroyed`);
         interrupted = true;
       }
     }
 
-    // Waypoints reached: turn the corner, or finish the journey.
+    // Waypoints reached: turn the corner, finish the journey, or start the next
+    // order in the queue with no gap and nobody asked.
     for (const u of units) {
-      const order = orders[u.id];
-      if (!u.alive || !order) continue;
+      const order = head(u.id);
+      if (!u.alive || order?.kind !== 'move') continue;
       const target = centreOf(order.path[order.idx]);
       if (dist(u.position, target) > 1e-7) continue;
       u.position = { ...target };
       const nextIdx = order.idx + 1;
       if (nextIdx >= order.path.length) {
-        delete orders[u.id];
+        shift(u.id);
         if (promotesAt(u, order.path[order.idx])) {
           u.type = 'queen';
           u.maxHp = maxHpOf('queen');
@@ -806,7 +968,7 @@ function integrate(unitsIn, ordersIn, t0, span) {
         }
         events.push(`${u.id} arrives on ${sqOf(order.path[order.idx].x, order.path[order.idx].y)}`);
         interrupted = true;
-      } else orders[u.id] = { ...order, idx: nextIdx };
+      } else queues = setQueue(queues, u.id, [{ ...order, idx: nextIdx }, ...(queues[u.id] ?? []).slice(1)]);
     }
 
     if (t >= deadline - EPS) break;
@@ -816,7 +978,7 @@ function integrate(unitsIn, ordersIn, t0, span) {
   }
 
   for (const u of units) u.cell = cellOf(u.position);
-  return { units, orders, t, events, settled: false };
+  return { units, queues, ready, t, events, settled: false };
 }
 
 /**
@@ -826,17 +988,17 @@ function integrate(unitsIn, ordersIn, t0, span) {
  */
 function advanceSlides(state) {
   const rt = state.gameSpecific.rt;
-  const anythingToDo = Object.keys(rt.orders).length > 0 || hasContact(state.units);
+  const anythingToDo = Object.keys(rt.queues).length > 0 || hasContact(state.units);
   if (!anythingToDo) return idleAdvance(state);
 
-  const res = integrate(state.units, rt.orders, rt.clock, IDLE_TICK);
+  const res = integrate(state.units, rt.queues, rt.ready, rt.clock, IDLE_TICK);
   for (const u of res.units) u.cell = cellOf(u.position);
   return {
     ...state,
     units: res.units,
     gameSpecific: {
       ...state.gameSpecific,
-      rt: { ...rt, clock: res.t, orders: res.orders, idleTicks: 0, events: res.events },
+      rt: { ...rt, clock: res.t, queues: res.queues, ready: res.ready, idleTicks: 0, events: res.events },
     },
   };
 }
@@ -864,8 +1026,8 @@ const hasContact = (units) => {
  */
 function resolveSingleMove(state, playerId, action) {
   const rt = state.gameSpecific.rt;
-  const orders = { [action.unitId]: { path: action.path, idx: 0, pathId: action.pathId ?? 0 } };
-  const res = integrate(state.units, orders, rt.clock, Infinity);
+  const queues = { [action.unitId]: [{ kind: 'move', path: action.path, idx: 0, pathId: action.pathId ?? 0 }] };
+  const res = integrate(state.units, queues, {}, rt.clock, Infinity);
   for (const u of res.units) u.cell = cellOf(u.position);
   const opponent = opponentOf(playerId);
   return {
@@ -878,7 +1040,7 @@ function resolveSingleMove(state, playerId, action) {
     // shuffle without contact, and this one always ends on a destroyed king.
     gameSpecific: {
       ...state.gameSpecific,
-      rt: { ...rt, clock: res.t, orders: {}, idleTicks: 0, events: res.events },
+      rt: { ...rt, clock: res.t, queues: {}, ready: {}, idleTicks: 0, events: res.events },
     },
   };
 }
@@ -928,8 +1090,13 @@ export function evaluateState(state, playerId) {
     const here = unitCell(u);
     if (enemyKing) score -= 0.01 * dist(here, unitCell(enemyKing));
 
-    const order = rt.orders[u.id];
-    if (!order) continue;
+    // Only the HEAD of the queue is scored: it is the order actually under way,
+    // and what a queued one will be worth depends on a board nobody can see yet.
+    // (A one-ply agent never queues anyway — `getSearchActions` keeps the
+    // planning orders out of its reach entirely — so this only has to price what
+    // a piece is doing now.)
+    const order = queueOf(rt, u.id)[0];
+    if (order?.kind !== 'move') continue;
     // What this journey is pointed at: the best enemy still standing on the part
     // of the route the piece has yet to walk, discounted by how far off it is.
     for (let i = order.idx; i < order.path.length; i++) {
@@ -947,6 +1114,44 @@ export function evaluateState(state, playerId) {
 // ── Presentation ─────────────────────────────────────────────────────────────
 
 const GLYPH = { king: 'K', queen: 'Q', rook: 'R', bishop: 'B', knight: 'N', pawn: 'P' };
+
+/**
+ * A piece's queue in the shape the client's goto-queue overlay wants: a waypoint
+ * per order, oldest first. A move contributes the square it ends on; a delay has
+ * no square at all, so it contributes a labelled entry with no coordinates and
+ * the overlay simply doesn't draw a leg for it.
+ */
+const queueEntriesForUi = (queue) => queue.map((e) => (e.kind === 'delay'
+  ? { label: `hold ${e.duration}` }
+  : { x: e.path[e.path.length - 1].x, y: e.path[e.path.length - 1].y }));
+
+/**
+ * A player-level plan (games/planQueue.js), re-cut as per-PIECE waypoint lists so
+ * the client's goto-queue overlay can draw it: `Map(square the piece stands on
+ * now → the squares it will visit, in order)`.
+ *
+ * The re-cutting is the whole job. A plan is a list of MOVES, and the second move
+ * of a piece starts from a square it has not reached yet, so the waypoints have to
+ * be traced back to where each piece stands today or they attach to empty squares.
+ */
+export function planWaypoints(plan) {
+  const originOf = new Map();   // square a piece will be on → square it is on now
+  const routes = new Map();     // that original square → waypoints, in order
+  for (const move of plan ?? []) {
+    if (!move?.from || !move?.to) continue;
+    const origin = originOf.get(move.from) ?? move.from;
+    const cell = gridOf(move.to);
+    routes.set(origin, [...(routes.get(origin) ?? []), { x: cell.x, y: cell.y }]);
+    originOf.delete(move.from);
+    originOf.set(move.to, origin);
+  }
+  return routes;
+}
+
+/** One queue entry, said out loud: a destination square, or a hold. */
+const describeEntry = (e) => (e.kind === 'delay'
+  ? `hold ${e.duration}`
+  : sqOf(e.path[e.path.length - 1].x, e.path[e.path.length - 1].y));
 
 export function renderState(state) {
   const rt = state.gameSpecific.rt;
@@ -966,9 +1171,9 @@ export function renderState(state) {
     rows.push(`${8 - y} ${cells.join(' ')}`);
   }
   rows.push('  ' + FILES.split('').join(' '));
-  const orders = Object.entries(rt.orders).map(([id, o]) => {
-    const dest = o.path[o.path.length - 1];
-    return `${id}→${sqOf(dest.x, dest.y)}`;
+  const orders = Object.entries(rt.queues).map(([id, q]) => {
+    const held = (rt.ready[id] ?? 0) > rt.clock + EPS ? `(held to ${rt.ready[id].toFixed(2)})` : '';
+    return `${id}${held}→${q.map(describeEntry).join('→')}`;
   });
   const lines = [head, ...rows];
   if (orders.length) lines.push(`orders: ${orders.join(' ')}`);
@@ -1001,9 +1206,18 @@ export function toGrid(state, colors) {
     }
   }
 
+  // In discrete time the queue on the board is the PLAYER's plan, re-cut per piece
+  // (planWaypoints); in continuous time it is each piece's own order queue.
+  // Either way only the viewer's own is drawn in full — see the enemy rule below.
+  const viewer = state.viewerId ?? null;
+  const planRoutes = rt.time === 'continuous'
+    ? new Map()
+    : (viewer ? planWaypoints(state.gameSpecific.plan?.[viewer]) : new Map());
+
   const units = liveUnits(state).map((u) => {
-    const order = rt.orders[u.id];
-    const dest = order ? order.path[order.path.length - 1] : null;
+    const queue = queueOf(rt, u.id);
+    const mine = !viewer || u.ownerId === viewer;
+    const holding = (rt.ready[u.id] ?? 0) > rt.clock + EPS;
     // Continuous space hands over the exact point; discrete space hands over the
     // integer cell index and lets the client centre it (App.vue's
     // `positionedOffset` adds the half-cell for a positioned grid game — adding
@@ -1019,9 +1233,23 @@ export function toGrid(state, colors) {
       hp: rt.space === 'continuous' ? Math.ceil(u.hp) : undefined,
       maxHp: rt.space === 'continuous' ? u.maxHp : undefined,
       imagePath: `/images/chess/${u.ownerId === 'white' ? 'w' : 'b'}${GLYPH[u.type]}`,
-      // Shown as the piece's standing order in the unit panel, and the reason a
-      // committed piece offers `cancel` instead of a new destination.
-      statusEffects: dest ? [`→ ${sqOf(dest.x, dest.y)}`] : [],
+      // The piece's plan, in the shape the generic goto-queue UI already draws
+      // (games/moveQueue.js): a dashed, numbered route on the board and a chip
+      // list in the side panel. A `delay` has no square to draw, so it carries a
+      // `label` and no coordinates — see HtmlLayer's queueSegments.
+      //
+      // An ENEMY piece shows only the leg it is on, never the rest of its queue.
+      // Where a body is heading right now is a physical fact — you can watch it
+      // move — but what it means to do after that is intent, and in a game both
+      // sides play into the same instant, reading the opponent's whole plan off
+      // the board would be the end of the game as a contest.
+      queue: rt.time === 'continuous'
+        ? (mine ? queueEntriesForUi(queue) : queueEntriesForUi(queue.slice(0, 1)))
+        : (mine ? planRoutes.get(sqOf(unitCell(u).x, unitCell(u).y)) : undefined),
+      statusEffects: [
+        ...(holding && mine ? [`holding to t=${rt.ready[u.id].toFixed(2)}`] : []),
+        ...(queue.length && mine ? [`→ ${queue.map(describeEntry).join(' → ')}`] : []),
+      ],
       radius: rt.space === 'continuous' ? HITBOX_R : undefined,
     };
   });
