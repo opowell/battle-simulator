@@ -112,6 +112,15 @@ const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value 
            :src="teamSpriteHref(unit.imagePath, unit.teamObj?.raw, recolor)"/>
       <span v-else-if="showLetter" class="hl-letter"
             :style="{ fontFamily: rdr.font, fontSize: labelFontSize(unit)+'px' }">{{ unitLabel(unit) }}</span>
+
+      <!-- Standing order (civ1's fortifying/sentry/fortified — see App.vue's statusMark):
+           a frame drawn round the body, a letter in its corner, or both. Both sit on top
+           of the body without a layout slot of their own, so the sprite under them is
+           never nudged and the mark reads the same whatever that token is. -->
+      <div v-if="unit.statusMark?.frame" class="hl-statusframe" :title="unit.statusMark.title"/>
+      <span v-if="unit.statusMark?.glyph" class="hl-statusglyph"
+            :title="unit.statusMark.title"
+            :style="{ fontFamily: rdr.font, fontSize: (r * 0.8)+'px' }">{{ unit.statusMark.glyph }}</span>
     </div>
 
     <!-- HP bar, stacked under the body by the flex column -->
@@ -145,6 +154,23 @@ const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value 
 .hl-ring-active   { outline: 2px solid #fff; outline-offset: 5px; box-shadow: 0 0 0 9px rgba(255,255,255,0.25); animation: hl-pulse 1.4s ease-in-out infinite; }
 .hl-ring-selected { outline: 1.5px dashed rgba(255,255,255,0.75); outline-offset: 4px; }
 .hl-ring-hover    { outline: 1.5px solid rgba(255,255,255,0.5); outline-offset: 4px; }
+
+/* Status marks. The frame sits just OUTSIDE the body (and inherits its border-radius, so
+   a circular marker gets a circular frame): unit sprites tend to carry a pale edge of
+   their own, and a frame drawn on that edge is read as part of the art rather than as a
+   state. The dark line either side of the white one keeps it legible over both pale
+   terrain and a pale sprite. Neither mark is hit-testable — the token under it stays
+   clickable, including the part the glyph covers. */
+.hl-statusframe {
+  position: absolute; inset: -3px; box-sizing: border-box; pointer-events: none;
+  border: 2px solid rgba(255,255,255,0.95); border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.6);
+}
+.hl-statusglyph {
+  position: absolute; top: -2px; right: -1px; pointer-events: none;
+  font-weight: 800; line-height: 1; color: #fff;
+  text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000;
+}
 
 .hl-hp { height: 3px; flex: none; }
 .hl-hp-fill { height: 100%; }

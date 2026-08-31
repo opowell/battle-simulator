@@ -195,6 +195,53 @@ test('civ1: a city carries what its city screen draws — population, garrison, 
 });
 
 // ---------------------------------------------------------------------------
+// Standing orders, as the map shows them
+// ---------------------------------------------------------------------------
+
+// The original draws its three standing-order states differently: an "F" over a unit
+// still digging in, a frame round one that is dug in, an "S" over a sentry. toGrid
+// reports which of those a square wears (statusMark) — see HtmlUnit.vue.
+test('civ1: fortifying wears an F, and is a frame by the time the turn comes back round', () => {
+  const state = Civ1Game.createInitialState(players());
+  const unit = state.units.find(u => u.ownerId === 'p1');
+  const cellOf = s => Civ1Game.toGrid(s).cells.find(c => c.unitId === unit.id);
+
+  const digging = Civ1Game.applyActions(state,
+    [{ playerId: 'p1', action: { type: 'fortify', unitId: unit.id } }]);
+  assert.equal(cellOf(digging).statusMark?.glyph, 'F', 'still digging in: a letter');
+  assert.ok(!cellOf(digging).statusMark?.frame);
+  assert.deepEqual(cellOf(digging).statusEffects, ['fortifying']);
+
+  // A round later the unit is dug in: the letter goes, the frame arrives. The defence
+  // bonus was there all along (combat.js reads attrs.fortified, which the order sets),
+  // so only the drawing tells the two apart.
+  const dugIn = endTurn(endTurn(digging, 'p1'), 'p2');
+  assert.equal(dugIn.units.find(u => u.id === unit.id).attrs.fortified, true);
+  assert.equal(cellOf(dugIn).statusMark?.frame, true, 'dug in: a frame, no letter');
+  assert.ok(!cellOf(dugIn).statusMark?.glyph);
+  assert.deepEqual(cellOf(dugIn).statusEffects, ['fortified']);
+});
+
+test('civ1: a sentry wears an S, and a fresh order takes the mark off', () => {
+  const state = Civ1Game.createInitialState(players());
+  const unit = state.units.find(u => u.ownerId === 'p1');
+  const cellOf = s => Civ1Game.toGrid(s).cells.find(c => c.unitId === unit.id);
+
+  const watching = Civ1Game.applyActions(state,
+    [{ playerId: 'p1', action: { type: 'sentry', unitId: unit.id } }]);
+  assert.equal(cellOf(watching).statusMark?.glyph, 'S');
+  assert.deepEqual(cellOf(watching).statusEffects, ['sentry']);
+
+  // Moving is a fresh order, so it drops the standing one — mark and all.
+  const refreshed = endTurn(endTurn(watching, 'p1'), 'p2');
+  const move = Civ1Game.getLegalActions(refreshed, 'p1')
+    .find(a => a.type === 'move' && a.unitId === unit.id);
+  const moved = Civ1Game.applyActions(refreshed, [{ playerId: 'p1', action: move }]);
+  assert.equal(cellOf(moved).statusMark, undefined, 'a moving unit has no standing order');
+  assert.deepEqual(cellOf(moved).statusEffects, []);
+});
+
+// ---------------------------------------------------------------------------
 // Self-play
 // ---------------------------------------------------------------------------
 

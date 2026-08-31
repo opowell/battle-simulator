@@ -726,6 +726,11 @@ function buildField(g, s) {
       abilities:     c.abilities,
       equipment:     c.equipment,
       statusEffects: c.statusEffects,
+      // The one standing order worth SEEING on the board rather than reading in the
+      // panel — a game's toGrid may set { glyph?, frame?, title? } (civ1: fortifying/
+      // sentry/fortified). The renderer draws the glyph as a corner letter on the token
+      // and the frame as a box round it; see battlefield/HtmlUnit.vue.
+      statusMark:    c.statusMark,
       // Whether this unit still wants orders this turn (a game's toGrid may set this —
       // see Civ1Game.js's `needsOrders`); drives Battlefield.vue's opt-in
       // ui.autoAdvanceUnit feature. Undefined for games with no such concept.
