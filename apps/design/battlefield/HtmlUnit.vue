@@ -149,7 +149,10 @@ const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value 
 .hl-hp { height: 3px; flex: none; }
 .hl-hp-fill { height: 100%; }
 
+/* The blink is a hard on/off cut: steps(1), and the off frame is fully transparent
+   rather than dimmed, so the token disappears outright instead of ghosting. It stays
+   hit-testable while invisible, so a click still lands on the unit. */
 .hl-blink { animation: hl-blink 0.7s steps(1) infinite; }
-@keyframes hl-blink { 50% { opacity: 0.35; } }
+@keyframes hl-blink { 50% { opacity: 0; } }
 @keyframes hl-pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
 </style>
