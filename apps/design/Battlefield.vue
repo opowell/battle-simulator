@@ -118,6 +118,11 @@ const showHelp   = ref(false);
 // ── selection ─────────────────────────────────────────────────
 const selectedId = ref(null);
 const hoveredId  = ref(null);
+// Set when the selection was picked out of the city screen's garrison box rather than
+// off the board — it says the selected id means the UNIT, not the city sharing its
+// square. Declared up here with selectedId because selectUnit, below, clears it; see
+// selectedCity for why the two need telling apart at all.
+const garrisonPick = ref(null);
 
 // Empty-square selection (terrain info), only meaningful for games whose cells carry
 // `terrain` data (see field.hasTerrain, computed in App.vue's buildField). Selecting a
@@ -160,8 +165,17 @@ function pointInShape(s, px, py) {
 
 function selectUnit(id) {
   selectedId.value = id;
+  garrisonPick.value = null;
   if (id) { selectedSquare.value = null; selectedShape.value = null; inspectTerrain.value = false; }
   aiming.value = null;
+}
+
+// Picking a unit out of the city screen's "Units in City" box (see garrisonPick, and
+// CityInspectorOverlay's select-unit). Goes through selectUnit first so it clears the
+// same things any other selection does, then claims the id as a garrison pick.
+function selectGarrisonUnit(id) {
+  selectUnit(id);
+  garrisonPick.value = id;
 }
 
 // ── aiming (throw/shoot: pick a button, then a spot/direction on the map) ───────
@@ -1628,9 +1642,19 @@ watch(() => [selectedId.value, selectedUnit.value?.needsOrders],
 // number), so it doubles as "this selection is a city, not a unit" here. When it is,
 // the City Inspector overlay takes over instead of the generic SelectedUnitDetail
 // sidebar (see games/civ1/Civ1Game.js's `cities` field for the full per-city detail).
+//
+// …but a city and the unit garrisoned in it share one square, and the city wins the
+// token: one id for two things, so a unit inside a city could be selected and never
+// *reached* — every click on that square put the city screen over it and its orders
+// behind that. garrisonPick is the way out: the screen's "Units in City" box picks the
+// unit by id (selectGarrisonUnit), and that pick says the selection means the UNIT, so
+// the screen closes and leaves it in hand. The token was already describing the unit
+// (its unitName, portrait, HP and MP are the unit's — see toGrid), so nothing else has
+// to change. Any other selection goes through selectUnit and clears the pick, which is
+// what lets a click on that same city open its screen again.
 const selectedCity = computed(() => {
   const u = selectedUnit.value;
-  if (!u || u.badge == null) return null;
+  if (!u || u.badge == null || garrisonPick.value === selectedId.value) return null;
   const x = Math.floor(u.x), y = Math.floor(u.y);
   return (props.field.cities ?? []).find(c => c.x === x && c.y === y) ?? null;
 });
@@ -2215,7 +2239,7 @@ onUnmounted(() => {
 
   <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
     :team="selectedCityTeam" :recolor="field.ui?.recolorTeamSprites"
-    @close="selectedId = null" @submit="submitAction"/>
+    @close="selectedId = null" @submit="submitAction" @select-unit="selectGarrisonUnit"/>
 
   <GameOverOverlay
     :isDone="isDone" :dismissed="dismissedResult" :liveState="liveState"
