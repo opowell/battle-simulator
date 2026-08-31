@@ -147,10 +147,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
               <div v-if="city.garrison?.length" class="ci-garrison">
                 <button v-for="u in city.garrison" :key="u.id" class="ci-unit"
                         :class="{ 'ci-unit--orders': u.needsOrders }"
-                        :title="`${u.type} — click to select`"
+                        :title="`${u.type}${u.statusMark ? ` · ${u.statusMark.title}` : ''} — click to select`"
                         @click="emit('select-unit', u.id)">
                   <img :src="teamSpriteHref(u.image, team?.raw, recolor)"
                        class="ci-unit-img" draggable="false"/>
+                  <!-- The standing order this defender is on, in the same idiom the board
+                       uses for a unit out in the open (a frame round it, or a letter in
+                       the corner — see battlefield/HtmlUnit.vue). A garrison never gets
+                       that mark on the map, because the city's own token wins the square. -->
+                  <span v-if="u.statusMark?.frame" class="ci-unit-frame"/>
+                  <span v-if="u.statusMark?.glyph" class="ci-unit-glyph">{{ u.statusMark.glyph }}</span>
                 </button>
               </div>
               <div v-else class="ci-none">undefended</div>
@@ -211,12 +217,25 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
 .ci-res-v--bad { color: #ff5f56; }
 
 .ci-garrison { display: flex; flex-wrap: wrap; gap: 4px; }
-.ci-unit { width: 44px; height: 44px; padding: 0; background: var(--bg3); border: 1px solid var(--line); cursor: pointer; }
+.ci-unit { position: relative; width: 44px; height: 44px; padding: 0; background: var(--bg3); border: 1px solid var(--line); cursor: pointer; }
 .ci-unit:hover { background: var(--bg1); border-color: var(--line2); }
 /* Still wants orders this turn — the same units the board's next-unit key chases, so
    the box says at a glance which of them are waiting on you. */
 .ci-unit--orders { border-color: #f2b441; }
 .ci-unit-img { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+/* Standing-order marks, drawn over the sprite without taking a layout slot — the tile
+   stays a plain 44px button whether the unit is on an order or not. Both sit inside the
+   button's own border, so the amber "wants orders" edge is still readable around them. */
+.ci-unit-frame {
+  position: absolute; inset: 2px; box-sizing: border-box; pointer-events: none;
+  border: 2px solid rgba(255,255,255,0.95);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.6);
+}
+.ci-unit-glyph {
+  position: absolute; top: 0; right: 2px; pointer-events: none;
+  font-size: 15px; font-weight: 800; line-height: 1.1; color: #fff;
+  text-shadow: 0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000;
+}
 
 .ci-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .ci-chip { font-size: 12px; padding: 3px 8px; border-radius: 3px; background: var(--bg3); color: var(--txt); }

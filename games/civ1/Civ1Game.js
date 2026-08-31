@@ -124,12 +124,13 @@ function wakeSentryUnits(units, playerId, boardWidth) {
 // game's own three answers: a unit still digging in wears an "F", a sentried one an
 // "S", and one that is dug in gets a frame drawn round it instead of a letter — the
 // state you leave a stack of defenders in is the one that costs no ink to read.
-// Only one order can stand at a time (each of fortify/sentry clears the other), so a
-// mark is a single answer, not a set.
+// Only one order can stand at a time (each of fortify/sentry clears the other, and
+// fortifying/fortified are the two halves of one order), so a mark is a single answer,
+// not a set.
 function statusMarkFor(unit) {
   if (unit.attrs?.sentry) return { glyph: 'S', title: 'Sentry — wakes when an enemy comes into view' };
-  if (unit.attrs?.fortifying) return { glyph: 'F', title: 'Fortifying — dug in from next turn' };
-  if (unit.attrs?.fortified) return { frame: true, title: 'Fortified' };
+  if (unit.attrs?.fortifying) return { glyph: 'F', title: 'Fortifying — no defence bonus until next turn' };
+  if (unit.attrs?.fortified) return { frame: true, title: 'Fortified — +50% defence' };
   return undefined;
 }
 
@@ -299,7 +300,7 @@ function getLegalActions(state, playerId) {
       // fresh order (see the attrs-clearing in applyMove/attack/build*/queue-move
       // below) — that's also what lets the auto-advance-to-next-unit UI feature
       // skip past them (see Civ1Game's `needsOrders` in toGrid).
-      if (stats.domain !== 'air' && !unit.attrs?.fortified) {
+      if (stats.domain !== 'air' && !unit.attrs?.fortified && !unit.attrs?.fortifying) {
         actions.push({ type: 'fortify', unitId: unit.id });
       }
       if (!unit.attrs?.sentry) {
@@ -671,9 +672,11 @@ function applyOneAction(state, playerActions, rng = Math.random) {
         const base = ST.moveBudget(kinematics, u, state)
           + (UNITS[u.type].domain === 'sea' ? navalBonus : 0);
         // A unit that spent last turn fortifying is dug in by the time the turn comes
-        // back round: the transient flag goes, attrs.fortified stays (see the 'fortify'
-        // action in applyActions).
-        const attrs = u.attrs?.fortifying ? { ...u.attrs, fortifying: false } : u.attrs;
+        // back round — and only now does it earn the +50% (see the 'fortify' action in
+        // applyActions). Digging in through an enemy turn is the price of the bonus.
+        const attrs = u.attrs?.fortifying
+          ? { ...u.attrs, fortifying: false, fortified: true }
+          : u.attrs;
         return { ...u, movesLeft: base, attrs };
       }
       return u;
@@ -892,23 +895,26 @@ function applyOneAction(state, playerActions, rng = Math.random) {
   }
 
   // ── skip-unit ─────────────────────────────────────────────────────────────
-  // Deliberately leaves attrs.fortified/attrs.sentry untouched — "wait" on an
-  // already-fortified/sentried unit isn't a new order, same as the original.
+  // Deliberately leaves the standing-order attrs untouched — "wait" on a unit that is
+  // already fortifying/fortified/sentried isn't a new order, same as the original (so
+  // a unit part-way through digging in keeps digging).
   if (action.type === 'skip-unit') {
     units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0 } : u);
     return { ...state, units, lastActions: playerActions };
   }
 
   // ── fortify / sentry (standing orders) ──────────────────────────────────────
-  // Digging in takes the rest of the turn: the unit is *fortifying* now and counts as
-  // fortified from the owner's next turn on (the flag is cleared where their moves
-  // refresh, see the 'end-turn' handling above). The original draws those two states
-  // differently — an "F" while it digs in, a frame around it once it's dug in — which
-  // is what toGrid's statusMark below reports. Both already carry the defence bonus
-  // (combat.js reads attrs.fortified, which is set from the moment the order is given).
+  // Digging in takes a turn, as in the original: the order leaves the unit *fortifying*
+  // — no defence bonus yet — and it is fortified from the owner's next turn on (the
+  // promotion happens where their moves refresh, see the 'end-turn' handling above).
+  // The two flags are mutually exclusive, so everything that asks "is this unit dug
+  // in?" — combat.js's +50%, production.js's standing defence, toGrid's pick of the
+  // stack's best defender — gets the answer right by reading attrs.fortified alone.
+  // The map tells them apart too: an "F" while it digs in, a frame once it is dug in
+  // (see statusMarkFor).
   if (action.type === 'fortify') {
     units = units.map(u => u.id === action.unitId
-      ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: true, fortifying: true, sentry: false } }
+      ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, fortifying: true, sentry: false } }
       : u);
     return { ...state, units, lastActions: playerActions };
   }
@@ -1417,7 +1423,7 @@ function identityOf(state, playerId) {
   for (const u of state.units) {
     if (!u.alive) continue;
     const orders = u.ownerId === playerId
-      ? `:${u.movesLeft}:${u.attrs?.fortified ? 'F' : ''}${u.attrs?.sentry ? 'S' : ''}:${u.queue?.length ?? 0}`
+      ? `:${u.movesLeft}:${u.attrs?.fortified ? 'F' : ''}${u.attrs?.fortifying ? 'f' : ''}${u.attrs?.sentry ? 'S' : ''}:${u.queue?.length ?? 0}`
       : '';
     (stacks[`u:${u.position.x},${u.position.y}`] ??= []).push(`${u.ownerId}:${u.type}:${u.hp}${orders}`);
   }
@@ -1825,7 +1831,8 @@ export const Civ1Game = {
     // pickDefender; terrain and city bonuses are common to everyone standing here, so
     // ranking on the unit's own modifiers puts them in the same order), then by id so
     // the pick never wobbles between two identical units.
-    const wantsOrders = u => u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.sentry;
+    const wantsOrders = u => u.movesLeft > 0
+      && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry;
     const defenceRank = u => UNITS[u.type].defense
       * (u.attrs?.fortified ? 1.5 : 1) * (u.attrs?.veteran ? 1.5 : 1);
     const cmap = {};
@@ -1845,7 +1852,8 @@ export const Civ1Game = {
     // square — how many are standing there, since only the top of a stack is visible
     // on the board.
     const statusTags = (u, stackSize) => [
-      ...(u.attrs?.fortified ? [u.attrs.fortifying ? 'fortifying' : 'fortified'] : []),
+      ...(u.attrs?.fortifying ? ['fortifying'] : []),
+      ...(u.attrs?.fortified ? ['fortified'] : []),
       ...(u.attrs?.sentry ? ['sentry'] : []),
       ...(stackSize > 1 ? [`stack of ${stackSize}`] : []),
     ];
@@ -2015,7 +2023,7 @@ export const Civ1Game = {
           // parked on a standing order. Drives the generic auto-advance-to-next-unit
           // UI feature (ui.autoAdvanceUnit below, see Battlefield.vue) — most games
           // don't have a persistent per-unit order state, so this is undefined for them.
-          needsOrders: u ? (u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.sentry) : undefined,
+          needsOrders: u ? (u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry) : undefined,
         });
       }
     }
@@ -2138,7 +2146,11 @@ export const Civ1Game = {
         garrison: units.filter(u => u.alive && u.position.x === c.position.x && u.position.y === c.position.y)
           .map(u => ({
             id: u.id, type: u.type, image: `${BASE}/units/${u.type}`, hp: u.hp, maxHp: u.maxHp,
-            needsOrders: u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.sentry,
+            needsOrders: u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry,
+            // …and what standing order it is on. The map can't say it for a garrison —
+            // the city wins the square — so this box is where a defender's F/S/frame
+            // has to be readable (see CityInspectorOverlay.vue).
+            statusMark: statusMarkFor(u),
           })),
         production: c.production, productionName: prod,
         shields: c.shields, buildCost: buildCost(c.production),

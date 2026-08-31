@@ -149,7 +149,9 @@ export function attackStrength(type) {
 }
 
 // A unit standing where it is now: veteran and dug-in both multiply defence by 1.5
-// in combat.js, so both belong in what the city can already count on.
+// in combat.js, so both belong in what the city can already count on. A unit still
+// digging in (attrs.fortifying) is not dug in yet and carries no bonus in combat.js
+// either — counting one here would have the city bank defence it doesn't have.
 function standingDefence(unit) {
   let d = defenceStrength(unit.type);
   if (unit.attrs?.veteran) d *= 1.5;

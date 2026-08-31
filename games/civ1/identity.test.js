@@ -51,6 +51,17 @@ test('civ1 identity distinguishes the orders a move never shows on the map', () 
   const skipped   = sig(apply(state, 'p1', { type: 'skip-unit', unitId: unit.id }), 'p1');
   assert.notEqual(fortified, skipped);
   assert.notEqual(fortified, sig(state, 'p1'));
+
+  // …and the two halves of the fortify order are different states too: a unit still
+  // digging in has no defence bonus and one that is dug in has +50% (combat.js), so a
+  // search that keyed them the same would be planning against the wrong board.
+  const digging = apply(state, 'p1', { type: 'fortify', unitId: unit.id });
+  const dugIn = {
+    ...digging,
+    units: digging.units.map(u => u.id === unit.id
+      ? { ...u, attrs: { ...u.attrs, fortifying: false, fortified: true } } : u),
+  };
+  assert.notEqual(sig(digging, 'p1'), sig(dugIn, 'p1'));
 });
 
 test('civ1 identity names the empire ledger, not just the board', () => {

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Civ1Game } from './index.js';
+import { getCombatStrengths } from './combat.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -172,6 +173,14 @@ test('civ1: a city carries what its city screen draws — population, garrison, 
   assert.equal(g.id, unit.id, 'the pick is by unit id');
   assert.equal(g.needsOrders, true, 'a fresh unit in a city is still waiting on you');
 
+  // The box is also the only place a garrison's standing order can be seen — the city
+  // wins the square, so a defender never wears its mark on the map.
+  const sentried = Civ1Game.applyActions(withCity,
+    [{ playerId: 'p1', action: { type: 'sentry', unitId: unit.id } }]);
+  const onWatch = Civ1Game.toGrid(sentried).cities.find(c => c.id === 'city-test');
+  assert.equal(onWatch.garrison[0].statusMark?.glyph, 'S');
+  assert.equal(onWatch.garrison[0].needsOrders, false);
+
   // apps/design is game-agnostic by rule, so every picture the screen draws has to be
   // named in the payload — icons included, not built from paths on the client.
   assert.match(city.icons.food, /city\/food$/);
@@ -211,15 +220,35 @@ test('civ1: fortifying wears an F, and is a frame by the time the turn comes bac
   assert.equal(cellOf(digging).statusMark?.glyph, 'F', 'still digging in: a letter');
   assert.ok(!cellOf(digging).statusMark?.frame);
   assert.deepEqual(cellOf(digging).statusEffects, ['fortifying']);
+  assert.ok(!digging.units.find(u => u.id === unit.id).attrs.fortified,
+    'digging in is not yet dug in — no bonus this turn (see combat.js)');
 
-  // A round later the unit is dug in: the letter goes, the frame arrives. The defence
-  // bonus was there all along (combat.js reads attrs.fortified, which the order sets),
-  // so only the drawing tells the two apart.
+  // A round later the order has finished: the letter goes, the frame arrives, and only
+  // now is the unit fortified.
   const dugIn = endTurn(endTurn(digging, 'p1'), 'p2');
-  assert.equal(dugIn.units.find(u => u.id === unit.id).attrs.fortified, true);
+  const after = dugIn.units.find(u => u.id === unit.id).attrs;
+  assert.equal(after.fortified, true);
+  assert.ok(!after.fortifying, 'the two halves of the order are exclusive');
   assert.equal(cellOf(dugIn).statusMark?.frame, true, 'dug in: a frame, no letter');
   assert.ok(!cellOf(dugIn).statusMark?.glyph);
   assert.deepEqual(cellOf(dugIn).statusEffects, ['fortified']);
+});
+
+// The point of the two-stage order, as in the original: digging in costs a turn, so the
+// +50% is not something an attacked unit can conjure the moment it is threatened.
+test('civ1: the fortify bonus lands only once the unit is dug in', () => {
+  const state = Civ1Game.createInitialState(players());
+  const unit = state.units.find(u => u.ownerId === 'p1' && u.type === 'militia');
+  const enemy = state.units.find(u => u.ownerId === 'p2' && u.type === 'militia');
+  const defOf = s => getCombatStrengths(enemy, s.units.find(u => u.id === unit.id), s).def;
+
+  const bare = defOf(state);
+  const digging = Civ1Game.applyActions(state,
+    [{ playerId: 'p1', action: { type: 'fortify', unitId: unit.id } }]);
+  assert.equal(defOf(digging), bare, 'still digging in: defence unchanged');
+
+  const dugIn = endTurn(endTurn(digging, 'p1'), 'p2');
+  assert.equal(defOf(dugIn), bare * 1.5, 'dug in: +50%');
 });
 
 test('civ1: a sentry wears an S, and a fresh order takes the mark off', () => {

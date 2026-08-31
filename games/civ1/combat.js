@@ -32,7 +32,9 @@ export function getCombatStrengths(attacker, defender, state) {
   if (defender.attrs?.veteran) def *= 1.5;
 
   // Fortify bonus: +50% defense while dug in (attrs.fortified — see Civ1Game.js's
-  // 'fortify' action; cleared the moment the unit gets a fresh order).
+  // 'fortify' action; cleared the moment the unit gets a fresh order). A unit that
+  // was ordered to dig in this turn is only attrs.fortifying and gets nothing yet:
+  // the bonus arrives when the order finishes, on its owner's next turn.
   if (defender.attrs?.fortified) def *= 1.5;
 
   return { att, def };
