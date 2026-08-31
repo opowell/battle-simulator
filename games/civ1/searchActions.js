@@ -59,9 +59,11 @@ const K_MOVES = 4;
 const K_ATTACKS = 2;
 const K_PRODUCTION = 3;
 
-// Mirrors ai.js: don't found cities on the capital's doorstep.
+// Mirrors ai.js: don't found cities on the capital's doorstep, and don't pile units
+// onto one square outside a city (ai.js STACK_PENALTY, in tiles of detour).
 const MIN_CITY_SPACING = 4;
 const CITY_TARGET = 6;
+const STACK_PENALTY = 3;
 
 // Won't trade into a coin flip (ai.js MIN_WIN_PROB) — but the search is allowed to
 // look at slightly worse odds than the heuristic agent takes, because it can see
@@ -236,10 +238,23 @@ function unitActions(legal, obs, playerId, unit) {
     const enemyCities = obs.cities.filter(c => c.ownerId !== playerId).map(c => c.position);
     const targets = [...enemies, ...enemyCities];
 
+    // Piling up outside a city loses every unit on the square to one lost defence
+    // (civ1 stack death — see Civ1Game's resolveAttack), so a step onto one of our own
+    // units is worth STACK_PENALTY tiles of detour, the same price ai.js puts on it.
+    // Moves are scored at 4 a tile below, and a city square is exempt: that is a
+    // garrison, and a city dies one unit at a time.
+    const minePos = new Set(obs.units.filter(u => u.alive && u.ownerId === playerId)
+      .map(u => `${u.position.x},${u.position.y}`));
+    const myCityPos = new Set(myCities.map(c => `${c.position.x},${c.position.y}`));
+    const stackCost = (to) => {
+      const k = `${to.x},${to.y}`;
+      return (minePos.has(k) && !myCityPos.has(k)) ? STACK_PENALTY * 4 : 0;
+    };
+
     const scored = moves.map(a => {
       const tile = obs.board.tiles[`${a.to.x},${a.to.y}`];
       const t = TERRAIN[tile?.terrain] ?? null;
-      let score = 0;
+      let score = -stackCost(a.to);
       if (isSettler && myCities.length < CITY_TARGET) {
         // Somewhere to live: fed, and not on top of a city we already hold.
         const spacing = nearestOwnCity(a.to);

@@ -78,7 +78,7 @@ const MIN_WIN_PROB = 0.5;
 // by Manhattan distance. Both of those first two are why it loses.
 const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 
-export function makeGreedyAgent({ id = 'greedy' } = {}) {
+export function makeGreedyAgent({ id = 'greedy', stackPenalty = STACK_PENALTY } = {}) {
   return {
     id,
     chooseAction(state, legalActions) {
@@ -99,6 +99,21 @@ export function makeGreedyAgent({ id = 'greedy' } = {}) {
       const enemyCities = state.cities.filter(c => c.ownerId !== myId);
       const targets = [...enemies.map(u => u.position), ...enemyCities.map(c => c.position)];
 
+      // The one thing this agent is not naive about: piling onto its own units. Until
+      // units could share a square the engine refused those moves, so marching everyone
+      // down one corridor cost nothing; now it puts the whole column on one combat roll
+      // (STACK_PENALTY below, and see Civ1Game's stack death). A baseline that throws
+      // armies away for free is no baseline, so it pays the same detour the heuristic
+      // agent does — its own cities excepted, which is where a stack belongs.
+      const minePos = new Set(state.units.filter(u => u.alive && u.ownerId === myId)
+        .map(u => `${u.position.x},${u.position.y}`));
+      const myCityPos = new Set(state.cities.filter(c => c.ownerId === myId)
+        .map(c => `${c.position.x},${c.position.y}`));
+      const stackCost = (to) => {
+        const k = `${to.x},${to.y}`;
+        return (minePos.has(k) && !myCityPos.has(k)) ? stackPenalty : 0;
+      };
+
       const moves = legalActions.filter(a => a.type === 'move');
       if (moves.length && targets.length) {
         const byUnit = new Map();
@@ -112,7 +127,7 @@ export function makeGreedyAgent({ id = 'greedy' } = {}) {
           const from = unitMoves[0].from;
           const nearest = targets.reduce((b, t) => manhattan(from, t) < manhattan(from, b) ? t : b, targets[0]);
           for (const m of unitMoves) {
-            const d = manhattan(m.to, nearest);
+            const d = manhattan(m.to, nearest) + stackCost(m.to);
             if (d < bestScore) { bestScore = d; bestMove = m; }
           }
         }
@@ -121,7 +136,8 @@ export function makeGreedyAgent({ id = 'greedy' } = {}) {
 
       if (moves.length) {
         const center = { x: state.board.width / 2, y: state.board.height / 2 };
-        return moves.reduce((best, m) => manhattan(m.to, center) < manhattan(best.to, center) ? m : best);
+        const inward = m => manhattan(m.to, center) + stackCost(m.to);
+        return moves.reduce((best, m) => inward(m) < inward(best) ? m : best);
       }
 
       return { type: 'end-turn', unitId: '__player__' };
@@ -142,6 +158,15 @@ const MIN_CITY_SPACING = 4;
 // Together they stop a frightened city from recalling the whole army.
 const MAX_GARRISON = 2;
 const RECALL_RANGE = 4;
+
+// What a step onto a square one of our own units already holds is worth, in tiles of
+// detour. Friendly units may share a square (civ1 stacks them), but an open square that
+// loses its defence loses EVERY unit standing on it — see Civ1Game's resolveAttack — so
+// a pile in the field is several units riding on one combat roll. Priced rather than
+// forbidden: a unit whose only way forward is over a friend still takes it, and a
+// square inside one of our cities costs nothing, because that is a garrison and a city
+// dies one unit at a time.
+const STACK_PENALTY = 3;
 
 /**
  * Production choice for one city, delegated to the shared scorer in production.js
@@ -181,7 +206,8 @@ function chooseResearch(researchActions, current) {
   return researchActions[0] ?? null;
 }
 
-export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cityTarget = CITY_TARGET } = {}) {
+export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cityTarget = CITY_TARGET,
+                                stackPenalty = STACK_PENALTY } = {}) {
   return {
     id,
     chooseAction(state, legalActions) {
@@ -275,6 +301,18 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
       // entire field army home and the war would stop.
       const myCities = state.cities.filter(c => c.ownerId === myId);
       const myUnits = state.units.filter(u => u.alive && u.ownerId === myId);
+
+      // Detour cost of stepping onto our own units (STACK_PENALTY above). Added to every
+      // move score below, all of which are distances in tiles, so the agent walks around
+      // its own army instead of piling onto it — except into its cities, which are what
+      // a stack is FOR.
+      const minePos = new Set(myUnits.map(u => `${u.position.x},${u.position.y}`));
+      const myCityPos = new Set(myCities.map(c => `${c.position.x},${c.position.y}`));
+      const stackCost = (to) => {
+        const k = `${to.x},${to.y}`;
+        return (minePos.has(k) && !myCityPos.has(k)) ? stackPenalty : 0;
+      };
+
       const garrison = new Map(); // unitId -> city position it is holding
       const claimed = new Set();
       for (const city of myCities) {
@@ -304,9 +342,8 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         }
         const homeward = legalActions.filter(a => a.type === 'move' && a.unitId === unitId);
         if (homeward.length) {
-          return homeward.reduce(
-            (best, m) => chebyshevWrapped(m.to, cityPos, W) < chebyshevWrapped(best.to, cityPos, W) ? m : best,
-          );
+          const home = m => chebyshevWrapped(m.to, cityPos, W) + stackCost(m.to);
+          return homeward.reduce((best, m) => home(m) < home(best) ? m : best);
         }
       }
 
@@ -326,9 +363,8 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         // Too close to home — walk the settler outward instead of wasting it.
         const settlerMoves = legalActions.filter(a => a.type === 'move' && a.unitId === found.unitId);
         if (settlerMoves.length) {
-          return settlerMoves.reduce(
-            (best, m) => nearestOwnCity(m.to) > nearestOwnCity(best.to) ? m : best,
-          );
+          const outward = m => nearestOwnCity(m.to) - stackCost(m.to);
+          return settlerMoves.reduce((best, m) => outward(m) > outward(best) ? m : best);
         }
         if (here && nearestOwnCity(here) > 1) return found; // boxed in; take what we can get
       }
@@ -355,7 +391,7 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
             targets[0],
           );
           for (const m of unitMoves) {
-            const d = chebyshevWrapped(m.to, goal, W);
+            const d = chebyshevWrapped(m.to, goal, W) + stackCost(m.to);
             if (d < bestScore) { bestScore = d; bestMove = m; }
           }
         }
@@ -364,9 +400,8 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
 
       if (moves.length) {
         const center = { x: state.board.width / 2, y: state.board.height / 2 };
-        return moves.reduce(
-          (best, m) => chebyshevWrapped(m.to, center, W) < chebyshevWrapped(best.to, center, W) ? m : best,
-        );
+        const inward = m => chebyshevWrapped(m.to, center, W) + stackCost(m.to);
+        return moves.reduce((best, m) => inward(m) < inward(best) ? m : best);
       }
 
       return { type: 'end-turn', unitId: '__player__' };
