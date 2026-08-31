@@ -23,14 +23,15 @@
    *     real positions in a parallel `grid.units` channel;
    *   • everything else embeds its units in the cells, located by cell index.
    *
-   * A token standing on a FIXTURE square is left out entirely. `cell.fixture` says the
-   * square's art belongs to the square — civ1 draws a city there, not its garrison —
-   * while `cell.unitId` still names the piece standing in it, so the token carries the
-   * mover's id but is drawn as the thing that cannot move. Animating that hop walks
-   * the city across the map behind the unit that just stepped into it (and, for a hop
-   * still queued behind others, parks it on the mover's old square for the length of
-   * the bundle). A piece that enters a fixture is simply absorbed by it, which is also
-   * how the original games draw it.
+   * A token standing on a FIXTURE square is left out entirely, and so is a fixture
+   * riding in a square's `stack` (civ1's city, drawn under the garrison standing on top
+   * of it). `cell.fixture` says the square's art belongs to the square — civ1 draws a
+   * city there, not its garrison — while `cell.unitId` still names the piece standing
+   * in it, so the token carries the mover's id but is drawn as the thing that cannot
+   * move. Animating that hop walks the city across the map behind the unit that just
+   * stepped into it (and, for a hop still queued behind others, parks it on the mover's
+   * old square for the length of the bundle). A piece that enters a fixture is simply
+   * absorbed by it, which is also how the original games draw it.
    */
   function movedTokens(oldGrid, newGrid) {
     const moved = new Map();
@@ -54,7 +55,7 @@
     // which gives each of those a token too). Without the stack a unit that steps
     // under an escort, or out from under one, would arrive with no hop at all.
     const tokens = (grid) => (grid.cells ?? []).flatMap(c => [
-      ...(c.stack ?? []).map(s => ({ id: s.unitId, x: c.x, y: c.y, fixture: false })),
+      ...(c.stack ?? []).map(s => ({ id: s.unitId, x: c.x, y: c.y, fixture: !!s.fixture })),
       ...(c.unitId ? [{ id: c.unitId, x: c.x, y: c.y, fixture: !!c.fixture }] : []),
     ]);
 
