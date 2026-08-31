@@ -129,6 +129,10 @@ const allListActions = computed(() => aimedActions.value.filter(a => !OVERLAY_HA
 // into a single row of numbers. Purely structural: the panel doesn't know what the
 // number means, only that it is the one thing that varies.
 const NUMERIC_CHOICE_MIN = 3;
+// What a game calls the buttons and the row is presentation, not a field of the choice:
+// those labels vary *because* the number does, so they don't count as a second thing
+// varying (which would stop the collapse and leave a column of near-identical buttons).
+const PRESENTATION_KEYS = new Set(['label', 'groupLabel']);
 const numericChoices = computed(() => {
   const byType = new Map();
   for (const a of allListActions.value) {
@@ -138,12 +142,16 @@ const numericChoices = computed(() => {
   const groups = [];
   for (const [type, actions] of byType) {
     if (actions.length < NUMERIC_CHOICE_MIN) continue;
-    const keys = [...new Set(actions.flatMap(a => Object.keys(a)))].filter(k => k !== 'type');
+    const keys = [...new Set(actions.flatMap(a => Object.keys(a)))]
+      .filter(k => k !== 'type' && !PRESENTATION_KEYS.has(k));
     const varying = keys.filter(k => new Set(actions.map(a => JSON.stringify(a[k]))).size > 1);
     if (varying.length !== 1) continue;
     const field = varying[0];
     if (!actions.every(a => typeof a[field] === 'number')) continue;
-    groups.push({ type, field, actions: [...actions].sort((a, b) => a[field] - b[field]) });
+    // The row's own name, where the actions carry one (Risk's occupy actions name the
+    // territory the armies move into — which the numbers alone can't say).
+    const label = actions[0].groupLabel ?? null;
+    groups.push({ type, field, label, actions: [...actions].sort((a, b) => a[field] - b[field]) });
   }
   return groups;
 });
@@ -292,8 +300,8 @@ function fmtAction(action) {
           </div>
           <!-- One choice at several sizes (Risk's occupying force) — a row of numbers. -->
           <div v-for="g in numericChoices" :key="'nc' + g.type" class="ap-variant">
-            <span class="mono ap-variant-label">{{ui?.actionGroupLabels?.[g.type] ?? g.type.replace(/-/g, ' ')}}</span>
-            <button v-for="a in g.actions" :key="a[g.field]"
+            <span class="mono ap-variant-label">{{g.label ?? ui?.actionGroupLabels?.[g.type] ?? g.type.replace(/-/g, ' ')}}</span>
+            <button v-for="a in g.actions" :key="a[g.field]" :title="a.label"
                     class="ap-chip" @click="$emit('submit', a)">{{a[g.field]}}</button>
           </div>
           <div class="ap-list">

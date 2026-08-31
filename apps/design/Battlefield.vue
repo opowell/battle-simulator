@@ -1488,25 +1488,41 @@ watch(pairVariantValues, (vals) => {
   }
 });
 
-// A shift-click says "the most you can, and don't ask me anything else". Some pair
-// actions stop the game to ask a follow-up whose whole content is a number — Risk's
-// capture asks how many more armies follow the dice into the territory just taken —
-// and a player who already asked for the most means that answer too. The game names
-// the follow-up type and its number in ui.territoryPairShiftFollowUp; the flag below
-// is armed by one shift-click and spent on the very next position, so it is never a
-// standing order to stop asking.
-const shiftFollowUpSpec = computed(() => ui.value.territoryPairShiftFollowUp ?? null);
-const awaitingShiftFollowUp = ref(false);
+// Some pair actions stop the game to ask a follow-up whose whole content is a number —
+// Risk's capture asks how many more armies follow the dice into the territory just
+// taken. The game names the follow-up's type and its number in ui.territoryFollowUp,
+// and `auto` there says the biggest answer is the default, so the question is never put
+// to the player at all (Risk's autoOccupy option, which its toGrid ships per session).
+// A shift-click on the pair that leads here asks for the other mode: the question when
+// the game would answer it, and the largest answer when the game would ask. The ref
+// below carries that one click's choice and is spent on the very next position, so it
+// is never a standing order either way.
+const followUpSpec = computed(() => ui.value.territoryFollowUp ?? null);
+const followUpMode = ref(null);   // 'auto' | 'ask' | null (= whatever the game's default is)
+// The biggest answer the position offers — "everything you can spare".
+function maxFollowUp(actions, spec) {
+  return actions.reduce((a, b) => ((b[spec.field] ?? 0) > (a[spec.field] ?? 0) ? b : a));
+}
+// Whether the follow-up asked by the position a pair action leads to should be answered
+// for the player: the game's default, flipped by a shift-click.
+function followUpAuto(shift) {
+  return shift ? !followUpSpec.value?.auto : !!followUpSpec.value?.auto;
+}
 watch(legalActions, (actions) => {
-  if (!awaitingShiftFollowUp.value) return;
-  awaitingShiftFollowUp.value = false;
-  const spec = shiftFollowUpSpec.value;
+  const mode = followUpMode.value;
+  followUpMode.value = null;
+  const spec = followUpSpec.value;
   if (!spec || !isPending.value || !actions.length) return;
+  // Only the live game at its latest position: a past ply reached by the timeline (or a
+  // fork being explored) can be sitting on the same question, and answering that one
+  // would play a move nobody asked for into a sandbox.
+  if (!atLatest.value || forking.value) return;
   // Only ever answers a question that has no other answer: if anything besides the
   // follow-up is legal here, the position is a real choice and stays the player's.
   if (!actions.every(a => a.type === spec.type)) return;
-  submitAction(actions.reduce((a, b) => ((b[spec.field] ?? 0) > (a[spec.field] ?? 0) ? b : a)));
-});
+  if (mode ? mode !== 'auto' : !spec.auto) return;
+  submitAction(maxFollowUp(actions, spec));
+}, { immediate: true });   // a question already standing when the page opens is one too
 
 // A click on a territory map means one of three things, in order: finish a pair
 // (something is selected and the pair is a legal from→to action — attack, or Risk's
@@ -1522,18 +1538,40 @@ function handleTerritoryClick(x, y, mods = {}) {
   const pairTypes = ui.value.territoryPairTypes ?? ['attack'];
   const tapType = ui.value.territoryTapType;
 
+  // A follow-up left for the player to answer (see followUpSpec) is a question about two
+  // territories the map is already showing — Risk's "how many more armies follow the dice
+  // into the one you just took?" — so it can be answered on the map instead of in the
+  // panel: click the territory the armies would move to and every one that can go goes,
+  // click the one they would come from and none of them do. Nothing else is legal while
+  // the question stands, so a click anywhere else is left alone rather than turned into
+  // a selection the player can't use.
+  const followUp = followUpSpec.value;
+  const pendingFollowUp = isPending.value && followUp && legalActions.value.length
+    && legalActions.value.every(a => a.type === followUp.type);
+  if (pendingFollowUp) {
+    const acts = legalActions.value;
+    if (acts.some(a => a.to === clickedId)) submitAction(maxFollowUp(acts, followUp));
+    else if (acts.some(a => a.from === clickedId))
+      submitAction(acts.reduce((a, b) => ((b[followUp.field] ?? 0) < (a[followUp.field] ?? 0) ? b : a)));
+    return;
+  }
+
   if (isPending.value && selectedId.value && selectedId.value !== clickedId) {
     const matches = legalActions.value.filter(a =>
       pairTypes.includes(a.type) && a.from === selectedId.value && a.to === clickedId);
     // Several matches differ only in the variant field the game named (Risk's dice):
     // take the player's pick, or the most the pair allows when they picked more than
-    // this one can manage — and always the most when the click was shift-held, which
-    // also arms the follow-up above so the shift carries through the question the
-    // action may ask next.
-    const action = mods.shift ? matches[0] : pickPairVariant(matches);
+    // this one can manage. A shift-click means "everything" — the most this pair allows,
+    // and the largest answer to whatever the action asks next — except where the game
+    // already answers that follow-up by itself, which is what a shift-click is *for*:
+    // there it buys the question back instead, and leaves the picker's choice of dice
+    // alone, since going all in was never what the player was asking for.
+    const auto = followUpAuto(!!mods.shift);
+    const action = mods.shift && !followUpSpec.value?.auto ? matches[0] : pickPairVariant(matches);
     if (action) {
       submitAction(action);
-      if (mods.shift) awaitingShiftFollowUp.value = true;
+      // Arm the follow-up above for exactly the position this action leads to.
+      followUpMode.value = auto ? 'auto' : 'ask';
       // Keep the source selected: after an attack that didn't take the territory, the
       // obvious next move is to attack again from the same place. A watcher below drops
       // the selection as soon as nothing can be done from there.
@@ -1877,9 +1915,11 @@ watch(isPending, (now, was) => {
 
 function submitAction(action) {
   if (ui.value.clearSelectedAtEndOfTurn) selectedId.value = null;
-  // Any deliberate action disarms the shift follow-up, so an armed flag that never
-  // met its question (the attack simply bounced) can't fire on a later, plain click.
-  awaitingShiftFollowUp.value = false;
+  // Any deliberate action disarms the follow-up's one-click override, so a shift-click
+  // that never met its question (the attack simply bounced) can't answer a later, plain
+  // one — the game's own default takes it from there. Actions that DO expect a follow-up
+  // re-arm it right after calling this (see handleTerritoryClick).
+  followUpMode.value = null;
   // Moving while browsing replay (or already inside a fork) explores a sandbox
   // instead of playing a real move — see forkPlayMove above.
   if (canExplore.value && (forking.value || !atLatest.value)) { forkPlayMove(action); return; }

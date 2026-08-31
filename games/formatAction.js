@@ -4,6 +4,10 @@ function pos(p) {
 }
 
 export function formatAction(a) {
+  // A game that knows how to say what one of its own actions does says it
+  // (getLegalActions may put a `label` on any action — Risk's occupy names the
+  // territory the armies move into, which nothing generic here could work out).
+  if (a.label) return a.label;
   if (a.type === 'move' && a.from && a.to) {
     const cap = a.isCapture ? ` x${a.targetId}` : '';
     const promo = a.payload?.promote ? `=${a.payload.promote[0].toUpperCase()}` : '';

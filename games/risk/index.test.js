@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RiskGame, TERRITORY_IDS, ADJACENCY, resolveCombat } from './index.js';
+import { RiskGame, TERRITORY_IDS, TERRITORY_NAMES, ADJACENCY, resolveCombat } from './index.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -256,6 +256,35 @@ test('risk: a capture asks how many armies follow the dice in (postCaptureFortif
   assert.equal(moved.currentPhase, 'attack', 'the attack phase resumes once occupied');
   assert.equal(moved.board.territories[to].armies, after.board.territories[to].armies + 2);
   assert.equal(moved.board.territories[from].armies, after.board.territories[from].armies - 2);
+});
+
+test('risk: every occupy choice names the territory the armies move into', () => {
+  const { state, from, to } = attackReady();
+  const after = RiskGame.applyActions(state,
+    [{ playerId: 'p1', action: { type: 'attack', from, to, attackerDice: 3 } }], riggedRng(3));
+  const actions = RiskGame.getLegalActions(after, 'p1');
+  const into = TERRITORY_NAMES[to];
+  assert.ok(into, 'the target territory has a name to put on the buttons');
+  for (const a of actions) {
+    assert.ok(a.label.includes(into), `"${a.label}" should name ${into}`);
+    assert.equal(a.groupLabel, `Armies to move into ${into}`);
+  }
+  // The panel collapses a run of same-action-different-number actions into a row of
+  // numbers, and only does so while exactly one non-presentational field varies (see
+  // ActionsPanel's numericChoices) — the labels vary because `armies` does, and must
+  // not read as a second choice being made.
+  const keys = [...new Set(actions.flatMap(Object.keys))]
+    .filter(k => !['type', 'label', 'groupLabel'].includes(k));
+  const varying = keys.filter(k => new Set(actions.map(a => a[k])).size > 1);
+  assert.deepEqual(varying, ['armies']);
+});
+
+test('risk: toGrid tells the client whether the occupy question answers itself', () => {
+  const on = RiskGame.createInitialState(players());
+  assert.deepEqual(RiskGame.toGrid(on).ui.territoryFollowUp,
+    { type: 'occupy', field: 'armies', auto: true });
+  const off = RiskGame.createInitialState(players(), { autoOccupy: false });
+  assert.equal(RiskGame.toGrid(off).ui.territoryFollowUp.auto, false);
 });
 
 test('risk: with postCaptureFortify off, only the dice move in', () => {

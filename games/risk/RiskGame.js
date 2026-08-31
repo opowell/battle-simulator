@@ -125,6 +125,10 @@ function resolveOptions(config = {}) {
     // in behind the dice. On by default; off keeps the earlier behaviour where exactly
     // as many armies as dice rolled move in and the turn goes straight on.
     postCaptureFortify: config.postCaptureFortify !== false,
+    // Only means anything while postCaptureFortify is on: it decides whether that
+    // question is asked at all, or answered by moving in everything the attacker can
+    // spare. On by default — see the option below, and territoryFollowUp in toGrid.
+    autoOccupy: config.autoOccupy !== false,
   };
 }
 
@@ -221,8 +225,21 @@ function getLegalActions(state, playerId) {
   // A capture waiting for its occupying force blocks everything else: how many armies
   // follow the dice in is the only question on the table until it's answered.
   if (pendingOccupy) {
+    // "3" says nothing about where the armies are going, and by the time the question
+    // is asked the attack that raised it has already left the screen — so every button
+    // names the territory it moves armies into, and the row above them does too
+    // (`groupLabel`; the panel collapses a run of same-action-different-number actions
+    // into a row of numbers, and only the game knows what the number counts).
+    const into = TERRITORY_NAMES[pendingOccupy.to] ?? pendingOccupy.to;
+    const held = TERRITORY_NAMES[pendingOccupy.from] ?? pendingOccupy.from;
     for (let extra = 0; extra <= pendingOccupy.max; extra++) {
-      actions.push({ type: 'occupy', from: pendingOccupy.from, to: pendingOccupy.to, armies: extra });
+      actions.push({
+        type: 'occupy', from: pendingOccupy.from, to: pendingOccupy.to, armies: extra,
+        groupLabel: `Armies to move into ${into}`,
+        label: extra === 0
+          ? `Move nothing more into ${into} — the rest hold ${held}`
+          : `Move ${extra} more ${extra === 1 ? 'army' : 'armies'} into ${into}`,
+      });
     }
     return actions;
   }
@@ -757,6 +774,15 @@ function toGrid(state) {
     territoryBorders: borders,
     links,
     statusChips,
+    // A per-state `ui` override, layered over the static one below: whether the capture
+    // question is answered by itself is a rule of *this session* (the autoOccupy
+    // option), and the client can only know it from here.
+    ui: {
+      territoryFollowUp: {
+        type: 'occupy', field: 'armies',
+        auto: !!(state.gameSpecific.options ?? resolveOptions()).autoOccupy,
+      },
+    },
   };
 }
 
@@ -792,12 +818,18 @@ export const RiskGame = {
     // dice are committed — and the dice are also the armies that occupy what you take.
     // The panel offers the choice; a click uses it, shift-click always uses the most.
     territoryPairVariant: { field: 'attackerDice', label: 'Dice', types: ['attack'] },
-    // ...and a capture asks a second question — how many more armies follow the dice in
-    // — which the same shift answers the same way: everything the attacker can spare.
-    // A committed assault is one gesture, not an attack followed by a form to fill in.
-    territoryPairShiftFollowUp: { type: 'occupy', field: 'armies' },
-    // What to call a row of same-action-different-number buttons (the panel groups those
-    // on its own; only the game knows what the number counts).
+    // ...and a capture asks a second question — how many more armies follow the dice in.
+    // With `auto` on (the autoOccupy option, shipped per session by toGrid above) it is
+    // never asked: everything the attacker can spare moves in, and shift buys the
+    // alternative — the question. With it off the question is asked and shift answers
+    // it the same way the dice were answered, going all in. Either way a committed
+    // assault is one gesture, not an attack followed by a form to fill in. The occupy
+    // phase is also clickable on the map: the territory taken takes everything that can
+    // follow, the one attacked from keeps them.
+    territoryFollowUp: { type: 'occupy', field: 'armies', auto: true },
+    // What to call a row of same-action-different-number buttons when the actions
+    // themselves don't say (the occupy actions carry their own `groupLabel`, naming the
+    // territory — this is the fallback the panel uses without one).
     actionGroupLabels: { occupy: 'Armies to move in' },
     // Three phases inside one turn, and which one you're in decides what a click does —
     // so the header names the phase (ui.phases, in order) and the action panel explains
@@ -822,7 +854,7 @@ export const RiskGame = {
         },
         {
           heading: 'Taking a territory',
-          text: 'When the last defender falls, as many armies as you rolled dice move in straight away, and then you say how many MORE follow them — anything above the one army that has to stay and hold the territory you attacked from. How many dice a click commits is the panel\'s dice picker; shift-click ignores it and commits everything, rolling the most you can and moving in every army you can spare without stopping to ask.',
+          text: 'When the last defender falls, as many armies as you rolled dice move in straight away, and then every other army the territory you attacked from can spare — everything above the one army that has to stay and hold it — follows them. Shift-click the attack to be asked how many should follow instead, and answer either by clicking a number, by clicking the territory you took (all of them) or the one you attacked from (none). Turn off "Move in everything you can spare" in the lobby and you are asked every time, with shift-click the shortcut that goes all in. How many dice a click commits is the panel\'s dice picker.',
         },
         {
           heading: 'Cards',
@@ -832,8 +864,8 @@ export const RiskGame = {
     },
     phaseHints: {
       reinforce: 'Tap your territories to place armies — one per tap. The phase ends itself once the last one is down.',
-      attack: 'Click one of your territories, then a neighbour to attack it. The dice you commit are also the armies that move in if you take it — shift-click to commit everything: the most dice you can roll, and, if you take it, every army you can spare moving in after them.',
-      occupy: 'Territory taken. Choose how many more armies follow the dice in — everything above the one army that has to hold the territory you attacked from.',
+      attack: 'Click one of your territories, then a neighbour to attack it. The dice you commit are also the armies that move in if you take it, and every army the attacker can spare follows them — shift-click to be asked how many instead.',
+      occupy: 'Territory taken. Choose how many more armies follow the dice in — everything above the one army that has to hold the territory you attacked from. Or click the territory you took to send them all, and the one you attacked from to send none.',
       fortify: 'Click one of your territories, then a connected one to move armies there. Or end your turn.',
     },
   },
@@ -874,6 +906,13 @@ export const RiskGame = {
         { value: 'random', label: 'Placed at random' },
       ],
       default: 'selected',
+    },
+    {
+      id: 'autoOccupy',
+      label: 'Move in everything you can spare',
+      description: 'On: taking a territory moves every army the attacker can spare into it straight away, and shift-clicking the attack asks how many instead. Off: you are asked after every capture, and shift-click is the shortcut that moves everything in. Nothing to decide either way unless "Choose occupying force" is on.',
+      type: 'boolean',
+      default: true,
     },
     {
       id: 'postCaptureFortify',
