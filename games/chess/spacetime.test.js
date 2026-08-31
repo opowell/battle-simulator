@@ -8,7 +8,7 @@ import assert from 'node:assert';
 import { ChessGame } from './ChessGame.js';
 import {
   geometricMoves, contactWindow, resolveVariant, isSpacetimeVariant,
-  sqOf, gridOf, PIECE_SPEED, HITBOX_R,
+  sqOf, gridOf, PIECE_SPEED, HITBOX_R, MAX_ORDERS,
 } from './spacetime.js';
 
 const PLAYERS = [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }];
@@ -100,8 +100,9 @@ test('slider destinations run past occupied squares, because the board will have
   const dests = new Set(rookMoves.map((m) => sqOf(m.to.x, m.to.y)));
   assert.ok(dests.has('a8'), 'the whole file is a destination even with pieces in the way');
   assert.ok(dests.has('h1'));
-  // …but nothing may be ORDERED through a square its own side is standing on right now.
-  assert.equal(legal(s, 'white').filter((a) => a.unitId === 'wR1').length, 0);
+  // …but nothing may be ORDERED through a square its own side is standing on right
+  // now. (A delay is still on offer — holding still is never blocked by anything.)
+  assert.equal(legal(s, 'white').filter((a) => a.unitId === 'wR1' && a.type === 'order').length, 0);
 });
 
 test('a pawn aims at its capture diagonals whether or not anything is standing there', () => {
@@ -124,29 +125,33 @@ test('clockwork: an order is walked one square per cooldown, not teleported', ()
   s = runClock(s);
   assert.equal(at(s, 'e3')?.id, 'wP5');
   assert.equal(s.gameSpecific.rt.clock, 0);
-  assert.ok(s.gameSpecific.rt.orders.wP5, 'still on its way');
+  assert.ok(s.gameSpecific.rt.queues.wP5, 'still on its way');
 
   s = runClock(s);
   assert.equal(at(s, 'e4')?.id, 'wP5');
   // A pawn covers PIECE_SPEED.pawn squares per turn window, so one square is one window.
   assert.equal(s.gameSpecific.rt.clock, 1 / PIECE_SPEED.pawn);
-  assert.equal(s.gameSpecific.rt.orders.wP5, undefined, 'arrived, so free to be re-ordered');
+  assert.equal(s.gameSpecific.rt.queues.wP5, undefined, 'arrived, so free to be re-ordered');
 });
 
 test('clockwork: a piece already on its way cannot be re-aimed, only called off', () => {
   let s = start('clockwork');
   s = apply(s, 'white', find(s, 'white', (a) => a.unitId === 'wP5' && a.to === 'e4'));
-  // One decision per piece per instant: having just been ordered, it offers nothing more
-  // until the clock has moved — otherwise ordering and un-ordering, both free, could go
-  // round for ever and time would never pass.
-  assert.equal(legal(s, 'white').filter((a) => a.unitId === 'wP5').length, 0);
+  // Committed: the order it is carrying out cannot be swapped for another. What it
+  // CAN do is take another one behind that (see the queue tests below).
+  const now = legal(s, 'white').filter((a) => a.unitId === 'wP5');
+  assert.ok(!now.some((a) => a.type === 'order'));
+  assert.ok(now.some((a) => a.type === 'queue-order'));
 
   s = runClock(s);
   const mine = legal(s, 'white').filter((a) => a.unitId === 'wP5');
-  assert.deepEqual(mine.map((a) => a.type), ['cancel'], 'committed: call it off or leave it');
+  assert.ok(mine.some((a) => a.type === 'cancel'), 'it can be called off');
+  assert.ok(!mine.some((a) => a.type === 'order'), 'but not re-aimed — only queued behind');
+  assert.ok(mine.some((a) => a.type === 'queue-order'), 'a further order joins the queue');
 
-  s = apply(s, 'white', mine[0]);
-  assert.equal(s.gameSpecific.rt.orders.wP5, undefined);
+  s = apply(s, 'white', mine.find((a) => a.type === 'cancel'));
+  assert.equal(s.gameSpecific.rt.queues.wP5, undefined);
+  // Shortening a queue locks the piece for the rest of the instant.
   assert.equal(legal(s, 'white').filter((a) => a.unitId === 'wP5').length, 0);
   assert.ok(legal(runClock(s), 'white').some((a) => a.type === 'order' && a.unitId === 'wP5'));
 });
@@ -159,30 +164,32 @@ test('clockwork: hopping onto an enemy takes it and the journey carries on', () 
   s = { ...s, board: Object.fromEntries(Object.entries(s.board).filter(([, p]) => p && !['wP1', 'bR1'].includes(p.id))) };
 
   s = apply(s, 'white', find(s, 'white', (a) => a.unitId === 'wR1' && a.to === 'a8'));
-  for (let i = 0; i < 30 && s.gameSpecific.rt.orders.wR1; i++) s = runClock(s);
+  for (let i = 0; i < 30 && s.gameSpecific.rt.queues.wR1; i++) s = runClock(s);
 
   assert.equal(at(s, 'a8')?.id, 'wR1');
   assert.equal(unit(s, 'bP1').alive, false, 'the pawn it hopped onto is gone');
-  assert.equal(s.gameSpecific.rt.orders.bP1, undefined, 'and is not still under orders');
+  assert.equal(s.gameSpecific.rt.queues.bP1, undefined, 'and is not still under orders');
 });
 
 test('clockwork: hopping onto a friend calls the order off and still costs the cooldown', () => {
   // wR1 is behind wP1. Reach that position by hand rather than through the action
   // filter, which (deliberately) will not offer such an order in the first place.
   let s = start('clockwork');
+  // a2 is its own pawn, and the rook's route runs straight through it.
   s = {
     ...s,
     gameSpecific: {
       ...s.gameSpecific,
-      rt: { ...s.gameSpecific.rt, orders: { wR1: { path: [gridOf('a3')].map((c) => ({ ...c })), idx: 0, pathId: 0 } } },
+      rt: {
+        ...s.gameSpecific.rt,
+        queues: { wR1: [{ kind: 'move', path: [gridOf('a2'), gridOf('a3')], idx: 0, pathId: 0 }] },
+      },
     },
   };
-  // a2 is its own pawn, and the rook's route runs through it.
-  s = { ...s, gameSpecific: { ...s.gameSpecific, rt: { ...s.gameSpecific.rt, orders: { wR1: { path: [gridOf('a2'), gridOf('a3')], idx: 0, pathId: 0 } } } } };
   s = runClock(s);
 
   assert.equal(at(s, 'a1')?.id, 'wR1', 'it did not move');
-  assert.equal(s.gameSpecific.rt.orders.wR1, undefined, 'the order is off');
+  assert.equal(s.gameSpecific.rt.queues.wR1, undefined, 'the order — and the rest of the plan — is off');
   assert.equal(s.gameSpecific.rt.ready.wR1, s.gameSpecific.rt.clock + 1 / PIECE_SPEED.rook,
     'the bounce cost a full hop of cooldown — otherwise the clock could never move');
 });
@@ -232,7 +239,7 @@ test('sliding: a turn is one order, played out to a standstill, then the turn pa
   assert.notDeepEqual(unit(s, 'wP5').position, before);
   // It really arrived — a slide is resolved within the turn, not left in flight.
   assert.deepEqual(unit(s, 'wP5').position, { x: 4.5, y: 4.5 });
-  assert.equal(Object.keys(s.gameSpecific.rt.orders).length, 0);
+  assert.equal(Object.keys(s.gameSpecific.rt.queues).length, 0);
 });
 
 test('sliding: equal pieces that meet destroy each other; a queen shrugs a pawn off', () => {
@@ -306,7 +313,7 @@ test('melee: pieces are somewhere between squares while they travel', () => {
   s = runClock(s);
   const p = unit(s, 'wP5').position;
   assert.ok(p.y < 6.5 && p.y > 4.5, `mid-slide, not snapped to a square (y=${p.y})`);
-  assert.ok(s.gameSpecific.rt.orders.wP5, 'and still under way');
+  assert.ok(s.gameSpecific.rt.queues.wP5, 'and still under way');
 });
 
 test('melee: the clock never stalls, whatever the players do', () => {
@@ -319,6 +326,133 @@ test('melee: the clock never stalls, whatever the players do', () => {
     clock = next.gameSpecific.rt.clock;
     s = next;
   }
+});
+
+// ── Order queues and delays (continuous time) ───────────────────────────────
+
+test('an order given to a busy piece joins the back of its queue', () => {
+  let s = start('clockwork');
+  s = apply(s, 'white', find(s, 'white', (a) => a.type === 'order' && a.unitId === 'wP5' && a.to === 'e4'));
+  // The next order is enumerated from e4 — where the queue LEAVES the pawn — not
+  // from e2, where it still stands.
+  const next = legal(s, 'white').filter((a) => a.type === 'queue-order' && a.unitId === 'wP5');
+  assert.ok(next.length > 0);
+  assert.ok(next.every((a) => a.from === 'e4'), 'queued orders start where the plan ends');
+  assert.deepEqual(new Set(next.map((a) => a.to)), new Set(['e5', 'd5', 'f5']));
+
+  s = apply(s, 'white', next.find((a) => a.to === 'e5'));
+  assert.equal(s.gameSpecific.rt.queues.wP5.length, 2);
+  for (let i = 0; i < 6 && s.gameSpecific.rt.queues.wP5; i++) s = runClock(s);
+  assert.equal(at(s, 'e5')?.id, 'wP5', 'it walked the whole plan without being asked again');
+});
+
+test('a queue is capped, and taking an order back locks the piece for the instant', () => {
+  let s = start('clockwork');
+  s = apply(s, 'white', find(s, 'white', (a) => a.type === 'order' && a.unitId === 'wP5'));
+  for (let i = 1; i < MAX_ORDERS; i++) {
+    s = apply(s, 'white', find(s, 'white', (a) => a.type === 'queue-order' && a.unitId === 'wP5'));
+  }
+  assert.equal(s.gameSpecific.rt.queues.wP5.length, MAX_ORDERS);
+  // Full: nothing more may be added, only taken away.
+  const full = legal(s, 'white').filter((a) => a.unitId === 'wP5');
+  assert.deepEqual(new Set(full.map((a) => a.type)), new Set(['cancel', 'queue-pop']));
+
+  s = apply(s, 'white', full.find((a) => a.type === 'queue-pop'));
+  assert.equal(s.gameSpecific.rt.queues.wP5.length, MAX_ORDERS - 1);
+  assert.equal(legal(s, 'white').filter((a) => a.unitId === 'wP5').length, 0,
+    'shortening a queue costs the piece its say until the clock moves');
+});
+
+test('the clock still cannot stall, however much a player fiddles with queues', () => {
+  let s = start('melee');
+  let clock = s.gameSpecific.rt.clock;
+  for (let round = 0; round < 12; round++) {
+    // Fill up, then unpick, then hand the instant over — the worst a player can do.
+    for (const seat of ['white', 'black']) {
+      for (let i = 0; i < 60; i++) {
+        const a = legal(s, seat).find((x) => x.unitId !== '__player__');
+        if (!a) break;
+        s = apply(s, seat, a);
+      }
+      s = apply(s, seat, { type: 'wait', unitId: '__player__' });
+    }
+    assert.ok(s.gameSpecific.rt.clock > clock, `the clock must move (stuck at ${clock})`);
+    clock = s.gameSpecific.rt.clock;
+  }
+});
+
+test('a delay holds a piece where it stands, then it goes', () => {
+  let s = start('clockwork');
+  s = apply(s, 'white', find(s, 'white', (a) => a.type === 'delay' && a.unitId === 'wP5' && a.duration === 1));
+  s = apply(s, 'white', find(s, 'white', (a) => a.type === 'queue-order' && a.unitId === 'wP5' && a.to === 'e3'));
+
+  s = runClock(s);   // the delay is consumed the moment it comes up
+  assert.equal(at(s, 'e2')?.id, 'wP5', 'still at home');
+  assert.equal(s.gameSpecific.rt.ready.wP5, 1);
+
+  s = runClock(s);
+  assert.equal(s.gameSpecific.rt.clock, 1, 'the clock ran on to the moment it comes free');
+  assert.equal(at(s, 'e3')?.id, 'wP5');
+});
+
+test('melee: a delayed piece does not move until its hold is up', () => {
+  let s = start('melee');
+  s = apply(s, 'white', find(s, 'white', (a) => a.type === 'delay' && a.unitId === 'wP5' && a.duration === 0.5));
+  s = apply(s, 'white', find(s, 'white', (a) => a.type === 'queue-order' && a.unitId === 'wP5' && a.to === 'e4'));
+  const home = { ...unit(s, 'wP5').position };
+
+  s = runClock(s);
+  // A pawn covers one square per turn window and the window is 1, so half of it was
+  // spent standing still: it is half a square along, not a whole one.
+  const moved = home.y - unit(s, 'wP5').position.y;
+  assert.ok(Math.abs(moved - 0.5) < 1e-6, `held half the window, then moved (got ${moved})`);
+});
+
+test('delays are a continuous-time thing; a turn-based variant offers none', () => {
+  assert.equal(legal(start('sliding'), 'white').some((a) => a.type === 'delay'), false);
+  assert.ok(legal(start('clockwork'), 'white').some((a) => a.type === 'delay'));
+  assert.ok(legal(start('melee'), 'white').some((a) => a.type === 'delay'));
+});
+
+test('a search never sees the planning orders, only what acts now', () => {
+  let s = start('melee');
+  s = apply(s, 'white', find(s, 'white', (a) => a.type === 'order' && a.unitId === 'wP5'));
+  const all = ChessGame.getLegalActions(s, 'white');
+  const search = ChessGame.getSearchActions(s, 'white');
+  assert.ok(all.some((a) => a.type === 'queue-order'), 'planning orders exist');
+  assert.ok(!search.some((a) => ['queue-order', 'queue-delay', 'queue-pop'].includes(a.type)),
+    'but a search is never offered one');
+  assert.ok(search.some((a) => a.type === 'order'));
+  assert.ok(search.some((a) => a.type === 'delay'));
+  assert.ok(search.some((a) => a.type === 'cancel'));
+  // Standard and fog chess are untouched: same list either way.
+  for (const cfg of [{}, { fogOfWar: true }]) {
+    const std = ChessGame.createInitialState(PLAYERS, cfg);
+    assert.deepEqual(ChessGame.getSearchActions(std, 'white'), ChessGame.getLegalActions(std, 'white'));
+  }
+});
+
+test('a plan dies with the piece, and with the route it was planned from', () => {
+  // Queue two orders, then let the pawn be blocked by its own side on the first.
+  let s = start('clockwork');
+  s = {
+    ...s,
+    gameSpecific: {
+      ...s.gameSpecific,
+      rt: {
+        ...s.gameSpecific.rt,
+        queues: {
+          wR1: [
+            { kind: 'move', path: [gridOf('a2')], idx: 0, pathId: 0 },
+            { kind: 'move', path: [gridOf('a3')], idx: 0, pathId: 0 },
+          ],
+        },
+      },
+    },
+  };
+  s = runClock(s);
+  assert.equal(s.gameSpecific.rt.queues.wR1, undefined,
+    'everything behind a blocked order was planned from a square it never reached');
 });
 
 // ── End to end ──────────────────────────────────────────────────────────────
