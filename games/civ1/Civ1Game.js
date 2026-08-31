@@ -1413,14 +1413,16 @@ export const Civ1Game = {
   kinematics,
   // mapZoom/defaultTileSize: the map runs to 100x60 tiles, far more than fits legibly on
   // the stage at once, so the zoom & pan controls are always on here (not a configurable
-  // option) and the view starts at the original game's rough tile scale.
+  // option) and the view starts one zoom step in from the original game's rough tile
+  // scale (40px * the 1.25 step in Battlefield.vue), which is where the terrain art and
+  // the unit sprites actually read.
   // moveQueue: the goto-queue mechanic (games/moveQueue.js) — on by default for every game,
   // stated here explicitly since civ1 is the one that actually wires it up (queue-move/
   // queue-pop, see getLegalActions/applyActions above).
   ui: {
     hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
     blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
-    mapZoom: true, defaultTileSize: 40, moveQueue: true,
+    mapZoom: true, defaultTileSize: 50, moveQueue: true,
     // Units glide from square to square instead of blinking between centres (see
     // App.vue's startSlide). A civ1 move is one tile, so the default hop is a unit
     // sitting still and then simply being somewhere else — with a whole empire
