@@ -1,7 +1,8 @@
 <script setup>
-// The production half of the city screen: what this city is building — as a picture,
-// the way the original shows the item between its CHANGE and BUY buttons — how far
-// along it is, and the menu of everything else it could build instead.
+// The production half of the city screen: what this city is building — as a picture —
+// how far along it is, and the menu of everything else it could build instead. The
+// picture is the control: click the item being built to open that menu, click again to
+// close it, so there is no separate CHANGE button beside it.
 //
 // The pictures and names come from the game, not from here: `city.buildOptions` is a
 // map item -> { name, image, cost, turns, stats, kind } built server-side in
@@ -43,7 +44,11 @@ const choices = computed(() => props.productionActions.map(a => ({
 
 <template>
   <div class="cp">
-    <div class="cp-now">
+    <!-- The item being built is itself the change-production control: clicking it opens
+         the menu of everything else this city could build, and clicking it again closes
+         it. There is no separate button. -->
+    <button class="cp-now" :class="{ 'cp-open': open }" :disabled="locked"
+            @click="emit('update:open', !open)">
       <img :src="art(current)" class="cp-art" draggable="false"/>
       <div class="cp-now-txt">
         <div class="cp-name">{{current.name}}</div>
@@ -52,14 +57,14 @@ const choices = computed(() => props.productionActions.map(a => ({
           <template v-if="city.shields >= city.buildCost"> · ready</template>
           <template v-else-if="city.buildTurnsLeft != null"> · {{city.buildTurnsLeft}} turns left</template>
         </div>
+        <div class="mono cp-hint">
+          {{locked ? 'production set this turn' : (open ? 'close menu' : 'change… [C]')}}
+        </div>
       </div>
-    </div>
+      <span v-if="!locked" class="cp-caret">{{open ? '▴' : '▾'}}</span>
+    </button>
 
     <CityIconStrip :icon="city.icons?.shields" :filled="city.shields" :total="city.buildCost" :size="16"/>
-
-    <button class="btn btn-ghost cp-change" :disabled="locked" @click="emit('update:open', !open)">
-      {{locked ? 'Production set this turn' : (open ? 'Close menu' : 'Change… [C]')}}
-    </button>
 
     <!-- Numbered because the number keys pick straight off this list (see the city
          screen's onKeyDown) — the original's own change-production menu did the same. -->
@@ -81,13 +86,20 @@ const choices = computed(() => props.productionActions.map(a => ({
 
 <style scoped>
 .cp { display: flex; flex-direction: column; gap: 8px; }
-.cp-now { display: flex; align-items: center; gap: 10px; }
+/* The whole readout is the button, so it keeps no button chrome of its own until it is
+   hovered or the menu below it is open. */
+.cp-now { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+          background: none; border: 1px solid transparent; color: var(--txt);
+          padding: 4px; cursor: pointer; }
+.cp-now:hover:not(:disabled), .cp-now.cp-open { background: var(--bg2); border-color: var(--line3); }
+.cp-now:disabled { cursor: default; }
 .cp-art { width: 52px; height: 52px; object-fit: contain; image-rendering: pixelated; flex: none;
           background: var(--bg3); border: 1px solid var(--line2); padding: 3px; }
-.cp-now-txt { min-width: 0; }
+.cp-now-txt { min-width: 0; flex: 1; }
 .cp-name { font-size: 15px; font-weight: 700; text-transform: capitalize; }
 .cp-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
-.cp-change { width: 100%; justify-content: center; font-size: 12px; padding: 7px 10px; }
+.cp-hint { font-size: 10px; color: var(--faint); margin-top: 3px; }
+.cp-caret { flex: none; color: var(--dim); font-size: 15px; padding-right: 4px; }
 .cp-menu { display: flex; flex-direction: column; gap: 3px; max-height: 320px; overflow-y: auto;
            background: var(--bg0); border: 1px solid var(--line2); padding: 4px; }
 .cp-opt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; cursor: pointer;
