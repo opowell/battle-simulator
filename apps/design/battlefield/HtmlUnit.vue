@@ -149,7 +149,7 @@ const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value 
 .hl-hp { height: 3px; flex: none; }
 .hl-hp-fill { height: 100%; }
 
-.hl-blink { animation: hl-blink 1s steps(1) infinite; }
+.hl-blink { animation: hl-blink 0.7s steps(1) infinite; }
 @keyframes hl-blink { 50% { opacity: 0.35; } }
 @keyframes hl-pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
 </style>
