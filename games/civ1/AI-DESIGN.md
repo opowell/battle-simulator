@@ -344,6 +344,60 @@ Same army, nearly twice the empire. No decisive results either way at these leng
 — greedy holds a city and the games time out — so the win rate is still untested;
 that needs longer games or a stronger opponent.
 
+## Stack discipline (2026-08-31): not piling up is worth an empire
+
+Friendly units can share a square now (see the stacking work in
+[Civ1Game.js](Civ1Game.js)), and civ1's rule for that is harsh: an open square that
+loses its defence loses **every** unit standing on it. Both agents were given the
+new moves and no reason to distrust them — an agent that walks its army down one
+corridor stacks by accident, and then several units ride on one combat roll.
+
+Both now price a step onto one of their own at `STACK_PENALTY = 3` tiles of detour
+([ai.js](ai.js), mirrored in [searchActions.js](searchActions.js), where moves score
+4 a tile). Priced, not forbidden: a unit whose only way forward is over a friend
+still takes it. A square inside one of our own cities costs nothing — that is a
+garrison, and a city dies one unit at a time.
+
+Measured against the identical agent with `stackPenalty: 0`, **60 seat-swapped pairs
+at `maxTurns: 600`** (120 games; the pairing is what cancels civ1's large seat bias):
+
+| per pair, penalty on − off | mean | t | pairs ahead – behind |
+| --- | --- | --- | --- |
+| cities | **+1.17** | 3.22 | 36 – 7 |
+| advances | **+8.05** | 4.46 | 34 – 9 |
+| units alive | +1.38 | 1.49 | 29 – 14 |
+| decisive games | 6 – 2 | 1.66 | 5 – 1 |
+
+Stacked units in the field fell from **1.55 per turn to 0.05** — the mechanism does
+what it says. The empire terms are the signal (t > 3); the decisive record is the
+right metric in principle but 112 of 120 games still time out as draws, so 6–2 is
+suggestive at best. Note the agent gets *more* of everything, not just safer units:
+walking around your own army spreads it over more ground, and in civ1 ground is
+cities.
+
+Against a different opponent it points the same way. 30 seat-swapped pairs against
+the greedy baseline, the same seeds and the same (then unguarded) greedy in both runs:
+
+| heuristic vs greedy | penalty off | penalty on |
+| --- | --- | --- |
+| avg cities | 2.50 | **3.10** |
+| avg advances | 20.08 | **24.37** |
+| decisive games | 2 – 12 | **2 – 10** |
+
+The old finding that greedy wins the decisive games ([Round 2](#round-2-the-game-now-resolves-and-the-two-metrics-disagree))
+is untouched by this — it is a production and posture problem, not a movement one.
+
+**Greedy got the same rule, and for it the change is worth nothing — which is the
+point.** It piled up worst of all (4.1 stacked units a turn), because until squares
+could be shared the *engine* was what stopped it. 40 seat-swapped pairs of greedy
+against itself, penalty on vs off: cities 0.99 vs 1.01, advances 7.91 vs 7.89,
+decisive 8 – 9, stacked units 0.40 vs 4.12. A dead heat on strength, so the baseline
+is still the baseline; it just no longer throws four units away to one attack in
+front of a human playing against it.
+
+The harness is [demo/civ1-bench.mjs](../../demo/civ1-bench.mjs) — seat-swapped pairs,
+one line per game, and the three switches used for the tables above.
+
 ## Revised order
 
 The original plan had `set-production` last, as an unlock for the personality material. That
