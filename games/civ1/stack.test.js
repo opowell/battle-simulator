@@ -222,13 +222,71 @@ test('civ1 stacking: once everyone is done the square shows its defender', () =>
 
 test('civ1 stacking: a city square keeps its garrison box instead of a stack', () => {
   // The city wins the square's art there (see toGrid) and its units are picked out of
-  // the city screen — a second token in the same square would be drawn over the city.
+  // the city screen — the rest of the garrison gets no token of its own.
   const state = world({
-    units: [unit('g1', 'p1', 'phalanx', 10, 10), unit('g2', 'p1', 'militia', 10, 10)],
+    units: [
+      unit('g1', 'p1', 'phalanx', 10, 10, { attrs: { fortified: true } }),
+      unit('g2', 'p1', 'militia', 10, 10, { attrs: { fortified: true } }),
+    ],
     cities: [city('c1', 'p1', 10, 10)],
   });
   const grid = Civ1Game.toGrid(state);
   const cell = grid.cells.find(c => c.x === 10 && c.y === 10);
   assert.equal(cell.stack, undefined);
+  assert.equal(cell.imagePath.endsWith('/map/city'), true, 'the square is drawn as the city');
   assert.deepEqual(grid.cities[0].garrison.map(u => u.id).sort(), ['g1', 'g2']);
+});
+
+// ---------------------------------------------------------------------------
+// A unit waiting for orders inside its city
+// ---------------------------------------------------------------------------
+
+test('civ1 stacking: the garrison the turn is waiting on stands ON its city', () => {
+  // A militia that has just been built used to be invisible: the city won the square,
+  // so the piece the turn was handing over had no art at all (and the blink that says
+  // "this one is waiting" blinked the CITY away instead). Now it is drawn standing on
+  // the city, with the city riding underneath it in `stack`.
+  const state = world({
+    units: [unit('new', 'p1', 'militia', 10, 10)],
+    cities: [city('c1', 'p1', 10, 10)],
+  });
+  const cell = Civ1Game.toGrid(state).cells.find(c => c.x === 10 && c.y === 10);
+
+  assert.equal(cell.unitId, 'new');
+  assert.equal(cell.needsOrders, true);
+  assert.equal(cell.imagePath.endsWith('/units/militia'), true, 'the square draws the militia');
+  assert.equal(cell.fixture, undefined, 'and it is a piece that can move, not the city');
+  assert.equal(cell.badge, null, "the city's size plaque goes with the city");
+
+  assert.equal(cell.stack.length, 1, 'the city is the token underneath');
+  assert.equal(cell.stack[0].unitId, 'u_10_10', 'with the id an empty city square gets');
+  assert.equal(cell.stack[0].imagePath.endsWith('/map/city'), true);
+  assert.equal(cell.stack[0].badge, 1);
+  assert.equal(cell.stack[0].fixture, true, 'nothing can walk it off the square');
+});
+
+test('civ1 stacking: a garrison that has had its orders goes back under the city', () => {
+  for (const done of [{ movesLeft: 0 }, { attrs: { fortified: true } }, { attrs: { sentry: true } }]) {
+    const state = world({
+      units: [unit('g', 'p1', 'militia', 10, 10, done)],
+      cities: [city('c1', 'p1', 10, 10)],
+    });
+    const cell = Civ1Game.toGrid(state).cells.find(c => c.x === 10 && c.y === 10);
+    assert.equal(cell.imagePath.endsWith('/map/city'), true, JSON.stringify(done));
+    assert.equal(cell.stack, undefined);
+    assert.equal(cell.unitId, 'g', 'the square still selects the garrison');
+  }
+});
+
+test('civ1 stacking: an enemy city does not show you who is holding it', () => {
+  // Only the player on the clock has a unit "waiting for orders" — everyone else's
+  // pieces have full moves all through your turn, and would otherwise stand on top of
+  // every enemy city on the map.
+  const state = world({
+    units: [unit('g', 'p2', 'militia', 10, 10)],
+    cities: [city('c1', 'p2', 10, 10)],
+  });
+  const cell = Civ1Game.toGrid(state).cells.find(c => c.x === 10 && c.y === 10);
+  assert.equal(cell.imagePath.endsWith('/map/city'), true);
+  assert.equal(cell.stack, undefined);
 });

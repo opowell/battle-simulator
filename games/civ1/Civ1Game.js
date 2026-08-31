@@ -1871,6 +1871,28 @@ export const Civ1Game = {
       needsOrders: wantsOrders(u),
     });
     for (const c of cities) cmap[`${c.position.x},${c.position.y}`] = c;
+    // A city square draws the CITY, not what is standing in it (see the cells below) —
+    // with the original's own exception: the unit the turn is waiting on stands ON its
+    // city, blinking over it, so a militia that has just been built is something you can
+    // see and order instead of a piece hidden under a plaque. `garrisonOnTop` picks that
+    // square out: the top of the stack still wants orders AND its owner is the one on the
+    // clock, so an enemy city never shows you who is holding it.
+    const onTheClock = new Set(state.activePlayers ?? []);
+    const garrisonOnTop = (city, u) => !!city && !!u && wantsOrders(u) && onTheClock.has(u.ownerId);
+    // The city as a token of its own, for exactly that case: it rides in the square's
+    // `stack` (drawn UNDER the piece standing on it — see App.vue's buildField) while the
+    // square's own token is the garrison. Its id is the same synthetic position id an
+    // EMPTY city square gets from buildField, so the city keeps one identity across the
+    // moment its garrison starts and stops standing on it. Nothing can move it, and
+    // `fixture` says so (see boardMoves.js).
+    const cityToken = (c) => ({
+      unitId: `u_${c.position.x}_${c.position.y}`,
+      glyph: '★', unitName: c.name,
+      imagePath: `${BASE}/map/city`,
+      owner: pidIdx[c.ownerId] ?? 0,
+      badge: c.size, badgeLabel: c.name,
+      fixture: true,
+    });
 
     // River overlay: pick a directional sprite (river_<nesw>) from which screen
     // neighbours also carry a river or are ocean, so segments join up and reach
@@ -1946,6 +1968,10 @@ export const Civ1Game = {
         const u = umap[`${x},${y}`];
         const city = cmap[`${x},${y}`];
         const here = stackAt[`${x},${y}`] ?? [];
+        // Whether the garrison is standing on top of its city this frame (see above) —
+        // when it is, the square's token is the UNIT and the city rides underneath it.
+        const onTop = garrisonOnTop(city, u);
+        const drawsCity = !!city && !onTop;
         cells.push({
           x, y,
           glyph: u ? u.type[0].toUpperCase() : city ? '★' : '',
@@ -1960,23 +1986,29 @@ export const Civ1Game = {
           // militia. The unit is still what the square selects (unitId above) and what
           // the side panel, roster and HP/MP fields describe — only the art is the
           // city's, so unitName stays the unit's and the city's name rides badgeLabel.
+          // Except while the garrison is the piece the turn is waiting on (`onTop`): then
+          // the unit is drawn standing on its city, blinking over it, and the city rides
+          // in `stack` underneath — see garrisonOnTop above.
           // For real units, `glyph` alone is ambiguous (militia/musketeers/mech-inf/
           // marines all start with 'm') — unitName carries the real type so the side
           // panel and roster show e.g. "militia" instead of a bare "M".
           unitName: u ? u.type : city ? city.name : undefined,
-          imagePath: city ? `${BASE}/map/city` : (u ? `${BASE}/units/${u.type}` : null),
+          imagePath: drawsCity ? `${BASE}/map/city` : (u ? `${BASE}/units/${u.type}` : null),
           // …but the panels that describe the *unit* (roster, selected-unit detail) keep
           // showing the unit: portraitPath wins over imagePath there, so a militia sitting
           // in a city is still a militia everywhere except on the map square itself.
-          portraitPath: (city && u) ? `${BASE}/units/${u.type}` : undefined,
-          badge: city ? city.size : null,
-          badgeLabel: city ? city.name : undefined,
+          portraitPath: (drawsCity && u) ? `${BASE}/units/${u.type}` : undefined,
+          badge: drawsCity ? city.size : null,
+          badgeLabel: drawsCity ? city.name : undefined,
           // …and because the square's art is the CITY's while `unitId` above is the
           // garrison's, the client must not treat this token as the piece that carries
           // that id: a unit stepping into the city would otherwise animate the city
           // walking to meet it. `fixture` says the art belongs to the square (see
           // apps/design/boardMoves.js).
-          fixture: city ? true : undefined,
+          // (…and when the garrison IS the art — the unit on the clock, standing on top —
+          // the square is a real piece again: it may move, and the city token underneath
+          // carries the fixture flag instead.)
+          fixture: drawsCity ? true : undefined,
           // Ocean draws no terrain sprite — coastSprite (below) supplies the real
           // ocean tile. Land draws its authentic tile, blended with like neighbours.
           bgImage: (tile.terrain === 'ocean' || tile.terrain === 'unknown') ? null
@@ -2016,9 +2048,13 @@ export const Civ1Game = {
           // (see the sort above) — and these ride along as tokens of their own drawn in
           // the same cell under it (apps/design/App.vue's buildField), so a settler under
           // its escort is still selectable, still in the roster, and still gets handed
-          // the turn. A city square is the exception: the city wins the square there and
-          // its garrison is picked out of the city screen's own box (`garrison` below).
-          stack: (!city && here.length > 1) ? here.slice(1).map(su => unitToken(su, here.length)) : undefined,
+          // the turn. A city square is the exception: the city wins its square, so the
+          // rest of the garrison is picked out of the city screen's own box (`garrison`
+          // below) — and when the unit on the clock is standing ON the city, the CITY is
+          // what rides here, underneath it.
+          stack: city
+            ? (onTop ? [cityToken(city)] : undefined)
+            : (here.length > 1 ? here.slice(1).map(su => unitToken(su, here.length)) : undefined),
           // Whether this unit still wants orders this turn: has moves left and isn't
           // parked on a standing order. Drives the generic auto-advance-to-next-unit
           // UI feature (ui.autoAdvanceUnit below, see Battlefield.vue) — most games

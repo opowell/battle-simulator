@@ -1699,16 +1699,15 @@ function unitWantingOrders(exceptId) {
     u.team === pendingPlayerId.value && u.needsOrders && u.id !== exceptId) ?? null;
 }
 
-// Put that unit in hand and bring it on screen. A unit garrisoned in a city has no
-// token of its own — the city wins the square and carries the unit's id (see
-// selectedCity, and Civ1Game's toGrid) — so selecting it the plain way would open the
-// city screen over the unit instead of handing it over. Going through the garrison
-// pick says this selection means the UNIT, which is what a turn handing you one unit
-// after another has to mean: the original never answers "your militia is waiting" with
-// a city screen. An EMPTY city's token is the city and nothing else (`needsOrders` is
-// only ever stamped on a real unit), so that one still selects as a city.
+// Put that unit in hand and bring it on screen. A unit standing in a city shares its
+// square (see selectedCity), so selecting it the plain way would open the city screen
+// over the unit instead of handing it over. Going through the garrison pick says this
+// selection means the UNIT, which is what a turn handing you one unit after another has
+// to mean: the original never answers "your militia is waiting" with a city screen. An
+// EMPTY city's token is the city and nothing else (`needsOrders` is only ever stamped on
+// a real unit), so that one still selects as a city.
 function handOverUnit(u) {
-  if (u.badge != null && u.needsOrders != null) selectGarrisonUnit(u.id);
+  if (u.needsOrders != null && cityAt(Math.floor(u.x), Math.floor(u.y))) selectGarrisonUnit(u.id);
   else selectUnit(u.id);
   centerOn(u.x, u.y);
 }
@@ -1747,26 +1746,31 @@ watch([preselectFor, () => props.animating, displayUnits], ([pending, busy, unit
   if (first) handOverUnit(first);
 }, { immediate: true });
 
-// Cities render through the same glyph→pseudo-unit pipeline as real units (see
-// App.vue's buildField) — `badge` is only ever set on those city tokens (the size
-// number), so it doubles as "this selection is a city, not a unit" here. When it is,
-// the City Inspector overlay takes over instead of the generic SelectedUnitDetail
-// sidebar (see games/civ1/Civ1Game.js's `cities` field for the full per-city detail).
+// The city standing on a square, if any (a function declaration, not a const, because
+// handOverUnit above calls it and one of the watchers that hands a unit over fires while
+// this file is still being set up).
+function cityAt(x, y) {
+  return (props.field.cities ?? []).find(c => c.x === x && c.y === y) ?? null;
+}
+
+// A city standing on the selected square (field.cities — see games/civ1/Civ1Game.js for
+// the full per-city detail) means the selection is that CITY: the City Inspector overlay
+// takes over instead of the generic SelectedUnitDetail sidebar. It is the SQUARE that
+// decides, not the token on it, because a game may draw either one there — civ1 draws
+// its city, except while a unit garrisoned in it is the piece the turn is waiting on,
+// which stands on top — and a click on the square has to open the city screen either way.
 //
-// …but a city and the unit garrisoned in it share one square, and the city wins the
-// token: one id for two things, so a unit inside a city could be selected and never
-// *reached* — every click on that square put the city screen over it and its orders
-// behind that. garrisonPick is the way out: the screen's "Units in City" box picks the
-// unit by id (selectGarrisonUnit), and that pick says the selection means the UNIT, so
-// the screen closes and leaves it in hand. The token was already describing the unit
-// (its unitName, portrait, HP and MP are the unit's — see toGrid), so nothing else has
-// to change. Any other selection goes through selectUnit and clears the pick, which is
-// what lets a click on that same city open its screen again.
+// …but that means a city and the unit standing in it share one square: two things a
+// click could mean, so a unit inside a city could be selected and never *reached* —
+// every click on that square put the city screen over it and its orders behind that.
+// garrisonPick is the way out: the screen's "Units in City" box picks the unit by id
+// (selectGarrisonUnit), and that pick says the selection means the UNIT, so the screen
+// closes and leaves it in hand. Any other selection goes through selectUnit and clears
+// the pick, which is what lets a click on that same city open its screen again.
 const selectedCity = computed(() => {
   const u = selectedUnit.value;
-  if (!u || u.badge == null || garrisonPick.value === selectedId.value) return null;
-  const x = Math.floor(u.x), y = Math.floor(u.y);
-  return (props.field.cities ?? []).find(c => c.x === x && c.y === y) ?? null;
+  if (!u || garrisonPick.value === selectedId.value) return null;
+  return cityAt(Math.floor(u.x), Math.floor(u.y));
 });
 // The city screen paints the city and its units in their owner's colour, the same way
 // the board does (see teamSprite.js) — team ids are player ids (App.vue's buildField).

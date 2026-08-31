@@ -117,12 +117,15 @@ test('civ1: getResult win when p2 has no cities or units', () => {
 
 // A city with a unit standing in it is drawn as the CITY, the way the original game
 // draws it: before this, the garrison's sprite covered the city entirely, so every city
-// with a defender in it (i.e. nearly every city) was invisible on the map.
+// with a defender in it (i.e. nearly every city) was invisible on the map. (The one
+// exception — the unit the turn is waiting on, which stands on top of its city — is in
+// stack.test.js; the garrison here has already moved, so the city keeps its square.)
 test('civ1: a garrisoned city square is drawn as the city, not as its garrison', () => {
   const state = Civ1Game.createInitialState(players());
-  const unit = state.units.find(u => u.ownerId === 'p1');
+  const unit = { ...state.units.find(u => u.ownerId === 'p1'), movesLeft: 0 };
   const withCity = {
     ...state,
+    units: state.units.map(u => (u.id === unit.id ? unit : u)),
     cities: [...(state.cities ?? []), {
       id: 'city-test', name: 'Testopolis', ownerId: 'p1',
       position: { ...unit.position }, size: 7, shields: 0, food: 0,

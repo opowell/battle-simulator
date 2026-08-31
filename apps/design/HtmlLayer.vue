@@ -712,7 +712,13 @@ function handleUnitClick(e, u) {
         <div v-if="c.selEmpty" class="hl-fill hl-dashed"/>
         <div v-if="c.anno" class="hl-anno-circle" :style="{ borderWidth: annoBorderPx }"/>
 
-        <HtmlUnit v-for="u in c.units" :key="u.id"
+        <!-- A shared square's pieces are listed bottom-first (see unitsAt above), and
+             where there is more than one the order has to be a z-index too: a badged
+             token (a settlement) outranks plain tokens by class, so a piece standing on
+             a city — civ1's garrison, the one the turn is waiting on — would otherwise
+             be painted under the plaque it is standing on however late it is drawn. -->
+        <HtmlUnit v-for="(u, i) in c.units" :key="u.id"
+          :style="c.units.length > 1 ? { zIndex: 2 + i } : null"
           :unit="u" :r="unitR(u)" :rdr="rdr" :shape="unitShape(u)"
           :tween="unitTween(u)"
           :showHp="showHpBars"
