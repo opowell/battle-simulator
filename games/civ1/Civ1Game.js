@@ -1529,7 +1529,26 @@ export const Civ1Game = {
     },
   },
   scenarios: [
-    { id: 'standard', name: 'Standard', description: 'Random world map — set size below', config: {} },
+    // A full table rather than a duel: the original was a six-civ world, and one rival
+    // on a 50x30 map leaves both of you to develop alone for most of the game. The five
+    // are split between the two AIs so the world plays more than one way — the greedy
+    // baseline expands at you, Obscuro searches. Every one of these is a seat like any
+    // other, so the form can rename them, re-agent them, or delete them down to two.
+    {
+      id: 'standard',
+      name: 'Standard',
+      description: 'Random world map — you and five rival civilizations',
+      config: {
+        players: [
+          { name: 'You' },
+          { name: 'Greedy 1', agent: 'greedy' },
+          { name: 'Obscuro 1', agent: 'obscuro' },
+          { name: 'Greedy 2', agent: 'greedy' },
+          { name: 'Obscuro 2', agent: 'obscuro' },
+          { name: 'Greedy 3', agent: 'greedy' },
+        ],
+      },
+    },
     // Hand-built fixed maps (see fixedMaps.js).
     ...FIXED_MAPS.map(m => ({ id: m.id, name: m.name, description: m.description, config: {} })),
     // An exhibition rather than a game: both seats are AI and none is yours, which

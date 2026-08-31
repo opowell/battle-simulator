@@ -256,7 +256,12 @@ const GAMES = {
   chess:         { game: ChessGame,         minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }] },
   tactical:      { game: TacticalGame,      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   cardbattle:    { game: CardBattleGame,    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  civ1:          { game: Civ1Game,          minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
+  // Six, because that is how many seats civ1's own scenarios lay — the standard game
+  // and the large exhibition both seat six. A lower cap here doesn't stop them (a
+  // scenario seats the table itself, see gameDefaults.makeSlots); it only greys out
+  // "+ Add slot" from the moment the form opens, so a seat you delete is one you
+  // cannot put back.
+  civ1:          { game: Civ1Game,          minPlayers: 2, maxPlayers: 6,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   civ2:          { game: Civ2Game,          minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   // World Domination is the board game's full table of six: you plus five AI rivals
   // (the web UI seats the first slot as the human and the rest as CPUs — see
