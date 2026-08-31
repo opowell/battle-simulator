@@ -1397,8 +1397,10 @@ function confirmSurrender() {
 // ── opening view ──────────────────────────────────────────────
 // A zoomable map is bigger than the stage, so opening it centred on the board drops the
 // player somewhere they own nothing. Instead start on their first unit, selected — the
-// same state a click on it would produce. Scoped to mapZoom games so fixed-board games
-// (chess) still open with nothing selected, as they always have.
+// same state a click on it would produce, except that a unit garrisoned in a city is
+// handed over as the unit rather than as its city screen (see handOverUnit). Scoped to
+// mapZoom games so fixed-board games (chess) still open with nothing selected, as they
+// always have.
 // Units aren't in `field` on the first watch fire, so this waits for them and then runs
 // once per session; any click afterwards is the player's own and must not be overridden.
 const initedView = ref(false);
@@ -1409,8 +1411,7 @@ watch([displayUnits, zoomEnabled], () => {
     (humanPlayerId.value ? u.team === humanPlayerId.value : u.friendly));
   if (!mine) return;
   initedView.value = true;
-  selectUnit(mine.id);
-  centerOn(mine.x, mine.y);
+  handOverUnit(mine);
 }, { immediate: true });
 
 // Territory-click games (kdice, risk): every hex belongs to some territory, but only
@@ -1662,18 +1663,72 @@ const selectedUnit = computed(() => displayUnits.value.find(u => u.id === select
 // mp-hits-zero check would be wrong for them (see queuingMoves above on why `mp` alone
 // isn't a safe cross-game signal). Fires only when the SAME unit's flag goes true→not-
 // true, so it never fights a selection the player just made themselves: selecting
-// anything without orders to give — another unit, or a city (whose token has no
-// needsOrders at all) — is a selection change, not a unit finishing its turn, and used
-// to have its selection yanked straight back to the nearest unit still wanting orders.
+// anything else — another unit, or a city — is a selection change, not a unit
+// finishing its turn, and used to have its selection yanked straight back to the
+// nearest unit still wanting orders.
 watch(() => [selectedId.value, selectedUnit.value?.needsOrders],
       ([id, needsOrders], [prevId, prev] = []) => {
   if (!ui.value.autoAdvanceUnit || !isPending.value || id !== prevId
       || prev !== true || needsOrders === true) return;
-  const myTeam = pendingPlayerId.value;
-  const next = displayUnits.value.find(u => u.team === myTeam && u.needsOrders && u.id !== selectedId.value);
-  if (next) { selectUnit(next.id); centerOn(next.x, next.y); }
+  const next = unitWantingOrders(selectedId.value);
+  if (next) handOverUnit(next);
   else selectedId.value = null;
 });
+
+// The player's first unit that still wants orders, skipping `exceptId` — the one that
+// just finished, when advancing off it.
+function unitWantingOrders(exceptId) {
+  return displayUnits.value.find(u =>
+    u.team === pendingPlayerId.value && u.needsOrders && u.id !== exceptId) ?? null;
+}
+
+// Put that unit in hand and bring it on screen. A unit garrisoned in a city has no
+// token of its own — the city wins the square and carries the unit's id (see
+// selectedCity, and Civ1Game's toGrid) — so selecting it the plain way would open the
+// city screen over the unit instead of handing it over. Going through the garrison
+// pick says this selection means the UNIT, which is what a turn handing you one unit
+// after another has to mean: the original never answers "your militia is waiting" with
+// a city screen. An EMPTY city's token is the city and nothing else (`needsOrders` is
+// only ever stamped on a real unit), so that one still selects as a city.
+function handOverUnit(u) {
+  if (u.badge != null && u.needsOrders != null) selectGarrisonUnit(u.id);
+  else selectUnit(u.id);
+  centerOn(u.x, u.y);
+}
+
+// ...and the same jump at the other end: a turn opens with the first unit that wants
+// orders already picked and on screen, the way the original game hands you one unit
+// after another. Without it every turn starts by hunting the map for a unit to click,
+// and the auto-advance chain — which only ever fires off a unit FINISHING — never gets
+// its first link. Armed and fired in two steps like the turn chime above, and for the
+// same reason: a bundled AI turn arrives as one update whose battles animate for
+// seconds afterwards, and centring the map on your own unit over the top of that yanks
+// the view off the fight being shown. Keyed on the turn NUMBER as well as the player,
+// because for a seated human the AI seats' turns never take the pending player away:
+// the server goes on naming you as the one it waits on, and a whole AI round arrives
+// as a single update in which only `turn` has moved. Watching who is to move (as the
+// chime above does) therefore sees one unbroken "p1 to move" and would arm exactly
+// once, on load. The player stays in the key so a human→human
+// handoff inside one turn counts as a new turn too. Both watchers are `immediate`: the
+// first so that opening a game already waiting on you hands you a unit, the second
+// because that first arming happens while this very setup runs — before a plain
+// watcher exists to see it — and the arm would otherwise sit unfired until something
+// else happened to move.
+// One exception: a unit of yours that still wants orders and is already selected was
+// chosen by the player themselves (they ended the turn early with it in hand), so it
+// stands rather than being replaced by whichever unit happens to come first.
+const preselectFor = ref(null);
+watch(() => (isPending.value && ui.value.autoAdvanceUnit
+             ? `${pendingPlayerId.value}:${props.liveState?.turn}` : null),
+      (key, prev) => { preselectFor.value = key && key !== prev ? pendingPlayerId.value : null; },
+      { immediate: true });
+watch([preselectFor, () => props.animating, displayUnits], ([pending, busy, unitList]) => {
+  if (!pending || busy || !unitList.length) return;
+  preselectFor.value = null;
+  if (selectedUnit.value?.team === pending && selectedUnit.value.needsOrders) return;
+  const first = unitWantingOrders(null);
+  if (first) handOverUnit(first);
+}, { immediate: true });
 
 // Cities render through the same glyph→pseudo-unit pipeline as real units (see
 // App.vue's buildField) — `badge` is only ever set on those city tokens (the size
