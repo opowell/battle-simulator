@@ -119,6 +119,20 @@ function wakeSentryUnits(units, playerId, boardWidth) {
   });
 }
 
+// How a unit's standing order is drawn ON the map (toGrid hands this to the generic
+// renderer as `statusMark`, see apps/design/battlefield/HtmlUnit.vue). The original
+// game's own three answers: a unit still digging in wears an "F", a sentried one an
+// "S", and one that is dug in gets a frame drawn round it instead of a letter — the
+// state you leave a stack of defenders in is the one that costs no ink to read.
+// Only one order can stand at a time (each of fortify/sentry clears the other), so a
+// mark is a single answer, not a set.
+function statusMarkFor(unit) {
+  if (unit.attrs?.sentry) return { glyph: 'S', title: 'Sentry — wakes when an enemy comes into view' };
+  if (unit.attrs?.fortifying) return { glyph: 'F', title: 'Fortifying — dug in from next turn' };
+  if (unit.attrs?.fortified) return { frame: true, title: 'Fortified' };
+  return undefined;
+}
+
 // ── Civilizations ─────────────────────────────────────────────────────────────
 //
 // Which of the original game's fourteen civs each seat is playing (civs.js). The
@@ -382,7 +396,7 @@ function applyMove(units, cities, board, playerId, unit, to) {
   // Moving is a fresh order: drop any standing fortify/sentry (matches queued
   // waypoints too — this runs for those the same way it does for a direct 'move').
   const newUnits = units.map(u =>
-    u.id === unit.id ? { ...u, position: to, movesLeft: newMovesLeft, attrs: { ...u.attrs, fortified: false, sentry: false } } : u);
+    u.id === unit.id ? { ...u, position: to, movesLeft: newMovesLeft, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } } : u);
 
   const enemyCity = cities.find(c => c.ownerId !== playerId && c.position.x === to.x && c.position.y === to.y);
   const newCities = enemyCity
@@ -428,7 +442,7 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
 
   units = units.map(u => {
     if (u.id === attackerId) {
-      if (result.attackerSurvived) return { ...u, hp: result.attackerHpLeft, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } };
+      if (result.attackerSurvived) return { ...u, hp: result.attackerHpLeft, movesLeft: 0, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } };
       return { ...u, alive: false, hp: 0, movesLeft: 0 };
     }
     if (u.id === targetId) {
@@ -559,7 +573,11 @@ function applyOneAction(state, playerActions, rng = Math.random) {
         // the one spec so discrete-time budget and continuous-time cooldown agree.
         const base = ST.moveBudget(kinematics, u, state)
           + (UNITS[u.type].domain === 'sea' ? navalBonus : 0);
-        return { ...u, movesLeft: base };
+        // A unit that spent last turn fortifying is dug in by the time the turn comes
+        // back round: the transient flag goes, attrs.fortified stays (see the 'fortify'
+        // action in applyActions).
+        const attrs = u.attrs?.fortifying ? { ...u.attrs, fortifying: false } : u.attrs;
+        return { ...u, movesLeft: base, attrs };
       }
       return u;
     });
@@ -595,7 +613,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
     // never fires on the ordinary path.
     if (!reaches(unit, board, units, cities, playerId, action.to)) {
       units = units.map(u => u.id === action.unitId
-        ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } }
+        ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } }
         : u);
       return { ...state, units, lastActions: playerActions };
     }
@@ -610,7 +628,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
   // fortify/sentry so the unit doesn't look parked while it's actually got a plan.
   if (action.type === 'queue-move') {
     units = enqueueWaypoint(units, action.unitId, action.to);
-    units = units.map(u => u.id === action.unitId ? { ...u, attrs: { ...u.attrs, fortified: false, sentry: false } } : u);
+    units = units.map(u => u.id === action.unitId ? { ...u, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } } : u);
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -731,7 +749,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
     // survive the terraforming, and neither does the road it sat on.
     else patch = { terrain: CLEARS_TO[tile.terrain] ?? 'plains', irrigated: false, mined: false, hasRail: false };
     const newTiles = { ...board.tiles, [k]: { ...tile, ...patch } };
-    units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: false } } : u);
+    units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } } : u);
     return { ...state, units, board: { ...board, tiles: newTiles }, lastActions: playerActions };
   }
 
@@ -785,9 +803,15 @@ function applyOneAction(state, playerActions, rng = Math.random) {
   }
 
   // ── fortify / sentry (standing orders) ──────────────────────────────────────
+  // Digging in takes the rest of the turn: the unit is *fortifying* now and counts as
+  // fortified from the owner's next turn on (the flag is cleared where their moves
+  // refresh, see the 'end-turn' handling above). The original draws those two states
+  // differently — an "F" while it digs in, a frame around it once it's dug in — which
+  // is what toGrid's statusMark below reports. Both already carry the defence bonus
+  // (combat.js reads attrs.fortified, which is set from the moment the order is given).
   if (action.type === 'fortify') {
     units = units.map(u => u.id === action.unitId
-      ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: true, sentry: false } }
+      ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: true, fortifying: true, sentry: false } }
       : u);
     return { ...state, units, lastActions: playerActions };
   }
@@ -1830,7 +1854,11 @@ export const Civ1Game = {
           queue: u?.queue?.length ? u.queue : null,
           // Standing-order tags shown in the side panel (generic apps/design display
           // channel — see SelectedUnitDetail.vue's statusEffects tags).
-          statusEffects: u ? [...(u.attrs?.fortified ? ['fortified'] : []), ...(u.attrs?.sentry ? ['sentry'] : [])] : undefined,
+          statusEffects: u ? [...(u.attrs?.fortified ? [u.attrs.fortifying ? 'fortifying' : 'fortified'] : []), ...(u.attrs?.sentry ? ['sentry'] : [])] : undefined,
+          // The same standing order said on the map itself, so it can be read off a
+          // square without selecting the unit (generic display channel — see App.vue's
+          // statusMark and battlefield/HtmlUnit.vue).
+          statusMark: u ? statusMarkFor(u) : undefined,
           // Whether this unit still wants orders this turn: has moves left and isn't
           // parked on a standing order. Drives the generic auto-advance-to-next-unit
           // UI feature (ui.autoAdvanceUnit below, see Battlefield.vue) — most games
