@@ -84,6 +84,39 @@
  *   so a stateful belief tracker can record the move (e.g. to detect its own
  *   captured units next turn). Pure-stateless games can omit it.
  *
+ * --- Customised starting units ----------------------------------------------
+ * A session may replace the roster a game opens with — which units each side has
+ * and where they stand (engine/startingSetup.js, `config.startingUnits`). That
+ * works for EVERY game off the universal Unit contract above, so these three are
+ * only for games the generic layer can't fully serve.
+ *
+ * @property {(state: GameState, config?: object) => GameState} [applyStartingUnits]
+ *   Optional. Called with the opening state once its `units` have been replaced by
+ *   the customised roster; returns it with everything the game DERIVES from its
+ *   opening units brought back into step. Chess rebuilds `board` (there the board,
+ *   not the units array, is the position) and re-derives castling; civ1 re-seeds
+ *   which tiles each seat has explored. Games that keep no such copy omit it —
+ *   `gameSpecific.startRoster`, which nearly all of them keep for fog belief, is
+ *   rebuilt generically and needs no hook.
+ *
+ * @property {(state: GameState) => string[]} [setupUnitTypes]
+ *   Optional. Unit types a customised roster may ask for beyond the ones the game
+ *   happens to open with (civ1 offers its whole units table). Without it the
+ *   choice is limited to the types already on the board, since those are the only
+ *   ones a new unit can be cloned from.
+ *
+ * @property {(state: GameState, spec: {id: string, ownerId: string, type: string, position: any}) => Unit|null} [createSetupUnit]
+ *   Optional. Mint one unit of `type` for a customised roster — the game's own
+ *   factory, with its stats table applied. Asked first for every ADDED unit;
+ *   returning null (or omitting it) falls back to cloning a same-type unit
+ *   already in the opening position.
+ *
+ * @property {(config: object) => object} [resolveSetupConfig]
+ *   Optional. The session config with anything the game would otherwise roll fresh
+ *   on each createInitialState call pinned down (civ1/civ2: a blank map seed).
+ *   Called when a setup screen asks for the opening position to lay units out on,
+ *   so the session that is finally created gets the same world.
+ *
  * @property {(state: GameState, action: Action) => number} [getActionDuration]
  *   Optional. Continuous-time mode only. Returns the sim-time (in seconds) for
  *   this action to complete — e.g. travelTime for a move, reloadTime for an attack.

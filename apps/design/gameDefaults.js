@@ -62,4 +62,14 @@ function scenarioOverrides(sc) {
   };
 }
 
-window.gameDefaults = { defaultCpuAgent, makeSlots, initGameOpts, scenarioOverrides };
+// The ids the SERVER will seat these slots under. A form slot is 'slot0', 'slot1',
+// … — a handle for the row, not a player id; the session gets the game's own
+// default ids in slot order (createSession does the same mapping). Anything that
+// has to talk to the server about a specific seat before the session exists (the
+// starting-units editor asks for that seat's units) has to agree with it.
+function seatIds(game, slots) {
+  const defs = game?.defaultPlayers ?? [];
+  return slots.map((_, i) => defs[i]?.id ?? ('p' + (i + 1)));
+}
+
+window.gameDefaults = { defaultCpuAgent, makeSlots, initGameOpts, scenarioOverrides, seatIds };

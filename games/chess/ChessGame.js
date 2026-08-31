@@ -459,6 +459,45 @@ export const ChessGame = {
     };
   },
 
+  /**
+   * A customised opening (engine/startingSetup.js) hands back the units it wants
+   * on the board; here is everything standard chess derives from them.
+   *
+   * `board` is the authoritative position for this quadrant — the units array is
+   * built FROM it (boardToUnits), so it has to be rebuilt or the game would play
+   * on with its default pieces. Castling is re-derived rather than carried over:
+   * a set-up position is not a game that has been played, so the right exists
+   * exactly when the king and that rook are standing on their home squares. Fog
+   * markers are re-seeded from the new board for the same reason.
+   *
+   * The other three (space × time) quadrants keep no board — their units array IS
+   * the position — so they need nothing beyond what the generic layer did.
+   */
+  applyStartingUnits(state, _config = {}) {
+    if (!state.board || ST.isSpacetimeVariant(state)) return state;
+    const board = {};
+    for (const u of state.units) if (u.alive !== false) board[u.position] = u;
+    const home = (color) => (color === 'white' ? '1' : '8');
+    const at = (sq, type, color) => board[sq]?.type === type && board[sq]?.ownerId === color;
+    const rights = (color) => ({
+      kingSide:  at('e' + home(color), 'king', color) && at('h' + home(color), 'rook', color),
+      queenSide: at('e' + home(color), 'king', color) && at('a' + home(color), 'rook', color),
+    });
+    return {
+      ...state,
+      board,
+      gameSpecific: {
+        ...state.gameSpecific,
+        castlingRights: { white: rights('white'), black: rights('black') },
+        markers: state.gameSpecific.markers
+          ? (Object.keys(state.gameSpecific.markers.white ?? {}).length ||
+             Object.keys(state.gameSpecific.markers.black ?? {}).length
+              ? seedMarkers(board) : { white: {}, black: {} })
+          : state.gameSpecific.markers,
+      },
+    };
+  },
+
   // Note what is NOT in here: the player's queued future moves. A plan is set
   // through its own channel (`setPlan`) precisely so that it never becomes an
   // action — it can be built and called off while the opponent is thinking, which

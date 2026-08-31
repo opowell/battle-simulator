@@ -1793,6 +1793,27 @@ export const Civ1Game = {
     { id: 'seed',   label: 'Map seed',   description: 'Positive integer for a repeatable map — leave blank for a random one', type: 'integer', placeholder: 'random' },
   ],
   createInitialState,
+
+  // ── Customised starting units (engine/startingSetup.js) ─────────────────────
+  // A world is rolled from a seed; pin it, so the map somebody laid their settlers
+  // out on is the map the session is finally played on rather than a fresh random
+  // one. (createInitialState re-rolls whenever the seed is blank.)
+  resolveSetupConfig(config = {}) {
+    const parsed = Number.parseInt(config.seed, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return config;
+    return { ...config, seed: (Math.floor(Math.random() * 0xffffffff) >>> 0) || 1 };
+  },
+  // Any unit in the game, not just the settlers and militia a civ opens with —
+  // there is no tech to check at turn 0, the map is what it is, and starting a
+  // sandbox with a legion or a trireme is exactly the point of the feature.
+  setupUnitTypes() { return Object.keys(UNITS); },
+  createSetupUnit(state, { id, ownerId, type, position }) {
+    return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0, UNITS[type]?.moves);
+  },
+  // What each seat has SEEN is seeded from where its units stand, so a moved,
+  // added or deleted starting unit changes the hole it opens in the fog.
+  applyStartingUnits(state) { return seedExploration(state); },
+
   getLegalActions,
   applyActions,
   getResult,
