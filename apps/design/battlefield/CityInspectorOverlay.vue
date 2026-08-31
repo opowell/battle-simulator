@@ -23,7 +23,7 @@ const props = defineProps({
   team:             { type: Object, default: null },   // the city owner's team (colour)
   recolor:          Boolean,                           // field.ui.recolorTeamSprites
 });
-const emit = defineEmits(['close', 'submit']);
+const emit = defineEmits(['close', 'submit', 'select-unit']);
 const imgSrc = window.api.imgSrc;
 const teamSpriteHref = window.teamSpriteHref;
 
@@ -139,10 +139,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
 
             <section class="ci-box">
               <h4 class="ci-box-t">Units in City</h4>
+              <!-- This box is the only place a unit standing on the city's square can be
+                   picked up: the city's own token wins that square on the map, so a click
+                   there lands on the city and opens this screen. Picking one here selects
+                   it and closes the screen — the orders it was picked up for are given on
+                   the board (see Battlefield.vue's garrisonPick). -->
               <div v-if="city.garrison?.length" class="ci-garrison">
-                <img v-for="u in city.garrison" :key="u.id"
-                     :src="teamSpriteHref(u.image, team?.raw, recolor)"
-                     class="ci-unit" :title="u.type" draggable="false"/>
+                <button v-for="u in city.garrison" :key="u.id" class="ci-unit"
+                        :class="{ 'ci-unit--orders': u.needsOrders }"
+                        :title="`${u.type} — click to select`"
+                        @click="emit('select-unit', u.id)">
+                  <img :src="teamSpriteHref(u.image, team?.raw, recolor)"
+                       class="ci-unit-img" draggable="false"/>
+                </button>
               </div>
               <div v-else class="ci-none">undefended</div>
             </section>
@@ -202,7 +211,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
 .ci-res-v--bad { color: #ff5f56; }
 
 .ci-garrison { display: flex; flex-wrap: wrap; gap: 4px; }
-.ci-unit { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; background: var(--bg3); border: 1px solid var(--line); }
+.ci-unit { width: 44px; height: 44px; padding: 0; background: var(--bg3); border: 1px solid var(--line); cursor: pointer; }
+.ci-unit:hover { background: var(--bg1); border-color: var(--line2); }
+/* Still wants orders this turn — the same units the board's next-unit key chases, so
+   the box says at a glance which of them are waiting on you. */
+.ci-unit--orders { border-color: #f2b441; }
+.ci-unit-img { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
 
 .ci-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .ci-chip { font-size: 12px; padding: 3px 8px; border-radius: 3px; background: var(--bg3); color: var(--txt); }

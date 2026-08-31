@@ -1944,8 +1944,17 @@ export const Civ1Game = {
         // The garrison box of the original's city screen. Built from the same
         // (already fog-filtered) `units` the squares are, so a city seen through fog
         // shows only the units this viewer can actually see.
+        // It is also the only place a garrisoned unit can be *picked*: the city wins its
+        // square's token (see the cells above), so every click on that square opens this
+        // screen and the unit under it is never in hand. Clicking it in this box selects
+        // it (Battlefield.vue's garrisonPick), which is why each entry carries the unit's
+        // id and whether it is still waiting on orders — the box says which of them the
+        // turn is still owed, the same thing the board's next-unit key chases.
         garrison: units.filter(u => u.alive && u.position.x === c.position.x && u.position.y === c.position.y)
-          .map(u => ({ id: u.id, type: u.type, image: `${BASE}/units/${u.type}`, hp: u.hp, maxHp: u.maxHp })),
+          .map(u => ({
+            id: u.id, type: u.type, image: `${BASE}/units/${u.type}`, hp: u.hp, maxHp: u.maxHp,
+            needsOrders: u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.sentry,
+          })),
         production: c.production, productionName: prod,
         shields: c.shields, buildCost: buildCost(c.production),
         buildings: (c.buildings ?? []).map(id => IMPROVEMENTS[id]?.name ?? WONDERS[id]?.name ?? id),

@@ -164,6 +164,14 @@ test('civ1: a city carries what its city screen draws — population, garrison, 
   assert.deepEqual(city.garrison.map(g => g.type), [unit.type], 'the units-in-city box');
   assert.match(city.garrison[0].image, /units\//, 'each garrison unit brings its sprite');
 
+  // …and clicking one there is the only way to select it at all: the city wins the
+  // square's token (see the test above), so a click on the map opens this screen instead
+  // of picking the unit up. The box does the picking by id, and says which of them the
+  // turn is still owed.
+  const g = city.garrison[0];
+  assert.equal(g.id, unit.id, 'the pick is by unit id');
+  assert.equal(g.needsOrders, true, 'a fresh unit in a city is still waiting on you');
+
   // apps/design is game-agnostic by rule, so every picture the screen draws has to be
   // named in the payload — icons included, not built from paths on the client.
   assert.match(city.icons.food, /city\/food$/);
