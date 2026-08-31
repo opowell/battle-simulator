@@ -52,7 +52,7 @@ the phase (`ui.phases`) and the action panel the sentence explaining it
 | `turn-in-cards` | reinforce | `cardIndices` — indices of 3 cards; must turn in if hand ≥ 5 cards. Carries a `label` naming the cards and the bonus, since the indices mean nothing to a player |
 | `end-reinforce` | reinforce | Advance to attack phase (only offered when a card set is still turnable in — otherwise the phase ends itself) |
 | `attack` | attack | `from`, `to`, `attackerDice` (1–3) — roll dice combat |
-| `occupy` | attack | `from`, `to`, `armies` — how many MORE armies follow the dice into a territory just captured. Only legal while `gameSpecific.pendingOccupy` is set, and then it is the only legal action |
+| `occupy` | attack | `from`, `to`, `armies` — how many MORE armies follow the dice into a territory just captured. Only legal while `gameSpecific.pendingOccupy` is set, and then it is the only legal action. Carries a `label` (and a `groupLabel` for the row of them) naming the territory the armies move into, since a bare number can't say where they are going |
 | `end-attack` | attack | Advance to fortify phase (draws a card if territory captured this turn) |
 | `fortify` | fortify | `from`, `to`, `armies` — move armies between connected owned territories |
 | `end-turn` | fortify | End turn; advance to next player |
@@ -68,6 +68,7 @@ keeps the rules it started with.
 | `fortifyMoves` | `one` — a single move along one connected path per turn | `unlimited` — reshuffle your armies freely until you end the turn |
 | `reinforcePlacement` | `selected` — you tap territories to place each army | `random` — they scatter over your territories on their own and the turn starts at the attack phase |
 | `postCaptureFortify` | `true` — after taking a territory you choose how many more armies follow the dice in | `false` — exactly as many armies as dice rolled move in |
+| `autoOccupy` | `true` — the capture question is answered for you by moving in everything the attacker can spare, and shift-click asks it instead | `false` — you are asked after every capture, and shift-click is the shortcut that moves everything in. Only bites while `postCaptureFortify` is on |
 
 ## Combat
 
@@ -85,15 +86,28 @@ the map takes. Fewer dice risk fewer armies per exchange — worth it when you w
 territory but not the commitment, since with `postCaptureFortify` off the dice are also
 the occupying force.
 
-**Shift-click is the committed assault** — it ignores the picker and rolls the most the
-territory allows, and if that takes the territory it answers the occupy question the
-same way, moving in every army the attacker can spare. A capture otherwise stops the
-game for a row of buttons, which is the wrong thing to put between a player and the
-attack they already said they were going all-in on. The mechanism is generic:
-`ui.territoryPairShiftFollowUp` names the follow-up type and the field to maximise
-(`{ type: 'occupy', field: 'armies' }`), and Battlefield.vue arms it for exactly one
-position after a shift-click — firing only when that follow-up is the *only* legal
-action, so a real choice is never answered on the player's behalf.
+**Answering the occupy question** — a capture otherwise stops the game for a row of
+buttons, which is the wrong thing to put between a player and the attack they were
+already going all-in on, so by default (`autoOccupy`) it is answered by itself: every
+army the attacker can spare follows the dice in. Shift-click the attack to be asked
+instead — and only the question comes back, not the dice, which stay whatever the
+picker says, because "let me choose the occupying force" is not a request to go all in.
+With `autoOccupy` off the two swap: the question is asked, and a shift-click is the
+committed assault that rolls the most the territory allows and moves everything in.
+
+The mechanism is generic: `ui.territoryFollowUp` names the follow-up's type and the
+field to maximise, plus whether it is answered automatically
+(`{ type: 'occupy', field: 'armies', auto: true }` — `toGrid` re-emits it per session as
+a `ui` override, because `autoOccupy` is a rule of the session, not of the game).
+Battlefield.vue arms the *other* mode for exactly one position after a shift-click, and
+fires only when that follow-up is the *only* legal action, so a real choice is never
+answered on the player's behalf.
+
+**The question is answerable on the map too** — while it stands, clicking the territory
+just taken moves in everything that can go, and clicking the one attacked from leaves
+them all where they are; anything else is not a click on either half of the question, so
+it does nothing. Same generic hook (`ui.territoryFollowUp`): the follow-up's `from` and
+`to` are territories the map is already showing.
 
 ## Reinforcements
 
