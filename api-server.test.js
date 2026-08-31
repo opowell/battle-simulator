@@ -358,3 +358,49 @@ test('a fog player seat is never sent deltas', async () => {
     assert.ok(Array.isArray(msg.grid?.cells), 'a fog seat must get a whole board');
   }
 });
+
+// ---------------------------------------------------------------------------
+// Customised starting units (engine/startingSetup.js) over the wire: what a
+// setup screen asks for, and what a session created from its answer plays.
+// ---------------------------------------------------------------------------
+
+test('a game hands out its opening roster, and a session can be created from an edited one', async () => {
+  const players = [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }];
+  const preview = await post('/games/chess/setup', { players, config: {} });
+  assert.equal(preview.roster.length, 32);
+  assert.equal(preview.placeable, true);
+  assert.equal(preview.board.width, 8);
+  // Each unit comes back with the board cell it stands on, so a setup screen can
+  // draw it without knowing chess reads positions as 'e4'.
+  const whiteKing = preview.roster.find(u => u.ownerId === 'white' && u.type === 'king');
+  assert.deepEqual(whiteKing.cell, [4, 7]);
+
+  // Play it without knights, and with white's queen started on d4.
+  const roster = preview.roster
+    .filter(u => u.type !== 'knight')
+    .map(u => (u.ownerId === 'white' && u.type === 'queen' ? { ...u, position: 'd4' } : u))
+    .map(({ id, ownerId, type, position }) => ({ id, ownerId, type, position }));
+  const s = await post('/sessions', {
+    game: 'chess',
+    players: [{ id: 'white', agent: 'human' }, { id: 'black', agent: 'human' }],
+    config: { startingUnits: roster },
+  });
+  const snap = await get(`/sessions/${s.id}?player=white`);
+  const occupied = snap.grid.cells.filter(c => c.unitId);
+  assert.equal(occupied.length, 28, 'the four knights should not be on the board');
+  const d4 = snap.grid.cells.find(c => c.x === 3 && c.y === 4);
+  assert.ok(d4.unitId, "white's queen should be standing on d4");
+  // ...and the game is really played from there: the queen has moves a queen on
+  // d1 behind a pawn wall could not have.
+  const moves = snap.legalActions.filter(a => a.from === 'd4');
+  assert.ok(moves.length > 5, `a queen on d4 should have moves, got ${moves.length}`);
+});
+
+test('a roster the game cannot build is refused with a reason', async () => {
+  const bad = await post('/sessions', {
+    game: 'chess',
+    players: [{ id: 'white', agent: 'human' }, { id: 'black', agent: 'human' }],
+    config: { startingUnits: [{ ownerId: 'white', type: 'dragon', position: 'e4' }] },
+  });
+  assert.match(bad.error ?? '', /not a starting unit type/);
+});

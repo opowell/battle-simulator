@@ -464,6 +464,20 @@ export const Civ2Game = {
     { id: 'seed',   label: 'Map seed',   description: 'Positive integer for a repeatable map — leave blank for a random one', type: 'integer', placeholder: 'random' },
   ],
   createInitialState,
+
+  // Customised starting units (engine/startingSetup.js): pin the map seed, so the
+  // world a roster was laid out on is the one that gets played, and offer every
+  // unit in the game rather than only the two a civ opens with.
+  resolveSetupConfig(config = {}) {
+    const parsed = Number.parseInt(config.seed, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return config;
+    return { ...config, seed: (Math.floor(Math.random() * 0xffffffff) >>> 0) || 1 };
+  },
+  setupUnitTypes() { return Object.keys(UNITS); },
+  createSetupUnit(state, { id, ownerId, type, position }) {
+    return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0, UNITS[type]?.moves);
+  },
+
   getLegalActions,
   applyActions,
   getResult,

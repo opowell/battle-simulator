@@ -101,6 +101,13 @@ window.api = {
   },
   log:      (id)                    => _req('/sessions/' + id + '/log'),
   create:   (body)                  => _req('/sessions', { method: 'POST', body: JSON.stringify(body) }),
+  // The opening position a session WOULD start from, for the setup screen's
+  // starting-units editor: the game's own roster (each unit with the board cell it
+  // stands on), the board to arrange it on, the unit types that may be added, and
+  // the config it was built from — which comes back with anything the game rolls
+  // at random (a map seed) pinned, so the session is created on the same world.
+  // Creates nothing; the edited roster is sent back as config.startingUnits.
+  setupPreview: (game, body)        => _req('/games/' + encodeURIComponent(game) + '/setup', { method: 'POST', body: JSON.stringify(body) }),
   action:   (id, playerId, action)  => _req('/sessions/' + id + '/action', { method: 'POST', body: JSON.stringify({ playerId, action }) }),
   // Take moves back on an analysis board: `toPly` keeps that many, `plies`
   // (default 1) drops that many from the end. Unlike a fork this rewrites the

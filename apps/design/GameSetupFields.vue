@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import AiDifficultyField from './AiDifficultyField.vue';
+import StartingUnitsField from './StartingUnitsField.vue';
 
 const props = defineProps({
   game:     { type: Object, default: null },
@@ -19,6 +20,10 @@ const turnsLimited = ref(false);
 const maxTurns = ref(300);
 const gameOpts = ref({});
 const slots    = ref([]);
+// The customised opening roster, or null for "however the game opens by itself"
+// (the default). It rides along in gameOpts as `startingUnits` — see
+// StartingUnitsField.vue / engine/startingSetup.js.
+const startingUnits = ref(null);
 
 // Lay a scenario's config over the game's plain defaults. Called with the options
 // already re-seeded, so leaving a scenario also leaves whatever it had set rather
@@ -36,6 +41,7 @@ function applyScenario(sc) {
 // Re-seed the whole form whenever a different game — or scenario — is chosen.
 watch(() => props.game, (g) => {
   if (!g) return;
+  startingUnits.value = null;
   gameOpts.value = gameDefaults.initGameOpts(g);
   turnsLimited.value = false;
   maxTurns.value = 300;
@@ -44,15 +50,21 @@ watch(() => props.game, (g) => {
 
 watch(() => props.scenario, () => {
   if (!props.game) return;
+  startingUnits.value = null;
   gameOpts.value = gameDefaults.initGameOpts(props.game);
   applyScenario(props.game.scenarios?.find(s => s.id === props.scenario));
 });
 
-watch([turnsLimited, maxTurns, gameOpts, slots, () => props.scenario], () => {
+// The seats as the SERVER will name them, which is what the starting-units editor
+// has to ask about (a form slot's own id is just a row handle).
+const seats = computed(() => gameDefaults.seatIds(props.game, slots.value)
+  .map((id, i) => ({ id, name: slots.value[i].name, color: slots.value[i].color })));
+
+watch([turnsLimited, maxTurns, gameOpts, slots, startingUnits, () => props.scenario], () => {
   if (!props.game) return;
   emit('update:config', {
     game:     props.game.name,
-    gameOpts: { ...gameOpts.value },
+    gameOpts: { ...gameOpts.value, ...(startingUnits.value ? { startingUnits: startingUnits.value } : {}) },
     maxTurns: turnsLimited.value ? maxTurns.value : null,
     scenario: props.scenario || undefined,
     players:  slots.value,
@@ -160,6 +172,11 @@ function cycleColor(i) {
         <input type="range" min="50" max="500" step="10" v-model.number="maxTurns"/>
       </div>
     </div>
+
+    <!-- Which units each side starts with, and where they stand -->
+    <StartingUnitsField :game="game" :scenario="scenario" :players="seats" :config="gameOpts"
+                        @update:units="startingUnits = $event"
+                        @update:config="gameOpts = { ...gameOpts, ...$event }"/>
   </div>
 </template>
 

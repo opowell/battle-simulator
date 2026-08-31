@@ -22,7 +22,7 @@ import { fileURLToPath }         from 'node:url';
 import { WebSocketServer } from './vendor/ws/wrapper.mjs';
 import { GridTimeline } from './engine/gridFrames.js';
 
-import { GameEngine } from './engine/index.js';
+import { GameEngine, buildInitialState, rosterError, setupPreview, SETUP_KEY } from './engine/index.js';
 import { validate as validateAction } from './engine/ActionValidator.js';
 import * as gameEditor from './gameEditor.js';
 import { RandomAgent } from './agents/index.js';
@@ -1351,6 +1351,30 @@ async function handleGames(res) {
   })));
 }
 
+/**
+ * POST /games/:name/setup — the opening position a setup screen edits.
+ *
+ * Body: { players?: [{id,name}], config?: {…} } — the session being configured.
+ * Returns the game's own starting roster (annotated with each unit's board cell
+ * and art), the board to lay it out on, the unit types that may be added, and the
+ * config it was all built from. That last one matters: a game that rolls a random
+ * world per call pins it here (resolveSetupConfig), and the client sends the
+ * pinned config back when it creates the session, so the units are placed on the
+ * world they were arranged on. Nothing is stored — this creates no session.
+ */
+async function handleSetupPreview(req, res, gameName) {
+  const entry = GAMES[gameName];
+  if (!entry) return err(res, 404, `Unknown game: ${gameName}`);
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+  const defs = Array.isArray(body.players) && body.players.length ? body.players : entry.defaultPlayers;
+  const players = defs.map((p, i) => ({ id: p.id ?? entry.defaultPlayers[i]?.id ?? ('p' + (i + 1)), name: p.name ?? p.id }));
+  try {
+    send(res, 200, setupPreview(entry.game, players, body.config ?? {}));
+  } catch (e) { err(res, 400, e.message); }
+}
+
 // ---------------------------------------------------------------------------
 // Game-definition CRUD (for the /ui/game-editor app). These edit api-server.js's
 // GAMES registry and the games/<name>/ source files on disk; metadata / create /
@@ -1447,6 +1471,18 @@ async function handleCreateSession(req, res) {
     }
     return { id, name: name ?? id, agent };
   });
+
+  // A customised opening roster is checked HERE, against the position this game
+  // would otherwise have started from: a bad one is a 400 with a reason, rather
+  // than a session that exists and throws the first time anything looks at it.
+  if (config[SETUP_KEY] !== undefined) {
+    let problem;
+    try {
+      const base = entry.game.createInitialState(players.map(p => ({ id: p.id, name: p.name })), config);
+      problem = rosterError(entry.game, base, config[SETUP_KEY], players);
+    } catch (e) { problem = e.message; }
+    if (problem) return err(res, 400, problem);
+  }
 
   const fogOfWar = config.fog ?? config.fogOfWar ?? false;
   // A game can declare engine-level defaults (e.g. CS runs in simultaneous "we-go"
@@ -1725,7 +1761,7 @@ async function handleSetMarker(req, res, id) {
 // every reconstruction gets its own throwaway, isolated belief instead.
 function replayStateAtPly(game, session, ply) {
   const players = (session.params.players ?? []).map(p => ({ id: p.id, name: p.name ?? p.id }));
-  let state = game.createInitialState(players, session.params.config ?? {});
+  let state = buildInitialState(game, players, session.params.config ?? {});
   const log = session.engine.log;
   const n = Math.max(0, Math.min(ply, log.length));
   for (let i = 0; i < n; i++) state = game.applyActions(state, log[i].playerActions);
@@ -1739,7 +1775,7 @@ function replayStateAtPly(game, session, ply) {
 // replayStateAtPly call per ply would be quadratic for no reason.
 function replayStatesToPly(game, session, ply) {
   const players = (session.params.players ?? []).map(p => ({ id: p.id, name: p.name ?? p.id }));
-  let state = game.createInitialState(players, session.params.config ?? {});
+  let state = buildInitialState(game, players, session.params.config ?? {});
   const log = session.engine.log;
   const n = Math.max(0, Math.min(ply, log.length));
   const states = [state];
@@ -2232,6 +2268,10 @@ async function handleRequest(req, res) {
     // GET /games
     if (method === 'GET' && parts[0] === 'games' && parts.length === 1)
       return await handleGames(res);
+
+    // POST /games/:name/setup — the opening roster a setup screen edits
+    if (method === 'POST' && parts[0] === 'games' && parts.length === 3 && parts[2] === 'setup')
+      return await handleSetupPreview(req, res, parts[1]);
 
     // Game-definition CRUD for the editor — /admin/games…
     if (parts[0] === 'admin' && parts[1] === 'games') {

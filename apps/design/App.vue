@@ -1164,8 +1164,9 @@ async function openSession(s) {
 async function createSession(cfg) {
   const apiGame = apiGames.value.find(g => g.name === cfg.game);
   const defs    = apiGame?.defaultPlayers ?? [];
+  const ids     = gameDefaults.seatIds(apiGame, cfg.players);
   const players = cfg.players.map((p, i) => ({
-    id:    defs[i]?.id ?? ('p' + (i + 1)),
+    id:    ids[i],
     name:  p.name || defs[i]?.name || ('Player ' + (i + 1)),
     agent: p.agent === 'human' ? 'human' : (p.agent ?? 'random'),
   }));

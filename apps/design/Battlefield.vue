@@ -807,11 +807,16 @@ function openAbilityInfo(ab) {
 const stageEl = ref(null);
 const stageW  = ref(900);
 const stageH  = ref(600);
+// Whether those two are the real board's size yet. Until the stage is in the DOM
+// they are placeholders, and the opening view (below) must not be computed from a
+// board that isn't there — it only gets one chance to frame the position.
+const stageMeasured = ref(false);
 
 function updateStageSize() {
-  if (stageEl.value) {
+  if (stageEl.value && stageEl.value.clientWidth > 0) {
     stageW.value = stageEl.value.clientWidth;
     stageH.value = stageEl.value.clientHeight;
+    stageMeasured.value = true;
   }
 }
 
@@ -888,10 +893,16 @@ const center = ref(null);
 const zoomEnabled = computed(() =>
   props.liveState?.params?.config?.mapZoom ?? ui.value.mapZoom ?? false);
 
-// Each game starts at its own default tile size (or fitted), centred on the board.
+// Set once the opening view (openingView, below) has framed a session's position,
+// so it does so once and never fights the player's own zooming afterwards.
+const openedFor = ref(null);
+
+// Each game starts at its own default tile size (or fitted), centred on the board —
+// until the opening position arrives and frames itself (openingView, below).
 watch(() => props.liveState?.id, () => {
   zoomPx.value = zoomEnabled.value ? (ui.value.defaultTileSize ?? null) : null;
   center.value = null;
+  openedFor.value = null;
 }, { immediate: true });
 
 // What a zoom step works from when the view is still fitted rather than explicitly zoomed.
@@ -1132,6 +1143,47 @@ watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
 
 // ── move highlights ───────────────────────────────────────────
 const displayUnits = units;
+
+// ── the opening view ──────────────────────────────────────────
+// A zoomable map opens ON the units you start with, not on the middle of a world
+// you have not seen yet. The view is framed around the units you own (all of them,
+// for an observer with no seat), with a couple of tiles of air around the outermost
+// one, and never narrower than `ui.openingSpan` tiles — so a civ that begins with
+// two settlers opens about ten tiles high, close enough to read what it has, while
+// a game that deals an army across the map opens far enough back to show all of it.
+// How far it zooms is therefore a consequence of how many starting units there are
+// and how far apart they stand, rather than one fixed number per game.
+//
+// It happens once per session, the first time there is both a measured board and a
+// position on it; every zoom and pan after that is the player's.
+const OPENING_SPAN = 10;      // tiles across, at least
+const OPENING_MARGIN = 2;     // tiles of air around the outermost unit
+function openingView() {
+  const alive = displayUnits.value.filter(u => !u.dead && Number.isFinite(u.x) && Number.isFinite(u.y));
+  const mine = viewerTeam.value ? alive.filter(u => u.team === viewerTeam.value) : [];
+  const use = mine.length ? mine : alive;
+  if (!use.length) return null;
+  const xs = use.map(u => u.x), ys = use.map(u => u.y);
+  const box = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  const span = ui.value.openingSpan ?? OPENING_SPAN;
+  const spanX = Math.max(box.x1 - box.x0 + OPENING_MARGIN * 2, span);
+  const spanY = Math.max(box.y1 - box.y0 + OPENING_MARGIN * 2, span);
+  const px = Math.min(stageW.value / spanX, stageH.value / spanY);
+  return {
+    px: Math.min(MAX_TILE_PX, Math.max(MIN_TILE_PX, px)),
+    center: { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 },
+  };
+}
+
+watch([() => props.liveState?.id, stageMeasured, stageW, stageH, displayUnits], () => {
+  const id = props.liveState?.id;
+  if (!id || !zoomEnabled.value || !stageMeasured.value || openedFor.value === id) return;
+  const view = openingView();
+  if (!view) return;
+  zoomPx.value = view.px;
+  center.value = view.center;
+  openedFor.value = id;
+});
 
 // ── playback tweening ─────────────────────────────────────────
 // Units as the board DRAWS them: displayUnits, but during history playback slid

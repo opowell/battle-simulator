@@ -2,6 +2,7 @@ import { freeze } from './StateManager.js';
 import { validate } from './ActionValidator.js';
 import { EventQueue } from './EventQueue.js';
 import { resolveTimeline } from './KineticResolver.js';
+import { buildInitialState } from './startingSetup.js';
 
 /**
  * Orchestrates a game in either discrete or continuous time.
@@ -159,7 +160,10 @@ export class GameEngine {
   }
 
   _init() {
-    this._state = freeze(this.game.createInitialState(this.players, this.config));
+    // Not createInitialState directly: a session may have customised the opening
+    // roster (config.startingUnits — see startingSetup.js), and every path that
+    // builds this game's starting position has to apply it the same way.
+    this._state = freeze(buildInitialState(this.game, this.players, this.config));
     this._log = [];
     this._result = null;
     this._clock = 0;

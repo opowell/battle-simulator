@@ -251,6 +251,42 @@ Create a new game session.
 
 Returns the full session object (201). The response includes `humanPlayers: string[]` — the IDs of all human-controlled players in this session.
 
+#### `POST /games/:name/setup`
+The opening position a session *would* start from, for editing the units it opens
+with. Body: `{ players?: [{id, name}], config?: {…} }` — the session being set up.
+
+```json
+{
+  "config":    { "seed": 2553391646 },
+  "placeable": true,
+  "unitTypes": ["settlers", "militia", "…"],
+  "roster":    [{ "id": "u0", "ownerId": "p1", "type": "settlers",
+                  "position": {"x": 15, "y": 16}, "cell": [15, 16],
+                  "imagePath": "/images/civ1/units/settlers", "glyph": "S" }],
+  "board":     { "width": 50, "height": 30,
+                 "cells": [{ "x": 0, "y": 0, "color": "#719230", "pos": {"x": 0, "y": 0} }] }
+}
+```
+
+Every unit comes back with the board cell it stands on, and every cell with the
+position it stands for, so a client can lay units out without knowing how a game
+names its squares. `config` is echoed back with anything the game would otherwise
+roll fresh (a map seed) pinned, and should be sent back when the session is
+created so the units are placed on the world they were arranged on. `placeable`
+is false for a game whose units aren't on a board at all (cards, territories) —
+its roster can still be edited, just not arranged. Creates nothing.
+
+#### Customised starting units
+
+Send the edited roster as `config.startingUnits` on `POST /sessions`: the whole
+opening roster, as `[{ id?, ownerId, type, position }]`. An entry whose `id` names
+a unit of the same owner and type in the game's own opening is THAT unit, moved to
+`position` (keeping its stats and everything else the game hung off it); anything
+else is a new unit of that type. It works for every game — see
+`engine/startingSetup.js` — and a roster the game cannot build is refused with a
+reason (400) rather than creating a broken session. Because it lives in the
+session's config, replays, analysis and undo rebuild from the same opening.
+
 #### `GET /sessions`
 List all active sessions (id, game, status, turn, pendingPlayer).
 
@@ -381,6 +417,13 @@ export const MyGame = {
 
   // Optional: filter state for fog-of-war
   getVisibleState(state, playerId) { ... },
+
+  // Optional: only for customised starting units (engine/startingSetup.js). The
+  // feature itself needs none of these — it works off `state.units` alone.
+  applyStartingUnits(state, config) { ... },  // rebuild what you derive from your opening units
+  setupUnitTypes(state) { ... },              // types a roster may add beyond the ones you deal
+  createSetupUnit(state, spec) { ... },       // mint one of them with your own stats
+  resolveSetupConfig(config) { ... },         // pin what you would otherwise roll fresh (a map seed)
 };
 ```
 
