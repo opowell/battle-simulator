@@ -376,8 +376,17 @@ function toGrid(state) {
         // token that grows with it. Which territory can take which is the whole game,
         // and reading two numbers off two hexes is a slower way to see it than
         // comparing two blobs.
+        //
+        // sizeFrac is measured against ONE hex (HtmlHexLayer's tokenBaseR is
+        // 0.55 * hexSize), but a kdice territory is a blob of ~8 of them, so a
+        // token sized like a single-hex piece comes out a ~12px badge with a 6px
+        // digit in a 90px blob — the army count, the thing the whole game is
+        // read off, is the least legible thing on the board. These fractions put
+        // a 1-die token at roughly a hex and a half across and an 8-die one at
+        // about half its blob, so the count is readable and the stack still
+        // grows visibly with it.
         pips: isCapital && !hidden ? t.dice : undefined,
-        sizeFrac: isCapital && !hidden ? 0.65 + 0.7 * ((t.dice - 1) / (MAX_DICE - 1)) : undefined,
+        sizeFrac: isCapital && !hidden ? 1.35 + 1.15 * ((t.dice - 1) / (MAX_DICE - 1)) : undefined,
       });
     }
   }
