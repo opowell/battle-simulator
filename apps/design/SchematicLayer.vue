@@ -17,6 +17,7 @@ const props = defineProps({
   // circle on its capital hex — used by kdice's attack animation.
   territoryFx:  { type: Object, default: () => ({}) },
   selectedId:   String,
+  blinkUnitId:  { type: String, default: null },
   hoveredId:    { type: String, default: null },
   activeUnitId: { type: String, default: null },
   fog:          Boolean,
@@ -61,9 +62,10 @@ const viewerId = computed(() => props.revealAll
   : (props.viewerOverride ?? props.viewerTeam ?? props.field.teams?.[0]?.id ?? null));
 const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.id);
 
-// Which unit should blink when `ui.blinkActiveUnit` is set. In free-selection games
-// (e.g. civ1) there's no turn-scoped activeUnitId, so blink whichever unit is clicked.
-const blinkTargetId = computed(() => props.field.ui?.freeSelection ? props.selectedId : props.activeUnitId);
+// Which unit should blink when `ui.blinkActiveUnit` is set: decided by Battlefield.vue,
+// since the blink means "waiting on your order" and only a unit the player on the clock
+// commands qualifies — see its blinkUnitId.
+const blinkTargetId = computed(() => props.blinkUnitId);
 
 // While aiming a button-picked action (CS lists every unit's actions at once, so the
 // clicked "Move…"/"Shoot…" button may belong to a unit other than activeUnitId — see

@@ -33,6 +33,7 @@ const props = defineProps({
   field:        Object,
   units:        Array,
   selectedId:   String,
+  blinkUnitId:  { type: String, default: null },
   hoveredId:    { type: String, default: null },
   activeUnitId: { type: String, default: null },
   fog:          Boolean,
@@ -151,7 +152,10 @@ const boardStyle = computed(() => {
 });
 
 const highlightUnitId = computed(() => props.activeUnitId);
-const blinkTargetId   = computed(() => props.field.ui?.freeSelection ? props.selectedId : props.activeUnitId);
+// Which unit blinks (only when `ui.blinkActiveUnit` is set): decided by Battlefield.vue,
+// since the blink means "waiting on your order" and only a unit the player on the clock
+// commands qualifies — see its blinkUnitId.
+const blinkTargetId   = computed(() => props.blinkUnitId);
 
 // Team whose pieces project vision — the human (teams[0]); in reveal mode whoever is to
 // move at the displayed ply, so fog flips as you step through. Mirrors SchematicLayer.

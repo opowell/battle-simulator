@@ -1366,6 +1366,20 @@ const activeUnitId = computed(() => {
 const moveUnitId = computed(() =>
   ui.value.strictActiveUnit ? activeUnitId.value : selectedId.value);
 
+// Which unit blinks, in the games that blink the unit in hand (ui.blinkActiveUnit).
+// The blink means "this one is waiting on your order", so it is only ever a unit the
+// player on the clock actually commands: clicking someone else's unit still selects it
+// and still fills the detail panel, it just wears the ordinary selected ring instead of
+// claiming to be up for orders. Free-selection games (civ1) have no turn-scoped active
+// unit, so there the blink follows whatever was clicked.
+const blinkUnitId = computed(() => {
+  if (!isPending.value) return null;
+  const id = ui.value.freeSelection ? selectedId.value : activeUnitId.value;
+  if (!id) return null;
+  const u = displayUnits.value.find(x => x.id === id);
+  return u && u.team === pendingPlayerId.value ? id : null;
+});
+
 // The one human player viewing this session (fog games are always 1 human vs AI/other-human
 // via separate sessions), used to attribute a manual fog marker to the right player.
 const humanPlayerId = computed(() => props.liveState?.humanPlayers?.[0] ?? null);
@@ -2233,7 +2247,7 @@ onUnmounted(() => {
              board cell is a whole number of pixels — see HtmlLayer.vue's header. -->
         <HtmlLayer v-else-if="useHtmlRenderer"
           :field="displayField" :units="renderUnits"
-          :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
+          :selectedId="selectedId" :blinkUnitId="blinkUnitId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
           :showRuler="showRuler" :showHpBars="showHpBars" :rdr="rdr"
           :legalSquares="unitMoves"
           :lastMoveSquares="lastMoveSquares"
@@ -2251,7 +2265,7 @@ onUnmounted(() => {
           @set-marker="handleSetMarker"/>
         <SchematicLayer v-else
           :field="displayField" :fit="fit" :units="renderUnits"
-          :selectedId="selectedId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
+          :selectedId="selectedId" :blinkUnitId="blinkUnitId" :hoveredId="hoveredId" :activeUnitId="activeUnitId" :fog="fog"
           :showRuler="showRuler" :showHpBars="showHpBars" :rdr="rdr"
           :unitFx="(atLatest && !revealAll) ? unitFx : {}"
           :territoryFx="(atLatest && !revealAll) ? territoryFx : {}"
