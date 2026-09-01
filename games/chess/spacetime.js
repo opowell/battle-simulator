@@ -536,10 +536,13 @@ export function applyActions(state, playerActions) {
   }
 }
 
+// `motion` is cleared on the way through: it is what the last run of the clock
+// moved (see routesFrom), and giving an order runs no clock, so carrying the old
+// routes into the next instant would offer the board a journey nobody took.
 const withRt = (state, patch, extra = {}) => ({
   ...state,
   ...extra,
-  gameSpecific: { ...state.gameSpecific, rt: { ...state.gameSpecific.rt, ...patch } },
+  gameSpecific: { ...state.gameSpecific, rt: { ...state.gameSpecific.rt, motion: undefined, ...patch } },
 });
 
 /** Replace one piece's queue, dropping the entry entirely when it empties. */
@@ -820,6 +823,26 @@ function integrate(unitsIn, queuesIn, readyIn, t0, span) {
   const shift = (id) => { queues = setQueue(queues, id, (queues[id] ?? []).slice(1)); };
   const velOf = (u) => velocityOf(u, head(u.id), ready[u.id] ?? 0, t);
 
+  // The route each piece takes through this run, for the board to draw (see
+  // `routesFrom`). A point is recorded wherever a piece's VELOCITY changes — it sets
+  // off, turns a corner, is stopped, dies — and nowhere else, because between two
+  // such moments it travels in a straight line at a constant speed and the two
+  // endpoints say everything. Straight from-to would cut every corner instead: the
+  // three legs of a knight's L are walked inside a single turn window here, and
+  // which way round it walks them is part of the order (`pathId`).
+  const tracks = new Map(units.map((u) => [u.id, [{ t, x: u.position.x, y: u.position.y }]]));
+  const lastVel = new Map();
+  const mark = (u, at) => {
+    const pts = tracks.get(u.id);
+    const last = pts[pts.length - 1];
+    if (Math.abs(last.x - u.position.x) < EPS && Math.abs(last.y - u.position.y) < EPS
+      && Math.abs(last.t - at) < EPS) return;
+    pts.push({ t: at, x: u.position.x, y: u.position.y });
+  };
+  // Close every route off where the run leaves the piece standing, whichever way the
+  // run ended.
+  const close = () => { for (const u of units) mark(u, t); return tracks; };
+
   for (let guard = 0; guard < 5000; guard++) {
     const alive = units.filter((u) => u.alive);
     let interrupted = false;
@@ -895,7 +918,7 @@ function integrate(unitsIn, queuesIn, readyIn, t0, span) {
       && Math.hypot(p.dp.x + p.dv.x * tau, p.dp.y + p.dv.y * tau) < TOUCH);
 
     if (!moving && overlapAt(0).length === 0 && !Number.isFinite(nextFree))
-      return { units, queues, ready, t, events, settled: true };
+      return { units, queues, ready, t, events, tracks: close(), settled: true };
 
     // How far can the step run before the pieces' arrangement changes?
     let dt = deadline - t;
@@ -928,8 +951,18 @@ function integrate(unitsIn, queuesIn, readyIn, t0, span) {
       const r = rate.get(u.id);
       if (r > 0) consider(u.hp / r);
     }
-    if (!Number.isFinite(dt)) return { units, queues, ready, t, events, settled: true };
+    if (!Number.isFinite(dt)) return { units, queues, ready, t, events, tracks: close(), settled: true };
     if (dt <= EPS) break;
+
+    // The step ahead is a straight line at a constant speed for everybody, so the
+    // only points on it worth keeping are the ones where that just changed.
+    for (const u of alive) {
+      const v = vel.get(u.id);
+      const was = lastVel.get(u.id);
+      if (was && Math.abs(was.x - v.x) < EPS && Math.abs(was.y - v.y) < EPS) continue;
+      lastVel.set(u.id, { x: v.x, y: v.y });
+      mark(u, t);
+    }
 
     for (const u of alive) {
       const v = vel.get(u.id);
@@ -945,6 +978,9 @@ function integrate(unitsIn, queuesIn, readyIn, t0, span) {
         u.hp = 0;
         queues = setQueue(queues, u.id, []);
         events.push(`${u.id} destroyed`);
+        // Where it fell, and when: the route has to stop there rather than carry the
+        // body on to wherever the rest of the run ends.
+        mark(u, t);
         interrupted = true;
       }
     }
@@ -978,7 +1014,28 @@ function integrate(unitsIn, queuesIn, readyIn, t0, span) {
   }
 
   for (const u of units) u.cell = cellOf(u.position);
-  return { units, queues, ready, t, events, settled: false };
+  return { units, queues, ready, t, events, tracks: close(), settled: false };
+}
+
+/**
+ * The routes `integrate` recorded, in the shape the board animates from: per piece,
+ * the points it passed through as `[x, y, when]`, `when` being how far into this
+ * run it was there — 0 at the start, 1 at the end. Times rather than even spacing
+ * because a piece is not evenly spread along its own route: it can set off late (a
+ * delay running out), stop early (blocked, or killed), and walk legs of different
+ * lengths. A piece that never moved is left out, and so is a run that took no time.
+ */
+function routesFrom(tracks, t0, t1) {
+  const span = t1 - t0;
+  if (!(span > EPS)) return undefined;
+  const routes = {};
+  for (const [id, pts] of tracks) {
+    if (pts.length < 2) continue;
+    const still = pts.every((p) => Math.abs(p.x - pts[0].x) < EPS && Math.abs(p.y - pts[0].y) < EPS);
+    if (still) continue;
+    routes[id] = pts.map((p) => [p.x, p.y, Math.min(1, Math.max(0, (p.t - t0) / span))]);
+  }
+  return Object.keys(routes).length ? routes : undefined;
 }
 
 /**
@@ -998,7 +1055,10 @@ function advanceSlides(state) {
     units: res.units,
     gameSpecific: {
       ...state.gameSpecific,
-      rt: { ...rt, clock: res.t, queues: res.queues, ready: res.ready, idleTicks: 0, events: res.events },
+      rt: {
+        ...rt, clock: res.t, queues: res.queues, ready: res.ready, idleTicks: 0, events: res.events,
+        motion: routesFrom(res.tracks, rt.clock, res.t),
+      },
     },
   };
 }
@@ -1040,7 +1100,12 @@ function resolveSingleMove(state, playerId, action) {
     // shuffle without contact, and this one always ends on a destroyed king.
     gameSpecific: {
       ...state.gameSpecific,
-      rt: { ...rt, clock: res.t, queues: {}, ready: {}, idleTicks: 0, events: res.events },
+      rt: {
+        ...rt, clock: res.t, queues: {}, ready: {}, idleTicks: 0, events: res.events,
+        // One mover, but it can still turn corners on the way (a knight walks its L
+        // inside the turn), so the board wants the route rather than the endpoints.
+        motion: routesFrom(res.tracks, rt.clock, res.t),
+      },
     },
   };
 }
@@ -1263,6 +1328,12 @@ export function toGrid(state, colors) {
     cells, units,
     xLabels: FILES.split(''), yLabels: '87654321'.split(''),
     clock: rt.clock,
+    // How each piece GOT here since the previous board: `{ unitId: [[x, y, when], …] }`,
+    // the route it actually travelled during the last run of the clock (see
+    // routesFrom). Without it the board can only draw a straight line between where a
+    // piece was and where it is, which cuts the corners off every journey that turned
+    // one — and a knight's L is three legs, walked in an order the player chose.
+    motion: rt.motion,
     ui: {
       showFacing: false,
       showHpBars: rt.space === 'continuous',

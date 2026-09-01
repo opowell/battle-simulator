@@ -39,7 +39,7 @@ const sessionMeta = ref({});
 // computer's immediate reply). Each turn becomes one or more "beats" — a move
 // hop and/or a burst of combat flashes — queued and played in log order, so a
 // later turn never renders (or flashes) ahead of an earlier turn still playing.
-// Beats: { kind:'hop', hops:[{unitId, steps:[{x,y}]}], slide, durationMs? }
+// Beats: { kind:'hop', hops:[{unitId, steps:[{x,y}], times?:[0..1]}], slide, durationMs? }
 //      | { kind:'fx', flashes:[{unitId,fx}] }
 //
 // A hop beat carries a LIST of movers, not one, because a beat is an instant and
@@ -51,19 +51,34 @@ const sessionMeta = ref({});
 // way they travelled together in the game.
 const HOP_STEP_MS = 220;
 const FX_BEAT_MS  = 400; // gap before the next beat; the numeral keeps rising into it
-// currently-playing hop (for pinning): { hops, step, frac, slide }. `step` is the
-// index of the square a unit is standing on — shared by every mover in the beat, and
-// clamped per unit to its own path's last square — and `frac` is how far it has
-// travelled from there toward steps[step + 1], and is always 0 for a hop: only a
-// slide (ui.moveAnimation: 'slide') puts a unit between two squares.
+// currently-playing hop (for pinning): { hops, step, p, slide }. A HOP walks whole
+// squares, so `step` is the index of the one every mover in the beat is standing on,
+// clamped per unit to its own path's last. A SLIDE is continuous, so `p` is how far
+// through the beat it is (0-1) and each mover is placed along its own path by that.
 const hopAnim  = ref(null);
 // A mover's pose within the beat on screen: the square it is standing on, the one it
-// is heading for, and how far along it is. A path shorter than the beat's longest
-// simply parks on its final square.
+// is heading for, and how far between them it is. A path shorter than the beat's
+// longest simply parks on its final square.
 function hopPose(hop, anim) {
-  const last = hop.steps.length - 1;
-  const step = Math.min(anim.step, last);
-  return { a: hop.steps[step], b: hop.steps[step + 1] ?? hop.steps[step], frac: step === anim.step ? anim.frac : 0 };
+  const pts = hop.steps, last = pts.length - 1;
+  if (!anim.slide || last < 1) {
+    const step = Math.min(anim.step ?? 0, last);
+    return { a: pts[step], b: pts[step + 1] ?? pts[step], frac: 0 };
+  }
+  const p = Math.min(1, Math.max(0, anim.p ?? 0));
+  // `times` (from the game's own record of the journey — see grid.motion) says WHEN
+  // the piece was at each point. A piece is not evenly spread along its own route: it
+  // can set off late, stop early, or walk legs of different lengths, and spacing the
+  // points evenly would slide it through all of that at one made-up speed. Without
+  // times the path is all the beat knows, so the legs share the time equally.
+  const times = hop.times;
+  let i = 0;
+  if (times) while (i < last - 1 && times[i + 1] <= p) i++;
+  else i = Math.min(last - 1, Math.floor(p * last));
+  const t0 = times ? times[i] : i / last;
+  const t1 = times ? times[i + 1] : (i + 1) / last;
+  const frac = t1 > t0 ? Math.min(1, Math.max(0, (p - t0) / (t1 - t0))) : (p >= t1 ? 1 : 0);
+  return { a: pts[i], b: pts[i + 1], frac };
 }
 const hopFor = (beat, unitId) => beat?.hops.find(h => h.unitId === unitId) ?? null;
 const animQueue = ref([]);   // pending beats, not yet started
@@ -327,7 +342,7 @@ function playNext() {
     animTimer = setTimeout(() => { fxBusy.value = false; playNext(); }, delay / playbackSpeed.value);
     return;
   }
-  hopAnim.value = { hops: beat.hops, step: 0, frac: 0, slide: beat.slide, durationMs: beat.durationMs };
+  hopAnim.value = { hops: beat.hops, step: 0, p: 0, slide: beat.slide, durationMs: beat.durationMs };
   if (beat.slide) startSlide();
   else animTimer = setTimeout(advanceHop, HOP_STEP_MS);
 }
@@ -365,9 +380,7 @@ function startSlide() {
     if (token !== slideToken || !hopAnim.value) return;
     const p = Math.min(1, (performance.now() - t0) / duration);
     if (p >= 1) { endSlide(token); return; }
-    const at = p * segments;
-    const step = Math.floor(at);
-    hopAnim.value = { ...hopAnim.value, step, frac: at - step };
+    hopAnim.value = { ...hopAnim.value, p };
     slideRaf = requestAnimationFrame(frame);
   };
   // A hidden tab throttles requestAnimationFrame to nothing, which would park this
@@ -442,6 +455,24 @@ watch(liveState, (newState, oldState) => {
   // the beat it belongs to. A token that is drawn as a board fixture — civ1's city
   // sprite, which carries its garrison's id — is not in here: see boardMoves.js.
   const moved = MOVES.movedTokens(oldState.grid, newState.grid);
+
+  // The route a unit actually travelled to get here, when the game recorded one
+  // (grid.motion: `[[x, y, when], …]` per unit, `when` being how far through the
+  // instant it was at that point). A game that resolves a journey rather than a
+  // relocation knows the corners it turned; the straight from-to line below cuts
+  // them all off, which is wrong wherever the journey had any shape to it.
+  //
+  // Only when the route starts where this unit stood: `moved` is NET over everything
+  // this update bundled, so a bundle of more than one instant leaves the recorded
+  // route describing the last one alone, and drawing it would teleport the unit to
+  // the start of that leg. The straight line is the honest summary in that case.
+  const routes = newState.grid.motion ?? null;
+  const travelled = (unitId, from) => {
+    const route = routes?.[unitId];
+    if (!route || route.length < 2) return null;
+    const [x, y] = route[0];
+    return (Math.abs(x - from.x) < 1e-6 && Math.abs(y - from.y) < 1e-6) ? route : null;
+  };
 
   // Board point of a unit for a flash: its new point if still on the board, else its
   // last-seen point (a slain unit is gone from newState). Square-grid discrete units
@@ -560,11 +591,14 @@ watch(liveState, (newState, oldState) => {
     claimed.add(unitId);
     // Seam crossing: nothing to animate, the unit is simply already there.
     if (Math.abs(to.x - from.x) > halfW) return;
-    const steps = straightPath ? [from, to] : buildHopPath(from, to, diagonal);
+    const route = travelled(unitId, from);
+    const steps = route ? route.map(([x, y]) => ({ x, y }))
+      : straightPath ? [from, to] : buildHopPath(from, to, diagonal);
+    const hop = { unitId, steps, times: route?.map(p => p[2]) };
     if (groupBeat) {
       if (!groupBeat.hops.length) beats.push(groupBeat);
-      groupBeat.hops.push({ unitId, steps });
-    } else beats.push({ kind: 'hop', hops: [{ unitId, steps }], slide: smooth });
+      groupBeat.hops.push(hop);
+    } else beats.push({ kind: 'hop', hops: [hop], slide: smooth });
   };
   // A clock advance is not attributed to the piece that moved — the action that ran
   // the clock is somebody's `wait` — so on one clock the movers are collected up
