@@ -435,6 +435,41 @@ test('one clock advance moves every piece under way, and says so to the board', 
   assert.equal(ui.hideTurnTimeline, true);
 });
 
+// A journey has corners in it, and the board can only draw the ones it is told
+// about: the straight line between where a piece was and where it ended up cuts off
+// exactly the part of a knight's L that the player chose (see `pathId`).
+test('the board is handed the route a piece travelled, corners and all', () => {
+  let s = start('melee');
+  // Clear b2, so the knight has a first leg to walk onto, and send it the long way
+  // round — three legs at speed 3, which is one whole turn window.
+  s = apply(s, 'white', find(s, 'white', (a) => a.label === 'b2 → b4'));
+  s = runClock(s);
+  s = runClock(s);
+  s = apply(s, 'white', find(s, 'white', (a) => a.label === 'b1 → c3 via b2-b3'));
+  s = runClock(s);
+
+  const motion = ChessGame.toGrid(s).motion;
+  const route = motion.wN2;
+  const at = (p) => `${p[0]},${p[1]}`;
+  assert.equal(at(route[0]), '1.5,7.5', 'the route starts where the piece stood (b1)');
+  assert.equal(at(route[route.length - 1]), '2.5,5.5', 'and ends where it stands now (c3)');
+  // The corner: two ranks straight down the b-file, and only then across to c3. The
+  // legs are collinear until b3, so that — and not b2 — is the point that matters.
+  assert.ok(route.some((p) => at(p) === '1.5,5.5'), `the turn at b3 is in the route: ${route.map(at)}`);
+
+  const times = route.map((p) => p[2]);
+  assert.equal(times[0], 0);
+  assert.equal(times[times.length - 1], 1);
+  assert.deepEqual(times, [...times].sort((a, b) => a - b), 'stamped in the order they were reached');
+  // Two of the three squares are walked before the corner, so the turn comes two
+  // thirds of the way through the instant — not half, which is where evenly spacing
+  // the points would put it.
+  assert.ok(Math.abs(times[1] - 2 / 3) < 1e-6, `the corner is 2/3 of the way through (got ${times[1]})`);
+
+  // A piece that stood still all instant has no route to draw.
+  assert.equal(motion.wK5, undefined);
+});
+
 test('delays are a continuous-time thing; a turn-based variant offers none', () => {
   assert.equal(legal(start('sliding'), 'white').some((a) => a.type === 'delay'), false);
   assert.ok(legal(start('clockwork'), 'white').some((a) => a.type === 'delay'));
