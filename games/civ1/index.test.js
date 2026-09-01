@@ -206,6 +206,70 @@ test('civ1: a city carries what its city screen draws — population, garrison, 
   if (palace) assert.match(palace.image, /city\/production$/);
 });
 
+// A square of the fat cross that yields this city nothing has exactly two excuses, and
+// the screen has to give the right one: a neighbour of your own is already working it,
+// or nobody has ever been near it. Both ride the radius payload — apps/design is
+// game-agnostic and cannot work either one out for itself.
+test('civ1: the radius map says which squares are taken, and by which city', () => {
+  const state = Civ1Game.createInitialState(players());
+  const unit = state.units.find(u => u.ownerId === 'p1');
+  const base = { x: Math.min(unit.position.x, state.board.width - 3), y: unit.position.y };
+  const city = (id, name, x, size) => ({
+    id, name, ownerId: 'p1', position: { x, y: base.y }, size,
+    shields: 0, food: 0, production: 'militia', buildings: [],
+  });
+  // Two squares apart, so eleven squares of the crosses are the same ground. Bombay is
+  // big enough (12 citizens over 21 squares) that some of what it works has to be in
+  // there, whichever way the map fell.
+  const withCities = { ...state, cities: [city('city-a', 'Alphaville', base.x, 3),
+                                          city('city-b', 'Bombay', base.x + 2, 12)] };
+  const grid = Civ1Game.toGrid(withCities);
+  const a = grid.cities.find(c => c.id === 'city-a');
+  const b = grid.cities.find(c => c.id === 'city-b');
+
+  const bombay = new Set(b.radius.filter(t => t.worked).map(t => `${t.x},${t.y}`));
+  const shared = a.radius.filter(t => !t.center && !t.offBoard && bombay.has(`${t.x},${t.y}`));
+  assert.ok(shared.length, 'the two crosses overlap on ground Bombay is working');
+  for (const t of shared) {
+    assert.equal(t.worked, false, 'no square is worked by two cities at once');
+    assert.equal(t.claimedByOther, true);
+    // The naming is the point, and it is why this is worth two passes: Alphaville
+    // comes first in board order, so the sequential takenTiles bookkeeping alone knew
+    // nothing yet about the city that ends up holding these squares.
+    assert.equal(t.claimedBy, 'Bombay');
+  }
+  const free = a.radius.find(t => !t.center && !t.offBoard && !t.worked && !bombay.has(`${t.x},${t.y}`));
+  if (free) assert.equal(free.claimedBy, null, 'a square nobody works is nobody\'s');
+});
+
+test('civ1: the radius map marks squares this player has never seen', () => {
+  const state = Civ1Game.createInitialState(players());
+  const unit = state.units.find(u => u.ownerId === 'p1');
+  const { width, height } = state.board;
+  // p1 has laid eyes on their city square and nothing else — the rest of the cross is
+  // ground they have never walked, which getVisibleState hands back as `unknown`.
+  const seenOnly = Array(width * height).fill('0');
+  seenOnly[unit.position.y * width + unit.position.x] = '1';
+  const withCity = {
+    ...state,
+    cities: [{ id: 'city-test', name: 'Testopolis', ownerId: 'p1',
+               position: { ...unit.position }, size: 3, shields: 0, food: 0,
+               production: 'militia', buildings: [] }],
+    gameSpecific: { ...state.gameSpecific, explored: { p1: seenOnly.join('') } },
+  };
+  const city = Civ1Game.toGrid(Civ1Game.getVisibleState(withCity, 'p1'))
+    .cities.find(c => c.id === 'city-test');
+
+  const centre = city.radius.find(t => t.center);
+  assert.equal(centre.fogged, false, 'you can always see the ground you are standing on');
+  const dark = city.radius.filter(t => !t.offBoard && t.fogged);
+  assert.equal(dark.length, city.radius.filter(t => !t.offBoard).length - 1,
+    'every other square of the cross is unexplored');
+  assert.equal(dark[0].terrain, 'unknown');
+  assert.deepEqual(dark[0].yield, { food: 0, shields: 0, trade: 0 },
+    'unexplored ground yields nothing — which is why the screen has to say why');
+});
+
 // ---------------------------------------------------------------------------
 // Standing orders, as the map shows them
 // ---------------------------------------------------------------------------

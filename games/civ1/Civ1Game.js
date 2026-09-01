@@ -2112,19 +2112,34 @@ export const Civ1Game = {
     const cityDetail = {};
     for (const ownerId of Object.keys(state.gameSpecific.civ ?? {})) {
       const ctx = buildOwnerCtx(state, ownerId);
-      for (const c of state.cities) {
-        if (c.ownerId !== ownerId) continue;
+      const owned = state.cities.filter(c => c.ownerId === ownerId);
+
+      // Two passes over the owner's cities, because what a square's status *is*
+      // depends on cities this loop has not reached yet. The first assigns every city
+      // its workers in board order — ctx.takenTiles has to accumulate exactly as
+      // processOwnerEconomy's loop does in economy.js, so that no two cities claim the
+      // same square — and records which city ended up on each square. The second can
+      // then name the city working any square whichever order the two came in; the
+      // sequential bookkeeping alone only ever knew about the cities behind it, so a
+      // neighbour later in `state.cities` used to leave its squares looking free.
+      const computed = new Map();
+      const workedBy = new Map();                      // "x,y" -> name of the city working it
+      for (const c of owned) {
         const out = computeCity(c, ctx);
+        computed.set(c.id, out);
+        for (const w of out.worked) {
+          ctx.takenTiles.add(`${w.x},${w.y}`);
+          workedBy.set(`${w.x},${w.y}`, c.name);
+        }
+      }
+
+      for (const c of owned) {
+        const out = computed.get(c.id);
         const workedKeys = new Set(out.worked.map(w => w.key));
 
         // The full 21-square "fat cross" (see city.js's FAT_CROSS), not just the
         // worked subset — the City Inspector's radius map needs every square's
-        // terrain/yield/status to render, worked or not. claimedByOther reflects only
-        // cities already processed earlier in this loop (this owner's cities in board
-        // order); a same-owner city later in `state.cities` that also wants one of
-        // these squares won't show as a conflict here — an inherent snapshot
-        // limitation of the sequential takenTiles bookkeeping, not worth a second pass
-        // just for display.
+        // terrain/yield/status to render, worked or not.
         const radius = FAT_CROSS.map(([dx, dy]) => {
           const ry = c.position.y + dy;
           if (ry < 0 || ry >= height) return { dx, dy, offBoard: true };
@@ -2134,6 +2149,11 @@ export const Civ1Game = {
           if (!tile) return { dx, dy, offBoard: true };
           const center = dx === 0 && dy === 0;
           const y3 = workedTileYield(tile, rx, ry, ctx);
+          const mine = workedKeys.has(key);
+          // Which *other* city of this owner's holds the square, by name — the city
+          // screen says so on the square itself, since "why is that grassland not
+          // being worked" is otherwise unanswerable from this screen alone.
+          const claimedBy = !center && !mine ? (workedBy.get(key) ?? null) : null;
           return {
             x: rx, y: ry, dx, dy, center,
             terrain: tile.terrain,
@@ -2142,13 +2162,20 @@ export const Civ1Game = {
             // Same flat terrain colour the board paints under its tiles, so the city
             // screen's oceans (which draw no sprite) match the map instead of guessing.
             color: this.colors[tile.terrain] ?? this.colors.plains ?? '#808070',
-            worked: workedKeys.has(key),
-            claimedByOther: !center && !workedKeys.has(key) && ctx.takenTiles.has(key),
+            worked: mine,
+            claimedBy,
+            claimedByOther: !!claimedBy,
+            // Ground this viewer has never seen. `tiles` is already their fogged board,
+            // where unexplored squares carry the `unknown` terrain — which yields
+            // nothing, so the screen would otherwise draw it as a black square that is
+            // simply worthless. Your own cities light their whole cross the moment they
+            // are founded (CITY_VISION is a 2-square box, and the cross fits inside it),
+            // so this is what an enemy city's screen is mostly made of.
+            fogged: tile.terrain === 'unknown',
             yield: y3,
-            icons: workedKeys.has(key) && !center ? yieldIcons(y3) : [],
+            icons: mine && !center ? yieldIcons(y3) : [],
           };
         });
-        for (const w of out.worked) ctx.takenTiles.add(`${w.x},${w.y}`);
 
         // What this city may build right now, resolved to display form (name, cost,
         // art, one-line stats) here rather than in the client: apps/design has no
