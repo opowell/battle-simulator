@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, reactive } from 'vue';
 import RatesOverlay    from './RatesOverlay.vue';
 import CitiesOverlay   from './CitiesOverlay.vue';
 import MilitaryOverlay from './MilitaryOverlay.vue';
@@ -54,7 +54,7 @@ const props = defineProps({
   // screens stay on that civ instead of describing nobody.
   overviewPlayerId: { type: String, default: null },
 });
-defineEmits(['submit', 'aim', 'cancel-aim', 'goto', 'update:panel', 'set-variant']);
+const emit = defineEmits(['submit', 'aim', 'cancel-aim', 'goto', 'update:panel', 'set-variant']);
 
 // Action types listed in field.ui.aimedActionTypes resolve their target by clicking
 // the map (see SchematicLayer.vue's aiming overlay) instead of one button per legal
@@ -123,6 +123,65 @@ const hasContent      = computed(() => !props.observing || !!props.civ || props.
 const OVERLAY_HANDLED = new Set(['set-tax', 'set-luxury', 'set-research', 'set-production']);
 const allListActions = computed(() => aimedActions.value.filter(a => !OVERLAY_HANDLED.has(a.type)));
 
+// A field whose value is a LENGTH OF TIME (ui.timeEntry — chess's "hold this piece
+// where it stands", in the quadrants where time runs continuously). Time there is a
+// real number, so the way to ask for one is a field the player types into, not a row
+// of preset chips: chips are what a DISCRETE quantity looks like, and offering them
+// for a continuous one hands back exactly the freedom the quadrant is about. The
+// game still enumerates a few lengths — a search needs a finite action set — and
+// they serve here as the field's default; anything else typed is checked by the
+// game's isActionLegal (see engine/ActionValidator.js).
+const timeEntryTypes = computed(() => new Set(Object.keys(props.ui?.timeEntry ?? {})));
+const listCandidates = computed(() => allListActions.value.filter(a => !timeEntryTypes.value.has(a.type)));
+
+const timeEntries = computed(() => {
+  const spec = props.ui?.timeEntry;
+  if (!spec) return [];
+  const groups = new Map();
+  for (const a of allListActions.value) {
+    const s = spec[a.type];
+    if (!s) continue;
+    // One field per unit: several pieces' holds must not land in the same box.
+    const key = `${a.type}:${a.unitId ?? ''}`;
+    if (!groups.has(key)) groups.set(key, { key, spec: s, values: [], base: a });
+    groups.get(key).values.push(Number(a[s.field]));
+  }
+  // The middle enumerated length is the field's default — the game's own idea of an
+  // ordinary amount to wait, rather than the shortest or the longest it thought of.
+  return [...groups.values()].map(g => {
+    const sorted = g.values.filter(Number.isFinite).sort((a, b) => a - b);
+    return { ...g, fallback: sorted[Math.floor(sorted.length / 2)] ?? 1 };
+  });
+});
+
+// Typed-but-not-yet-committed values, keyed as above. Absent = the field shows the
+// default, so a group that reappears next instant starts clean rather than holding
+// on to a number the player typed for a piece that has since moved.
+const timeDrafts = reactive({});
+const timeDraft = (g) => timeDrafts[g.key] ?? String(g.fallback);
+const round2 = (v) => Math.round(v * 100) / 100;
+function onTimeInput(g, e) { timeDrafts[g.key] = e.target.value; }
+function parseTime(g) {
+  const v = parseFloat(timeDraft(g));
+  return Number.isFinite(v) ? v : g.fallback;
+}
+function clampTime(g, v) {
+  return Math.min(g.spec.max ?? Infinity, Math.max(g.spec.min ?? 0, v));
+}
+function nudgeTime(g, dir) {
+  timeDrafts[g.key] = String(round2(clampTime(g, parseTime(g) + dir * (g.spec.step ?? 0.25))));
+}
+function submitTime(g) {
+  const value = round2(clampTime(g, parseTime(g)));
+  const { label: _label, ...base } = g.base;
+  // Said the way the game says it for the lengths it listed itself ("Hold 2 turns"),
+  // so a typed hold reads no differently in the log.
+  const unit = (g.spec.unit && value === 1) ? g.spec.unit.replace(/s$/, '') : g.spec.unit;
+  const label = [g.spec.button ?? g.spec.label, value, unit].filter(x => x != null && x !== '').join(' ');
+  delete timeDrafts[g.key];
+  emit('submit', { ...base, [g.spec.field]: value, label });
+}
+
 // One choice offered at several sizes — Risk's "how many armies follow the dice into the
 // territory you just took" — arrives as a run of actions identical but for one number.
 // A column of near-identical buttons is a bad way to ask "how many?", so those collapse
@@ -135,7 +194,7 @@ const NUMERIC_CHOICE_MIN = 3;
 const PRESENTATION_KEYS = new Set(['label', 'groupLabel']);
 const numericChoices = computed(() => {
   const byType = new Map();
-  for (const a of allListActions.value) {
+  for (const a of listCandidates.value) {
     if (!byType.has(a.type)) byType.set(a.type, []);
     byType.get(a.type).push(a);
   }
@@ -156,7 +215,7 @@ const numericChoices = computed(() => {
   return groups;
 });
 const groupedTypes = computed(() => new Set(numericChoices.value.map(g => g.type)));
-const listActions = computed(() => allListActions.value.filter(a => !groupedTypes.value.has(a.type)));
+const listActions = computed(() => listCandidates.value.filter(a => !groupedTypes.value.has(a.type)));
 
 // Territory games (ui.territoryClick — kdice, risk) issue every territory action on the
 // map, so the panel can be empty while there is plenty to do. Say what the map does
@@ -304,6 +363,18 @@ function fmtAction(action) {
             <button v-for="a in g.actions" :key="a[g.field]" :title="a.label"
                     class="ap-chip" @click="$emit('submit', a)">{{a[g.field]}}</button>
           </div>
+          <!-- A length of time, typed (ui.timeEntry): chess's hold, in continuous time. -->
+          <div v-for="g in timeEntries" :key="g.key" class="ap-variant ap-time">
+            <span class="mono ap-variant-label">{{g.spec.label ?? 'Time'}}</span>
+            <button class="ap-arrow" @click="nudgeTime(g, -1)">&lsaquo;</button>
+            <input class="ap-time-input mono" :value="timeDraft(g)" inputmode="decimal"
+                   :title="'Any length from ' + (g.spec.min ?? 0) + ' to ' + (g.spec.max ?? '∞')"
+                   @input="e => onTimeInput(g, e)"
+                   @keydown="e => { if (e.key === 'Enter') { e.preventDefault(); submitTime(g); } }"/>
+            <button class="ap-arrow" @click="nudgeTime(g, 1)">&rsaquo;</button>
+            <span v-if="g.spec.unit" class="ap-time-unit">{{g.spec.unit}}</span>
+            <button class="ap-chip" @click="submitTime(g)">{{g.spec.button ?? 'Go'}}</button>
+          </div>
           <div class="ap-list">
             <button v-for="(action, i) in listActions" :key="i"
                     class="action-btn ap-btn ap-btn--icon"
@@ -313,7 +384,7 @@ function fmtAction(action) {
             </button>
             <!-- On a territory map an empty list is normal: the hint above already says
                  where the actions are. -->
-            <div v-if="!listActions.length && !numericChoices.length && !territoryHint" class="ap-empty">No actions.</div>
+            <div v-if="!listActions.length && !numericChoices.length && !timeEntries.length && !territoryHint" class="ap-empty">No actions.</div>
           </div>
         </template>
       </template>
@@ -354,6 +425,14 @@ function fmtAction(action) {
 .ap-chip { font-size: 11px; padding: 3px 9px; border-radius: 4px; border: 1px solid var(--line2); background: transparent; color: var(--dim); cursor: pointer; }
 .ap-chip:hover { border-color: var(--accent); color: var(--accent); }
 .ap-chip--on { border-color: var(--accent); color: var(--accent); background: rgba(66,198,230,.12); }
+.ap-time-input { width: 44px; text-align: right; padding: 2px 5px; font-size: 11px;
+  background: var(--panel, #1a1d24); color: var(--fg, #e6e6e6);
+  border: 1px solid var(--line2); border-radius: 4px; }
+.ap-time-input:focus { outline: none; border-color: var(--accent); }
+.ap-time-unit { font-size: 10px; color: var(--faint); }
+.ap-arrow { width: 16px; height: 20px; line-height: 1; padding: 0; font-size: 13px;
+  color: var(--dim); background: transparent; border: none; cursor: pointer; }
+.ap-arrow:hover { color: var(--accent); }
 .ap-hint { font-size: 10px; color: var(--faint); margin-bottom: 8px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; }
 .ap-hint--aim { color: var(--accent); }
 .ap-btn { font-size: 11px; font-family: var(--mono); }

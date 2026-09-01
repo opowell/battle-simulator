@@ -413,6 +413,16 @@ export const ChessGame = {
     hideGridLines: true,   // the light/dark checkerboard already delineates squares; extra per-cell borders look busy
     hideTurnTimeline: true, // a turn here is one move each way — the ply counter says it all, without the track
     ownTileColors: true,   // tiles are coloured as the checkerboard already — skip the synthetic square overlay
+    // A hold is a length of TIME, and in the continuous-time quadrants time is
+    // continuous — so the panel asks for it with a typed field rather than a row
+    // of preset chips (see ActionsPanel.vue's timeEntries). The listed delay
+    // actions supply the field's default; anything else the player types is
+    // checked by `isActionLegal` above. Absent in the discrete-time quadrants
+    // for the simplest of reasons: they offer no delay to enter.
+    timeEntry: {
+      delay:         { field: 'duration', label: 'Hold for',      button: 'Hold',      unit: 'turns', min: ST.MIN_DELAY, max: ST.MAX_DELAY, step: 0.25 },
+      'queue-delay': { field: 'duration', label: 'Then hold for', button: 'Then hold', unit: 'turns', min: ST.MIN_DELAY, max: ST.MAX_DELAY, step: 0.25 },
+    },
   },
 
   createInitialState(players, config = {}) {
@@ -525,6 +535,17 @@ export const ChessGame = {
     return ST.isSpacetimeVariant(state)
       ? ST.getSearchActions(state, playerId)
       : ChessGame.getLegalActions(state, playerId);
+  },
+
+  /**
+   * Orders too numerous to enumerate, checked after the fact instead (see
+   * engine/ActionValidator.js). There is exactly one here: a continuous-time
+   * hold, whose length may be any number of turn windows the player names, so
+   * the delays `getLegalActions` lists are examples and not the whole set.
+   * Standard chess has no such action — every move it allows is in the list.
+   */
+  isActionLegal(state, playerId, action) {
+    return ST.isSpacetimeVariant(state) && ST.isActionLegal(state, playerId, action);
   },
 
   // NOTE: there is deliberately NO getSearchLegalActions here. The search tree
@@ -868,8 +889,10 @@ export const ChessGame = {
   // unique per move, including the king's two-square castling hop.
   actionKey(action) {
     // The other quadrants add orders that from+to cannot tell apart: `wait`,
-    // `cancel`, and two knight routes to the same square.
-    if (action.type === 'wait' || action.type === 'cancel' || action.pathId != null)
+    // `cancel`, two knight routes to the same square, and a hold — which has no
+    // from/to at all, only a length of time.
+    if (action.type === 'wait' || action.type === 'cancel' || action.pathId != null
+        || action.type === 'delay' || action.type === 'queue-delay')
       return ST.actionKey(action);
     const promo = action.payload?.promote ? '=' + action.payload.promote[0] : '';
     return (action.from ?? '') + (action.to ?? '') + promo;

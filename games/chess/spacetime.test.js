@@ -8,8 +8,9 @@ import assert from 'node:assert';
 import { ChessGame } from './ChessGame.js';
 import {
   geometricMoves, contactWindow, resolveVariant, isSpacetimeVariant,
-  sqOf, gridOf, PIECE_SPEED, HITBOX_R, MAX_ORDERS,
+  sqOf, gridOf, PIECE_SPEED, HITBOX_R, MAX_ORDERS, MIN_DELAY, MAX_DELAY,
 } from './spacetime.js';
+import { validate } from '../../engine/ActionValidator.js';
 
 const PLAYERS = [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }];
 const CONFIG = {
@@ -438,6 +439,74 @@ test('delays are a continuous-time thing; a turn-based variant offers none', () 
   assert.equal(legal(start('sliding'), 'white').some((a) => a.type === 'delay'), false);
   assert.ok(legal(start('clockwork'), 'white').some((a) => a.type === 'delay'));
   assert.ok(legal(start('melee'), 'white').some((a) => a.type === 'delay'));
+});
+
+// Time is continuous here, so a length of time is too: the delays getLegalActions
+// lists are examples (a search needs a finite set, a panel needs a default), and any
+// other length a player names goes through isActionLegal — the same route a click on
+// an arbitrary POINT takes in the continuous-space games.
+test('a hold may be any length, not just the ones listed', () => {
+  let s = start('clockwork');
+  const typed = { type: 'delay', unitId: 'wP5', duration: 0.37 };
+  assert.equal(legal(s, 'white').some((a) => a.type === 'delay' && a.duration === 0.37), false,
+    'not one of the enumerated lengths');
+  assert.ok(ChessGame.isActionLegal(s, 'white', typed), 'but legal all the same');
+  // The engine's own gate, which is what a submitted order actually meets.
+  validate(typed, legal(s, 'white'), ChessGame, s, 'white');
+
+  s = apply(s, 'white', typed);
+  s = apply(s, 'white', find(s, 'white', (a) => a.type === 'queue-order' && a.unitId === 'wP5' && a.to === 'e3'));
+  s = runClock(s);
+  assert.equal(at(s, 'e2')?.id, 'wP5', 'still at home');
+  assert.ok(Math.abs(s.gameSpecific.rt.ready.wP5 - 0.37) < 1e-9, 'held for exactly what was asked');
+  s = runClock(s);
+  assert.ok(Math.abs(s.gameSpecific.rt.clock - 0.37) < 1e-9, 'the clock ran on to the moment it came free');
+  assert.equal(at(s, 'e3')?.id, 'wP5');
+});
+
+test('a typed hold is still checked: a number, in range, and matching the queue', () => {
+  const s = start('melee');
+  const ok = (a) => ChessGame.isActionLegal(s, 'white', a);
+  assert.ok(ok({ type: 'delay', unitId: 'wP5', duration: MIN_DELAY }));
+  assert.ok(ok({ type: 'delay', unitId: 'wP5', duration: MAX_DELAY }));
+  assert.equal(ok({ type: 'delay', unitId: 'wP5', duration: 0 }), false, 'a hold of no time is not a hold');
+  assert.equal(ok({ type: 'delay', unitId: 'wP5', duration: -1 }), false);
+  assert.equal(ok({ type: 'delay', unitId: 'wP5', duration: MAX_DELAY + 1 }), false);
+  assert.equal(ok({ type: 'delay', unitId: 'wP5', duration: Infinity }), false);
+  assert.equal(ok({ type: 'delay', unitId: 'wP5', duration: 'soon' }), false);
+  assert.equal(ok({ type: 'delay', unitId: 'wP5' }), false, 'no length named at all');
+  assert.equal(ok({ type: 'delay', unitId: 'bP5', duration: 1 }), false, "not white's piece to hold");
+  assert.equal(ok({ type: 'queue-delay', unitId: 'wP5', duration: 1 }), false,
+    'an idle piece takes a plain delay, not a queued one');
+
+  // A busy piece is the other way round, exactly as the enumeration has it.
+  const busy = apply(s, 'white', find(s, 'white', (a) => a.type === 'order' && a.unitId === 'wP5'));
+  assert.ok(ChessGame.isActionLegal(busy, 'white', { type: 'queue-delay', unitId: 'wP5', duration: 1.5 }));
+  assert.equal(ChessGame.isActionLegal(busy, 'white', { type: 'delay', unitId: 'wP5', duration: 1.5 }), false);
+});
+
+test('no quadrant with discrete time takes a typed hold', () => {
+  for (const cfg of [{}, { fogOfWar: true }, CONFIG.sliding]) {
+    const s = ChessGame.createInitialState(PLAYERS, cfg);
+    assert.equal(ChessGame.isActionLegal(s, 'white', { type: 'delay', unitId: 'wP5', duration: 0.4 }), false);
+  }
+});
+
+test('two holds of different lengths are two different actions', () => {
+  const k = (d) => ChessGame.actionKey({ type: 'delay', unitId: 'wP5', duration: d });
+  assert.equal(k(1), k(1));
+  assert.notEqual(k(0.5), k(1.25));
+  assert.notEqual(k(1), ChessGame.actionKey({ type: 'delay', unitId: 'wP4', duration: 1 }));
+});
+
+// The panel asks for a hold with a typed field rather than a row of chips, and it
+// only knows to because the game says which of its fields is a length of time.
+test('the game declares its hold as a time entry, for the panel to ask for', () => {
+  const spec = ChessGame.ui.timeEntry;
+  assert.equal(spec.delay.field, 'duration');
+  assert.equal(spec['queue-delay'].field, 'duration');
+  assert.equal(spec.delay.min, MIN_DELAY);
+  assert.equal(spec.delay.max, MAX_DELAY);
 });
 
 test('a search never sees the planning orders, only what acts now', () => {

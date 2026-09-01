@@ -113,11 +113,24 @@ const MAX_IDLE_TICKS = 40;
 export const MAX_ORDERS = 4;
 
 /**
- * Delays a piece can be told to hold for, in turn windows. A delay is how you say
- * "go, but not yet" — the thing continuous time makes possible and discrete time
- * cannot express, since there a turn is the smallest unit of waiting there is.
+ * A delay is how you say "go, but not yet" — the thing continuous time makes
+ * possible and discrete time cannot express, since there a turn is the smallest
+ * unit of waiting there is.
+ *
+ * And because time here is continuous, so is the hold: a player may name ANY
+ * length in [MIN_DELAY, MAX_DELAY] turn windows, not one off a menu. A menu is
+ * what discrete time looks like, and offering one here would put the quadrant's
+ * defining freedom back in a box. `isActionLegal` below is what accepts a typed
+ * length; `DELAYS` are only the ones the enumeration puts up as buttons, because
+ * a search needs a finite action set and a panel needs a default in the field.
  */
 export const DELAYS = [0.5, 1, 2];
+/** Shortest / longest hold a player may name, in turn windows. */
+export const MIN_DELAY = 0.01;
+export const MAX_DELAY = 8;
+
+/** A hold length, said out loud: 1 → "1", 0.75 → "0.75", 1/3 → "0.33". */
+export const fmtDuration = (d) => String(Math.round(Number(d) * 100) / 100);
 
 const EPS = 1e-9;
 const FILES = 'abcdefgh';
@@ -455,12 +468,7 @@ export function getLegalActions(state, playerId) {
           actions.push({ type: 'queue-pop', unitId: u.id, label: `Drop ${u.id}'s last queued order` });
       }
       if (queue.length >= MAX_ORDERS) continue;
-      for (const d of DELAYS) {
-        actions.push({
-          type: queued ? 'queue-delay' : 'delay', unitId: u.id, duration: d,
-          label: `${queued ? 'Then hold' : 'Hold'} ${d} turn${d === 1 ? '' : 's'}`,
-        });
-      }
+      for (const d of DELAYS) actions.push(delayAction(u.id, d, queued));
     }
 
     // Where this order starts: where the piece stands, or — for one joining a
@@ -515,6 +523,43 @@ const PLANNING_ACTIONS = new Set(['queue-order', 'queue-delay', 'queue-pop', 'qu
 export const isPlanningAction = (a) => PLANNING_ACTIONS.has(a.type);
 export function getSearchActions(state, playerId) {
   return getLegalActions(state, playerId).filter((a) => !isPlanningAction(a));
+}
+
+/** One "hold for this long" order, however the length was arrived at. */
+export function delayAction(unitId, duration, queued = false) {
+  const d = Math.round(Number(duration) * 100) / 100;
+  return {
+    type: queued ? 'queue-delay' : 'delay', unitId, duration: d,
+    label: `${queued ? 'Then hold' : 'Hold'} ${fmtDuration(d)} turn${d === 1 ? '' : 's'}`,
+  };
+}
+
+/**
+ * The legality check for orders that cannot be enumerated — the same role
+ * `isActionLegal` plays in the continuous-SPACE games (cs, doom, surviv), where a
+ * player may click any exact point and the engine can only check it after the
+ * fact (see engine/ActionValidator.js). Continuous TIME has the same shape of
+ * freedom in its one time-valued field: a hold may be any length, so the delays
+ * `getLegalActions` lists are examples rather than the whole set, and a length
+ * typed in the panel arrives here instead.
+ *
+ * Everything except the length itself is checked exactly as the enumeration
+ * checks it: continuous time, the piece is the player's and alive, it hasn't
+ * spent its say this instant, and its queue has room. `queue-delay` vs `delay`
+ * must match the queue's state for the same reason it does up there — a delay
+ * given to a busy piece is a queued one.
+ */
+export function isActionLegal(state, playerId, action) {
+  if (action?.type !== 'delay' && action?.type !== 'queue-delay') return false;
+  const rt = state?.gameSpecific?.rt;
+  if (rt?.time !== 'continuous') return false;
+  const d = Number(action.duration);
+  if (!Number.isFinite(d) || d < MIN_DELAY || d > MAX_DELAY) return false;
+  const u = liveUnits(state).find((x) => x.id === action.unitId && x.ownerId === playerId);
+  if (!u || rt.locked.includes(u.id)) return false;
+  const queue = queueOf(rt, u.id);
+  if (queue.length >= MAX_ORDERS) return false;
+  return (action.type === 'queue-delay') === (queue.length > 0);
 }
 
 // ── Applying an action ───────────────────────────────────────────────────────
@@ -1122,7 +1167,7 @@ const GLYPH = { king: 'K', queen: 'Q', rook: 'R', bishop: 'B', knight: 'N', pawn
  * the overlay simply doesn't draw a leg for it.
  */
 const queueEntriesForUi = (queue) => queue.map((e) => (e.kind === 'delay'
-  ? { label: `hold ${e.duration}` }
+  ? { label: `hold ${fmtDuration(e.duration)}` }
   : { x: e.path[e.path.length - 1].x, y: e.path[e.path.length - 1].y }));
 
 /**
@@ -1150,7 +1195,7 @@ export function planWaypoints(plan) {
 
 /** One queue entry, said out loud: a destination square, or a hold. */
 const describeEntry = (e) => (e.kind === 'delay'
-  ? `hold ${e.duration}`
+  ? `hold ${fmtDuration(e.duration)}`
   : sqOf(e.path[e.path.length - 1].x, e.path[e.path.length - 1].y));
 
 export function renderState(state) {
@@ -1313,5 +1358,9 @@ export function getBattleSummary(finalState) {
 export function actionKey(action) {
   if (action.type === 'wait') return 'wait';
   if (action.type === 'cancel') return `cancel:${action.unitId}`;
+  // A hold has no from/to at all, so without this every delay of a piece — and
+  // every length of one — would share the one key.
+  if (action.type === 'delay' || action.type === 'queue-delay')
+    return `${action.type}:${action.unitId}:${fmtDuration(action.duration)}`;
   return `${action.unitId}:${action.from}${action.to}#${action.pathId ?? 0}`;
 }
