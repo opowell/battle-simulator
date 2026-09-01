@@ -270,6 +270,49 @@ test('civ1: the radius map marks squares this player has never seen', () => {
     'unexplored ground yields nothing — which is why the screen has to say why');
 });
 
+// The Military advisor is how you find one particular unit in an empire of dozens —
+// a stacked or garrisoned one especially, since the board only ever draws the top of a
+// stack. That means the per-owner roster has to carry the units one by one, with the id
+// a click sends back (MilitaryOverlay.vue) and enough about each to tell them apart;
+// apps/design has no access to UNITS, so every stat rides the payload.
+test('civ1: the military roster lists each unit, with the id, place and stats a row needs', () => {
+  const state = Civ1Game.createInitialState(players());
+  const unit = state.units.find(u => u.ownerId === 'p1');
+  const withCity = {
+    ...state,
+    cities: [...(state.cities ?? []), {
+      id: 'city-test', name: 'Testopolis', ownerId: 'p1',
+      position: { ...unit.position }, size: 3, shields: 0, food: 0,
+      production: 'militia', buildings: [],
+    }],
+  };
+  const mine = Civ1Game.toGrid(withCity).military.p1;
+
+  assert.equal(mine.units.length, mine.total, 'one row per unit that was counted');
+  const row = mine.units.find(u => u.id === unit.id);
+  assert.ok(row, 'the row is found by the unit id a click sends back');
+  assert.equal(row.type, unit.type);
+  assert.deepEqual([row.x, row.y], [unit.position.x, unit.position.y]);
+  assert.equal(row.maxMp, 1, 'stats come from UNITS, which only the server has');
+  assert.equal(row.city, 'Testopolis', 'a garrison is placed by its city, not its terrain');
+  assert.equal(row.needsOrders, true);
+  // A unit on open ground is placed by what it is standing on instead.
+  const afield = mine.units.find(u => u.id !== unit.id);
+  assert.equal(afield.city, null);
+  assert.ok(afield.terrain, '…and always has somewhere to be');
+
+  // Whoever still owes the turn an order comes first: the list doubles as "who have I
+  // not moved yet?", which is the reason to open it mid-turn.
+  const done = Civ1Game.applyActions(withCity,
+    [{ playerId: 'p1', action: { type: 'fortify', unitId: unit.id } }]);
+  const after = Civ1Game.toGrid(done).military.p1.units;
+  assert.equal(after.find(u => u.id === unit.id).needsOrders, false);
+  assert.deepEqual(after.map(u => u.needsOrders), [...after.map(u => u.needsOrders)].sort((a, b) => b - a),
+    'units still wanting orders sort to the top');
+  assert.deepEqual(after.find(u => u.id === unit.id).status, ['fortifying'],
+    'standing orders are on the row — the map cannot show a garrison\'s');
+});
+
 // ---------------------------------------------------------------------------
 // Standing orders, as the map shows them
 // ---------------------------------------------------------------------------
