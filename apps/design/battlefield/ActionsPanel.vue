@@ -54,7 +54,7 @@ const props = defineProps({
   // screens stay on that civ instead of describing nobody.
   overviewPlayerId: { type: String, default: null },
 });
-const emit = defineEmits(['submit', 'aim', 'cancel-aim', 'goto', 'update:panel', 'set-variant']);
+const emit = defineEmits(['submit', 'aim', 'cancel-aim', 'goto', 'goto-unit', 'next-unit', 'deselect', 'update:panel', 'set-variant']);
 
 // Action types listed in field.ui.aimedActionTypes resolve their target by clicking
 // the map (see SchematicLayer.vue's aiming overlay) instead of one button per legal
@@ -386,6 +386,17 @@ function fmtAction(action) {
                  where the actions are. -->
             <div v-if="!listActions.length && !numericChoices.length && !timeEntries.length && !territoryHint" class="ap-empty">No actions.</div>
           </div>
+          <!-- Putting the piece in hand down, and picking the next one up: the mouse
+               equivalents of Esc and the game's next-unit key (see Battlefield.vue's
+               onKeyDown / selectNextUnit). Only for games that hand you units one after
+               another (ui.autoAdvanceUnit — civ1); elsewhere there is no "next unit that
+               still wants orders" to step to. -->
+          <div v-if="ui?.autoAdvanceUnit" class="ap-hand">
+            <button class="ap-chip" title="Go to the next unit that still wants orders"
+                    @click="$emit('next-unit')">Next unit</button>
+            <button v-if="selectedId" class="ap-chip" title="Put this unit down without giving it an order"
+                    @click="$emit('deselect')">Deselect</button>
+          </div>
         </template>
       </template>
       <template v-else-if="isPending">
@@ -402,7 +413,7 @@ function fmtAction(action) {
     <CitiesOverlay :show="panel === 'cities'" :cities="cities" :playerId="overviewId"
                   @close="$emit('update:panel', null)" @goto="g => $emit('goto', g)"/>
     <MilitaryOverlay :show="panel === 'military'" :military="military" :playerId="overviewId"
-                  @close="$emit('update:panel', null)"/>
+                  @close="$emit('update:panel', null)" @select-unit="id => $emit('goto-unit', id)"/>
   </div>
 </template>
 
@@ -439,6 +450,7 @@ function fmtAction(action) {
 .ap-btn--icon { display: flex; align-items: center; gap: 6px; }
 .ap-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .ap-icon { width: 20px; height: 20px; object-fit: contain; flex-shrink: 0; }
+.ap-hand { display: flex; gap: 6px; margin-top: 6px; }
 .ap-empty { font-size: 11px; color: var(--faint); }
 .ap-waiting { font-size: 12px; color: var(--warn); }
 </style>

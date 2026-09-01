@@ -178,6 +178,15 @@ function selectGarrisonUnit(id) {
   garrisonPick.value = id;
 }
 
+// Put the piece in hand down. On a map you play by picking units up one after another
+// (civ1) there has to be a way to let go that isn't "click bare ground" — that also
+// pans the view (see handleSqClick) — or "give an order you didn't want to give".
+// Reached from Esc and from the panel's Deselect button.
+function deselectUnit() {
+  selectedId.value = null;
+  garrisonPick.value = null;
+}
+
 // ── aiming (throw/shoot: pick a button, then a spot/direction on the map) ───────
 // See ActionsPanel's 'aim' emit (a button for an action type in field.ui.aimedActionTypes)
 // and SchematicLayer's aiming overlay (throw arc + blast preview, or shoot's aim ray).
@@ -939,6 +948,16 @@ function tokenIdAt(x, y) {
 function handleGoto({ x, y, unitId }) {
   centerOn(x + 0.5, y + 0.5);
   if (unitId) selectUnit(tokenIdAt(x, y));
+}
+
+// The same jump for one NAMED unit (the Military advisor's roster rows — see
+// MilitaryOverlay.vue). Not handleGoto: that picks whatever token is on top of the
+// square, which for a stack or a garrison is the wrong piece — and picking the unit by
+// id is exactly what these rows exist for. handOverUnit is what makes a garrisoned one
+// arrive as the unit rather than as its city screen (see the garrison note there).
+function handleGotoUnit(unitId) {
+  const u = displayUnits.value.find(un => un.id === unitId);
+  if (u) handOverUnit(u);
 }
 
 // The minimap sends one event for all three of its gestures (click = pan, double-click =
@@ -2150,8 +2169,11 @@ function selectNextUnit() {
   if (!pool.length) return false;
   const at = pool.findIndex(u => u.id === selectedId.value);
   const next = pool[(at + 1) % pool.length];
-  selectUnit(next.id);
-  centerOn(next.x, next.y);
+  // handOverUnit, not selectUnit + centerOn: a unit standing in a city shares its
+  // square, and selecting it the plain way opens the city screen over the unit you
+  // just asked for (see handOverUnit's note). Stepping through units must hand you
+  // units.
+  handOverUnit(next);
   return true;
 }
 
@@ -2190,6 +2212,11 @@ function onKeyDown(e) {
     else if (openPanel.value)    openPanel.value = null;
     else if (selectedCity.value) selectedId.value = null;   // leave the city screen
     else if (showHelp.value)     showHelp.value = false;
+    // Put the piece in hand down. On a map you play by picking units up one after
+    // another (civ1), having no way to let go means the only exits are clicking bare
+    // ground — which also pans the view out from under you — or giving an order you
+    // did not want to give. Escape reaches the menu from an empty board, as before.
+    else if (selectedId.value)   deselectUnit();
     else showMenu.value = !showMenu.value;
     return;
   }
@@ -2297,6 +2324,7 @@ onUnmounted(() => {
             :observing="isObserver" :overviewPlayerId="overviewPlayerId"
             :variantSpec="pairVariantSpec" :variantValues="pairVariantValues" :variantValue="pairVariant"
             @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"
+            @goto-unit="handleGotoUnit" @next-unit="selectNextUnit" @deselect="deselectUnit"
             @set-variant="pairVariant = $event"
             @update:panel="openPanel = $event"/>
         </div>

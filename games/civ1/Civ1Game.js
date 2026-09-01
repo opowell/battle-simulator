@@ -1655,7 +1655,7 @@ export const Civ1Game = {
       notes: [
         { keys: '↑ ↓ ← → / 1–9', label: 'Move the selected unit one square — into an enemy to attack it', group: 'Unit orders' },
         { keys: 'Shift + ↑ ↓ ← →', label: 'Scroll the map', group: 'Map & view' },
-        { keys: 'Esc', label: 'Leave the current screen, or open the menu', group: 'Map & view' },
+        { keys: 'Esc', label: 'Put the selected unit down, leave the current screen, or open the menu', group: 'Map & view' },
         // The city screen's own keys, handled there (CityInspectorOverlay.vue) because
         // they only exist while it is open.
         { keys: 'C', label: 'On the city screen: change production', group: 'Cities' },
@@ -2220,15 +2220,40 @@ export const Civ1Game = {
     // single ambiguous glyph letter per unit (see the `glyph` field above, which
     // collides: militia/musketeers/mech-inf/marines all start with 'm'), so counts and
     // attack/defense totals have to be computed here where UNITS is available.
+    // `units` lists them one by one for the same reason: the Military advisor is how
+    // you find a particular unit in an empire of dozens (clicking a row picks it up on
+    // the map — see MilitaryOverlay.vue), and a stacked or garrisoned unit is one the
+    // board alone can't hand you, since only the top of a stack is drawn.
     const military = {};
     for (const u of state.units) {
       if (!u.alive) continue;
       const stats = UNITS[u.type];
-      const m = military[u.ownerId] ?? (military[u.ownerId] = { total: 0, totalAttack: 0, totalDefense: 0, byType: {} });
+      const m = military[u.ownerId] ?? (military[u.ownerId] = { total: 0, totalAttack: 0, totalDefense: 0, byType: {}, units: [] });
       m.total += 1;
       m.totalAttack += stats.attack;
       m.totalDefense += stats.defense;
       m.byType[u.type] = (m.byType[u.type] ?? 0) + 1;
+      const here = stackAt[`${u.position.x},${u.position.y}`] ?? [];
+      m.units.push({
+        id: u.id, type: u.type, x: u.position.x, y: u.position.y,
+        hp: u.hp, maxHp: u.maxHp, mp: u.movesLeft, maxMp: stats.moves,
+        attack: stats.attack, defense: stats.defense,
+        needsOrders: wantsOrders(u),
+        // Where it is, in the words the player thinks in: the city it garrisons, else
+        // the terrain it stands on. Bare coordinates are on the row too, but "Paris"
+        // is what makes a list of forty units readable.
+        city: cmap[`${u.position.x},${u.position.y}`]?.name ?? null,
+        terrain: terrainInfo(tiles[`${u.position.x},${u.position.y}`] ?? UNKNOWN_TILE,
+                             u.position.x, u.position.y).name,
+        status: statusTags(u, here.length),
+      });
+    }
+    // Whoever still owes the turn an order comes first — the advisor doubles as the
+    // "who have I not moved yet?" list — then by type, then by where they stand, so
+    // the order a player learns doesn't reshuffle as moves are spent.
+    for (const m of Object.values(military)) {
+      m.units.sort((a, b) => (Number(b.needsOrders) - Number(a.needsOrders))
+        || a.type.localeCompare(b.type) || (a.y - b.y) || (a.x - b.x));
     }
 
     // Generic {icon,value,title,warn} chips for the header's optional per-player status
