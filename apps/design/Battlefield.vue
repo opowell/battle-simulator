@@ -243,6 +243,10 @@ const canReveal = computed(() =>
 // ── action history (back/forward replay) ──────────────────────
 const fieldHistory = ref([]);
 const histPos      = ref(0);
+// The frames recorded for a move this seat's log leaves out (the AI's, under fog —
+// see the watch that records them), as { ply, playerId, turnNumber }. displayLog
+// puts a hidden-move row at each, so the log still lines up with the frames.
+const hiddenMoves  = ref([]);
 // Inside a "what if" line the controls walk that line instead of the game (see
 // forkLength below); otherwise it is the recorded history, revealed or not.
 const histLength   = computed(() => forking.value ? forkLength.value
@@ -274,6 +278,7 @@ const snapshotField = () => props.resolvedField ?? props.field;
 watch([() => props.liveState?.id, () => (analysisBoard.value ? null : props.liveState?.viewerId)], () => {
   stopHistoryPlay();
   fieldHistory.value = snapshotField() ? [snapshotField()] : [];
+  hiddenMoves.value = [];
   histPos.value = 0;
   dismissedResult.value = false;
   revealAll.value = false;
@@ -286,6 +291,7 @@ watch([() => props.liveState?.id, () => (analysisBoard.value ? null : props.live
 watch(() => props.historyFields, (h) => {
   if (h && h.length > 0) {
     fieldHistory.value = [...h];
+    hiddenMoves.value = [];
     histPos.value = h.length - 1;
   }
 });
@@ -298,6 +304,7 @@ watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
   if (newLen < oldLen) {
     const kept = fieldHistory.value.slice(0, newLen + 1);
     fieldHistory.value = kept.length ? kept : [snapshotField()];
+    hiddenMoves.value = hiddenMoves.value.filter(m => m.ply < fieldHistory.value.length);
     histPos.value = Math.min(histPos.value, fieldHistory.value.length - 1);
     clearExactFrame();
     return;
@@ -307,21 +314,34 @@ watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
   clearExactFrame(); // a new turn replaces the playback model any pending frame was for
 });
 
-// In fog mode the AI's move is stripped from the log, so the log-length watch above
-// never fires when the AI responds. Instead, watch for the pendingPlayer switching
-// from an AI player to a human player (the AI just finished), and refresh the latest
-// history entry so the board reflects the post-AI-response state.
-watch(() => props.liveState?.fog ? props.liveState?.pendingPlayer : null, (pending, prev) => {
-  if (!prev) return; // initial fire or fog off — skip
-  const humanPlayers = props.liveState?.humanPlayers ?? [];
-  if (!humanPlayers.includes(pending)) return; // still AI's turn or game over
-  if (humanPlayers.includes(prev))    return; // was already the human's turn (no-op)
-  // AI → human transition: refresh the latest snapshot with the post-AI board.
-  if (fieldHistory.value.length > 0 && snapshotField()) {
-    const updated = [...fieldHistory.value];
-    updated[updated.length - 1] = snapshotField();
-    fieldHistory.value = updated;
-  }
+// The AI to move, when this seat's log leaves its moves out (a fog seat's, unless
+// debugAI or an observer's view put them back in).
+const hiddenMover = computed(() => {
+  const s = props.liveState;
+  if (!s?.fog || s.debugAI || s.observer || s.status !== 'active') return null;
+  const humans = s.humanPlayers ?? [];
+  return (s.activePlayers ?? []).find(id => !humans.includes(id)) ?? null;
+});
+
+// A seat's fog view strips the AI's moves from the log (see api-server.js's toJSON),
+// so the log-length watch above never fires when the AI responds. Instead, watch for
+// the turn leaving the AI — to a human, or to nobody when its move ended the game —
+// and record the board it left as a ply of its own. Stepping back then goes a
+// half-move at a time, through the position right after your move as well as the
+// one after the reply, and — in a game this page has watched from the start — a
+// frame's index is the ply the server counts (the engine's full log), which is
+// what /position and the analysis panel look up.
+// (Not pendingPlayer: that only ever names a human, so it reads null while the AI
+// thinks.)
+watch(() => [hiddenMover.value, props.liveState?.turn], ([mover], [wasMover, wasTurn] = []) => {
+  if (mover || !wasMover) return;
+  if (props.liveState?.result?.resignedBy) return; // resigned while the AI thought: no move came
+  if (!snapshotField()) return;
+  fieldHistory.value = [...fieldHistory.value, snapshotField()];
+  hiddenMoves.value = [...hiddenMoves.value,
+    { ply: fieldHistory.value.length - 1, playerId: wasMover, turnNumber: wasTurn ?? null }];
+  if (histPos.value >= fieldHistory.value.length - 2) histPos.value = fieldHistory.value.length - 1;
+  clearExactFrame();
 });
 
 // ── analysis panel + replay forking ─────────────────────────────
@@ -1334,9 +1354,12 @@ const renderUnits = computed(() => {
 const lastMoveSquares = computed(() => {
   if (revealAll.value) return []; // the live log's last move is meaningless while stepping history
   if (!ui.value.highlightLastMove) return [];
-  const log = props.liveState?.log;
-  if (!log?.length) return [];
-  const lastEntry = log[log.length - 1];
+  // Stepped back, the move that led to the position on screen (displayLog lines up
+  // with the frames); otherwise the game's last.
+  const lastEntry = forking.value || atLatest.value
+    ? props.liveState?.log?.at(-1)
+    : displayLog.value[histPos.value - 1];
+  if (!lastEntry) return [];
   if (props.liveState?.fog) {
     const humanPlayers = props.liveState?.humanPlayers ?? [];
     const mover = lastEntry?.playerActions?.[0]?.playerId;
@@ -1355,7 +1378,20 @@ const displayLog = computed(() => {
   if (!props.liveState?.fog) return log;
   if (props.liveState?.debugAI) return log;
   const humanPlayers = props.liveState?.humanPlayers ?? [];
-  return log.filter(entry => entry.playerActions?.every(pa => humanPlayers.includes(pa.playerId)));
+  const shown = log.filter(entry => entry.playerActions?.every(pa => humanPlayers.includes(pa.playerId)));
+  if (!hiddenMoves.value.length) return shown;
+  // A row per frame after the first: the moves the log has, in order, and a
+  // "hidden move" where the AI moved unseen — so row i is what led to frame i + 1,
+  // as GameLog and lastMoveSquares both assume.
+  const hidden = new Map(hiddenMoves.value.map(m => [m.ply, m]));
+  const rows = [];
+  let next = 0;
+  for (let ply = 1; ply < fieldHistory.value.length; ply++) {
+    const m = hidden.get(ply);
+    if (m) rows.push({ turnNumber: m.turnNumber, playerActions: [{ playerId: m.playerId, action: { type: 'hidden', label: 'hidden move' } }] });
+    else if (next < shown.length) rows.push(shown[next++]);
+  }
+  return [...rows, ...shown.slice(next)];
 });
 
 // In reveal mode the whole game is exposed, so the log shows every move (both sides) and
