@@ -48,7 +48,9 @@ onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible
 // making a new one of something (by entity key).
 const opened = ref([])
 // The window itself draws no bar: the browser and the records are what is in it.
-const home = () => headless(row([panelNode('browse')]))
+// The browser is headless too: it is the page, not a window on it, and a bar
+// saying "Browse" over it says nothing.
+const home = () => headless(row([headless(panelNode('browse'))]))
 const layout = ref(home())
 
 const panels = computed(() => [
@@ -125,6 +127,7 @@ const itemFor = (id) => opened.value.find((o) => o.id === id)
         :source="source"
         :theme="THEME"
         :defaults="{ sort: 'age', dir: 'asc' }"
+        row-press="open"
         @activate="openRow"
         @create="openCreate"
       >
@@ -158,6 +161,21 @@ const itemFor = (id) => opened.value.find((o) => o.id === id)
 /* Shared by every panel. Written against appfr's tokens, so the panels wear
    whatever theme the window does. */
 .cx-window { flex: 1; min-height: 0; }
+
+/* The window runs edge to edge: no inset round it, no box round each pane — the
+   browser is the page, and a record opened beside it is set off by the one
+   hairline between them, which is also the handle that resizes them. */
+.dc-shell.dc-window.cx-window { padding: 0; }
+/* The shell fills its pane to the bottom rather than leaving the pane's own
+   background showing under its last row. */
+.cx-window .dc-pane__body > .dc-shell { height: 100%; }
+.cx-window .dc-space,
+.cx-window .dc-pane { border: 0; border-radius: 0; }
+.cx-window .dc-window__split { padding: 0; }
+.cx-window .dc-window__split[data-dc-direction='row'] > .dc-window__gutter { width: 5px; }
+.cx-window .dc-window__split[data-dc-direction='row'] > .dc-window__gutter::after { width: 1px; background: var(--dc-line-2); }
+.cx-window .dc-window__gutter:hover::after,
+.cx-window .dc-window__gutter:focus-visible::after { background: var(--dc-accent); }
 .cx-boot { margin: auto; font: 13px/1.5 ui-monospace, Menlo, monospace; color: #8a96a1; }
 .cx-boot--err { color: #ff8a80; }
 
