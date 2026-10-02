@@ -62,3 +62,8 @@ an import map, with a Vue 3.5 runtime vendored in `apps/console/vendor/` (appfr
 needs 3.5, while the other apps run 3.4). Same rule as the AI submodules: change
 appfr upstream, then bump the pin here.
 
+appfr's releases are on its **`main`** branch; GitHub's default branch there is a
+stale `master` (0.10.0), which a plain clone lands on. `.gitmodules` sets
+`branch = main`, so `git submodule update --remote vendor/appfr` follows the
+releases — pin a release tag (`v0.41.0`, …), and read its minors as breaking.
+

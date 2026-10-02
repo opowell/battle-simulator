@@ -21,3 +21,4 @@
 [submodule "vendor/appfr"]
 	path = vendor/appfr
 	url = https://github.com/opowell/appfr.git
+	branch = main

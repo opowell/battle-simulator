@@ -2,9 +2,11 @@
 //
 // The catalog is small (a few hundred records), so the console fetches it whole
 // and filters, sorts and pages here, with appfr's own expression language and
-// facet matching. One departure: appfr matches `field:value` as a substring, so
-// the scope term `game:"cs"` would also take in csmini. The `game` join key is
-// matched EXACTLY here — it names one game, never a family of them.
+// facet matching. One departure: the scope term appfr writes when narrowing to
+// a game is `game:"cs"`, and `:` is containment, which would also take in
+// csmini. The `game` join key is matched EXACTLY here — it names one game, never
+// a family of them — under appfr's other rules for a field: `-game:x` (a ⌘-press)
+// leaves x out, and several positive `game` terms in one group are any-of.
 
 import { columnsFor, cellValue, findSort, matchesExpression, matchesFacets, parseExpression } from 'header-content-layout'
 
@@ -26,11 +28,20 @@ function matchesGame(term, row) {
   return Array.isArray(game) ? game.some(exact) : game != null && exact(game)
 }
 
+function matchesGroup(group, row, entity) {
+  const games = group.filter(isScopeTerm)
+  const rest = group.filter((term) => !isScopeTerm(term))
+  const wanted = games.filter((term) => !term.negated)
+  if (wanted.length && !wanted.some((term) => matchesGame(term, row))) return false
+  if (games.some((term) => term.negated && matchesGame(term, row))) return false
+  // The rest of the group goes to appfr whole, so its own rules across terms
+  // (any-of on a repeated field) hold for them as written.
+  return !rest.length || matchesExpression([rest], row, entity)
+}
+
 function matches(expression, row, entity) {
   if (!expression.length) return true
-  return expression.some((group) =>
-    group.every((term) => (isScopeTerm(term) ? matchesGame(term, row) : matchesExpression([[term]], row, entity))),
-  )
+  return expression.some((group) => matchesGroup(group, row, entity))
 }
 
 /**
