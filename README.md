@@ -100,6 +100,36 @@ When Player B opens their link (`?session=<id>&player=<pid>`), the app joins the
 
 There is no lobby or authentication — the share link is the full credential. Anyone who opens a player's link can act as that player.
 
+## Console
+
+`/ui/console` (`apps/console`) is a second UI, for everything *around* playing:
+one searchable place for every object the server knows about. It is built on
+[appfr](https://github.com/opowell/appfr), vendored as a submodule at
+`vendor/appfr` and served from its prebuilt `dist/` at `/appfr/`.
+
+| Object | What it is | What you can do |
+|---|---|---|
+| **Games** | the registry in `api-server.js` | edit player counts and sides, create, delete |
+| **Files** | each game's source under `games/<name>/` | edit and save (⌘S) |
+| **Sessions** | games being played right now | start one, open it in the play UI, delete it |
+| **Recordings** | finished and interrupted games under `sessions/` | inspect seats, result and moves |
+| **Scenarios** | each game's `scenarios` | start a session from one |
+| **Units** | each game's unit types, read from its opening position | browse, with the game's own art |
+| **Sides** | each game's default seats | browse; edit them on the game |
+| **Agents** | the built-in AIs and the ones a game adds | browse |
+| **Options** | each game's setup options, plus the engine's own | browse |
+
+Everything is one result set with appfr's query language, and every object
+carries the game it belongs to. The → beside a game narrows the whole corpus to
+that game, and a number on a game row (Sessions 3, Units 6) opens exactly those
+records. The query lives in the URL, so any view is a link. An opened record
+becomes a tab beside the browser.
+
+The data comes from one endpoint, `GET /catalog` (`catalog.js`), which derives
+it all generically: units come from the same `setupPreview` the setup screen
+uses, so no game needs code for the console. Edits to a game's definition or
+source take effect when the server next starts.
+
 ## Engine API
 
 ### Running a full game

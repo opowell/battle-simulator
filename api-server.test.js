@@ -404,3 +404,32 @@ test('a roster the game cannot build is refused with a reason', async () => {
   });
   assert.match(bad.error ?? '', /not a starting unit type/);
 });
+
+test('the console catalog lists every game and what it defines, and sees a session as it starts', async () => {
+  const games = await get('/games');
+  const before = await get('/catalog');
+  assert.deepEqual(before.games.filter(g => g.live).map(g => g.name).sort(), games.map(g => g.name).sort());
+  const chess = before.games.find(g => g.name === 'chess');
+  assert.equal(chess.units, 6, 'chess has six piece types');
+  assert.equal(before.units.filter(u => u.game === 'chess').reduce((n, u) => n + u.starting, 0), 32);
+  assert.equal(chess.scenarios, before.scenarios.filter(s => s.game === 'chess').length);
+
+  const s = await post('/sessions', {
+    game: 'chess',
+    players: [{ id: 'white', name: 'W', agent: 'human' }, { id: 'black', name: 'B', agent: 'human' }],
+    config: {},
+  });
+  const after = await get('/catalog');
+  const session = after.sessions.find(x => x.id === s.id);
+  assert.equal(session.game, 'chess');
+  assert.equal(session.humans, 2);
+  assert.equal(after.games.find(g => g.name === 'chess').sessions, chess.sessions + 1);
+});
+
+test('the appfr framework is served for the console: its modules and stylesheet only', async () => {
+  const js = await fetch(BASE + '/appfr/index.js');
+  assert.equal(js.status, 200);
+  assert.match(js.headers.get('content-type'), /javascript/);
+  assert.equal((await fetch(BASE + '/appfr/style.css')).status, 200);
+  assert.equal((await fetch(BASE + '/appfr/index.d.ts')).status, 404);
+});

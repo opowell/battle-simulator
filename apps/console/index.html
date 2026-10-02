@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Console — Battle Simulator</title>
+
+<!--
+  The console is built on appfr (vendor/appfr, served at /appfr/ by the API
+  server): its DataShell is the query header and result views, and every object
+  the server knows about — games, sessions, recordings, scenarios, units, sides,
+  agents, options, source files — is one entity in its schema.
+
+  No build step, like the other apps here: the import map names appfr's built
+  ES modules and a Vue 3.5 runtime (appfr needs 3.5's useId), and
+  vue3-sfc-loader compiles this app's .vue files in the tab. Every path is
+  relative, so the app works under a mount prefix (/battle-simulator/ui/console).
+-->
+
+<link rel="stylesheet" href="../../appfr/style.css"/>
+
+<script type="importmap">
+{
+  "imports": {
+    "vue": "./vendor/vue.runtime.esm-browser.prod.js",
+    "header-content-layout": "../../appfr/index.js"
+  }
+}
+</script>
+
+<style>
+html, body { height: 100%; margin: 0; }
+body { background: #0f1216; color-scheme: dark; }
+#app { height: 100vh; display: flex; flex-direction: column; }
+#boot { margin: auto; font: 13px/1.5 ui-monospace, Menlo, monospace; color: #8a96a1; }
+#boot.err { color: #ff8a80; white-space: pre-wrap; padding: 24px; }
+</style>
+
+<!-- The play UI's own seating and scenario rules, so a session started here is
+     configured exactly as one started there (window.gameDefaults). -->
+<script src="../design/teamPalette.js"></script>
+<script src="../design/gameDefaults.js"></script>
+</head>
+<body>
+<div id="app"><p id="boot">Loading…</p></div>
+
+<script type="module">
+import * as Vue from 'vue'
+import * as appfr from 'header-content-layout'
+import { loadModule } from './vendor/vue3-sfc-loader.esm.js'
+
+const options = {
+  // The shell must run on this very Vue, not a second copy fetched by the loader.
+  moduleCache: { vue: Vue, 'header-content-layout': appfr },
+  async getFile(url) {
+    const response = await fetch(url, { cache: 'no-cache' })
+    if (!response.ok) throw new Error(`${response.status} ${url}`)
+    const text = await response.text()
+    // This app's .js files are ES modules; the loader would parse them as
+    // classic scripts unless told so.
+    return { getContentData: () => text, type: url.endsWith('.js') ? '.mjs' : undefined }
+  },
+  addStyle(css) {
+    document.head.append(Object.assign(document.createElement('style'), { textContent: css }))
+  },
+  // Bare specifiers go to moduleCache; everything else resolves as a URL (the
+  // loader's default joins strings and folds `http://` down to `http:/`).
+  pathResolve({ refPath, relPath }) {
+    if (relPath === '.') return refPath
+    if (!relPath.startsWith('.') && !relPath.startsWith('/')) return relPath
+    return new URL(relPath, refPath ?? document.baseURI).href
+  },
+}
+
+try {
+  const App = await loadModule(new URL('./App.vue', document.baseURI).href, options)
+  document.getElementById('app').replaceChildren()
+  Vue.createApp(App).mount('#app')
+} catch (error) {
+  const boot = document.getElementById('boot')
+  boot.className = 'err'
+  boot.textContent = `The console failed to load:\n${error?.stack ?? error}`
+}
+</script>
+</body>
+</html>

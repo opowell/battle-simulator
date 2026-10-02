@@ -18,3 +18,6 @@
 	# are two checkouts of the same repo, and only the inner one is what the
 	# chess AI actually runs against.
 	ignore = untracked
+[submodule "vendor/appfr"]
+	path = vendor/appfr
+	url = https://github.com/opowell/appfr.git

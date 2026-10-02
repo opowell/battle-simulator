@@ -25,6 +25,7 @@ import { GridTimeline } from './engine/gridFrames.js';
 import { GameEngine, buildInitialState, rosterError, setupPreview, SETUP_KEY } from './engine/index.js';
 import { validate as validateAction } from './engine/ActionValidator.js';
 import * as gameEditor from './gameEditor.js';
+import { buildCatalog, createRecordingReader } from './catalog.js';
 import { RandomAgent } from './agents/index.js';
 import { ApiAgent } from './agents/ApiAgent.js';
 import { ObscuroAgent } from './agents/ObscuroAgent.js';
@@ -144,6 +145,26 @@ async function serveLibModule(res, relPath) {
     const data = await readFile(abs);
     res.writeHead(200, {
       'Content-Type': ext === '.wasm' ? 'application/wasm' : 'text/javascript; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache',
+    });
+    res.end(data);
+  } catch { res.writeHead(404); res.end('Not found'); }
+}
+
+// The appfr framework (vendor/appfr, a submodule) ships prebuilt ES modules and
+// one stylesheet in dist/; /ui/console imports them through an import map.
+const APPFR_DIST = resolve(ROOT_DIR, 'vendor', 'appfr', 'dist');
+
+async function serveAppfr(res, relPath) {
+  const abs = resolve(APPFR_DIST, relPath);
+  if (!abs.startsWith(APPFR_DIST + sep)) { res.writeHead(403); return res.end('Forbidden'); }
+  const ext = extname(abs);
+  if (!['.js', '.css'].includes(ext)) { res.writeHead(404); return res.end('Not found'); }
+  try {
+    const data = await readFile(abs);
+    res.writeHead(200, {
+      'Content-Type': ext === '.css' ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-cache',
     });
@@ -1362,6 +1383,31 @@ async function handleGames(res) {
  * pinned config back when it creates the session, so the units are placed on the
  * world they were arranged on. Nothing is stored — this creates no session.
  */
+/**
+ * GET /catalog — every object the /ui/console app browses (see catalog.js):
+ * games and what each defines, live sessions, and the recordings on disk.
+ */
+const readRecordings = createRecordingReader(SESSIONS_DIR);
+
+async function handleCatalog(res) {
+  try {
+    const registry = gameEditor.registryList(await readFile(SERVER_PATH, 'utf8'));
+    const names = new Set([...Object.keys(GAMES), ...registry.map((g) => g.name)]);
+    const files = {};
+    for (const name of names) files[name] = await gameEditor.listGameFiles(GAMES_DIR, name);
+    send(res, 200, buildCatalog({
+      games: GAMES,
+      pending: registry,
+      sessions: [...sessions.values()],
+      recordings: await readRecordings(),
+      files,
+      setupPreview,
+      builtinAgents: BUILTIN_AGENTS,
+      engineOptions: ENGINE_OPTIONS,
+    }));
+  } catch (e) { err(res, 500, e.message); }
+}
+
 async function handleSetupPreview(req, res, gameName) {
   const entry = GAMES[gameName];
   if (!entry) return err(res, 404, `Unknown game: ${gameName}`);
@@ -2218,7 +2264,7 @@ async function handleRequest(req, res) {
       return await serveLibModule(res, parts.slice(1).join('/'));
 
     // Static UI apps — GET /ui/<name>/* or GET /design/* (legacy)
-    const UI_APPS = ['design', 'game-editor'];
+    const UI_APPS = ['design', 'game-editor', 'console'];
     if (method === 'GET' && parts[0] === 'ui' && UI_APPS.includes(parts[1])) {
       // Redirect /ui/<name> (no trailing slash) so relative asset paths resolve correctly
       if (parts.length === 2 && !url.pathname.endsWith('/')) {
@@ -2265,9 +2311,17 @@ async function handleRequest(req, res) {
     if (method === 'GET' && parts[0] === 'sounds' && parts.length === 3)
       return await serveGameSound(parts[1], parts[2], res);
 
+    // The appfr UI framework's built artifacts (vendor/appfr/dist) — GET /appfr/*
+    if (method === 'GET' && parts[0] === 'appfr')
+      return await serveAppfr(res, parts.slice(1).join('/'));
+
     // GET /games
     if (method === 'GET' && parts[0] === 'games' && parts.length === 1)
       return await handleGames(res);
+
+    // GET /catalog
+    if (method === 'GET' && parts[0] === 'catalog' && parts.length === 1)
+      return await handleCatalog(res);
 
     // POST /games/:name/setup — the opening roster a setup screen edits
     if (method === 'POST' && parts[0] === 'games' && parts.length === 3 && parts[2] === 'setup')

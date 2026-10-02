@@ -53,3 +53,12 @@ The chess Stockfish evaluation cache (`games/chess/vendor/sf-cache.*`, ~50 MB of
 derived data) deliberately stayed here rather than going into a public package;
 `games/chess/stockfish.js` is the shim that points the vendored engine at it.
 
+## The console's UI framework is a submodule too
+
+`vendor/appfr` is [opowell/appfr](https://github.com/opowell/appfr), the
+framework `apps/console` is built on (DataShell, WindowFrame). Its `dist/` is
+committed upstream and served as-is at `/appfr/`; the console imports it through
+an import map, with a Vue 3.5 runtime vendored in `apps/console/vendor/` (appfr
+needs 3.5, while the other apps run 3.4). Same rule as the AI submodules: change
+appfr upstream, then bump the pin here.
+

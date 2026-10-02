@@ -7,8 +7,9 @@
  * a live class reference (`game: ChessGame`), so we can't just JSON-parse it.
  * Instead we:
  *   • parse   — extract the block, stringify the class token, eval to an object;
- *   • rewrite — regenerate the whole block from a plain-object model, turning the
- *               `game: "ChessGame"` string back into a bare identifier.
+ *   • rewrite — replace, add or remove the ONE entry line an edit is about, with
+ *               `game: "ChessGame"` back as a bare identifier. Everything else in
+ *               the block — comments, computed values — is left as written.
  *
  * Every metadata/create/delete edit rewrites api-server.js on disk. Because the
  * running process has already imported everything, changes only take effect
@@ -56,26 +57,60 @@ function serializePlayers(players) {
 const padEnd = (s, w) => s + ' '.repeat(Math.max(0, w - s.length));
 
 /**
- * Regenerate the whole `const GAMES = { … };` block, column-aligning the fields
- * the way the hand-written registry does so edits produce a minimal diff.
+ * One registry entry as a line, column-aligned the way the hand-written registry
+ * is (`obj` is the whole registry, which sets the column widths).
  */
-function serializeRegistry(obj) {
+function serializeEntry(obj, name, e) {
   const rows = Object.entries(obj);
   const keyW  = Math.max(...rows.map(([n]) => n.length + 1));                 // "name:"
-  const gameW = Math.max(...rows.map(([, e]) => `game: ${e.game},`.length));
-  const maxW  = Math.max(...rows.map(([, e]) => `maxPlayers: ${e.maxPlayers},`.length));
-  const lines = rows.map(([name, e]) =>
-    `  ${padEnd(name + ':', keyW)} { ${padEnd(`game: ${e.game},`, gameW)} ` +
+  const gameW = Math.max(...rows.map(([, x]) => `game: ${x.game},`.length));
+  const maxW  = Math.max(...rows.map(([, x]) => `maxPlayers: ${x.maxPlayers},`.length));
+  return `  ${padEnd(name + ':', keyW)} { ${padEnd(`game: ${e.game},`, gameW)} ` +
     `minPlayers: ${e.minPlayers}, ` +
-    `${padEnd(`maxPlayers: ${e.maxPlayers},`, maxW)} defaultPlayers: ${serializePlayers(e.defaultPlayers)} },`
-  );
-  return `const GAMES = {\n${lines.join('\n')}\n};`;
+    `${padEnd(`maxPlayers: ${e.maxPlayers},`, maxW)} defaultPlayers: ${serializePlayers(e.defaultPlayers)} },`;
 }
 
-/** Replace the GAMES block in server source with a freshly serialized one. */
-export function rewriteRegistry(serverSrc, obj) {
-  if (!BLOCK_RE.test(serverSrc)) throw new Error('Could not locate GAMES block to rewrite');
-  return serverSrc.replace(BLOCK_RE, serializeRegistry(obj));
+const entryLineRe = (name, flags = 'm') => new RegExp(`^  ${escapeRe(name)}:[ \\t]*\\{.*$`, flags);
+
+/**
+ * Edits touch the one entry they are about and nothing else in the block — the
+ * registry is hand-written source, with comments explaining entries and the odd
+ * computed value (`Array.from(…)`), and regenerating the whole block from parsed
+ * data would silently delete all of that on every save.
+ *
+ * Each check below re-parses the result, so an entry that is not the single line
+ * these edits assume is refused rather than half-rewritten.
+ */
+function checkedRegistry(out, name, expected) {
+  let actual;
+  try { actual = parseRegistry(out)[name]; } catch { actual = Symbol('unparseable'); }
+  if (typeof actual === 'symbol' || JSON.stringify(actual ?? null) !== JSON.stringify(expected ?? null)) {
+    throw new Error(`Could not rewrite the "${name}" entry in api-server.js cleanly; edit it by hand`);
+  }
+  return out;
+}
+
+/** Replace `name`'s entry, or add it at the end of the block if it has none. */
+export function setRegistryEntry(serverSrc, name, entry) {
+  const m = serverSrc.match(BLOCK_RE);
+  if (!m) throw new Error('Could not locate GAMES block to rewrite');
+  const obj = { ...parseRegistry(serverSrc), [name]: entry };
+  const line = serializeEntry(obj, name, entry);
+  let out;
+  if (entryLineRe(name).test(m[1])) {
+    out = serverSrc.replace(entryLineRe(name), line);
+  } else {
+    const close = m.index + m[0].length - '\n};'.length;
+    out = serverSrc.slice(0, close) + '\n' + line + serverSrc.slice(close);
+  }
+  return checkedRegistry(out, name, entry);
+}
+
+/** Remove `name`'s entry, with the comment lines directly above it that are about it. */
+export function removeRegistryEntry(serverSrc, name) {
+  const re = new RegExp(`(?:^  //.*\\n)*^  ${escapeRe(name)}:[ \\t]*\\{.*\\n`, 'm');
+  if (!re.test(serverSrc)) throw new Error(`Could not find the "${name}" entry in api-server.js`);
+  return checkedRegistry(serverSrc.replace(re, ''), name, undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -161,9 +196,9 @@ export async function updateGameMeta(serverPath, name, meta) {
   const obj = parseRegistry(src);
   if (!obj[name]) throw new Error(`Unknown game: ${name}`);
   const norm = normalizeMeta(meta);
-  obj[name] = { game: obj[name].game, ...norm };
-  await writeFile(serverPath, rewriteRegistry(src, obj));
-  return { name, ...norm, gameClass: obj[name].game };
+  const entry = { game: obj[name].game, ...norm };
+  await writeFile(serverPath, setRegistryEntry(src, name, entry));
+  return { name, ...norm, gameClass: entry.game };
 }
 
 export async function createGame(serverPath, gamesDir, name, meta) {
@@ -184,8 +219,7 @@ export async function createGame(serverPath, gamesDir, name, meta) {
   await writeFile(join(dir, 'README.md'), `# ${name}\n\nScaffolded by the game editor. Implement the game logic in \`${cls}.js\`.\n`);
 
   // Register it: append entry + import, then rewrite the file.
-  obj[name] = { game: cls, ...norm };
-  let out = rewriteRegistry(src, obj);
+  let out = setRegistryEntry(src, name, { game: cls, ...norm });
   out = addGameImport(out, cls, name);
   await writeFile(serverPath, out);
   return { name, gameClass: cls, ...norm };
@@ -196,8 +230,7 @@ export async function deleteGame(serverPath, gamesDir, name) {
   const obj = parseRegistry(src);
   if (!obj[name]) throw new Error(`Unknown game: ${name}`);
   const cls = obj[name].game;
-  delete obj[name];
-  let out = rewriteRegistry(src, obj);
+  let out = removeRegistryEntry(src, name);
   out = removeGameImport(out, cls);
   await writeFile(serverPath, out);
   // Remove the directory too.
