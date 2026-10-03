@@ -398,6 +398,23 @@ front of a human playing against it.
 The harness is [demo/civ1-bench.mjs](../../demo/civ1-bench.mjs) — seat-swapped pairs,
 one line per game, and the three switches used for the tables above.
 
+## The winner stays put (2026-10-03)
+
+Until now a won attack moved the attacker onto the emptied square, and a city fell the
+moment its last defender died. Neither is the original: CIV.EXE's combat routine never
+moves the attacker (checked in the OpenCivOne disassembly, segment 29f3 and its caller),
+so a city whose garrison is dead stands empty until a unit walks in — capture by
+occupation, which `applyMove` already did. Every agent here already steps onto an
+adjacent enemy city (it is a target at distance 0), but taking a city now costs a move
+after the last kill, and gives the owner a turn to put a fresh defender in. **Measurements
+from before this date were taken under the old rule.**
+
+It made the Siege *easier* for the attacker, not harder. Heuristic vs heuristic, fog on,
+200 games each: the attacker took the city 51/200 (26%) under the old rule and 69/200
+(35%) under the new, at the same average turn (16.5 vs 16.6). The likeliest reason is the
+one stack discipline found: a winner that advanced stood alone on open ground beside the
+walls, where the garrison's sallies picked it off; one that stays put stays with its army.
+
 ## Revised order
 
 The original plan had `set-production` last, as an unlock for the personality material. That

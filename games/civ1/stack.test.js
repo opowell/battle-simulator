@@ -155,7 +155,7 @@ test('civ1 stacking: losing an open square kills everything standing on it', () 
   const byId = Object.fromEntries(after.units.map(u => [u.id, u]));
   assert.equal(byId.hard.alive, false);
   assert.equal(byId.soft.alive, false, 'the settlers die with their escort');
-  assert.deepEqual(byId.atk.position, { x: 10, y: 10 }, 'and the winner takes the square');
+  assert.deepEqual(byId.atk.position, { x: 9, y: 10 }, 'and the winner stays where it struck from');
 });
 
 test('civ1 stacking: a city is the exception — the garrison dies one unit at a time', () => {
@@ -178,20 +178,30 @@ test('civ1 stacking: a city is the exception — the garrison dies one unit at a
   assert.equal(after.cities[0].ownerId, 'p2', 'and the city has not fallen');
 });
 
-test('civ1 stacking: the city falls with its last defender', () => {
+// As in the original: killing the last defender leaves the city standing empty, and it
+// is taken by walking into it — not by the fight, whose winner stays where it was.
+test('civ1 stacking: the last defender\'s death empties the city, which falls to whoever walks in', () => {
   const state = world({
     units: [
       unit('atk', 'p1', 'legion', 9, 10),
+      unit('walker', 'p1', 'militia', 9, 9),
       unit('g1', 'p2', 'militia', 10, 10),
     ],
     cities: [city('c1', 'p2', 10, 10)],
   });
 
-  const after = Civ1Game.applyActions(state,
+  const fought = Civ1Game.applyActions(state,
     [{ playerId: 'p1', action: { type: 'attack', unitId: 'atk', targetId: 'g1' } }],
     attackerWins);
-  assert.equal(after.cities[0].ownerId, 'p1');
-  assert.deepEqual(after.units.find(u => u.id === 'atk').position, { x: 10, y: 10 });
+  assert.equal(fought.units.find(u => u.id === 'g1').alive, false);
+  assert.deepEqual(fought.units.find(u => u.id === 'atk').position, { x: 9, y: 10 }, 'the winner stays out');
+  assert.equal(fought.cities[0].ownerId, 'p2', 'the empty city is still theirs');
+
+  const walkIn = Civ1Game.getLegalActions(fought, 'p1')
+    .find(a => a.type === 'move' && a.unitId === 'walker' && a.to.x === 10 && a.to.y === 10);
+  assert.ok(walkIn, 'stepping into the empty city is a legal move');
+  const taken = Civ1Game.applyActions(fought, [{ playerId: 'p1', action: walkIn }]);
+  assert.equal(taken.cities[0].ownerId, 'p1', 'and it falls to the unit that walks in');
 });
 
 // ---------------------------------------------------------------------------

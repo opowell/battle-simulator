@@ -447,8 +447,11 @@ function isMoveTargetLegal(to, board, units, cities, playerId, unit) {
   return true;
 }
 
-// One attack on one square: the combat rounds, the casualties, the capture of any city
-// the defender was holding, and the winner's advance onto the emptied square. Shared
+// One attack on one square: the combat rounds and the casualties. The winner stays
+// where it is, as in the original (CIV.EXE's combat routine never moves the attacker,
+// and its caller only takes the move the attack cost): a square — a city included —
+// that the fight has emptied is taken by walking into it afterwards (applyMove), by
+// this unit on a later move or by any other. Shared
 // by the 'attack' action below and by the barbarian phase (barbarians.js), which
 // raids by exactly these rules — `units`/`cities` are passed in (rather than read off
 // `state`) because the raid resolves several fights inside one phase.
@@ -496,22 +499,11 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
     // Stack death, as in the original: lose the defence of an open square and every
     // unit on it dies with the defender. A city (in the original, a fortress too — this
     // game has none) is the exception: only the loser dies there, so a garrison has to
-    // be killed off one unit at a time and the city falls with its last defender.
+    // be killed off one unit at a time — and once the last of it is dead the city stands
+    // empty, still its owner's, until someone walks in.
     const inCity = cities.some(c => c.position.x === defPos.x && c.position.y === defPos.y);
     if (!inCity) {
       units = units.map(u => (u.id !== attackerId && at(u, defPos)) ? { ...u, alive: false, hp: 0 } : u);
-    }
-
-    const stillHeld = units.some(u => u.id !== attackerId && at(u, defPos));
-    // The city falls when nothing is left standing in it — killing one unit out of a
-    // three-unit garrison takes the square's defence down a notch, not the city.
-    const capturedCity = stillHeld ? null
-      : cities.find(c => c.position.x === defPos.x && c.position.y === defPos.y);
-    if (capturedCity) {
-      cities = cities.map(c => c.id === capturedCity.id ? { ...c, ownerId: attacker.ownerId } : c);
-    }
-    if (!stillHeld) {
-      units = units.map(u => u.id === attackerId ? { ...u, position: defPos } : u);
     }
   }
 

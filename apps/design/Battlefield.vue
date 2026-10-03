@@ -1963,8 +1963,8 @@ const selectedUnit = computed(() => displayUnits.value.find(u => u.id === select
 // Except while a fight is on the board (battleFx): a unit that has just attacked has
 // finished too, but the board is still showing what its attack did, and centring the
 // map on the next unit would pan away from it. The hand-over waits for the fight, and
-// for the winner's advance onto the square it took, which plays after it — as the
-// original's does — and is dropped if the player picks something meanwhile.
+// for whatever the board plays after it (a winner advancing, in a game where winners
+// do), and is dropped if the player picks something meanwhile.
 // Only a fight holds it: an ordinary move's slide is short, and holding the hand-over
 // for every one would swallow the next keypress of anyone moving units quickly.
 const advanceOff = ref(null);

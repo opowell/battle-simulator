@@ -681,7 +681,8 @@ watch(liveState, (newState, oldState) => {
   // An attacker has to be standing on the square it struck from when its fight plays,
   // but `moved` only knows where it started this update and where it ended up — so its
   // journey is split around the fight: up to the square, the fight, then on to where
-  // the board has it now (the square it took, as a rule). `standing` is where the
+  // the board has it now (the square it took, in a game whose winners advance; civ1's
+  // stay put, so nothing follows there). `standing` is where the
   // beats queued so far leave it. A piece the board does not draw as itself any more
   // (dead, out of sight, gone into a city) has no token to walk; its fight draws it.
   const standing = new Map();

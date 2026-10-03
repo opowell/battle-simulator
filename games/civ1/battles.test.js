@@ -46,8 +46,8 @@ test('civ1 battles: a won attack is recorded — from, at, the two fighters, and
     attacker: { id: 'a', type: 'legion', ownerId: 'p1' },
     defender: { id: 'd', type: 'militia', ownerId: 'p2' },
   }]);
-  // The record keeps where the attacker struck FROM, though it has since advanced.
-  assert.deepEqual(state.units.find(u => u.id === 'a').position, { x: 6, y: 6 });
+  // The winner stays where it struck from, as in the original — it does not advance.
+  assert.deepEqual(state.units.find(u => u.id === 'a').position, { x: 5, y: 5 });
 });
 
 test('civ1 battles: a lost attack is recorded as lost', () => {

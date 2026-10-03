@@ -188,11 +188,20 @@ test('civ1 barbarians: a defended city is fought for, not walked into', () => {
       unit('b1', BARBARIAN_ID, 'legion', 11, 10),
       unit('d1', 'p1', 'militia', CITY.x, CITY.y, { attrs: { fortified: true } }),
     ],
+    // A small city: a size-4 one turns out a fresh militia within a couple of turns,
+    // which would put a second fight in front of the walk-in this test is about.
+    cities: [city({ size: 1 })],
   });
   state = playTurn(state, ATTACKER_WINS);
 
   assert.equal(state.units.find(u => u.id === 'd1').alive, false, 'the garrison was fought and killed');
-  assert.equal(state.cities[0].ownerId, BARBARIAN_ID, 'and the city fell with it');
+  // The fight takes the raider's turn and leaves it where it stood (as in the
+  // original, a winner never advances) — the city stands empty until it walks in.
+  assert.deepEqual(state.units.find(u => u.id === 'b1').position, { x: 11, y: 10 });
+  assert.equal(state.cities[0].ownerId, 'p1', 'the emptied city is not taken by the fight');
+
+  state = playTurn(state, ATTACKER_WINS);
+  assert.equal(state.cities[0].ownerId, BARBARIAN_ID, 'the raider walks in on its next turn');
 });
 
 test('civ1 barbarians: a raid that loses its fight leaves the city alone', () => {
