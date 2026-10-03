@@ -415,6 +415,27 @@ It made the Siege *easier* for the attacker, not harder. Heuristic vs heuristic,
 one stack discipline found: a winner that advanced stood alone on open ground beside the
 walls, where the garrison's sallies picked it off; one that stays put stays with its army.
 
+Two more of the original's rules followed the same day, from the same caller: **an attack
+costs one move, not the turn** (`RemainingMoves -= 3` in thirds — knights and chariots can
+strike twice), and **every defender beaten in a city costs it a citizen** unless it has
+City Walls of its own or the blow came from the sea; a city with none left is razed,
+with every unit it supported. (The original spares a human's cities on Chieftain; here
+difficulty is symmetric, so on Chieftain nobody's are.)
+
+That one rewrites the Siege. Its city is size 3 with no walls, so three won attacks raze
+it whatever is still standing inside, and the attacker wins as `civilization-destroyed`.
+Heuristic vs heuristic, fog on, 150 games per variant of the city:
+
+| city | attacker wins | average turn |
+| --- | --- | --- |
+| as built: size 3, palace | 92% | 12.0 |
+| size 8 | 81% | 16.8 |
+| size 3 + City Walls | 0% | — |
+| size 6 + City Walls | 0% | — |
+
+Walls stop the shrinking but also triple the garrison's defence against land units, and
+the heuristic attacker cannot crack that at all. Rebalancing the scenario is open.
+
 ## Revised order
 
 The original plan had `set-production` last, as an unlock for the personality material. That

@@ -484,7 +484,14 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
 
   units = units.map(u => {
     if (u.id === attackerId) {
-      if (result.attackerSurvived) return { ...u, hp: result.attackerHpLeft, movesLeft: 0, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } };
+      // An attack costs one move, not the turn — the original's caller takes three of
+      // the unit's thirds and no more — so a unit with moves to spare (knights, a
+      // chariot, anything that came by road) may attack again or move on. Snapped to a
+      // third, since roads leave fractions and float dust would read as moves left.
+      if (result.attackerSurvived) {
+        const movesLeft = Math.max(0, Math.round((u.movesLeft - 1) * 3) / 3);
+        return { ...u, hp: result.attackerHpLeft, movesLeft, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } };
+      }
       return { ...u, alive: false, hp: 0, movesLeft: 0 };
     }
     if (u.id === targetId) {
@@ -501,13 +508,43 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
     // game has none) is the exception: only the loser dies there, so a garrison has to
     // be killed off one unit at a time — and once the last of it is dead the city stands
     // empty, still its owner's, until someone walks in.
-    const inCity = cities.some(c => c.position.x === defPos.x && c.position.y === defPos.y);
-    if (!inCity) {
+    const city = cities.find(c => c.position.x === defPos.x && c.position.y === defPos.y);
+    if (!city) {
       units = units.map(u => (u.id !== attackerId && at(u, defPos)) ? { ...u, alive: false, hp: 0 } : u);
+    } else if (beatenGarrisonCostsACitizen(state, city, attacker)) {
+      // …and every defender beaten there costs the city a citizen. One that had only
+      // the one left is razed: gone from the map, and every unit it supported with it.
+      ({ units, cities } = city.size > 1
+        ? { units, cities: cities.map(c => c.id === city.id ? { ...c, size: c.size - 1 } : c) }
+        : razeCity(units, cities, city));
     }
   }
 
   return { units, cities, battle };
+}
+
+// Whether beating a city's defender costs the city a citizen. The original's rule (its
+// caller of the combat routine, after a won attack): unless the city has City Walls of
+// its own — the flag on the city itself, so the Great Wall, which only lends every city
+// the walls' defence, does not spare its people — and unless the blow came from a ship
+// at sea. The original also spares a HUMAN's cities on Chieftain; difficulty here is a
+// symmetric preset that never favours one side (difficulty.js), so on Chieftain no
+// city loses people this way.
+function beatenGarrisonCostsACitizen(state, city, attacker) {
+  if ((city.buildings ?? []).includes('city-walls')) return false;
+  if (state.board.tiles[`${attacker.position.x},${attacker.position.y}`]?.terrain === 'ocean') return false;
+  return state.gameSpecific?.rules?.difficulty !== 'chieftain';
+}
+
+// A city wiped off the map, as the original's destroy-city routine does it: the city
+// goes (and with it its buildings, wonders included), and so does every unit it
+// supported, wherever on the map that unit is. Units merely standing in it survive on
+// what is now open ground. Whether its owner is finished is killOffLostCivs's call.
+function razeCity(units, cities, city) {
+  return {
+    cities: cities.filter(c => c.id !== city.id),
+    units: units.map(u => (u.alive && u.homeCityId === city.id) ? { ...u, alive: false, hp: 0 } : u),
+  };
 }
 
 // The last few fights, kept on the state for the board to animate (toGrid's

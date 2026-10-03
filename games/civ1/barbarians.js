@@ -251,10 +251,12 @@ function raid(state, rng, deps) {
 
       const victim = adjacentVictim(unit, units, cities, wrapWidth(board));
       if (victim) {
+        // An attack costs one move (resolveAttack), so a raider with moves to spare —
+        // horsemen, a chariot — goes round again: at the next victim, or onward.
         let battle;
         ({ units, cities, battle } = deps.resolveAttack({ ...state, units, cities }, units, cities, id, victim.id, rng));
         if (battle) battles.push(battle);
-        break; // an attack spends the whole turn, win or lose
+        continue;
       }
 
       const step = nextStep(unit, units, cities, board);

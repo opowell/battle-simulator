@@ -189,8 +189,9 @@ test('civ1 barbarians: a defended city is fought for, not walked into', () => {
       unit('d1', 'p1', 'militia', CITY.x, CITY.y, { attrs: { fortified: true } }),
     ],
     // A small city: a size-4 one turns out a fresh militia within a couple of turns,
-    // which would put a second fight in front of the walk-in this test is about.
-    cities: [city({ size: 1 })],
+    // which would put a second fight in front of the walk-in this test is about. Not
+    // size 1, though — beating its last defender would raze it (resolveAttack).
+    cities: [city({ size: 2 })],
   });
   state = playTurn(state, ATTACKER_WINS);
 
@@ -202,6 +203,23 @@ test('civ1 barbarians: a defended city is fought for, not walked into', () => {
 
   state = playTurn(state, ATTACKER_WINS);
   assert.equal(state.cities[0].ownerId, BARBARIAN_ID, 'the raider walks in on its next turn');
+});
+
+// An attack costs one move, not the turn (resolveAttack), for raiders as for anyone:
+// a mounted one with two moves wins a fight and goes straight on to the next.
+test('civ1 barbarians: a raider with moves to spare fights on after a win', () => {
+  let state = world('roving-bands', { turnNumber: QUIET_TURN,
+    units: [
+      unit('b1', BARBARIAN_ID, 'chariot', 14, 10),
+      unit('m1', 'p1', 'militia', 15, 10),
+      unit('m2', 'p1', 'militia', 13, 10),
+    ],
+  });
+  state = playTurn(state, ATTACKER_WINS);
+
+  assert.equal(state.units.find(u => u.id === 'm1').alive, false);
+  assert.equal(state.units.find(u => u.id === 'm2').alive, false, 'both fell to the one chariot, in one raid');
+  assert.equal(state.gameSpecific.battles.filter(b => b.attacker.id === 'b1').length, 2);
 });
 
 test('civ1 barbarians: a raid that loses its fight leaves the city alone', () => {

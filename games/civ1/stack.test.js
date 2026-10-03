@@ -165,7 +165,7 @@ test('civ1 stacking: a city is the exception — the garrison dies one unit at a
       unit('g1', 'p2', 'phalanx', 10, 10),
       unit('g2', 'p2', 'militia', 10, 10),
     ],
-    cities: [city('c1', 'p2', 10, 10)],
+    cities: [city('c1', 'p2', 10, 10, { size: 3 })],
   });
 
   const after = Civ1Game.applyActions(state,
@@ -176,6 +176,7 @@ test('civ1 stacking: a city is the exception — the garrison dies one unit at a
   assert.equal(byId.g2.alive, true, 'the rest of the garrison did not');
   assert.deepEqual(byId.atk.position, { x: 9, y: 10 }, 'the attacker stays out');
   assert.equal(after.cities[0].ownerId, 'p2', 'and the city has not fallen');
+  assert.equal(after.cities[0].size, 2, 'though it lost a citizen with its defender');
 });
 
 // As in the original: killing the last defender leaves the city standing empty, and it
@@ -187,7 +188,7 @@ test('civ1 stacking: the last defender\'s death empties the city, which falls to
       unit('walker', 'p1', 'militia', 9, 9),
       unit('g1', 'p2', 'militia', 10, 10),
     ],
-    cities: [city('c1', 'p2', 10, 10)],
+    cities: [city('c1', 'p2', 10, 10, { size: 3 })],
   });
 
   const fought = Civ1Game.applyActions(state,
@@ -196,6 +197,7 @@ test('civ1 stacking: the last defender\'s death empties the city, which falls to
   assert.equal(fought.units.find(u => u.id === 'g1').alive, false);
   assert.deepEqual(fought.units.find(u => u.id === 'atk').position, { x: 9, y: 10 }, 'the winner stays out');
   assert.equal(fought.cities[0].ownerId, 'p2', 'the empty city is still theirs');
+  assert.equal(fought.cities[0].size, 2);
 
   const walkIn = Civ1Game.getLegalActions(fought, 'p1')
     .find(a => a.type === 'move' && a.unitId === 'walker' && a.to.x === 10 && a.to.y === 10);
