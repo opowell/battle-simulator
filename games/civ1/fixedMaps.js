@@ -14,7 +14,18 @@
 // layer because a river sits *on* a terrain rather than replacing it.
 //
 // Starting units are `{ side: 1|2, type, x, y }`; side 1 → players[0],
-// side 2 → players[1]. Coordinates are 0-indexed from the top-left.
+// side 2 → players[1]. Coordinates are 0-indexed from the top-left. A unit may
+// also start `veteran` and/or `fortified` (dug in, with the bonus already earned).
+//
+// A battle rather than a world needs a few more pieces, all optional:
+//   cities     `{ side, x, y, name?, size?, buildings? }` standing from turn 1
+//   objective  `{ type: 'take-city', attacker: 1|2, defender: 1|2, turns }` — the
+//              attacker wins by capturing the defender's city (and so destroying
+//              them); the defender wins by still holding it once `turns` rounds
+//              are over, or by wiping out the attacking army first
+//   revealed   true: both sides know the whole battlefield's terrain from the
+//              start (units are still fogged)
+//   config     the scenario menu entry's config (seats, fog, …), as on any scenario
 
 // Character → engine terrain. `.` is water; the engine has no separate "coast"
 // or "lake" terrain, so open sea and inland lakes are all 'ocean' (shallow-water
@@ -203,6 +214,114 @@ export const FIXED_MAPS = [
       { side: 2, type: 'settlers', x: 60, y: 16 },
       { side: 2, type: 'militia',  x: 61, y: 16 },
     ],
+  },
+  {
+    id: 'siege',
+    name: 'Siege',
+    description: 'A fixed battle: your army of 20 — catapults, legions, knights — has 20 turns to take a coastal city held by 20 defenders',
+    // West to east: the attackers' open staging plains, a wooded ridge north and
+    // south with a pair of hills on the river crossing between them, the city's two
+    // hill outworks, and the city itself on the river mouth with the sea at its back
+    // — so it can only be approached from the west.
+    //
+    // The sea behind the city is wider than it needs to look, on purpose. Civ1's world
+    // wraps east to west, and on a narrow map going round the back of the world is the
+    // SHORTER way between two squares — 10 tiles from the attackers' camp to the city
+    // that way against 14 the direct way. Land units cannot actually cross it, but every
+    // distance the agents plan with is the wrapped one, and on a 24-wide map they marched
+    // the siege train west to the shore. At 40 wide, any two land squares (x 1..20) are
+    // closer the direct way.
+    rows: [
+      '........................................',
+      '.PGGGGPGGFFPGGGGPHMM....................',
+      '.GPGGGGPGFFFPGGGGPMMG...................',
+      '.GGPGGGGFFFGGPGGGGPGF...................',
+      '.GGGPGGGGFFGGGPHHGGPG...................',
+      '.PPPPPPGGGPGGGGPGGGGP...................',
+      '.PPPPPPGGGGPHGGGPGGGG...................',
+      '.PPPPPPPGGGGPGGGGPGG....................',
+      '.PPPPPPGPGGGHPGGGGGGG...................',
+      '.PPPPPPGGPGGGGPGGGGPG...................',
+      '.GGGGPGGGFFGGGGHHGGGP...................',
+      '.PGGGGPGFFFPGGGGPGGGF...................',
+      '.GPGGGGPGFFFPGGGGPMMG...................',
+      '.GGPGGGGPFFGGPGGGHMM....................',
+      '........................................',
+    ],
+    rivers: [
+      '                                        ',
+      '                                        ',
+      '                                        ',
+      '                                        ',
+      '                                        ',
+      '                                        ',
+      '                                        ',
+      '       ~~~~~~~~~~                       ',
+      '                                        ',
+      '                                        ',
+      '                                        ',
+      '                                        ',
+      '                                        ',
+      '                                        ',
+      '                                        ',
+    ],
+    revealed: true,
+    cities: [
+      { side: 2, x: 17, y: 7, size: 3, buildings: ['palace'] },
+    ],
+    objective: { type: 'take-city', attacker: 1, defender: 2, turns: 20 },
+    units: [
+      // ── The attackers (side 1): a siege train with its escort, on the plains ──
+      { side: 1, type: 'catapult', x: 7, y: 6, veteran: true },
+      { side: 1, type: 'catapult', x: 7, y: 7, veteran: true },
+      { side: 1, type: 'catapult', x: 7, y: 8, veteran: true },
+      { side: 1, type: 'catapult', x: 6, y: 6 },
+      { side: 1, type: 'catapult', x: 6, y: 8 },
+      { side: 1, type: 'legion',   x: 8, y: 5 },
+      { side: 1, type: 'legion',   x: 8, y: 6 },
+      { side: 1, type: 'legion',   x: 8, y: 7 },
+      { side: 1, type: 'legion',   x: 8, y: 8 },
+      { side: 1, type: 'legion',   x: 8, y: 9 },
+      { side: 1, type: 'legion',   x: 7, y: 5 },
+      { side: 1, type: 'knights',  x: 9, y: 5 },
+      { side: 1, type: 'knights',  x: 9, y: 6 },
+      { side: 1, type: 'knights',  x: 9, y: 8 },
+      { side: 1, type: 'knights',  x: 9, y: 9 },
+      { side: 1, type: 'chariot',  x: 6, y: 5 },
+      { side: 1, type: 'chariot',  x: 6, y: 9 },
+      { side: 1, type: 'chariot',  x: 7, y: 9 },
+      { side: 1, type: 'archers',  x: 6, y: 7 },
+      { side: 1, type: 'archers',  x: 5, y: 7 },
+      // ── The defenders (side 2) ────────────────────────────────────────────────
+      // The garrison, dug in.
+      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true, veteran: true },
+      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
+      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
+      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
+      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
+      { side: 2, type: 'archers',  x: 17, y: 7, fortified: true },
+      { side: 2, type: 'archers',  x: 17, y: 7, fortified: true },
+      { side: 2, type: 'archers',  x: 17, y: 7, fortified: true },
+      // The two hill outworks north and south of the approach.
+      { side: 2, type: 'phalanx',  x: 15, y: 4, fortified: true },
+      { side: 2, type: 'archers',  x: 16, y: 4, fortified: true },
+      { side: 2, type: 'phalanx',  x: 15, y: 10, fortified: true },
+      { side: 2, type: 'archers',  x: 16, y: 10, fortified: true },
+      // Pickets on the hills either side of the river crossing.
+      { side: 2, type: 'legion',   x: 12, y: 6, fortified: true },
+      { side: 2, type: 'legion',   x: 12, y: 8, fortified: true },
+      // A mounted reserve behind the walls, to sally against the siege train.
+      { side: 2, type: 'chariot',  x: 18, y: 6 },
+      { side: 2, type: 'chariot',  x: 18, y: 8 },
+      { side: 2, type: 'knights',  x: 19, y: 6 },
+      { side: 2, type: 'knights',  x: 19, y: 8 },
+      { side: 2, type: 'legion',   x: 16, y: 6, fortified: true },
+      { side: 2, type: 'legion',   x: 16, y: 8, fortified: true },
+    ],
+    config: {
+      players: [{ name: 'You' }, { name: 'Defender', agent: 'civ1-heuristic' }],
+      fogOfWar: true,
+    },
   },
 ];
 

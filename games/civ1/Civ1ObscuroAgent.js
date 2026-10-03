@@ -35,6 +35,7 @@ import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
 import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
 import { siteValue } from './searchActions.js';
+import { siegeRole } from './objective.js';
 
 function chebyshev(a, b, width) {
   const dx = Math.abs(a.x - b.x);
@@ -45,6 +46,19 @@ function chebyshev(a, b, width) {
 // much a settler is paid for having walked the whole way out to that gap.
 const MIN_CITY_SPACING = 4;
 const SETTLE_PULL = 60;
+
+// Holding a besieged city (objective.js): what the first unit inside it is worth on
+// top of its materiel, decaying by GARRISON_DECAY for each further one — the third
+// defender matters a great deal, the fifteenth less, but none of them is worth
+// walking out for an even trade.
+const GARRISON_STAKE = 40;
+const GARRISON_DECAY = 0.85;
+// ...and from the other side of the walls, what each defender still inside costs the
+// attacker. Flat, not decaying: to the assault the fifteenth defender is as much in
+// the way as the first, and the garrison's own decaying stake alone made a blow at a
+// deep stack worth less than the catapult that struck it — so the search sat outside.
+const ASSAULT_STAKE = 40;
+const SIEGE_PULL = 8;
 
 // Per-side score. The caller differences two of these, so only relative weights
 // matter. Materiel terms dominate; positional terms are deliberately an order of
@@ -81,8 +95,14 @@ function sideScore(state, playerId, oppId) {
   // as the game's own evaluateState does, is what lets every agent here grind
   // itself to a halt at two cities. Priced above a unit's build cost so the search
   // would rather grow than garrison.
+  // Only a unit with a home city costs upkeep (economy.js): an army that arrived with
+  // none — a fixed battle's, or the units a civ starts with — is free, and charging
+  // for it anyway made losing a unit look like a saving.
   const supportCap = cities.reduce((n, c) => n + (c.size ?? 1), 0);
-  score -= Math.max(0, units.length - supportCap) * 45;
+  const supported = units.reduce((n, u) => n + (u.homeCityId != null ? 1 : 0), 0);
+  score -= Math.max(0, supported - supportCap) * 45;
+
+  const siege = siegeRole(state, playerId);
 
   // ── Position ──
 
@@ -99,6 +119,22 @@ function sideScore(state, playerId, oppId) {
         u.position.x === c.position.x && u.position.y === c.position.y && !garrisoned.has(u.id);
     });
     if (holder) { score += 25; garrisoned.add(holder.id); }
+  }
+
+  // A besieged city is held by everyone inside it, not one holder: score the whole
+  // garrison, strongest first, with diminishing returns.
+  if (siege?.role === 'defender') {
+    const inside = units
+      .filter(u => u.position.x === siege.cityPos.x && u.position.y === siege.cityPos.y)
+      .map(u => UNITS[u.type]?.defense ?? 0)
+      .sort((a, b) => b - a);
+    let w = GARRISON_STAKE;
+    // Weighted by defence, a phalanx (2) being the unit of account.
+    for (const d of inside) { score += w * d / 2; w *= GARRISON_DECAY; }
+  } else if (siege?.role === 'attacker') {
+    const inside = state.units.filter(u => u.alive && u.ownerId !== playerId
+      && u.position.x === siege.cityPos.x && u.position.y === siege.cityPos.y).length;
+    score -= inside * ASSAULT_STAKE;
   }
 
   for (const u of units) {
@@ -125,8 +161,17 @@ function sideScore(state, playerId, oppId) {
       score += SETTLE_PULL * Math.min(1, spacing / MIN_CITY_SPACING);
       // ...and standing somewhere actually worth founding on when it gets there.
       if (spacing >= MIN_CITY_SPACING) score += siteValue(state, u.position);
+    } else if (siege?.role === 'defender') {
+      // Nothing to march on and nowhere to explore: the city is the whole game, and
+      // the garrison term above is what pays for standing in it.
     } else if (!garrisoned.has(u.id) && stats.attack > 0) {
-      if (oppCities.length) {
+      if (siege?.role === 'attacker') {
+        // The city is the target whether or not it is in sight (objective.js), and
+        // the pull is steep: at the open game's 2.5 a tile, a hill two squares out
+        // (+8 for the ground) outscored the square at the walls, and the siege train
+        // spent the battle sitting on the high ground watching the city.
+        score += Math.max(0, 20 - chebyshev(u.position, siege.cityPos, W)) * SIEGE_PULL;
+      } else if (oppCities.length) {
         // Pressure: an army closing on an enemy city is doing something, an army
         // milling around at home is not.
         const d = oppCities.reduce((m, c) => Math.min(m, chebyshev(u.position, c.position, W)), Infinity);

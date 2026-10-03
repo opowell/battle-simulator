@@ -936,6 +936,19 @@ const CLEARS_TO = { forest: 'plains', jungle: 'grassland', swamp: 'grassland' };
 function getResult(state) {
   const playerIds = state.players.map(p => p.id);
 
+  // A fixed battle's own objective (fixedMaps.js). Capturing the city also destroys
+  // the defender (it is their only one), which the conquest check below would call
+  // anyway — this names it for what it was. Holding out past the last round wins
+  // the defence; an attacking army wiped out first falls to the conquest check.
+  const obj = state.gameSpecific?.objective;
+  if (obj?.type === 'take-city') {
+    const city = state.cities.find(c => c.id === obj.cityId);
+    if (city && city.ownerId === obj.attackerId) return { outcome: 'win', winnerId: obj.attackerId, reason: 'city-taken' };
+    if (state.turnNumber > obj.turns && isCivAlive(state, obj.defenderId)) {
+      return { outcome: 'win', winnerId: obj.defenderId, reason: 'city-held' };
+    }
+  }
+
   // Space race: a launched spaceship that has reached Alpha Centauri wins — provided
   // its owner still holds a capital (losing the capital destroys the ship).
   for (const pid of playerIds) {
@@ -956,6 +969,19 @@ function getResult(state) {
   // Everyone wiped out on the same turn (mutual destruction) — nobody wins.
   if (alive.length === 0) return { outcome: 'draw', winnerId: null, reason: 'civilization-destroyed' };
   return null;
+}
+
+// The header's date line during a fixed battle: the clock that matters is the
+// rounds left to take the city, not the calendar. Null when there is no objective.
+function objectiveLabel(state) {
+  const obj = state.gameSpecific?.objective;
+  if (obj?.type !== 'take-city') return null;
+  // Out of the attacker's sight at the start, but its name is no secret: the opening
+  // roster is common knowledge.
+  const city = state.cities.find(c => c.id === obj.cityId)
+    ?? state.gameSpecific.startRoster?.cities?.find(c => c.id === obj.cityId);
+  const left = Math.max(0, obj.turns - state.turnNumber + 1);
+  return `${city?.name ?? 'The city'}: ${left === 1 ? 'last turn' : `${left} turns left`}`;
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -1003,8 +1029,46 @@ function createFixedMapState(map, players, config) {
   const sides = [players[0], players[1]];
 
   let idCtr = 0;
-  const units = map.units.map(u =>
-    makeUnit(`u${idCtr++}`, sides[u.side - 1].id, u.type, u.x, u.y, UNITS[u.type].moves));
+  const units = map.units.map(u => {
+    const unit = makeUnit(`u${idCtr++}`, sides[u.side - 1].id, u.type, u.x, u.y, UNITS[u.type].moves);
+    if (u.veteran) unit.attrs.veteran = true;
+    if (u.fortified) unit.attrs.fortified = true;
+    return unit;
+  });
+
+  // Who each seat is (civs.js). A hand-built scenario is meant to replay the same
+  // way every time, so its civs are taken in the original's roster order rather
+  // than drawn at random — the seat still gets whatever the menu picked for it.
+  const tribes = assignTribes(players, null, config.civ);
+
+  // Cities a battle opens with. Named from the owner's own list, as if founded.
+  const cities = [];
+  for (const c of map.cities ?? []) {
+    const ownerId = sides[c.side - 1].id;
+    cities.push({
+      id: `city-${idCtr++}`,
+      name: c.name ?? getNextCityName({ gameSpecific: { tribes } }, cities, ownerId),
+      ownerId,
+      position: { x: c.x, y: c.y },
+      size: c.size ?? 1,
+      shields: 0,
+      food: 0,
+      production: DEFAULT_PRODUCTION,
+      buildings: [...(c.buildings ?? [])],
+    });
+  }
+  const civ = Object.fromEntries(players.map(p => [p.id, newCivState()]));
+  for (const c of cities) civ[c.ownerId] = { ...civ[c.ownerId], hadCity: true };
+
+  // The objective, with its sides resolved to seat ids so getResult never has to
+  // look the map up again.
+  const objective = map.objective?.type === 'take-city' ? {
+    type: 'take-city',
+    attackerId: sides[map.objective.attacker - 1].id,
+    defenderId: sides[map.objective.defender - 1].id,
+    cityId: cities.find(c => c.ownerId === sides[map.objective.defender - 1].id)?.id ?? null,
+    turns: map.objective.turns,
+  } : null;
 
   return {
     gameName: 'Civ1',
@@ -1014,7 +1078,7 @@ function createFixedMapState(map, players, config) {
     players,
     board,
     units,
-    cities: [],
+    cities,
     lastActions: null,
     gameSpecific: {
       nextId: idCtr,
@@ -1027,11 +1091,11 @@ function createFixedMapState(map, players, config) {
       // gameOptions toggle below). Kept on the state so it survives a reload and
       // reaches the client through toGrid's `ui` override rather than the static ui.
       autoEndTurn: config.autoEndTurn ?? true,
-      civ: Object.fromEntries(players.map(p => [p.id, newCivState()])),
-      // Who each seat is (civs.js). A hand-built scenario is meant to replay the same
-      // way every time, so its civs are taken in the original's roster order rather
-      // than drawn at random — the seat still gets whatever the menu picked for it.
-      tribes: assignTribes(players, null, config.civ),
+      civ,
+      tribes,
+      ...(objective ? { objective } : {}),
+      // A battlefield both generals have surveyed: seedExploration marks all of it.
+      ...(map.revealed ? { revealMap: true } : {}),
       rules: resolveRules(config),
       // Barbarian activity level (see barbarians.js). Only the id is stored — the
       // schedule it selects lives in the module, so it never has to survive a
@@ -1039,7 +1103,7 @@ function createFixedMapState(map, players, config) {
       barbarians: resolveBarbarianLevel(config),
       startRoster: {
         units: units.map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: { ...u.position }, hp: u.hp })),
-        cities: [],
+        cities: cities.map(c => ({ id: c.id, ownerId: c.ownerId, name: c.name, position: { ...c.position }, size: c.size, production: c.production })),
       },
     },
   };
@@ -1192,6 +1256,11 @@ function exploredIndex(x, y, width) { return y * width + x; }
 function seedExploration(state) {
   const explored = {};
   for (const p of state.players) explored[p.id] = '';
+  // A revealed battlefield (fixedMaps.js) is known ground to everyone from the start.
+  if (state.gameSpecific?.revealMap) {
+    const all = EXPLORED.repeat(state.board.width * state.board.height);
+    for (const p of state.players) explored[p.id] = all;
+  }
   const seeded = { ...state, gameSpecific: { ...state.gameSpecific, explored } };
   return state.players.reduce((acc, p) => markExplored(acc, p.id), seeded);
 }
@@ -1685,7 +1754,7 @@ export const Civ1Game = {
       },
     },
     // Hand-built fixed maps (see fixedMaps.js).
-    ...FIXED_MAPS.map(m => ({ id: m.id, name: m.name, description: m.description, config: {} })),
+    ...FIXED_MAPS.map(m => ({ id: m.id, name: m.name, description: m.description, config: m.config ?? {} })),
     // An exhibition rather than a game: both seats are AI and none is yours, which
     // is exactly the condition the server puts on observer lock-step (api-server.js
     // Session.observerPaced) — it computes one step, waits for the watching client
@@ -2321,10 +2390,17 @@ export const Civ1Game = {
     // state.turnNumber, so scrubbing the history timeline moves the calendar too.
     return {
       width, height, cells, wrap: true, civ, cities: citiesOut, military, statusChips, extraTeams,
-      turnLabel: yearLabel(state.turnNumber),
+      turnLabel: objectiveLabel(state) ?? yearLabel(state.turnNumber),
       // Per-session view settings, layered over the static `ui` above (see App.vue's
       // buildField): whether a played turn ends itself, as the setup form asked.
-      ui: { autoEndTurn: state.gameSpecific?.autoEndTurn !== false },
+      // On a revealed battlefield (fixedMaps.js) every square is known ground from
+      // turn 1. The client builds its terrain memory from its own units' sightings
+      // (Battlefield.vue's exploredTileSet), so it has to be told, or it blacks out
+      // everything they have not yet stood next to.
+      ui: {
+        autoEndTurn: state.gameSpecific?.autoEndTurn !== false,
+        ...(state.gameSpecific?.revealMap ? { terrainKnown: true } : {}),
+      },
     };
   },
 };
