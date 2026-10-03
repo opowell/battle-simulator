@@ -16,6 +16,7 @@ import { chebyshevWrapped, BUILDABLE } from './Civ1Game.js';
 import {
   productionContext, chooseProductionAction, defenceStrength, RESEARCH_PRIORITY,
 } from './production.js';
+import { siegeRole, siegeAttackFloor, siegeAttackWant, isMounted, atSiegeCity, chooseSiegeProduction } from './objective.js';
 
 // Both priority lists and the production scorer live in production.js, shared with
 // the search's pruner (searchActions.js) so the two agents cannot drift apart.
@@ -214,6 +215,9 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
       const W = state.board.width;
       const myId = state.activePlayers[0];
       const unitById = new Map(state.units.map(u => [u.id, u]));
+      // A fixed battle's objective, if this is one (objective.js) — null in the open game.
+      const siege = siegeRole(state, myId);
+      const inSiegeCity = pos => atSiegeCity(siege, pos);
 
       // ── Win outright if the spaceship is ready ───────────────────────────
       const launch = legalActions.find(a => a.type === 'launch-spaceship');
@@ -263,7 +267,9 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         for (const [cityId, acts] of byCity) {
           const city = state.cities.find(c => c.id === cityId);
           if (!city) continue;
-          const choice = chooseProduction(state, myId, city, acts, cityTarget);
+          const choice = siege?.role === 'defender' && city.id === siege.cityId
+            ? chooseSiegeProduction(city, acts)
+            : chooseProduction(state, myId, city, acts, cityTarget);
           if (choice) return choice;
         }
       }
@@ -275,8 +281,16 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         const attacker = unitById.get(a.unitId);
         const defender = unitById.get(a.targetId);
         if (!attacker || !defender) continue;
-        const { want, P } = killDesire(attacker, defender, state);
-        if (P < minWinProb) continue;
+        let { want, P } = killDesire(attacker, defender, state);
+        // Holding the city: a winner moves onto the square it emptied, so a foot
+        // soldier striking out of the walls walks out of them. The horsemen sally.
+        if (siege?.role === 'defender' && inSiegeCity(attacker.position) && !isMounted(attacker.type)) continue;
+        // Taking it: the garrison is the objective, not a trade — every blow that
+        // lands is a defender the assault no longer has to get through (objective.js).
+        if (siege?.role === 'attacker' && inSiegeCity(defender.position)) {
+          if (P < siegeAttackFloor(siege)) continue;
+          want = siegeAttackWant(want, P);
+        } else if (P < minWinProb) continue;
         if (want > bestWant) { bestWant = want; bestAttack = a; }
       }
       if (bestAttack) return bestAttack;
@@ -316,6 +330,15 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
       const garrison = new Map(); // unitId -> city position it is holding
       const claimed = new Set();
       for (const city of myCities) {
+        // The besieged city keeps every foot soldier it can call in, from anywhere.
+        if (siege?.role === 'defender' && city.id === siege.cityId) {
+          for (const u of myUnits) {
+            if (claimed.has(u.id) || isMounted(u.type) || defenceStrength(u.type) <= 0) continue;
+            garrison.set(u.id, city.position);
+            claimed.add(u.id);
+          }
+          continue;
+        }
         const ctx = productionContext(state, city, myId, { cityTarget });
         const candidates = myUnits
           .filter(u => !claimed.has(u.id) && u.type !== 'settlers' && defenceStrength(u.type) > 0)
@@ -336,6 +359,10 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         if (!unit) continue;
         const atHome = unit.position.x === cityPos.x && unit.position.y === cityPos.y;
         if (atHome) {
+          // Under siege a garrison digs in rather than just standing there.
+          const dig = siege?.role === 'defender'
+            && legalActions.find(a => a.type === 'fortify' && a.unitId === unitId);
+          if (dig) return dig;
           const skip = legalActions.find(a => a.type === 'skip-unit' && a.unitId === unitId);
           if (skip) return skip;
           continue;
@@ -373,6 +400,9 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
       const enemies = state.units.filter(u => u.alive && u.ownerId !== myId);
       const enemyCities = state.cities.filter(c => c.ownerId !== myId);
       const targets = [...enemies.map(u => u.position), ...enemyCities.map(c => c.position)];
+      // The city under siege is a target before anyone has seen it: where it stands
+      // is common knowledge (objective.js).
+      if (siege?.role === 'attacker' && !enemyCities.some(c => inSiegeCity(c.position))) targets.push(siege.cityPos);
 
       // Garrisoned units are spoken for; everyone else advances.
       const moves = legalActions.filter(a => a.type === 'move' && !garrison.has(a.unitId));

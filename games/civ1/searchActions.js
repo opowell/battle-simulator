@@ -44,6 +44,7 @@ import { killDesire } from './ai.js';
 import {
   productionContext, rankProductionActions, RESEARCH_PRIORITY,
 } from './production.js';
+import { siegeRole, siegeAttackFloor, siegeAttackWant, isMounted, atSiegeCity, chooseSiegeProduction } from './objective.js';
 
 // Horizontally-wrapped Chebyshev distance. Deliberately re-derived here rather
 // than imported from Civ1Game.js: this module is installed onto the game object
@@ -178,6 +179,15 @@ function productionActions(legal, obs, playerId) {
   const city = obs.cities.find(c => c.id === cityId);
   if (!city) return acts.slice(0, K_PRODUCTION);
 
+  // A besieged city builds defenders and nothing else (objective.js). Offering
+  // only that one choice, or the explicit "leave it" of no choice at all, keeps the
+  // search from spending a branch on a granary for a city with twenty turns to live.
+  const siege = siegeRole(obs, playerId);
+  if (siege?.role === 'defender' && city.id === siege.cityId) {
+    const pick = chooseSiegeProduction(city, acts);
+    return pick ? [pick] : [];
+  }
+
   const ctx = productionContext(obs, city, playerId, { cityTarget: CITY_TARGET });
   return rankProductionActions(acts, ctx, city.production, K_PRODUCTION);
 }
@@ -197,6 +207,17 @@ function unitActions(legal, obs, playerId, unit) {
   const mine = legal.filter(a => a.unitId === unit.id);
   const out = [];
 
+  // A fixed battle's objective (objective.js). A foot soldier inside the besieged
+  // city holds it: it may dig in or stand, and nothing else — an attack out of the
+  // walls that wins walks the winner out of them, and the leaf value cannot see far
+  // enough ahead to know what that cost.
+  const siege = siegeRole(obs, playerId);
+  const holding = siege?.role === 'defender' && !isMounted(unit.type) && atSiegeCity(siege, unit.position);
+  if (holding) {
+    const stay = mine.filter(a => a.type === 'fortify' || a.type === 'skip-unit');
+    if (stay.length) return stay;
+  }
+
   // Attacks, priced by ai.js's kill_desire (shields destroyed × P(win) − shields
   // risked × P(lose)). Anything the odds don't justify is left out entirely.
   const unitById = new Map(obs.units.map(u => [u.id, u]));
@@ -205,8 +226,11 @@ function unitActions(legal, obs, playerId, unit) {
     if (a.type !== 'attack') continue;
     const defender = unitById.get(a.targetId);
     if (!defender) continue;
-    const { want, P } = killDesire(unit, defender, obs);
-    if (P < MIN_WIN_PROB) continue;
+    let { want, P } = killDesire(unit, defender, obs);
+    if (siege?.role === 'attacker' && atSiegeCity(siege, defender.position)) {
+      if (P < siegeAttackFloor(siege)) continue;
+      want = siegeAttackWant(want, P);
+    } else if (P < MIN_WIN_PROB) continue;
     attacks.push({ action: a, score: want });
   }
   out.push(...topK(attacks, K_ATTACKS));
@@ -237,6 +261,10 @@ function unitActions(legal, obs, playerId, unit) {
     const enemies = obs.units.filter(u => u.alive && u.ownerId !== playerId).map(u => u.position);
     const enemyCities = obs.cities.filter(c => c.ownerId !== playerId).map(c => c.position);
     const targets = [...enemies, ...enemyCities];
+    // The attackers march on the besieged city before they can see it; the
+    // defenders' foot soldiers outside it make for home.
+    if (siege?.role === 'attacker') targets.push(siege.cityPos);
+    const homeward = siege?.role === 'defender' && !isMounted(unit.type);
 
     // Piling up outside a city loses every unit on the square to one lost defence
     // (civ1 stack death — see Civ1Game's resolveAttack), so a step onto one of our own
@@ -260,6 +288,8 @@ function unitActions(legal, obs, playerId, unit) {
         const spacing = nearestOwnCity(a.to);
         score += siteValue(obs, a.to);
         score += spacing >= MIN_CITY_SPACING ? 20 : spacing * 2;
+      } else if (homeward) {
+        score += -chebyshev(a.to, siege.cityPos, W) * 4 + (t?.defBonus ?? 0) * 10;
       } else if (targets.length) {
         const d = targets.reduce((m, p) => Math.min(m, chebyshev(a.to, p, W)), Infinity);
         score += -d * 4 + (t?.defBonus ?? 0) * 10;

@@ -576,6 +576,13 @@ const displayField = computed(() => {
 const exploredTileSet = computed(() => {
   if (!props.fog || !props.field?.ui?.persistentFog || revealAll.value) return null;
   const acc = new Set();
+  // A game may declare the whole map known ground from the start (field.ui.terrainKnown
+  // — civ1's revealed battlefields): every square is remembered, only units re-fog.
+  if (props.field.ui.terrainKnown && props.field.world) {
+    for (let y = 0; y < props.field.world.h; y++)
+      for (let x = 0; x < props.field.world.w; x++) acc.add(`${x},${y}`);
+    return acc;
+  }
   // `f.units` (raw, from buildField) only carries a `path` — not the resolved x/y/dead
   // computeUnits derives from it — so past snapshots need computeUnits same as the
   // live display does (see `units` above); reuse displayUnits for the current one.
@@ -854,6 +861,8 @@ const REASON_LABELS = {
   'king-captured':        'King captured',
   'fifty-move-rule':      'Fifty-move rule',
   'max-turns':            'Turn limit reached',
+  'city-taken':           'City taken',
+  'city-held':            'City held to the last turn',
   'step-limit':           'Turn limit reached',
   'no-legal-actions':     'No legal actions',
   'surrender':            'Surrender',
