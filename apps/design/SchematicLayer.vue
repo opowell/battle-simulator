@@ -48,8 +48,14 @@ const props = defineProps({
   // reach arc at `aiming.range`, plus a throw's blast-radius preview or a shoot's
   // aim ray, both following the cursor.
   aiming: { type: Object, default: null },
+  // RTS-style drag-box selection (a game's ui.boxSelect): a left-drag across the board
+  // draws a box and emits 'box-select' with its corners in world units instead of
+  // clicking. `selectedIds` is the group that picks up — each member wears the
+  // selected ring, not just `selectedId`.
+  boxSelect:   { type: Boolean, default: false },
+  selectedIds: { type: Array, default: () => [] },
 });
-const emit = defineEmits(['select', 'sq-click', 'set-marker']);
+const emit = defineEmits(['select', 'sq-click', 'set-marker', 'box-select']);
 const imgSrc = window.api.imgSrc;
 
 // Team whose pieces project vision, and whose side of the board the view is from.
@@ -682,8 +688,65 @@ onUnmounted(() => {
   window.removeEventListener('mouseup',   _onDragEnd);
 });
 
+// ── drag-box selection (boxSelect) ────────────────────────────────────────────
+// A press only becomes a box once it has travelled a few pixels, so an ordinary click
+// (a slightly shaky one included) still clicks. The box is kept in screen px while it
+// is drawn and handed over in world units when the button comes up.
+const BOX_MIN_PX = 5;
+const boxDrag = ref(null);   // { x0, y0, x1, y1 } in svg px, while a box is being drawn
+let boxStart = null;
+// The mouseup that ends a box also fires a click on the board; this eats it so a drag
+// never also deselects, moves or pans. Reset on every press, so a box released outside
+// the board (no click follows) can't eat the next real click.
+let swallowClick = false;
+
+function svgPx(e) {
+  const r = svgEl.value.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function handleBoardMousedown(e) {
+  swallowClick = false;
+  if (!props.boxSelect || e.button !== 0 || props.aiming || dragUnit.value) return;
+  e.preventDefault();   // no text selection rubber-banding across the page
+  boxStart = svgPx(e);
+  window.addEventListener('mousemove', onBoxMove);
+  window.addEventListener('mouseup', onBoxEnd);
+}
+function onBoxMove(e) {
+  const p = svgPx(e);
+  if (!boxDrag.value && Math.hypot(p.x - boxStart.x, p.y - boxStart.y) < BOX_MIN_PX) return;
+  boxDrag.value = { x0: boxStart.x, y0: boxStart.y, x1: p.x, y1: p.y };
+}
+function onBoxEnd(e) {
+  window.removeEventListener('mousemove', onBoxMove);
+  window.removeEventListener('mouseup', onBoxEnd);
+  const b = boxDrag.value;
+  boxDrag.value = null;
+  boxStart = null;
+  if (!b) return;
+  swallowClick = true;
+  const wx = px => (px - props.fit.x(0)) / props.fit.s;
+  const wy = px => (px - props.fit.y(0)) / props.fit.s;
+  emit('box-select', { x0: wx(b.x0), y0: wy(b.y0), x1: wx(b.x1), y1: wy(b.y1) }, { shift: e.shiftKey });
+}
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onBoxMove);
+  window.removeEventListener('mouseup', onBoxEnd);
+});
+function eatBoxClick(e) {
+  if (!swallowClick) return false;
+  swallowClick = false;
+  e.stopPropagation();
+  return true;
+}
+
+function isSelected(u) {
+  return u.id === props.selectedId || props.selectedIds.includes(u.id);
+}
+
 // ── board / unit click ────────────────────────────────────────────────────────
 function handleBoardClick(e) {
+  if (eatBoxClick(e)) return;
   if (dragUnit.value) return; // drag ended; sq-click already emitted in _onDragEnd
   if (props.field.grid === 'hexagon') {
     // No integer col/row on a hex board — pass the raw world point and let
@@ -717,6 +780,7 @@ function handleBoardClick(e) {
 }
 
 function handleUnitClick(e, u) {
+  if (eatBoxClick(e)) return;
   // Aiming mode: clicking any unit token (e.g. the enemy you're shooting at) is just
   // a click at that point — let it bubble to handleBoardClick like bare ground would.
   if (props.aiming) return;
@@ -836,6 +900,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
     <svg ref="svgEl" width="100%" height="100%"
          :style="{ display:'block', position:'absolute', inset:0, cursor: dragUnit ? 'grabbing' : (aiming ? 'crosshair' : '') }"
          @click="handleBoardClick"
+         @mousedown="handleBoardMousedown"
          @mousemove="handleBoardMouseMove"
          @mouseleave="handleBoardMouseLeave">
 
@@ -1181,11 +1246,11 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
           </template>
           <!-- Selected unit ring: dashed ring (skipped when blinking, when the game highlights the square instead,
                or on territory-click maps for the same reason as the active-unit ring above). -->
-          <circle v-if="u.id === selectedId && u.id !== highlightUnitId && !(u.id === blinkTargetId && field.ui?.blinkActiveUnit) && !field.ui?.highlightSelectedSquare && !field.ui?.territoryClick"
+          <circle v-if="isSelected(u) && u.id !== highlightUnitId && !(u.id === blinkTargetId && field.ui?.blinkActiveUnit) && !field.ui?.highlightSelectedSquare && !field.ui?.territoryClick"
                   cx="0" cy="0" :r="unitR(u)+6"
                   fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="1.5" stroke-dasharray="3 3"/>
           <!-- Roster-hovered unit ring: soft solid ring, hidden once the unit is active/selected -->
-          <circle v-if="u.id === hoveredId && u.id !== highlightUnitId && u.id !== selectedId"
+          <circle v-if="u.id === hoveredId && u.id !== highlightUnitId && !isSelected(u)"
                   cx="0" cy="0" :r="unitR(u)+6"
                   fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5"/>
           <!-- Facing indicator: filled arrowhead on unit edge (hidden under fog) -->
@@ -1410,10 +1475,26 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
            WebkitMaskComposite: 'destination-in',
            maskComposite: 'intersect',
          }"/>
+
+    <!-- The drag-select box (boxSelect), over the fog so it never dims. -->
+    <div v-if="boxDrag" class="sl-box"
+         :style="{
+           left:   Math.min(boxDrag.x0, boxDrag.x1) + 'px',
+           top:    Math.min(boxDrag.y0, boxDrag.y1) + 'px',
+           width:  Math.abs(boxDrag.x1 - boxDrag.x0) + 'px',
+           height: Math.abs(boxDrag.y1 - boxDrag.y0) + 'px',
+         }"/>
   </div>
 </template>
 
 <style scoped>
+.sl-box {
+  position: absolute;
+  pointer-events: none;
+  z-index: 4;   /* above .sl-fog */
+  border: 1px solid #5be08a;
+  background: rgba(91, 224, 138, 0.12);
+}
 @keyframes active-pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.35; }

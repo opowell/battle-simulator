@@ -56,6 +56,35 @@ export function scSpriteLayers(type, def) {
   return layers;
 }
 
+// Map sprite for a unit that has real art (SC1's games/sc1/images/map/, the in-game
+// sprites from the StarCraft fandom wiki — see that folder's SOURCES.md): the picture
+// standing on a team-coloured base ring. The art is not recoloured: each sprite was
+// captured in whatever player colour its screenshot happened to use (purple, red,
+// none at all on Protoss gold), so tinting would mark some units and not others. The
+// ring is what says whose unit it is, the same way for every one. Workers draw a size
+// down and the massive units (battlecruiser, carrier, ultralisk) a size up, so a fleet
+// reads as bigger than the drones around it.
+function imageScale(def) {
+  const { special = [], hp = 0 } = def;
+  if (special.includes('worker')) return 0.85;
+  return (special.includes('massive') || hp >= 300) ? 1.35 : 1;
+}
+
+export function scImageSpriteLayers(src, def) {
+  const k = imageScale(def);
+  return [
+    { shape: 'circle', rFrac: k * 0.95, fill: '#0000002e', stroke: 'team', strokeWidth: 2, dx: 0, dy: 0, rot: 0 },
+    { src, wFrac: k * 2.5, hFrac: k * 2.5, anchorX: 0.5, anchorY: 0.5, dx: 0, dy: 0, rot: 0 },
+  ];
+}
+
+// The clickable radius that picture needs, as a multiple of the token radius (the
+// renderers' `hitRFrac`): the art overhangs the ring, and a click on a marine's rifle
+// should still pick the marine.
+export function scImageHitRFrac(def) {
+  return imageScale(def) * 1.2;
+}
+
 // How big a structure's token draws, as a multiple of the standard unit token (the
 // renderers' `sizeFrac`, see apps/design/SchematicLayer.vue's unitR). A base is the
 // landmark you navigate by and reads at a glance; a bunker or a turret is barely more

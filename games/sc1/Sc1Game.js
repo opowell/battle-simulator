@@ -7,7 +7,7 @@ import { generateMap, findAdjacentFree, getReachableTiles, renderMap, isPassable
 import { getSc1Belief } from './belief.js';
 import { lineCost, isClearOfUnits } from '../continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
-import { scSpriteLayers, scBuildingSpriteLayers, scBuildingSize } from '../starcraftSprite.js';
+import { scSpriteLayers, scImageSpriteLayers, scImageHitRFrac, scBuildingSpriteLayers, scBuildingSize } from '../starcraftSprite.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 // Unit types with a sprite in images/units/. Each PNG stores its player-color
@@ -19,6 +19,17 @@ const UNIT_SPRITES = new Set([
   'mutalisk', 'overlord', 'probe', 'scourge', 'scv', 'ultralisk', 'wraith',
   'zealot', 'zergling', 'defiler', 'devourer', 'queen', 'infested-terran',
   'civilian', 'kerrigan',
+]);
+
+// Unit types with map art in images/map/ — the in-game sprite from each unit's
+// StarCraft fandom wiki page, background removed (see images/map/SOURCES.md). Every
+// type in units.js has one; the set is what keeps a unit added later from asking for a
+// picture that isn't there (it falls back to the primitive token instead).
+const MAP_SPRITES = new Set([
+  'scv', 'marine', 'firebat', 'ghost', 'vulture', 'siege-tank', 'goliath', 'wraith',
+  'battlecruiser', 'drone', 'zergling', 'hydralisk', 'lurker', 'mutalisk', 'scourge',
+  'ultralisk', 'overlord', 'probe', 'zealot', 'dragoon', 'high-templar', 'dark-templar',
+  'archon', 'corsair', 'carrier', 'arbiter',
 ]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -804,16 +815,19 @@ export const Sc1Game = {
   name: 'SC1',
   // Unit sprites carry a magenta player-color ramp; the design app tints each to its
   // owner's team color at render time — used only for the side-panel portrait (see
-  // toGrid's portraitPath). The map itself draws an all-primitive body (see
-  // games/starcraftSprite.js's scSpriteLayers) with the type letter baked in as a
-  // sprite layer, so the many similarly-shaped unit types stay distinguishable without
-  // sourced art. SC1 has no tracked unit heading, so showFacing is off for the same
-  // reason chess/civ1/xcom disable it: a decorative, meaningless arrow isn't worth it.
+  // toGrid's portraitPath). The map draws each unit's in-game art from images/map/ on a
+  // team-coloured ring (games/starcraftSprite.js's scImageSpriteLayers); buildings are
+  // still primitive plated tokens with their type letter. SC1 has no tracked unit
+  // heading, so showFacing is off for the same reason chess/civ1/xcom disable it: a
+  // decorative, meaningless arrow isn't worth it.
   // No right-hand column: an RTS army of dozens of units and buildings doesn't fit a
   // per-unit roster card, and the map wants every pixel of a 48x40 board. What's there
   // is elsewhere already — a clicked unit's detail is the left panel, and an observer's
   // perspective switcher is in the menu overlay (see Battlefield.vue's right sidebar).
-  ui: { recolorTeamSprites: true, hideGridLines: true, showFacing: false, showRightSidebar: false },
+  // boxSelect: drag a box to pick up an army, then one click moves (or attacks with)
+  // all of it — ordering two dozen units one at a time is not how this game is played.
+  ui: { recolorTeamSprites: true, hideGridLines: true, showFacing: false, showRightSidebar: false,
+        boxSelect: true },
   scenarios: [
     { id: 'tvz', name: 'Terran vs Zerg',    description: 'Biomech forces vs the Swarm',          config: { race1: 'terran',   race2: 'zerg' } },
     { id: 'pvt', name: 'Protoss vs Terran', description: 'Psionic warriors vs human marines',    config: { race1: 'protoss',  race2: 'terran' } },
@@ -877,7 +891,10 @@ export const Sc1Game = {
         hp:        u.hp,
         maxHp:     u.maxHp,
         moveRange: u.movesLeft,
-        spriteLayers: scSpriteLayers(u.type, UNITS[u.type]),
+        spriteLayers: MAP_SPRITES.has(u.type)
+          ? scImageSpriteLayers(`/images/sc1/map/${u.type}`, UNITS[u.type])
+          : scSpriteLayers(u.type, UNITS[u.type]),
+        hitRFrac: MAP_SPRITES.has(u.type) ? scImageHitRFrac(UNITS[u.type]) : undefined,
         // Portrait-only (see the `ui` comment above) — only the side-panel portrait
         // (App.vue's portraitPath ?? imagePath fallback) uses it.
         portraitPath: UNIT_SPRITES.has(u.type) ? `/images/sc1/units/${u.type}` : undefined,

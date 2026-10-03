@@ -71,7 +71,7 @@ const props = defineProps({
   // non-live field playback) — App.vue owns it, the footer's speed control sets it.
   playbackSpeed:      { type: Number, default: 1 },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'resign', 'set-marker', 'set-plan', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
+const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'submit-actions', 'resign', 'set-marker', 'set-plan', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -124,6 +124,14 @@ const showHelp   = ref(false);
 // ── selection ─────────────────────────────────────────────────
 const selectedId = ref(null);
 const hoveredId  = ref(null);
+// A drag-selected group (ui.boxSelect — see handleBoxSelect). selectedId stays its first
+// member, so the side panel and everything else keyed on one selected unit keep working;
+// the group only adds what a click means (see groupOrderAt). Any selection that isn't a
+// member of the group — a plain click on another unit, a deselect — breaks it up.
+const groupIds = ref([]);
+watch(selectedId, (id) => {
+  if (!groupIds.value.includes(id)) groupIds.value = [];
+});
 // Set when the selection was picked out of the city screen's garrison box rather than
 // off the board — it says the selected id means the UNIT, not the city sharing its
 // square. Declared up here with selectedId because selectUnit, below, clears it; see
@@ -956,6 +964,28 @@ function centerOn(x, y) {
   center.value = { x, y };
 }
 
+// The mouse wheel zooms about the point under the cursor, as any map app does: that
+// spot stays where it is on screen while the map grows or shrinks around it. The step
+// follows the size of the wheel delta rather than counting events, so a trackpad's
+// stream of small deltas zooms as smoothly as a mouse's notches (deltaMode 1 reports
+// lines, not pixels — roughly 33px each).
+function handleWheel(e) {
+  if (!zoomEnabled.value) return;
+  e.preventDefault();
+  const px = e.deltaY * (e.deltaMode === 1 ? 33 : 1);
+  const oldS = tilePx.value;
+  const newS = Math.min(MAX_TILE_PX, Math.max(MIN_TILE_PX, oldS * Math.exp(-px * 0.002)));
+  if (newS === oldS) return;
+  const r = stageEl.value.getBoundingClientRect();
+  const sx = e.clientX - r.left, sy = e.clientY - r.top;
+  const f = fit.value;
+  const wx = (sx - f.x(0)) / f.s, wy = (sy - f.y(0)) / f.s;   // world point under the cursor
+  zoomPx.value = newS;
+  // The fitter puts `center` at the middle of the stage, so this is the centre that
+  // leaves (wx, wy) under the cursor at the new scale.
+  centerOn(wx - (sx - stageW.value / 2) / newS, wy - (sy - stageH.value / 2) / newS);
+}
+
 // The board token standing on a square, identified the way App.vue's buildField ids
 // them: a real unit's own id if one is there, else the synthetic position id that a
 // glyph-only cell (civ1's city sprite) gets. Needed because a garrisoned city's token
@@ -1713,6 +1743,51 @@ watch(legalActions, (actions) => {
   if (!stillUsable) selectedId.value = null;
 });
 
+// ── group selection & orders (ui.boxSelect) ────────────────────
+// A box picks up the acting side's units inside it (GROUP.boxPick); shift adds them to
+// the group already in hand instead of replacing it, the way an RTS does.
+function handleBoxSelect(box, mods = {}) {
+  const team = pendingPlayerId.value ?? viewerTeam.value;
+  const picked = GROUP.boxPick(displayUnits.value, box, team);
+  const ids = mods.shift ? [...new Set([...groupIds.value, ...picked])] : picked;
+  groupIds.value = ids;
+  selectUnit(ids[0] ?? null);
+}
+
+// What a click means to a group of two or more, as the list of actions to send, or
+// null when it means nothing special and should go through the ordinary click path.
+//   • a token that some members have an action naming as its target (attack it): each
+//     of those members does the first such action it has;
+//   • open ground on a continuous map: the group moves there, keeping its shape
+//     (GROUP.formationTargets).
+// Only on the live position — a fork or a reviewed ply plays one move at a time.
+function groupOrderAt({ targetId = null, x = null, y = null }) {
+  if (groupIds.value.length < 2 || !isPending.value || !atLatest.value || forking.value) return null;
+  if (targetId) {
+    const acts = groupIds.value
+      .map(id => legalActions.value.find(a => a.unitId === id && a.targetId === targetId))
+      .filter(Boolean);
+    return acts.length ? acts : null;
+  }
+  if (props.field.locationType !== 'continuous' || x == null || y == null) return null;
+  const members = displayUnits.value.filter(u => groupIds.value.includes(u.id));
+  const orders = GROUP.formationTargets(members, { x, y },
+    { bounds: { w: props.field.world.w, h: props.field.world.h } });
+  return orders.length
+    ? orders.map(o => ({ type: 'move', unitId: o.unitId, to: { x: String(o.to.x), y: String(o.to.y) } }))
+    : null;
+}
+
+// A token clicked on the map: with a group in hand, a click on something it can attack
+// is an attack order, not a change of selection. Anything else is a plain click, which
+// picks out that one unit — a member of the group included, as in an RTS.
+function handleTokenSelect(id) {
+  const acts = id && !groupIds.value.includes(id) ? groupOrderAt({ targetId: id }) : null;
+  if (acts) { emit('submit-actions', { playerId: pendingPlayerId.value, actions: acts }); return; }
+  groupIds.value = [];
+  selectUnit(id);
+}
+
 function handleSqClick(col, row, x, y, mods) {
   if (props.field.ui?.territoryClick) { handleTerritoryClick(x, y, mods ?? {}); return; }
   if (inspectTerrain.value) {
@@ -1771,6 +1846,12 @@ function handleSqClick(col, row, x, y, mods) {
       }
     }
     aiming.value = null;
+    return;
+  }
+  const groupActs = groupOrderAt({ x, y });
+  if (groupActs) {
+    emit('submit-actions', { playerId: pendingPlayerId.value, actions: groupActs });
+    selectedSquare.value = null; selectedShape.value = null;
     return;
   }
   if ((canMove.value || planning.value) && moveUnitId.value) {
@@ -2383,7 +2464,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Stage -->
-      <div ref="stageEl" class="bf-stage-area">
+      <div ref="stageEl" class="bf-stage-area" @wheel="handleWheel">
         <div v-if="forking" class="bf-fork-banner">
           <span>Exploring a forked line — not the real game</span>
           <span v-if="forkError" class="bf-fork-err">{{ forkError }}</span>
@@ -2447,9 +2528,12 @@ onUnmounted(() => {
           :selectedShape="selectedShape"
           :exploredTiles="exploredTileSet"
           :aiming="aiming"
-          @select="selectUnit"
+          :boxSelect="!!ui.boxSelect && isLive"
+          :selectedIds="groupIds"
+          @select="handleTokenSelect"
           @sq-click="handleSqClick"
-          @set-marker="handleSetMarker"/>
+          @set-marker="handleSetMarker"
+          @box-select="handleBoxSelect"/>
       </div>
 
       <!-- Right sidebar. Games whose map wants the width, and which say what the

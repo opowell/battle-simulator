@@ -1326,6 +1326,28 @@ async function submitAction({ playerId, action }) {
   } catch (e) { serverErr.value = e.message; }
 }
 
+// A group order (Battlefield's drag-selected units, one action each). Sent one at a
+// time, not all at once: each is its own step on the server, judged against the
+// position the one before it left. A member whose order is refused — its share of the
+// formation landed somewhere it can't stand — doesn't hold up the rest, so that is only
+// an error worth showing when none got through. Stops early if the turn passes.
+async function submitActions({ playerId, actions }) {
+  if (!liveState.value) return;
+  let state = null, lastErr = null;
+  for (const action of actions) {
+    try {
+      state = await api.action(liveState.value.id, playerId, action);
+      liveState.value = state;
+    } catch (e) { lastErr = e; }
+    if (state && state.pendingPlayer !== playerId) break;
+  }
+  if (!state) { serverErr.value = lastErr?.message ?? 'No order was accepted'; return; }
+  try {
+    state = await syncViewer(state);
+    maybeStartPoll(state);
+  } catch (e) { serverErr.value = e.message; }
+}
+
 // Concede the match as `playerId`, stopping the run loop and marking the
 // session done — works the same for every game since it's a session-level
 // operation, not a game move.
@@ -1594,6 +1616,7 @@ async function restartGame() {
                    @new-game="restartGame"
                    @open-settings="openSettings"
                    @submit-action="submitAction"
+                   @submit-actions="submitActions"
                    @resign="resign"
                    @set-marker="setMarker"
                    @set-plan="setPlan"
