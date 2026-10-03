@@ -1,7 +1,7 @@
 <script setup>
-// The game screen's panels — Menu, Settings, Game settings, How to play, Add
-// units — and the desk they are shown on (PanelDesk: floating over the board by
-// default, or docked beside it, as the menu's "Panels" switch says).
+// The game screen's panels — Menu, Game settings, How to play, Add units — and
+// the desk they are shown on (PanelDesk: floating over the board by default, or
+// docked beside it, as the menu's "Panels" switch says).
 //
 // Which are open is the host's (`v-model:open`, ids in the order opened), so the
 // board can ask for one from a key or a button; how they are shown is kept here,
@@ -12,7 +12,6 @@ import MenuPanel from './MenuPanel.vue';
 import GameSettingsPanel from './GameSettingsPanel.vue';
 import HelpPanel from './HelpPanel.vue';
 import AddUnitsPanel from './AddUnitsPanel.vue';
-import ThemePicker from '../ThemePicker.vue';
 
 const props = defineProps({
   open:      { type: Array, default: () => [] },
@@ -23,18 +22,15 @@ const props = defineProps({
   ui:        { type: Object, default: () => ({}) },
   game:      { type: String, default: '' },
   teams:     { type: Array, default: () => [] },
-  theme:     { type: String, default: '' },
-  themes:    { type: Array, default: () => [] },
 });
-const emit = defineEmits(['update:open', 'menu', 'set-theme', 'arm']);
+const emit = defineEmits(['update:open', 'menu', 'arm']);
 
 const MODE_KEY = 'bs_panel_mode';
 const mode = ref((() => { try { return localStorage.getItem(MODE_KEY) ?? 'float'; } catch { return 'float'; } })());
 watch(mode, (m) => { try { localStorage.setItem(MODE_KEY, m); } catch { /* private mode */ } });
 
 const DEFS = computed(() => ({
-  'menu':          { title: 'Menu', w: 300, h: 590 },
-  'settings':      { title: 'Settings', w: 340, h: 300 },
+  'menu':          { title: 'Menu', w: 300, h: 550 },
   'game-settings': { title: 'Game settings', w: 620, h: 640 },
   'help':          { title: props.ui?.help?.title ?? props.game, subtitle: 'How to play', w: 460, h: 520 },
   'add-units':     { title: 'Add units', w: 300, h: 440 },
@@ -76,12 +72,6 @@ defineExpose({
         @toggle-sidebar="onMenu('toggle-sidebar')" @toggle-ai-analysis="onMenu('toggle-ai-analysis')"
         @surrender="onMenu('surrender')" @set-observer-view="onMenu('set-observer-view', $event)"/>
     </template>
-    <template #settings>
-      <div class="gp-pad">
-        <div class="gp-label">Theme</div>
-        <ThemePicker :themes="themes" :model-value="theme" @update:model-value="emit('set-theme', $event)"/>
-      </div>
-    </template>
     <template #game-settings>
       <GameSettingsPanel :live-state="liveState" :game-def="gameDef" @close="close('game-settings')"/>
     </template>
@@ -93,8 +83,3 @@ defineExpose({
     </template>
   </PanelDesk>
 </template>
-
-<style scoped>
-.gp-pad { padding: 12px 14px; }
-.gp-label { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin-bottom: 8px; }
-</style>

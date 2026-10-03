@@ -4,20 +4,11 @@ import { useRouter, useRoute } from 'vue-router';
 import Lobby       from './Lobby.vue';
 import GamePage    from './GamePage.vue';
 import Battlefield from './Battlefield.vue';
-import ThemePicker from './ThemePicker.vue';
 
 const router = useRouter();
 const route  = useRoute();
 
-const THEMES = [
-  { id: 'military', label: 'Military', accent: '#42c6e6', teams: ['#4f9dff', '#ff5f56'] },
-  { id: 'minimal',  label: 'Minimal',  accent: '#2f6bff', teams: ['#3b7bff', '#ff5a52'] },
-  { id: 'retro',    label: 'Retro',    accent: '#39ff88', teams: ['#46c6ff', '#ff5f6e'] },
-];
-
-const theme       = ref(localStorage.getItem('bs_theme') ?? 'military');
 const view        = ref('lobby');
-const prevView    = ref('lobby');
 const liveState   = ref(null);   // raw API session JSON
 // Observer perspective: null = full-information ("everyone"), else a playerId to
 // watch through that player's own fog-limited view. Only meaningful for observer
@@ -1029,25 +1020,6 @@ const activeField = computed(() => {
   return field;
 });
 
-// ── theme ────────────────────────────────────────────────────
-watch(theme, id => {
-  document.documentElement.dataset.theme = id;
-  const th = THEMES.find(x => x.id === id);
-  if (!th) return;
-  document.documentElement.style.setProperty('--accent', th.accent);
-  document.documentElement.style.setProperty('--teamA',  th.teams[0]);
-  document.documentElement.style.setProperty('--teamB',  th.teams[1]);
-  localStorage.setItem('bs_theme', id);
-}, { immediate: true });
-
-function openSettings() {
-  prevView.value = view.value;
-  view.value = 'settings';
-}
-function closeSettings() {
-  view.value = prevView.value;
-}
-
 // ── live updates ─────────────────────────────────────────────
 // A WebSocket subscription pushes state changes instead of the old 2s poll
 // (api.subscribeSession falls back to polling internally if the socket drops).
@@ -1541,30 +1513,10 @@ async function restartGame() {
       <span class="mono app-games">
         {{apiGames.length}} games
       </span>
-      <button class="iconbtn app-settings-btn" @click="openSettings" title="Settings">
-        <BsIcon name="sliders" :size="15" color="var(--dim)"/>
-      </button>
     </div>
 
     <div class="app-body">
-      <div v-if="view === 'settings'" class="app-settings">
-        <div class="app-settings-inner">
-          <div class="app-settings-head">
-            <button class="btn btn-ghost btn-sm" @click="closeSettings">
-              <BsIcon name="back" :size="13" color="var(--dim)"/> Back
-            </button>
-            <span class="up app-settings-title">Settings</span>
-          </div>
-          <div class="panel">
-            <div class="panel-h"><span class="panel-t">Theme</span></div>
-            <div class="panel-b">
-              <ThemePicker :themes="THEMES" v-model="theme"/>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <Lobby v-else-if="view === 'lobby'"
+      <Lobby v-if="view === 'lobby'"
              :sessions="sessions"
              :api-games="apiGames"
              :server-err="serverErr"
@@ -1588,8 +1540,6 @@ async function restartGame() {
                    :history-fields="historyFields"
                    :reveal-fields="revealFields"
                    :reveal-log="revealLog"
-                   :theme="theme"
-                   :themes="THEMES"
                    :fog="liveState?.fog ?? false"
                    :games-count="apiGames.length"
                    :game-def="apiGames.find(g => g.name === liveState?.game) ?? null"
@@ -1603,7 +1553,6 @@ async function restartGame() {
                    :playback-speed="playbackSpeed"
                    @exit="exitBattle"
                    @new-game="restartGame"
-                   @set-theme="theme = $event"
                    @submit-action="submitAction"
                    @submit-actions="submitActions"
                    @resign="resign"
@@ -1633,11 +1582,6 @@ async function restartGame() {
 .app-pulse--err { background: var(--danger); animation-play-state: paused; }
 .app-spacer { flex: 1; }
 .app-games { font-size: 11px; color: var(--faint); }
-.app-settings-btn { color: var(--dim); }
 .app-body { flex: 1; min-height: 0; }
-.app-settings { height: 100%; overflow-y: auto; padding: 32px 24px; display: flex; align-items: flex-start; justify-content: center; }
-.app-settings-inner { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 20px; }
-.app-settings-head { display: flex; align-items: center; gap: 14px; }
-.app-settings-title { font-size: 12px; font-weight: 700; letter-spacing: .12em; }
 .app-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--dim); }
 </style>

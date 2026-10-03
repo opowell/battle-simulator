@@ -71,9 +71,6 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
       <button v-if="canShowHelp" class="btn btn-ghost mp-btn" @click="$emit('open-panel', 'help')">
         <BsIcon name="search" :size="14" color="var(--dim)"/> How to play
       </button>
-      <button class="btn btn-ghost mp-btn" @click="$emit('open-panel', 'settings')">
-        <BsIcon name="sliders" :size="14" color="var(--dim)"/> Settings
-      </button>
       <button v-if="canSurrender" class="btn btn-ghost mp-btn mp-btn--danger" @click="$emit('surrender')">
         <BsIcon name="flag" :size="14" color="var(--danger)"/> Surrender
       </button>

@@ -19,8 +19,8 @@
 // gently rather than colliding at seat 7.
 //
 // Seats 0 and 1 are the exception: they take the theme's own two team colours
-// (--teamA / --teamB, repainted by the theme picker in App.vue), because those
-// two seats are what nearly every game shows and the themes exist to colour them.
+// (--teamA / --teamB in index.html's :root), because those two seats are what
+// nearly every game shows.
 // The generated sequence still starts at seat 0's blue, so the generated seats
 // read as a continuation of the themed pair rather than a separate palette.
 

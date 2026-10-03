@@ -41,8 +41,6 @@ const props = defineProps({
   historyFields: { type: Array, default: () => [] },
   revealFields:  { type: Array, default: () => [] },
   revealLog:     { type: Array, default: () => [] },
-  theme:         String,
-  themes:        { type: Array, default: () => [] },
   fog:           { type: Boolean, default: false },
   gamesCount:    { type: Number, default: 0 },
   // This game's definition as GET /games serves it (options, agents, seat
@@ -70,7 +68,7 @@ const props = defineProps({
   // non-live field playback) — App.vue owns it, the footer's speed control sets it.
   playbackSpeed:      { type: Number, default: 1 },
 });
-const emit = defineEmits(['exit', 'set-theme', 'submit-action', 'submit-actions', 'resign', 'set-marker', 'set-plan', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
+const emit = defineEmits(['exit', 'submit-action', 'submit-actions', 'resign', 'set-marker', 'set-plan', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -904,7 +902,7 @@ function updateStageSize() {
 }
 
 // ── renderer palette ──────────────────────────────────────────
-const rdr = computed(() => RDR[props.theme] || RDR.military);
+const rdr = computed(() => RDR.military);
 
 // ── game UI flags ─────────────────────────────────────────────
 const ui = computed(() => props.field.ui ?? {});
@@ -2653,8 +2651,7 @@ onUnmounted(() => {
   <GamePanels ref="gamePanels" v-model:open="openPanels"
     :menu="menuProps" :live-state="liveState" :game-def="gameDef"
     :ui="ui" :game="field.game" :teams="field?.teams ?? []"
-    :theme="theme" :themes="themes"
-    @menu="onMenu" @set-theme="$emit('set-theme', $event)" @arm="placingUnit = $event"/>
+    @menu="onMenu" @arm="placingUnit = $event"/>
   </div>
 
   <SettingsChangeNotice :live-state="liveState" :game-def="gameDef"/>
