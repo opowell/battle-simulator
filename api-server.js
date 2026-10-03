@@ -22,7 +22,8 @@ import { fileURLToPath }         from 'node:url';
 import { WebSocketServer } from './vendor/ws/wrapper.mjs';
 import { GridTimeline } from './engine/gridFrames.js';
 
-import { GameEngine, buildInitialState, rosterError, setupPreview, SETUP_KEY } from './engine/index.js';
+import { GameEngine, rosterError, rosterFromState, setupPreview, SETUP_KEY } from './engine/index.js';
+import { planReconfigure, carriedRoster, rebuiltState, editedState, livePreview } from './engine/reconfigure.js';
 import { validate as validateAction } from './engine/ActionValidator.js';
 import * as gameEditor from './gameEditor.js';
 import { buildCatalog, createRecordingReader } from './catalog.js';
@@ -408,6 +409,12 @@ class Session {
     this._shown = null;
     this._sawHumanPending = false;
     this.createdAt = new Date();
+    // Mid-game settings changes (see reconfigure): every change made, and every
+    // earlier segment of a game whose world was rebuilt part way through.
+    // `_liveConfig` is the settings in force now, once anything has changed.
+    this.changes = [];
+    this.segments = [];
+    this._liveConfig = null;
     this.status = 'active';
     this.result = null;
     this.error = null;
@@ -746,6 +753,15 @@ class Session {
           status: this.status,
           result: this.result,
           log: this.engine.log,
+          // A game whose settings changed mid-play: what changed when, the patches
+          // and rebuilt start this segment's log replays from, and every earlier
+          // segment with its own log.
+          ...(this.changes.length ? {
+            changes: this.changes,
+            patches: this.engine.patches,
+            startState: this.engine.startState,
+            segments: this.segments,
+          } : {}),
         };
         await writeFile(this._recordPath, JSON.stringify(record, null, 2));
       } while (this._persistQueued);
@@ -778,10 +794,15 @@ class Session {
     let simTime = 0, done = false, steps = 0;
     while (true) {
       const preState = this.engine.state; // pre-step state, for sim-time timing below
+      const epoch = this.engine.epoch;
       let r;
       try {
         r = await this.engine.step();
       } catch (err) {
+        // The settings changed while this step was being decided (reconfigure):
+        // whatever came of it — a stale move the engine dropped, a waiting human
+        // released — belongs to the position before the change. Ask again.
+        if (this.engine.epoch !== epoch) return { aborted: true };
         // Moves were taken back while this step was waiting on the human whose
         // turn no longer exists (rewindTo aborts the pending agent to get here).
         // The step never happened, so nothing below it should run.
@@ -980,6 +1001,215 @@ class Session {
   }
 
   /**
+   * Which units `viewer` may see and edit in the settings editor, or null for all
+   * of them. Under fog a seat sees what its own view shows and no more — opening
+   * the editor must not be a way to look behind the fog — and the units it cannot
+   * see are carried through any edit untouched (see reconfigure).
+   */
+  visibleUnitIds(viewer) {
+    if (!this.fog || this.analysisBoard) return null;
+    const { game } = GAMES[this.gameName];
+    if (!viewer) return this.allowObservers ? null : new Set();
+    if (!game.getVisibleState) return null;
+    return new Set((game.getVisibleState(this.engine.state, viewer).units ?? []).map(u => u.id));
+  }
+
+  /** The settings the game is being played under right now (params.config is where this segment STARTED). */
+  currentConfig() {
+    const { [SETUP_KEY]: _roster, ...config } = this._liveConfig ?? this.params.config ?? {};
+    return config;
+  }
+
+  /**
+   * Change this session's settings while it is being played — any game option or
+   * engine option, who plays each seat, and which units stand where. Open to
+   * every session and every seat (anyone in it may change it); each change is
+   * recorded in `changes` and pushed to everyone, so nobody's game moves under
+   * them unannounced.
+   *
+   * How each change lands is worked out generically (engine/reconfigure.js): the
+   * engine's own options just take effect, settings the game copied into its
+   * state are patched there, and anything that changes the world itself — space,
+   * time, map, or an edited set of units — rebuilds the position from where every
+   * unit stands now and plays on from it as a new segment (the earlier segment is
+   * kept in `segments` and in the recording).
+   *
+   * Everything that can fail — an unknown player type, a roster the new settings
+   * cannot hold — is checked BEFORE anything changes, so a refused change leaves
+   * the game exactly as it was.
+   *
+   * @param {object} p
+   * @param {object} [p.config]   option id → new value (only the ones changing)
+   * @param {{id, name?, agent?}[]} [p.players]  seats to change, by id
+   * @param {{id?, ownerId, type, position}[]} [p.units]  the units as they should stand now
+   * @param {string} [p.by]       the seat that made the change, for the record
+   */
+  reconfigure({ config: patch = {}, players: seatPatch = null, units = null, by = null } = {}) {
+    if (this.status !== 'active') throw new Error(`Session is ${this.status}`);
+    const { game } = GAMES[this.gameName];
+
+    const fromConfig = this.currentConfig();
+    const toConfig = { ...fromConfig, ...patch };
+    delete toConfig[SETUP_KEY];
+    // `fog` and `fogOfWar` are one switch under two names (sessions are created
+    // with both); changing either changes it.
+    if ('fogOfWar' in patch && !('fog' in patch) && 'fog' in toConfig) toConfig.fog = patch.fogOfWar;
+    if ('fog' in patch && !('fogOfWar' in patch) && 'fogOfWar' in toConfig) toConfig.fogOfWar = patch.fog;
+
+    const defs = this.params.players ?? [];
+    const allowed = seatAgentIds(game);
+    for (const s of seatPatch ?? []) {
+      if (!defs.some(d => d.id === s.id)) throw new Error(`No seat "${s.id}" in this session`);
+      if (s.agent != null && !allowed.has(s.agent)) throw new Error(`Unknown player type "${s.agent}" for ${this.gameName}`);
+    }
+    const nextDefs = defs.map(d => {
+      const s = seatPatch?.find(x => x.id === d.id);
+      return s ? { ...d, ...(s.name != null ? { name: String(s.name) } : {}), ...(s.agent != null ? { agent: s.agent } : {}) } : d;
+    });
+
+    // A new world (space, time, map) is rebuilt from a fresh opening with every
+    // unit carried across; units edited on the SAME world go onto the game as it
+    // stands, so its cities, research and turn are kept (engine/reconfigure.js).
+    const plan = planReconfigure(game, nextDefs, fromConfig, toConfig);
+    const rebuild = plan.kind === 'rebuild' || units != null;
+    let roster = null;
+    let restartFrom = null;
+    // An editor working behind fog sent only the units its seat can see; every
+    // unit it could not see stays exactly as it was (carried, on a new world).
+    const visible = units != null ? this.visibleUnitIds(by) : null;
+    if (visible) {
+      const unseen = (plan.kind === 'rebuild' ? carriedRoster(game, this.engine.state, nextDefs, toConfig)
+        : rosterFromState(this.engine.state)).filter(e => !visible.has(e.id));
+      units = [...units.filter(e => e.id == null || visible.has(e.id)), ...unseen];
+    }
+    if (plan.kind === 'rebuild') {
+      roster = units ?? carriedRoster(game, this.engine.state, nextDefs, toConfig);
+      restartFrom = rebuiltState(game, this.engine.state, nextDefs, toConfig, roster);
+    } else if (units != null) {
+      roster = units;
+      const current = this.engine.state;
+      const base = plan.kind === 'patch' ? { ...current, gameSpecific: { ...current.gameSpecific, ...plan.gameSpecific } } : current;
+      restartFrom = editedState(game, base, nextDefs, toConfig, roster);
+    }
+
+    const seatChanges = nextDefs.flatMap((d, i) => {
+      const was = defs[i];
+      const out = [];
+      if ((was.agent ?? 'human') !== (d.agent ?? 'human')) out.push({ seat: d.id, field: 'player', from: was.agent ?? 'human', to: d.agent ?? 'human' });
+      if ((was.name ?? was.id) !== (d.name ?? d.id)) out.push({ seat: d.id, field: 'name', from: was.name ?? was.id, to: d.name ?? d.id });
+      return out;
+    });
+    if (plan.kind === 'none' && !rebuild && !seatChanges.length) return { change: null, applied: 'none' };
+
+    // ── From here on, nothing can be refused. ──────────────────────────────
+    const enginePlayers = this._reseat(game, nextDefs);
+    const fog = toConfig.fog ?? toConfig.fogOfWar ?? false;
+    const engineConfig = { ...game.defaultConfig, ...toConfig, fogOfWar: fog };
+
+    if (rebuild) {
+      this.segments.push({
+        endedAt: new Date().toISOString(),
+        params: this.params,
+        startState: this.engine.startState,
+        patches: this.engine.patches,
+        log: this.engine.log,
+        result: null,
+      });
+    }
+    this.engine.reconfigure({
+      config: engineConfig,
+      players: enginePlayers,
+      gameSpecific: !rebuild && plan.kind === 'patch' ? plan.gameSpecific : null,
+      restartFrom,
+    });
+    // A renamed seat is renamed on the board too. Only then: a fresh `players`
+    // array is also what makes a belief-tracking AI start its picture of the
+    // game over (it keys on the array's identity), which nothing else here wants.
+    if (!rebuild && seatChanges.some(c => c.field === 'name')) {
+      this.engine.patchState(s => ({ ...s, players: (s.players ?? []).map(p => ({ ...p, name: nextDefs.find(d => d.id === p.id)?.name ?? p.name })) }));
+    }
+
+    this._liveConfig = toConfig;
+    this.params = {
+      ...this.params,
+      players: nextDefs,
+      ...(rebuild ? { config: { ...toConfig, [SETUP_KEY]: roster } } : {}),
+    };
+    this.fog = fog;
+    this.allowObservers = toConfig.allowObservers ?? false;
+    this.observerDelay = Math.max(0, Number(toConfig.observerDelay) || 0);
+    this.aiDelay = Math.max(0, Number(toConfig.aiDelay) || 0);
+    this.analysisBoard = !!toConfig.analysisBoard && nextDefs.length > 0 && this.apiAgents.size === nextDefs.length;
+
+    // A rebuilt game is a new position with no past of its own: the timeline,
+    // the casualty list and the AI's last thoughts all described the old one.
+    this._shown = null;
+    this._awaitingAdvance = false;
+    this.aiAnalysis = {};
+    for (const client of this.wsClients) client._base = null;
+    if (rebuild) {
+      this.casualties = [];
+      this.gridTimeline.reset();
+      this._pushGridHistory(this._captureGrid());
+    }
+
+    // `fog` rides along with `fogOfWar` (see above) — one switch, reported once.
+    const reported = plan.keys.filter(k => !(k === 'fog' && plan.keys.includes('fogOfWar')));
+    const change = {
+      at: new Date().toISOString(),
+      by,
+      turn: this.engine.state?.turnNumber ?? null,
+      segment: this.segments.length,
+      rebuilt: rebuild,
+      unitsEdited: units != null,
+      options: reported.map(key => ({ key, from: fromConfig[key] ?? null, to: toConfig[key] ?? null })),
+      seats: seatChanges,
+    };
+    this.changes.push(change);
+
+    // Whatever was being decided belongs to the position before the change: a
+    // waiting human is released (the engine drops a stale move by its epoch, and
+    // the run loop reads the epoch to tell this apart from a failure), and the
+    // loop asks again — restarted if it had stopped.
+    for (const agent of this.apiAgents.values()) agent.abort('Settings changed');
+    if (!this._looping) this._run({ init: false });
+
+    this._persist();
+    // Pushed once the loop has asked again (all of it microtasks, done before the
+    // next macrotask), so everyone's snapshot carries the new settings AND the move
+    // being waited on. Pushed now, it would catch the instant between the old ask
+    // being cancelled and the new one: "your turn", with no moves to make.
+    setImmediate(() => this._broadcast());
+    return { change, applied: rebuild ? 'rebuild' : plan.kind === 'none' ? 'seats' : plan.kind };
+  }
+
+  /**
+   * Seat everyone as `defs` says — the AI a seat names, or a human — keeping the
+   * agent object of every seat whose player did not change (an AI's belief about
+   * the game lives in it). Returns the engine's players list.
+   */
+  _reseat(game, defs) {
+    return defs.map((d) => {
+      const current = this.engine.players.find(p => p.id === d.id);
+      const wasType = (this.params.players ?? []).find(p => p.id === d.id)?.agent ?? 'human';
+      const type = d.agent ?? 'human';
+      let agent = current?.agent;
+      if (!agent || type !== wasType) {
+        agent = makeSeatAgent(game, type);
+        this.apiAgents.get(d.id)?.abort('Seat changed hands');
+        this.apiAgents.delete(d.id);
+        if (!agent) {
+          const api = new ApiAgent(d.id);
+          api.onPending = () => { this._sawHumanPending = true; this._broadcast(); };
+          this.apiAgents.set(d.id, api);
+          agent = api;
+        }
+      }
+      return { id: d.id, name: d.name ?? d.id, agent };
+    });
+  }
+
+  /**
    * End the match immediately because `playerId` gave up — generic across every
    * game (no per-game support needed) since it never touches game rules: it just
    * forces the session's terminal result the same way a natural game-over does,
@@ -1093,9 +1323,14 @@ class Session {
       ? (rawState?.lastActions?.filter(pa => pa.playerId === playerId) ?? null)
       : (rawState?.lastActions ?? null);
     const fullLog = shown ? shown.log : this.engine.log;
-    const log = fogNoPlayer ? [] : fogFilter
-      ? fullLog.filter(e => e.playerActions?.every(pa => humanIds.has(pa.playerId)))
-      : fullLog;
+    const seenLog = (entries) => (fogNoPlayer ? [] : fogFilter
+      ? entries.filter(e => e.playerActions?.every(pa => humanIds.has(pa.playerId)))
+      : entries);
+    const log = seenLog(fullLog);
+    // The moves of every segment before a mid-game rebuild (see reconfigure), under
+    // the same fog rule — shown as history, kept apart from `log` so every ply
+    // count (analysis, take-backs, the scrub bar) still counts this segment's own.
+    const earlierLog = this.segments.flatMap(seg => seenLog(seg.log));
     // Sampled position frames of the last resolved simultaneous round, for the
     // client's replay-turn feature. Under fog, frames are trimmed to the units
     // currently visible to the viewer (an approximation — true per-frame
@@ -1108,7 +1343,11 @@ class Session {
     return {
       id: this.id,
       game: this.gameName,
-      params: this.params,
+      // The settings in force NOW: a client reads its display options
+      // (showAnalysisPanel, …) from here, and a change made mid-game has to reach it.
+      params: this._liveConfig ? { ...this.params, config: { ...this.params.config, ...this._liveConfig } } : this.params,
+      // Every mid-game settings change, oldest first (see reconfigure).
+      changes: this.changes,
       fog: this.fog,
       // A study board rather than a match — every seat is the viewer's own. Drives
       // the client's reveal control and its database panel, both of which are
@@ -1168,6 +1407,7 @@ class Session {
         observer || !this.fog || c.witnessedBy.includes(playerId)),
       lastActions,
       log,
+      earlierLog,
       playback,
       // AI deliberation (candidate moves + rankings). In fog it can leak the AI's
       // own move, so it is only revealed with debugAI on; with full information it
@@ -1479,6 +1719,27 @@ async function handleAdminWriteFile(req, res, name) {
   } catch (e) { err(res, 400, e.message); }
 }
 
+/**
+ * The AI that plays a seat set to `agentType`, or null for a human seat (and for
+ * an id nobody offers — the caller decides whether that is an error). Shared by
+ * session creation and by a seat's player being changed mid-game.
+ */
+function makeSeatAgent(game, agentType = 'human') {
+  if (agentType === 'random' || agentType === 'ai') return RandomAgent;
+  const gameAgent = game.agents?.find(a => a.id === agentType);
+  if (gameAgent) return gameAgent.agent;
+  // Generic 1-ply heuristic agent — low-memory, fast, runs for any game.
+  if (agentType === 'greedy') return makeGreedyAgent(game);
+  // Generic equilibrium agent — runs for any game the engine can drive.
+  if (agentType === 'obscuro') return new ObscuroAgent(game);
+  return null;
+}
+
+/** Every agent id a seat of `game` may be given: 'human', the builtins, and the game's own. */
+function seatAgentIds(game) {
+  return new Set(['human', 'ai', ...BUILTIN_AGENTS.map(a => a.id), ...(game.agents ?? []).map(a => a.id)]);
+}
+
 async function handleCreateSession(req, res) {
   let body;
   try { body = await readBody(req); }
@@ -1495,21 +1756,7 @@ async function handleCreateSession(req, res) {
 
   const apiAgents = new Map();
   const players = defs.map(({ id, name, agent: agentType = 'human' }) => {
-    let agent;
-    if (agentType === 'random' || agentType === 'ai') {
-      agent = RandomAgent;
-    } else {
-      const gameAgent = entry.game.agents?.find(a => a.id === agentType);
-      if (gameAgent) {
-        agent = gameAgent.agent;
-      } else if (agentType === 'greedy') {
-        // Generic 1-ply heuristic agent — low-memory, fast, runs for any game.
-        agent = makeGreedyAgent(entry.game);
-      } else if (agentType === 'obscuro') {
-        // Generic equilibrium agent — runs for any game the engine can drive.
-        agent = new ObscuroAgent(entry.game);
-      }
-    }
+    let agent = makeSeatAgent(entry.game, agentType);
     if (!agent) {
       const a = new ApiAgent(id);
       apiAgents.set(id, a);
@@ -1713,6 +1960,62 @@ async function handleUndo(req, res, id) {
 // Not a game move — it doesn't touch the authoritative state or consume a turn; it
 // just changes how fast (and whether) the engine auto-advances. The change is
 // broadcast to every subscriber via setControl, so all watchers stay in sync.
+/**
+ * POST /sessions/:id/reconfigure — change a game's settings while it is played.
+ *
+ * Body: { config?: { optionId: value, … }, players?: [{ id, name?, agent? }],
+ *         units?: [{ id?, ownerId, type, position }], by?: seatId }
+ * Every field is optional and only what is changing need be sent; see
+ * Session.reconfigure for how each lands. Answers with the change as recorded
+ * (also pushed to everyone in the session) and the snapshot for `by`.
+ */
+async function handleReconfigure(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+  if (body.config != null && (typeof body.config !== 'object' || Array.isArray(body.config))) return err(res, 400, 'config must be an object');
+  if (body.players != null && !Array.isArray(body.players)) return err(res, 400, 'players must be an array');
+  if (body.units != null && !Array.isArray(body.units)) return err(res, 400, 'units must be an array');
+  let outcome;
+  try {
+    outcome = session.reconfigure({ config: body.config ?? {}, players: body.players ?? null, units: body.units ?? null, by: body.by ?? null });
+  } catch (e) { return err(res, session.status === 'active' ? 400 : 409, e.message); }
+  // As after a take-back: the run loop re-asks the new position asynchronously.
+  const seat = session.engine.state?.activePlayers?.[0] ?? null;
+  for (let i = 0; i < 20 && session.status === 'active' && seat && session.apiAgents.has(seat) && !session.pendingFor(seat); i++) {
+    await new Promise(r => setImmediate(r));
+  }
+  send(res, 200, { ...outcome, session: session.toJSON(body.by ?? null) });
+}
+
+/**
+ * POST /sessions/:id/setup — the units editor's board for a game in progress:
+ * its units as they would stand under the settings being edited (`config`, only
+ * what differs from now). The setup screen's preview shape, so the same editor
+ * serves both; under fog it shows only what `by` can see.
+ */
+async function handleLiveSetup(req, res, id) {
+  const session = sessions.get(id);
+  if (!session) return err(res, 404, 'Session not found');
+  let body;
+  try { body = await readBody(req); }
+  catch { return err(res, 400, 'Invalid JSON'); }
+  const { game } = GAMES[session.gameName];
+  const from = session.currentConfig();
+  try {
+    const preview = livePreview(game, session.engine.state, session.params.players ?? [], from, { ...from, ...(body.config ?? {}) });
+    const visible = session.visibleUnitIds(body.by ?? null);
+    if (visible) {
+      const shown = preview.roster.filter(u => visible.has(u.id));
+      preview.hiddenUnits = preview.roster.length - shown.length;
+      preview.roster = shown;
+    }
+    send(res, 200, preview);
+  } catch (e) { err(res, 400, e.message); }
+}
+
 async function handleControl(req, res, id) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
@@ -1805,13 +2108,12 @@ async function handleSetMarker(req, res, id) {
 // EARLIER ply silently re-advance (and corrupt) whatever belief the live game
 // is actually relying on for real play. A brand-new array each call guarantees
 // every reconstruction gets its own throwaway, isolated belief instead.
+//
+// The engine does the replaying (GameEngine.replayStates): it knows where this
+// segment of the game started — rebuilt mid-game, if the settings changed — and
+// at which ply each settings patch landed, so history is replayed as it was played.
 function replayStateAtPly(game, session, ply) {
-  const players = (session.params.players ?? []).map(p => ({ id: p.id, name: p.name ?? p.id }));
-  let state = buildInitialState(game, players, session.params.config ?? {});
-  const log = session.engine.log;
-  const n = Math.max(0, Math.min(ply, log.length));
-  for (let i = 0; i < n; i++) state = game.applyActions(state, log[i].playerActions);
-  return state;
+  return session.engine.replayStates(ply).at(-1);
 }
 
 // Every position from the start of the game up to and including `ply`, from the
@@ -1820,13 +2122,7 @@ function replayStateAtPly(game, session, ply) {
 // (see games/chess/fowDatabase.js) — and reconstructing that with one
 // replayStateAtPly call per ply would be quadratic for no reason.
 function replayStatesToPly(game, session, ply) {
-  const players = (session.params.players ?? []).map(p => ({ id: p.id, name: p.name ?? p.id }));
-  let state = buildInitialState(game, players, session.params.config ?? {});
-  const log = session.engine.log;
-  const n = Math.max(0, Math.min(ply, log.length));
-  const states = [state];
-  for (let i = 0; i < n; i++) states.push(state = game.applyActions(state, log[i].playerActions));
-  return states;
+  return session.engine.replayStates(ply);
 }
 
 // Shared setup for both /analyze (single-shot) and /analyze-stream (SSE,
@@ -2397,6 +2693,14 @@ async function handleRequest(req, res) {
     // POST /sessions/:id/control — pause/resume + AI pacing delay
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'control')
       return await handleControl(req, res, parts[1]);
+
+    // POST /sessions/:id/reconfigure — change any setting mid-game
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'reconfigure')
+      return await handleReconfigure(req, res, parts[1]);
+
+    // POST /sessions/:id/setup — the units editor's board for a game in progress
+    if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'setup')
+      return await handleLiveSetup(req, res, parts[1]);
 
     // POST /sessions/:id/analyze
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 3 && parts[2] === 'analyze')

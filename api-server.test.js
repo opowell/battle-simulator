@@ -433,3 +433,171 @@ test('the appfr framework is served for the console: its modules and stylesheet 
   assert.equal((await fetch(BASE + '/appfr/style.css')).status, 200);
   assert.equal((await fetch(BASE + '/appfr/index.d.ts')).status, 404);
 });
+
+// ── Changing settings mid-game (Session.reconfigure, engine/reconfigure.js) ──
+
+/** A two-human chess game after 1. e4 — black to move. */
+async function chessAfterE4(config = {}) {
+  const s = await post('/sessions', {
+    game: 'chess',
+    players: [{ id: 'white', name: 'W', agent: 'human' }, { id: 'black', name: 'B', agent: 'human' }],
+    config,
+  });
+  const snap = await get(`/sessions/${s.id}?player=white`);
+  const e4 = snap.legalActions.find(a => a.from === 'e2' && a.to === 'e4');
+  await post(`/sessions/${s.id}/action`, { playerId: 'white', action: e4 });
+  return s.id;
+}
+
+/** Wait until `seat` is being asked for a move (the run loop re-asks asynchronously). */
+async function pendingFor(id, seat) {
+  for (let i = 0; i < 100; i++) {
+    const snap = await get(`/sessions/${id}?player=${seat}`);
+    if (snap.pendingPlayer === seat && snap.legalActions?.length) return snap;
+    await sleep(20);
+  }
+  throw new Error(`${seat} was never asked to move`);
+}
+
+test('fog switched on mid-game patches the position, and the game plays on', async () => {
+  const id = await chessAfterE4();
+  const r = await post(`/sessions/${id}/reconfigure`, { config: { fogOfWar: true }, by: 'black' });
+  assert.equal(r.applied, 'patch');
+  assert.deepEqual(r.change.options, [{ key: 'fogOfWar', from: null, to: true }]);
+  assert.equal(r.change.by, 'black');
+  const snap = await pendingFor(id, 'black');
+  assert.equal(snap.fog, true);
+  assert.equal(snap.log.length, 1, 'the move already played is still the game');
+  assert.equal(snap.changes.length, 1);
+  // History replays the patch at the ply it landed, so it reads the same as the game.
+  const hist = await get(`/sessions/${id}/history`);
+  assert.ok(Array.isArray(hist) || Array.isArray(hist.frames));
+  const reply = snap.legalActions.find(a => a.from === 'e7' && a.to === 'e5');
+  const after = await post(`/sessions/${id}/action`, { playerId: 'black', action: reply });
+  assert.equal(after.status, 'active', after.error ?? '');
+  assert.equal(after.log.length, 2);
+});
+
+test('switching chess to continuous space mid-game rebuilds it with every piece where it stood', async () => {
+  const id = await chessAfterE4();
+  const r = await post(`/sessions/${id}/reconfigure`, { config: { space: 'continuous' }, by: 'white' });
+  assert.equal(r.applied, 'rebuild');
+  assert.equal(r.change.rebuilt, true);
+  const snap = await pendingFor(id, 'black');
+  assert.deepEqual(snap.activePlayers ?? [snap.pendingPlayer], ['black'], 'still black to move');
+  assert.equal(snap.log.length, 0, 'a rebuilt game starts a segment of its own');
+  assert.equal(snap.earlierLog.length, 1, 'with the move played before it still there to read');
+  // Continuous space draws pieces as bodies at points (grid.units), not on cells.
+  // The e-pawn that went to e4 stands at the centre of e4 — file 4, row 4 — and
+  // nothing is left on e2.
+  const at = (x, y) => (snap.grid.units ?? []).filter(u => u.x === x && u.y === y);
+  assert.equal(at(4.5, 4.5).length, 1, 'a piece stands at the centre of e4');
+  assert.equal(at(4.5, 4.5)[0].type, 'pawn');
+  assert.equal(at(4.5, 6.5).length, 0, 'and not where it came from');
+  assert.equal((snap.grid.units ?? []).length, 32);
+  assert.ok(snap.legalActions.length > 0, 'black can move in the rebuilt game');
+});
+
+test('a seat handed from a human to an AI is played by the AI from then on', async () => {
+  const id = await chessAfterE4();
+  await pendingFor(id, 'black');
+  const r = await post(`/sessions/${id}/reconfigure`, { players: [{ id: 'black', agent: 'random' }], by: 'black' });
+  assert.equal(r.applied, 'seats');
+  assert.deepEqual(r.change.seats, [{ seat: 'black', field: 'player', from: 'human', to: 'random' }]);
+  // The AI answers, and it is white's move again.
+  const snap = await pendingFor(id, 'white');
+  assert.equal(snap.log.length, 2);
+});
+
+test('units added and removed mid-game go onto the game as it stands', async () => {
+  const id = await chessAfterE4();
+  const preview = await post(`/sessions/${id}/setup`, { config: {}, by: 'white' });
+  assert.equal(preview.rebuild, false);
+  assert.equal(preview.roster.length, 32);
+  const knight = preview.roster.find(u => u.ownerId === 'black' && u.type === 'knight');
+  const units = preview.roster
+    .filter(u => u !== knight)
+    .map(({ id: uid, ownerId, type, position }) => ({ id: uid, ownerId, type, position }))
+    .concat([{ ownerId: 'white', type: 'queen', position: 'd4' }]);
+  const r = await post(`/sessions/${id}/reconfigure`, { units, by: 'white' });
+  assert.equal(r.applied, 'rebuild');
+  assert.equal(r.change.unitsEdited, true);
+  const snap = await pendingFor(id, 'black');
+  const pieces = snap.grid.cells.filter(c => c.unitId);
+  assert.equal(pieces.length, 32, 'one knight off, one queen on');
+  assert.ok(snap.grid.cells.find(c => c.x === 3 && c.y === 4)?.unitId, 'the new queen stands on d4');
+  assert.deepEqual(snap.activePlayers ?? ['black'], ['black'], 'and it is still black to move');
+});
+
+test('under fog the units editor shows a seat only what it can see, and an edit leaves the rest alone', async () => {
+  const id = await chessAfterE4({ fogOfWar: true });
+  const preview = await post(`/sessions/${id}/setup`, { by: 'white' });
+  assert.ok(preview.hiddenUnits > 0, 'some of black is out of white\'s sight');
+  assert.equal(preview.roster.length + preview.hiddenUnits, 32);
+  // White edits with only what it can see — and black's hidden pieces survive it.
+  const units = preview.roster.map(({ id: uid, ownerId, type, position }) => ({ id: uid, ownerId, type, position }));
+  const r = await post(`/sessions/${id}/reconfigure`, { units, by: 'white' });
+  assert.equal(r.applied, 'rebuild');
+  const all = await post(`/sessions/${id}/setup`, { by: 'black' });
+  assert.equal(all.roster.length + (all.hiddenUnits ?? 0), 32, 'no piece was lost to the fog');
+});
+
+test('a unit added to a civ game in progress keeps its cities, its map and its turn', async () => {
+  const s = await post('/sessions', {
+    game: 'civ1',
+    players: [{ id: 'p1', name: 'A', agent: 'human' }, { id: 'p2', name: 'B', agent: 'human' }],
+    config: {},
+  });
+  const snap = await pendingFor(s.id, 'p1');
+  const found = snap.legalActions.find(a => a.type === 'found-city');
+  assert.ok(found, 'the opening settlers can found a city');
+  await post(`/sessions/${s.id}/action`, { playerId: 'p1', action: found });
+  const before = await get(`/sessions/${s.id}/state`);
+  assert.equal(before.cities.length, 1);
+
+  const preview = await post(`/sessions/${s.id}/setup`, { by: 'p1' });
+  assert.equal(preview.rebuild, false, 'adding a unit changes no setting');
+  const home = preview.roster.find(u => u.ownerId === 'p1');
+  const units = preview.roster.map(({ id: uid, ownerId, type, position }) => ({ id: uid, ownerId, type, position }))
+    .concat([{ ownerId: 'p1', type: home.type, position: home.position }]);
+  const r = await post(`/sessions/${s.id}/reconfigure`, { units, by: 'p1' });
+  assert.equal(r.error, undefined);
+
+  const after = await get(`/sessions/${s.id}/state`);
+  assert.equal(after.cities.length, 1, 'the city founded is still there');
+  assert.equal(after.cities[0].name, before.cities[0].name);
+  assert.equal(after.units.filter(u => u.alive !== false).length, before.units.filter(u => u.alive !== false).length + 1);
+  assert.equal(after.turnNumber, before.turnNumber);
+  assert.deepEqual(after.activePlayers, before.activePlayers);
+  assert.equal(JSON.stringify(after.board.tiles), JSON.stringify(before.board.tiles), 'on the very same map');
+});
+
+test('a change that cannot be made is refused, and the game is left exactly as it was', async () => {
+  const id = await chessAfterE4();
+  const before = await pendingFor(id, 'black');
+  const bad = await post(`/sessions/${id}/reconfigure`, { players: [{ id: 'black', agent: 'grandmaster' }] });
+  assert.match(bad.error ?? '', /Unknown player type/);
+  const noKing = await post(`/sessions/${id}/reconfigure`, { units: [{ ownerId: 'white', type: 'king', position: 'e1' }] });
+  assert.match(noKing.error ?? '', /black must start with at least one unit/);
+  const after = await pendingFor(id, 'black');
+  assert.equal(after.changes.length, 0);
+  assert.equal(after.log.length, before.log.length);
+});
+
+test('settings changed while two AIs are playing land between moves, and the game goes on', async () => {
+  const s = await post('/sessions', {
+    game: 'chess',
+    players: [{ id: 'white', agent: 'random' }, { id: 'black', agent: 'random' }],
+    config: { aiDelay: 5, maxTurns: 400 },
+  });
+  await sleep(60);
+  const r1 = await post(`/sessions/${s.id}/reconfigure`, { config: { difficulty: 60 } });
+  assert.equal(r1.error, undefined);
+  const r2 = await post(`/sessions/${s.id}/reconfigure`, { config: { space: 'continuous' } });
+  assert.equal(r2.error, undefined);
+  await sleep(150);
+  const snap = await get(`/sessions/${s.id}`);
+  assert.notEqual(snap.status, 'error', snap.error);
+  assert.equal(snap.changes.length, 2);
+  await fetch(`${BASE}/sessions/${s.id}`, { method: 'DELETE' });
+});

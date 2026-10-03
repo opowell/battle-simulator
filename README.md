@@ -100,6 +100,22 @@ When Player B opens their link (`?session=<id>&player=<pid>`), the app joins the
 
 There is no lobby or authentication — the share link is the full credential. Anyone who opens a player's link can act as that player.
 
+### Changing settings mid-game
+
+Every setting can be changed while a game is being played: the game's own options (fog of war, AI difficulty, chess's space and time models, a map), the engine's (simultaneous turns, observers, AI pacing, turn limit), who plays each seat, and the units on the board. Open the in-game menu (Esc) → **Game settings**. It is the setup form, opened on the game's current settings; only what you change is sent (`POST /sessions/:id/reconfigure`).
+
+How each change lands is worked out generically, without game-specific code (`engine/reconfigure.js`):
+
+| A setting that… | e.g. | lands as |
+|---|---|---|
+| the engine reads on every step | simultaneous turns, turn limit | the config changes, nothing else |
+| the game copied into its state at the start | fog of war, AI difficulty | those fields are patched into the live position |
+| decides what the world is | space, time, map, board size | the position is **rebuilt** from where every unit stands now |
+
+A rebuild carries each unit to the same cell of the new board (a pawn on e4 becomes a body at the centre of e4, and back), and keeps whose turn it is and every unit's hit points. What a game keeps outside its units (castling rights, a civ's cities and research) restarts from the new settings' defaults. Editing units **without** changing the world is not a rebuild: the units go onto the game as it stands, so cities, research, the explored map and lost castling rights are all kept.
+
+Any seat may change any setting, and every change is announced to everyone in the game and recorded in the session (`changes`). The moves before a rebuild stay readable in the log. Under fog, the units editor shows a seat only what it can see, and an edit leaves every unit it could not see exactly as it was.
+
 ## Console
 
 `/ui/console` (`apps/console`) is a second UI, for everything *around* playing:

@@ -500,26 +500,39 @@ export const ChessGame = {
    * exactly when the king and that rook are standing on their home squares. Fog
    * markers are re-seeded from the new board for the same reason.
    *
-   * The other three (space × time) quadrants keep no board — their units array IS
-   * the position — so they need nothing beyond what the generic layer did.
+   * The other three (space × time) quadrants keep their pieces' positions in the
+   * units array itself, alongside a `cell` their rules read first — put right by
+   * games/chess/spacetime.js, which also takes a square from a discrete board
+   * onto a continuous one and back.
    */
-  applyStartingUnits(state, _config = {}) {
-    if (!state.board || ST.isSpacetimeVariant(state)) return state;
+  applyStartingUnits(state, _config = {}, { midGame = false } = {}) {
+    if (ST.isSpacetimeVariant(state)) return ST.applyStartingUnits(state);
+    if (!state.board) return state;
+    // A piece carried over from a continuous board stands at a point; on this one
+    // it stands on the square containing it.
+    const units = state.units.map(u => (u.position && typeof u.position === 'object'
+      ? { ...u, position: ST.sqOf(Math.floor(u.position.x), Math.floor(u.position.y)) } : u));
     const board = {};
-    for (const u of state.units) if (u.alive !== false) board[u.position] = u;
+    for (const u of units) if (u.alive !== false) board[u.position] = u;
     const home = (color) => (color === 'white' ? '1' : '8');
     const at = (sq, type, color) => board[sq]?.type === type && board[sq]?.ownerId === color;
+    // Mid-game (units added or removed while it is played), a right already lost
+    // stays lost: the king walking home again does not give it back.
+    const had = (color, side) => !midGame || state.gameSpecific.castlingRights?.[color]?.[side] !== false;
     const rights = (color) => ({
-      kingSide:  at('e' + home(color), 'king', color) && at('h' + home(color), 'rook', color),
-      queenSide: at('e' + home(color), 'king', color) && at('a' + home(color), 'rook', color),
+      kingSide:  had(color, 'kingSide')  && at('e' + home(color), 'king', color) && at('h' + home(color), 'rook', color),
+      queenSide: had(color, 'queenSide') && at('e' + home(color), 'king', color) && at('a' + home(color), 'rook', color),
     });
     return {
       ...state,
+      units,
       board,
       gameSpecific: {
         ...state.gameSpecific,
         castlingRights: { white: rights('white'), black: rights('black') },
-        markers: state.gameSpecific.markers
+        // A game in progress keeps the markers its players have been placing.
+        markers: midGame ? state.gameSpecific.markers
+          : state.gameSpecific.markers
           ? (Object.keys(state.gameSpecific.markers.white ?? {}).length ||
              Object.keys(state.gameSpecific.markers.black ?? {}).length
               ? seedMarkers(board) : { white: {}, black: {} })

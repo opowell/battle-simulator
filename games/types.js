@@ -90,7 +90,7 @@
  * works for EVERY game off the universal Unit contract above, so these three are
  * only for games the generic layer can't fully serve.
  *
- * @property {(state: GameState, config?: object) => GameState} [applyStartingUnits]
+ * @property {(state: GameState, config?: object, opts?: {midGame?: boolean}) => GameState} [applyStartingUnits]
  *   Optional. Called with the opening state once its `units` have been replaced by
  *   the customised roster; returns it with everything the game DERIVES from its
  *   opening units brought back into step. Chess rebuilds `board` (there the board,
@@ -98,6 +98,13 @@
  *   which tiles each seat has explored. Games that keep no such copy omit it —
  *   `gameSpecific.startRoster`, which nearly all of them keep for fog belief, is
  *   rebuilt generically and needs no hook.
+ *   `opts.midGame` is set when the units were edited on a game IN PROGRESS
+ *   (engine/reconfigure.js) rather than at setup: build on what the game has
+ *   accumulated instead of starting it over — civ1 keeps the explored map, chess
+ *   keeps castling rights already lost. Positions may also arrive in another board
+ *   model's form (a square from a discrete board, a point from a continuous one)
+ *   when a game is rebuilt under a different space setting; a game whose position
+ *   form depends on that setting puts them in its own.
  *
  * @property {(state: GameState) => string[]} [setupUnitTypes]
  *   Optional. Unit types a customised roster may ask for beyond the ones the game

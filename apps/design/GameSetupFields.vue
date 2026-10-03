@@ -8,6 +8,13 @@ const props = defineProps({
   // Chosen next door, in GameScenarioPicker: picking one re-seeds the fields it
   // has an opinion about (turn limit, fog, player slots).
   scenario: { type: String, default: '' },
+  // A game already being played, whose settings this form edits instead of
+  // setting up a new one: { gameOpts, players: [{id,name,agent}], maxTurns }.
+  // The form opens on those values rather than the game's defaults, and the
+  // seats are fixed — who plays each can change, not how many there are.
+  initial:     { type: Object, default: null },
+  // { id, by } of that session — the units editor then edits its board.
+  liveSession: { type: Object, default: null },
 });
 // The whole form as one object, re-emitted on every change; the parent decides
 // what to do with it (start a session, open an analysis board, …).
@@ -24,6 +31,12 @@ const slots    = ref([]);
 // (the default). It rides along in gameOpts as `startingUnits` — see
 // StartingUnitsField.vue / engine/startingSetup.js.
 const startingUnits = ref(null);
+// Editing a game in progress (`initial`): the options as the form opened, and
+// what has been changed since — what the units editor previews the board under,
+// and what gets applied.
+const baselineOpts = ref({});
+const changedOpts = computed(() => Object.fromEntries(Object.entries(gameOpts.value)
+  .filter(([k, v]) => k !== 'startingUnits' && JSON.stringify(v ?? null) !== JSON.stringify(baselineOpts.value[k] ?? null))));
 
 // Lay a scenario's config over the game's plain defaults. Called with the options
 // already re-seeded, so leaving a scenario also leaves whatever it had set rather
@@ -45,11 +58,25 @@ watch(() => props.game, (g) => {
   gameOpts.value = gameDefaults.initGameOpts(g);
   turnsLimited.value = false;
   maxTurns.value = 300;
+  if (props.initial) return seedFromSession(g, props.initial);
   applyScenario(g.scenarios?.find(s => s.id === props.scenario));
 }, { immediate: true });
 
+// A game in progress: its own settings over the defaults (a session created from
+// the API may name only some of them), and its seats as they are.
+function seedFromSession(g, initial) {
+  gameOpts.value = { ...gameOpts.value, ...(initial.gameOpts ?? {}) };
+  baselineOpts.value = JSON.parse(JSON.stringify(gameOpts.value));
+  turnsLimited.value = initial.maxTurns != null;
+  maxTurns.value = initial.maxTurns ?? 300;
+  const palette = teamPalette.seatColors(g, (initial.players ?? []).length);
+  slots.value = (initial.players ?? []).map((p, i) => ({
+    id: 'slot' + i, name: p.name ?? p.id, agent: p.agent ?? 'human', color: palette[i],
+  }));
+}
+
 watch(() => props.scenario, () => {
-  if (!props.game) return;
+  if (!props.game || props.initial) return;
   startingUnits.value = null;
   gameOpts.value = gameDefaults.initGameOpts(props.game);
   applyScenario(props.game.scenarios?.find(s => s.id === props.scenario));
@@ -57,7 +84,9 @@ watch(() => props.scenario, () => {
 
 // The seats as the SERVER will name them, which is what the starting-units editor
 // has to ask about (a form slot's own id is just a row handle).
-const seats = computed(() => gameDefaults.seatIds(props.game, slots.value)
+const seats = computed(() => (props.initial
+  ? slots.value.map((_, i) => props.initial.players?.[i]?.id ?? ('p' + (i + 1)))
+  : gameDefaults.seatIds(props.game, slots.value))
   .map((id, i) => ({ id, name: slots.value[i].name, color: slots.value[i].color })));
 
 watch([turnsLimited, maxTurns, gameOpts, slots, startingUnits, () => props.scenario], () => {
@@ -68,6 +97,11 @@ watch([turnsLimited, maxTurns, gameOpts, slots, startingUnits, () => props.scena
     maxTurns: turnsLimited.value ? maxTurns.value : null,
     scenario: props.scenario || undefined,
     players:  slots.value,
+    // Editing a game in progress: what changed since the form opened, the seats
+    // under the session's own ids, and the units if they were edited (else null).
+    changed:  changedOpts.value,
+    seats:    seats.value.map((s, i) => ({ ...s, agent: slots.value[i].agent })),
+    units:    startingUnits.value,
   });
 }, { deep: true, immediate: true });
 
@@ -107,7 +141,7 @@ function cycleColor(i) {
     <!-- Player slots -->
     <div class="gsf-players-head">
       <label class="gsf-section-label">Players</label>
-      <button v-if="game.minPlayers !== game.maxPlayers"
+      <button v-if="game.minPlayers !== game.maxPlayers && !initial"
               class="btn btn-sm btn-ghost" @click="addSlot" :disabled="slots.length >= (game.maxPlayers ?? 8)">
         + Add slot
       </button>
@@ -121,7 +155,7 @@ function cycleColor(i) {
         <option value="human">Human</option>
         <option v-for="a in (game.agents ?? [])" :key="a.id" :value="a.id">{{a.name}}</option>
       </select>
-      <button v-if="game.minPlayers !== game.maxPlayers"
+      <button v-if="game.minPlayers !== game.maxPlayers && !initial"
               class="iconbtn gsf-rm" @click="rmSlot(i)"
               :disabled="slots.length <= (game.minPlayers ?? 2)">
         <BsIcon name="trash" :size="14" color="var(--dim)"/>
@@ -175,6 +209,7 @@ function cycleColor(i) {
 
     <!-- Which units each side starts with, and where they stand -->
     <StartingUnitsField :game="game" :scenario="scenario" :players="seats" :config="gameOpts"
+                        :live-session="liveSession" :live-config="liveSession ? changedOpts : null"
                         @update:units="startingUnits = $event"
                         @update:config="gameOpts = { ...gameOpts, ...$event }"/>
   </div>

@@ -127,6 +127,10 @@ window.api = {
   // Live playback controls: { paused?, aiDelay? }. Pauses/resumes the run loop and
   // sets the delay (ms) the engine waits between AI moves. Returns the applied values.
   control:  (id, body)              => _req('/sessions/' + id + '/control', { method: 'POST', body: JSON.stringify(body) }),
+  // Change a game's settings while it is played — { config?, players?, units?, by? }
+  // — and the units editor's board for it under settings being edited.
+  reconfigure: (id, body)           => _req('/sessions/' + id + '/reconfigure', { method: 'POST', body: JSON.stringify(body) }),
+  liveSetup:   (id, body)           => _req('/sessions/' + id + '/setup', { method: 'POST', body: JSON.stringify(body) }),
   // Read-only "what's good here" analysis for a live or replayed (ply) position.
   analyze:  (id, { playerId, agentId, ply }) =>
     _req('/sessions/' + id + '/analyze', { method: 'POST', body: JSON.stringify({ playerId, agentId, ply }) }),

@@ -20,6 +20,11 @@ const props = defineProps({
   // The rest of the form's game/engine options — the preview has to be built from
   // the same ones, or the roster would be laid out on a different board.
   config:   { type: Object, default: () => ({}) },
+  // A game in progress ({ id, by }): the editor then shows the units on ITS board
+  // — as they would stand under `liveConfig`, the options being changed — and an
+  // edit adds, removes and moves units in the game as it stands.
+  liveSession: { type: Object, default: null },
+  liveConfig:  { type: Object, default: null },
 });
 const emit = defineEmits(['update:units', 'update:config']);
 
@@ -34,10 +39,13 @@ const selected = ref(null);
 // just pinned a map seed into the options.
 let builtFrom = '';
 
+const live = computed(() => !!props.liveSession);
+
 const inputKey = () => JSON.stringify({
   g: props.game?.name, s: props.scenario,
   p: props.players.map(p => p.id),
-  c: Object.fromEntries(Object.entries(props.config).filter(([k]) => k !== 'startingUnits')),
+  c: live.value ? (props.liveConfig ?? {})
+    : Object.fromEntries(Object.entries(props.config).filter(([k]) => k !== 'startingUnits')),
 });
 
 async function load() {
@@ -45,16 +53,21 @@ async function load() {
   const { startingUnits, ...config } = props.config;
   loading.value = true; error.value = '';
   try {
-    const data = await window.api.setupPreview(props.game.name, {
-      players: props.players.map(p => ({ id: p.id, name: p.name })),
-      config,
-    });
+    const data = live.value
+      ? await window.api.liveSetup(props.liveSession.id, { config: props.liveConfig ?? {}, by: props.liveSession.by })
+      : await window.api.setupPreview(props.game.name, {
+        players: props.players.map(p => ({ id: p.id, name: p.name })),
+        config,
+      });
     preview.value = data;
     roster.value = data.roster.map(u => ({ ...u }));
     selected.value = null;
     // Whatever the game pinned rather than re-rolling (a map seed) goes back into
     // the form, so the session is created on the world these units were placed on.
-    const pins = Object.fromEntries(Object.entries(data.config ?? {}).filter(([k, v]) => config[k] !== v));
+    // A game in progress is described by the server's whole config, not the form's,
+    // so it says outright which settings it pinned rather than leaving them to a diff.
+    const pins = live.value ? (data.pins ?? {})
+      : Object.fromEntries(Object.entries(data.config ?? {}).filter(([k, v]) => config[k] !== v));
     builtFrom = JSON.stringify({ ...JSON.parse(key), c: { ...JSON.parse(key).c, ...pins } });
     if (Object.keys(pins).length) emit('update:config', pins);
   } catch (e) {
@@ -173,20 +186,25 @@ watch([on, roster], () => {
   <div class="su">
     <div class="su-head">
       <div>
-        <label class="gsf-section-label">Starting units</label>
-        <div class="su-sub">Which units each side begins with{{ placeable ? ', and where they stand' : '' }}</div>
+        <label class="gsf-section-label">{{ live ? 'Units on the board' : 'Starting units' }}</label>
+        <div class="su-sub" v-if="live">Add, remove{{ placeable ? ' or move' : '' }} units in the game as it stands</div>
+        <div class="su-sub" v-else>Which units each side begins with{{ placeable ? ', and where they stand' : '' }}</div>
       </div>
       <div class="seg gsf-seg">
-        <button :class="{on: !on}" @click="on = false" class="gsf-seg-btn">Default</button>
-        <button :class="{on:  on}" @click="on = true"  class="gsf-seg-btn">Custom</button>
+        <button :class="{on: !on}" @click="on = false" class="gsf-seg-btn">{{ live ? 'Keep' : 'Default' }}</button>
+        <button :class="{on:  on}" @click="on = true"  class="gsf-seg-btn">{{ live ? 'Edit' : 'Custom' }}</button>
       </div>
     </div>
 
     <div v-if="on" class="su-body">
-      <div v-if="loading" class="su-note">Laying out the opening position…</div>
+      <div v-if="loading" class="su-note">{{ live ? 'Reading the board…' : 'Laying out the opening position…' }}</div>
       <div v-else-if="error" class="su-note su-err">{{ error }}</div>
-      <div v-else-if="!supported" class="su-note">This game has no per-unit starting roster to edit.</div>
+      <div v-else-if="!supported" class="su-note">This game has no per-unit {{ live ? 'units' : 'starting roster' }} to edit.</div>
       <template v-else-if="preview">
+        <div v-if="live && preview.rebuild" class="su-note">These settings rebuild the board: the units are shown where they will stand on it.</div>
+        <div v-if="preview.hiddenUnits" class="su-note">
+          {{ preview.hiddenUnits }} unit{{ preview.hiddenUnits === 1 ? ' is' : 's are' }} out of your sight, and will stay as they are.
+        </div>
         <SetupBoard v-if="placeable" :board="preview.board" :tokens="tokens"
                     :selected-id="selected" @pick-cell="pickCell"/>
         <div v-if="placeable" class="su-note">
@@ -221,7 +239,7 @@ watch([on, roster], () => {
           </div>
         </div>
 
-        <button class="btn btn-sm btn-ghost su-reset" @click="reset">Reset to the game's own opening</button>
+        <button class="btn btn-sm btn-ghost su-reset" @click="reset">{{ live ? 'Back to the board as it stands' : "Reset to the game's own opening" }}</button>
       </template>
     </div>
   </div>

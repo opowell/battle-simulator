@@ -1110,7 +1110,19 @@ function maybeStartPoll(s) {
     return;
   }
   const pendingHuman = s.pendingPlayer && s.humanPlayers?.includes(s.pendingPlayer);
-  if (pendingHuman) return; // human's turn — nothing to wait on
+  if (pendingHuman) {
+    // A human's turn: nothing to wait on — except what can change under a player
+    // who is thinking. Anyone in the game may change its settings mid-play (the
+    // board may even be rebuilt), and the game can end; listen for exactly those
+    // and ignore everything else, so a waiting player's board is left alone.
+    const heldChanges = s.changes?.length ?? 0;
+    _sub = api.subscribeSession(s.id, viewAsId(s), (fresh) => {
+      if ((fresh.changes?.length ?? 0) === heldChanges && fresh.status === 'active') return;
+      liveState.value = fresh;
+      maybeStartPoll(fresh);
+    });
+    return;
+  }
   const humanId = viewAsId(s);
   _sub = api.subscribeSession(s.id, humanId, (fresh) => {
     liveState.value = fresh;
@@ -1119,7 +1131,7 @@ function maybeStartPoll(s) {
       stopPoll();
       // The socket was opened for whichever seat we were watching; if the turn has
       // landed on a DIFFERENT human seat (hotseat), that seat's view is the one to show.
-      syncViewer(fresh);
+      syncViewer(fresh).then(maybeStartPoll);
     }
   });
 }
@@ -1569,6 +1581,7 @@ async function restartGame() {
                    :theme="theme"
                    :fog="liveState?.fog ?? false"
                    :games-count="apiGames.length"
+                   :game-def="apiGames.find(g => g.name === liveState?.game) ?? null"
                    :server-err="serverErr"
                    :fork-state="forkState"
                    :fork-error="forkError"

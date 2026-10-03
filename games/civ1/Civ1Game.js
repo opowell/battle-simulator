@@ -1812,7 +1812,11 @@ export const Civ1Game = {
   },
   // What each seat has SEEN is seeded from where its units stand, so a moved,
   // added or deleted starting unit changes the hole it opens in the fog.
-  applyStartingUnits(state) { return seedExploration(state); },
+  // An opening is explored from scratch; units added to a game in progress only
+  // add what they can see to what each side has explored already.
+  applyStartingUnits(state, _config, { midGame = false } = {}) {
+    return midGame ? state.players.reduce((acc, p) => markExplored(acc, p.id), state) : seedExploration(state);
+  },
 
   getLegalActions,
   applyActions,

@@ -14,12 +14,14 @@ defineProps({
   showSidebar: { type: Boolean, default: true },
   showAiAnalysis: { type: Boolean, default: true },
   canSurrender: Boolean,
+  // A game still being played, whose settings can be changed from here.
+  canChangeSettings: Boolean,
   // Observer-only; omitted (empty) for a seated player, which hides the section.
   observerPlayers: { type: Array, default: () => [] },
   teams:           { type: Array, default: () => [] },
   observerView:    { type: String, default: null },
 });
-defineEmits(['close', 'exit', 'open-settings', 'toggle-ruler', 'toggle-hp-bars',
+defineEmits(['close', 'exit', 'open-settings', 'open-game-settings', 'toggle-ruler', 'toggle-hp-bars',
              'toggle-sidebar', 'toggle-ai-analysis', 'surrender', 'set-observer-view']);
 const apiLabel = 'api · ' + window.location.host + window.api.basePath;
 </script>
@@ -71,6 +73,10 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
                   @click="$emit('toggle-ai-analysis')">
             <BsIcon name="eye" :size="14" :color="showAiAnalysis ? 'var(--accent)' : 'var(--dim)'"/>
             {{showAiAnalysis ? 'Hide AI analysis' : 'Show AI analysis'}}
+          </button>
+          <button v-if="canChangeSettings" class="btn btn-ghost menu-btn"
+                  @click="$emit('close'); $emit('open-game-settings')">
+            <BsIcon name="sliders" :size="14" color="var(--accent)"/> Game settings
           </button>
           <button class="btn btn-ghost menu-btn"
                   @click="$emit('close'); $emit('open-settings')">

@@ -396,6 +396,28 @@ export function createInitialState(players, config, st) {
   return base;
 }
 
+/**
+ * A position laid out by the generic setup layer (engine/startingSetup.js) — a
+ * customised opening, or a game rebuilt mid-play under new settings — names each
+ * piece's position in whichever form it arrived in: a square ('e4') from a
+ * discrete board, a point from a continuous one. Here every piece is put in this
+ * quadrant's own form, and `cell` — which the rules below read FIRST, ahead of
+ * the position — is re-derived from it, along with the board discrete space keeps.
+ */
+export function applyStartingUnits(state) {
+  const continuous = state.gameSpecific.rt.space === 'continuous';
+  const units = state.units.map((u) => {
+    if (u.position == null) return u;
+    const cell = typeof u.position === 'string' ? gridOf(u.position) : cellOf(u.position);
+    const position = !continuous ? sqOf(cell.x, cell.y)
+      : typeof u.position === 'string' ? centreOf(cell) : { x: u.position.x, y: u.position.y };
+    return { ...u, cell, position };
+  });
+  const next = { ...state, units };
+  if (!continuous) next.board = boardFromUnits(units);
+  return next;
+}
+
 // ── Legal actions ────────────────────────────────────────────────────────────
 
 const liveUnits = (state) => state.units.filter((u) => u.alive);

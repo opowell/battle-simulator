@@ -5,6 +5,19 @@ import { resolveTimeline } from './KineticResolver.js';
 import { buildInitialState } from './startingSetup.js';
 
 /**
+ * Thrown out of step() when the game was reconfigured while an agent was still
+ * deciding (see GameEngine.reconfigure): the move it came back with was chosen
+ * for a position — or under settings — that no longer exist, so it is dropped
+ * rather than applied, and the caller simply steps again.
+ */
+export class EngineReconfigured extends Error {
+  constructor() {
+    super('The game was reconfigured while this move was being chosen');
+    this.name = 'EngineReconfigured';
+  }
+}
+
+/**
  * Orchestrates a game in either discrete or continuous time.
  *
  * Discrete mode (default): each step() gathers one action per active player,
@@ -64,9 +77,26 @@ export class GameEngine {
     this._planStates = null;
     this._playback = null;
     this._playbackFrameAt = null;
+    // Mid-game reconfiguration (see reconfigure). `_epoch` counts reconfigurations,
+    // so a move chosen before one can be recognised and dropped. The rest is what
+    // a replay needs to reproduce the game as it was really played: the config the
+    // current segment STARTED under (patches move `config` on, not this), the exact
+    // position a rebuilt segment started from, and every settings patch with the
+    // ply it landed at.
+    this._epoch = 0;
+    this._startConfig = config;
+    this._start = null;
+    this._patches = [];
+    this._roundStart = null;
   }
 
   get state() { return this._state; }
+  /** How many times the game has been reconfigured; a step that spans a change is void. */
+  get epoch() { return this._epoch; }
+  /** Settings patches applied mid-game: [{ ply, gameSpecific }]. */
+  get patches() { return this._patches; }
+  /** The exact position this segment of the game started from, when it was rebuilt mid-game. */
+  get startState() { return this._start; }
   /** Sampled position frames of the last resolved simultaneous round (or null). */
   get playback() { return this._playback; }
   /**
@@ -133,9 +163,12 @@ export class GameEngine {
     if (dropped <= 0) return 0;
 
     const kept = this._log.slice(0, keep);
+    const patches = this._patches.filter(p => p.ply <= keep);
     this._init();
-    for (const entry of kept) {
-      this._state = freeze(this.game.applyActions(this._state, entry.playerActions, this._rng));
+    this._patches = patches;
+    this._state = freeze(this._patchedAt(this._state, 0));
+    for (const [i, entry] of kept.entries()) {
+      this._state = freeze(this._patchedAt(this.game.applyActions(this._state, entry.playerActions, this._rng), i + 1));
       this._log.push(entry);
     }
     // A game that had ended may be un-ended by this (taking back the mate), and a
@@ -159,11 +192,101 @@ export class GameEngine {
     return this._planStates?.get(playerId) ?? null;
   }
 
+  /**
+   * Where this segment of the game starts. Not createInitialState directly: a
+   * session may have customised the opening roster (config.startingUnits — see
+   * startingSetup.js), and every path that builds this game's starting position
+   * has to apply it the same way. A segment rebuilt mid-game (reconfigure) starts
+   * from the exact position it was rebuilt to instead.
+   *
+   * Every call hands back a FRESH `players` array: belief-tracking agents key on
+   * its object identity, and a replay must never advance the live game's belief.
+   */
+  _initialState() {
+    if (this._start) return { ...this._start, players: (this._start.players ?? []).map(p => ({ ...p })) };
+    return buildInitialState(this.game, this.players.map(p => ({ ...p })), this._startConfig);
+  }
+
+  /** `state` with every settings patch recorded at `ply` applied, in order. */
+  _patchedAt(state, ply) {
+    let out = state;
+    for (const p of this._patches) {
+      if (p.ply === ply) out = { ...out, gameSpecific: { ...out.gameSpecific, ...p.gameSpecific } };
+    }
+    return out;
+  }
+
+  /**
+   * Every position of this segment from its start up to and including `ply`, by
+   * replaying the log (and the settings patches, each at the ply it landed) —
+   * never touching the live game. What analysis, the scrub bar and a fork read
+   * history from, so a game whose settings changed part way through is replayed
+   * the way it was actually played.
+   */
+  replayStates(ply = this._log.length) {
+    const n = Math.max(0, Math.min(Math.floor(ply), this._log.length));
+    let state = this._patchedAt(this._initialState(), 0);
+    const states = [state];
+    for (let i = 0; i < n; i++) {
+      state = this._patchedAt(this.game.applyActions(state, this._log[i].playerActions), i + 1);
+      states.push(state);
+    }
+    return states;
+  }
+
+  /**
+   * Change the game's settings under a game in progress. One of:
+   *
+   *   • `gameSpecific` — settings the game had copied into its state when it was
+   *     created (fog, AI difficulty, …): those keys are patched into the live
+   *     position and recorded at this ply, and everything else stands.
+   *   • `restartFrom` — a position rebuilt under the new settings (a different
+   *     space or time model, map, or set of units): the game goes on from there as
+   *     a new segment, with an empty log of its own.
+   *   • neither — only the engine's own reading of `config` (simultaneous turns,
+   *     fog filtering) or the seats' agents changed.
+   *
+   * Whatever an agent is still deciding belongs to the position before the change,
+   * so it is cancelled: the epoch moves on, the decision is dropped when it
+   * arrives (EngineReconfigured, out of step()), and the caller steps again. A
+   * simultaneous round in planning is unwound to the position it started from.
+   */
+  reconfigure({ config, players, gameSpecific, restartFrom } = {}) {
+    this._epoch++;
+    if (this._roundStart) this._state = this._roundStart;
+    this._roundStart = null;
+    this._planStates = null;
+    if (config) this.config = config;
+    if (players) this.players = players;
+    if (restartFrom) {
+      this._start = freeze(restartFrom);
+      this._startConfig = this.config;
+      this._state = this._start;
+      this._log = [];
+      this._patches = [];
+      this._result = null;
+      this._clock = restartFrom.clock ?? 0;
+      this._eventQueue = new EventQueue();
+      this._playback = null;
+      this._playbackFrameAt = null;
+    } else if (gameSpecific && Object.keys(gameSpecific).length && this._state) {
+      this._patches.push({ ply: this._log.length, gameSpecific });
+      this._state = freeze(this._patchedAt(this._state, this._log.length));
+      // _patchedAt applies every patch at this ply, earlier ones included; they
+      // are already in the state, and re-setting a key to its value changes nothing.
+    }
+  }
+
+  /** An agent's move, unless the game was reconfigured while it was being chosen. */
+  async _ask(player, visibleState, legalActions) {
+    const epoch = this._epoch;
+    const action = await player.agent.chooseAction(visibleState, legalActions, this.game);
+    if (epoch !== this._epoch) throw new EngineReconfigured();
+    return action;
+  }
+
   _init() {
-    // Not createInitialState directly: a session may have customised the opening
-    // roster (config.startingUnits — see startingSetup.js), and every path that
-    // builds this game's starting position has to apply it the same way.
-    this._state = freeze(buildInitialState(this.game, this.players, this.config));
+    this._state = freeze(this._initialState());
     this._log = [];
     this._result = null;
     this._clock = 0;
@@ -221,7 +344,7 @@ export class GameEngine {
       const visibleState = (this.config.fogOfWar && this.game.getVisibleState)
         ? this.game.getVisibleState(this._state, playerId)
         : this._state;
-      const action = await player.agent.chooseAction(visibleState, legalActions, this.game);
+      const action = await this._ask(player, visibleState, legalActions);
       validate(action, legalActions, this.game, this._state, playerId);
       playerActions.push({ playerId, action });
     }
@@ -265,11 +388,15 @@ export class GameEngine {
       }
     }
 
-    // While planning, every seat is active.
+    // While planning, every seat is active. `_roundStart` is what a reconfigure
+    // mid-planning unwinds to — the all-seats-active planning state is not a
+    // position the next step() can start from.
+    this._roundStart = turnStart;
     this._state = freeze({ ...turnStart, activePlayers: seatOrder });
     this._planStates = new Map();
     const plans = await Promise.all(seatOrder.map(playerId => this._collectOrders(playerId, turnStart)));
     this._planStates = null;
+    this._roundStart = null;
 
     // Exact event-driven kinetic resolution — see KineticResolver.js.
     const res = resolveTimeline({
@@ -314,7 +441,7 @@ export class GameEngine {
       const visibleState = (this.config.fogOfWar && this.game.getVisibleState)
         ? this.game.getVisibleState(plan, playerId)
         : plan;
-      const action = await player.agent.chooseAction(visibleState, legalActions, this.game);
+      const action = await this._ask(player, visibleState, legalActions);
       validate(action, legalActions, this.game, plan, playerId);
       orders.push(action);
       // A game may have more than one turn-terminating action (e.g. CS ends its
@@ -346,7 +473,10 @@ export class GameEngine {
     const turnEndTime = this._clock + turnDuration;
     const { activePlayers, turnNumber, currentPhase } = this._state;
 
-    // Collect orders from all active players and schedule them as future events.
+    // Collect orders from all active players, then schedule them as future events.
+    // Scheduled only once every order is in, so a reconfigure that cancels the
+    // collection part way leaves the queue exactly as it was.
+    const orders = [];
     for (const playerId of activePlayers) {
       const legalActions = this.game.getLegalActions(this._state, playerId);
       if (legalActions.length === 0) {
@@ -358,13 +488,14 @@ export class GameEngine {
       const visibleState = (this.config.fogOfWar && this.game.getVisibleState)
         ? this.game.getVisibleState(this._state, playerId)
         : this._state;
-      const action = await player.agent.chooseAction(visibleState, legalActions, this.game);
+      const action = await this._ask(player, visibleState, legalActions);
       validate(action, legalActions, this.game, this._state, playerId);
       const duration = this.game.getActionDuration
         ? this.game.getActionDuration(this._state, action)
         : 1;
-      this._eventQueue.push({ time: this._clock + duration, playerId, action });
+      orders.push({ time: this._clock + duration, playerId, action });
     }
+    for (const order of orders) this._eventQueue.push(order);
 
     // Run event loop until the turn window closes.
     const windowOrders = [];

@@ -12,7 +12,8 @@ import { ChessGame } from './index.js';
 import { resolveAnalysisContext } from '../../api-server.js';
 
 // A stand-in for api-server.js's Session, carrying only what the resolver
-// touches: the params/log a historical ply is replayed from, plus the live
+// touches: the engine's replay of a historical ply (GameEngine.replayStates — a
+// fresh `players` array per call, as the real one hands back), plus the live
 // state, fog flag and status that pick the seat.
 function fakeSession({ fog = true, status = 'active', plies = 2, analysisBoard = false } = {}) {
   const players = [{ id: 'white', name: 'You' }, { id: 'black', name: 'CPU' }];
@@ -26,7 +27,13 @@ function fakeSession({ fog = true, status = 'active', plies = 2, analysisBoard =
     log.push({ turnNumber: state.turnNumber, phase: 'action', playerActions });
     state = ChessGame.applyActions(state, playerActions);
   }
-  return { gameName: 'chess', fog, status, analysisBoard, params: { players, config }, engine: { state, log } };
+  const replayStates = (ply = log.length) => {
+    let s = ChessGame.createInitialState(players.map(p => ({ ...p })), config);
+    const states = [s];
+    for (const entry of log.slice(0, ply)) states.push(s = ChessGame.applyActions(s, entry.playerActions));
+    return states;
+  };
+  return { gameName: 'chess', fog, status, analysisBoard, params: { players, config }, engine: { state, log, replayStates } };
 }
 
 const args = (over) => ({ playerId: 'white', agentId: 'chess-ai', ...over });

@@ -18,6 +18,8 @@ import DatabasePanel     from './battlefield/DatabasePanel.vue';
 import BottomBar         from './battlefield/BottomBar.vue';
 import Minimap           from './battlefield/Minimap.vue';
 import MenuOverlay       from './battlefield/MenuOverlay.vue';
+import GameSettingsOverlay  from './battlefield/GameSettingsOverlay.vue';
+import SettingsChangeNotice from './battlefield/SettingsChangeNotice.vue';
 import GameOverOverlay   from './battlefield/GameOverOverlay.vue';
 import UnitInfoOverlay   from './battlefield/UnitInfoOverlay.vue';
 import HelpOverlay       from './battlefield/HelpOverlay.vue';
@@ -44,6 +46,9 @@ const props = defineProps({
   theme:         String,
   fog:           { type: Boolean, default: false },
   gamesCount:    { type: Number, default: 0 },
+  // This game's definition as GET /games serves it (options, agents, seat
+  // limits) — what the in-game settings editor is built from.
+  gameDef:       { type: Object, default: null },
   serverErr:     { type: String, default: '' },
   // Analysis-panel replay fork sandbox (App.vue owns the actual /fork-move calls
   // and builds `forkState.field` the same way it builds activeField — see
@@ -113,6 +118,7 @@ const showSidebar = ref(true);
 const showAiAnalysis = ref(true);
 const showHpBars = ref(true);
 const showMenu   = ref(false);
+const showGameSettings = ref(false);
 const showHelp   = ref(false);
 
 // ── selection ─────────────────────────────────────────────────
@@ -2094,7 +2100,7 @@ const openPanel = ref(null);
 // always gets through; panel keys stay live while a panel is up, so the advisor keys
 // switch between advisors the way the original's F-keys do.
 const overlayOpen = computed(() => !!(showMenu.value || showHelp.value || infoUnit.value
-  || infoAbility.value || openPanel.value || selectedCity.value));
+  || infoAbility.value || openPanel.value || selectedCity.value || showGameSettings.value));
 
 // ── auto end turn ─────────────────────────────────────────────
 // Civ1 never had an "end turn" key: the turn ended by itself once every unit had its
@@ -2242,7 +2248,8 @@ function keyCommand(command) {
 function onKeyDown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Escape') {
-    if (aiming.value)            aiming.value = null;
+    if (showGameSettings.value)  showGameSettings.value = false;
+    else if (aiming.value)       aiming.value = null;
     else if (infoAbility.value)  infoAbility.value = null;
     else if (infoUnit.value)     infoUnit.value = null;
     else if (openPanel.value)    openPanel.value = null;
@@ -2481,7 +2488,7 @@ onUnmounted(() => {
 
         <GameLog v-if="isLive"
           :log="logForDisplay" :historyLength="histLength" :histPos="histPos"
-          :units="displayUnits"
+          :units="displayUnits" :earlier-log="liveState?.earlierLog ?? []"
           @seek="seekTo"/>
 
         <AiAnalysisPanel v-if="isLive && showAiAnalysis && liveState?.aiAnalysis"
@@ -2526,11 +2533,16 @@ onUnmounted(() => {
     @exit="$emit('exit')"
     @set-observer-view="v => $emit('set-observer-view', v)"
     @open-settings="$emit('open-settings')"
+    :canChangeSettings="liveState?.status === 'active' && !!gameDef"
+    @open-game-settings="showGameSettings = true"
     @toggle-ruler="showRuler = !showRuler"
     @toggle-hp-bars="showHpBars = !showHpBars"
     @toggle-sidebar="showSidebar = !showSidebar"
     @toggle-ai-analysis="showAiAnalysis = !showAiAnalysis"
     @surrender="confirmSurrender"/>
+  <GameSettingsOverlay :show="showGameSettings" :live-state="liveState" :game-def="gameDef"
+                       @close="showGameSettings = false"/>
+  <SettingsChangeNotice :live-state="liveState" :game-def="gameDef"/>
 
   <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
     :team="selectedCityTeam" :recolor="field.ui?.recolorTeamSprites"

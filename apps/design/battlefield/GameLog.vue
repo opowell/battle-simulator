@@ -4,6 +4,9 @@ const props = defineProps({
   historyLength: { type: Number, default: 0 },
   histPos:       { type: Number, default: 0 },
   units:         { type: Array, default: () => [] },
+  // Moves played before the game was rebuilt under new settings mid-play: history
+  // to read, below the moves since, but not a position the scrub bar can reach.
+  earlierLog:    { type: Array, default: () => [] },
 });
 defineEmits(['seek']);
 
@@ -55,7 +58,7 @@ function fmtAction(action) {
     <div class="panel-t log-title">Log</div>
     <div class="log-scroll">
       <div v-if="!log.length" class="log-empty">
-        No moves yet.
+        {{ earlierLog.length ? 'No moves since the settings changed.' : 'No moves yet.' }}
       </div>
       <div v-for="(entry, ei) in [...log].reverse()" :key="ei"
            class="log-row"
@@ -74,6 +77,16 @@ function fmtAction(action) {
            : '†' }}
         </span>
       </div>
+      <template v-if="earlierLog.length">
+        <div class="log-divider">Before the settings changed</div>
+        <div v-for="(entry, ei) in [...earlierLog].reverse()" :key="'earlier' + ei" class="log-row log-row--earlier">
+          <span class="mono log-turn">T{{entry.turnNumber}}</span>
+          <span v-for="(pa, i) in entry.playerActions" :key="i" class="log-pa">
+            <b class="log-player">{{pa.playerId}}</b>
+            {{ fmtAction(pa.action) }}
+          </span>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -92,4 +105,6 @@ function fmtAction(action) {
 .log-ev--damage { color: var(--danger); }
 .log-ev--heal { color: var(--ok); }
 .log-ev--other { color: var(--dim); }
+.log-divider { padding: 6px 14px 4px; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--line); }
+.log-row--earlier { cursor: default; opacity: .6; }
 </style>

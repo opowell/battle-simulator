@@ -106,8 +106,14 @@ export function rosterError(game, base, roster, players = base?.players ?? []) {
 /**
  * `base` (a game's own opening position) rebuilt around `roster`.
  * Pure: `base` is never mutated.
+ *
+ * `midGame` says `base` is a game in progress rather than an opening — units added
+ * or taken off the board while it is being played (engine/reconfigure.js). It is
+ * passed on to the game's `applyStartingUnits`, so what the game re-derives from
+ * its units can build on what the game has accumulated instead of starting it
+ * over (civ1's explored map, chess's castling rights).
  */
-export function applyRoster(game, base, roster, config = {}) {
+export function applyRoster(game, base, roster, config = {}, { midGame = false } = {}) {
   const problem = rosterError(game, base, roster);
   if (problem) throw new Error(problem);
 
@@ -136,7 +142,7 @@ export function applyRoster(game, base, roster, config = {}) {
   // Anything else a game derives from its opening units — chess's `board`, civ1's
   // seeded exploration — is rebuilt by the game itself, from the units already in
   // place on `next`.
-  return game.applyStartingUnits ? game.applyStartingUnits(next, config) : next;
+  return game.applyStartingUnits ? game.applyStartingUnits(next, config, { midGame }) : next;
 }
 
 /**
@@ -199,19 +205,25 @@ function place(unit, position) {
  * board, worked out from the positions it actually opens with:
  *
  *   • a `gridToSquare(col,row)` hook (chess's algebraic 'e4') — the grid is
- *     enumerated once to invert it;
+ *     enumerated once to invert it. Only while the units actually stand on
+ *     squares: the same game in continuous space (chess's sliding bodies) keeps
+ *     points, and those are mapped as the next case;
  *   • {x,y} or {col,row} — used directly, keeping numbers or numeric strings
  *     as the game writes them, so a placed unit's position is the same SHAPE
- *     the game's own rules compare against;
+ *     the game's own rules compare against. Where any unit stands BETWEEN cells
+ *     (continuous space) the convention is games/spacetime.js's: a point is in
+ *     the cell it floors to, and a unit put on a cell stands at its centre;
  *   • anything else (a card, a territory, no position at all) — `placeable` is
  *     false: the roster can still be edited, only not dragged around a board.
  *
  * `grid` is the game's toGrid(state) output (or just { width, height }).
  */
 export function cellMapper(game, state, grid = null) {
-  const sample = (state?.units ?? []).find(u => u && u.alive !== false && u.position != null)?.position;
+  const live = (state?.units ?? []).filter(u => u && u.alive !== false && u.position != null);
+  const sample = live[0]?.position;
+  const atPoints = !!sample && typeof sample === 'object';
 
-  if (typeof game?.gridToSquare === 'function' && grid?.width && grid?.height) {
+  if (typeof game?.gridToSquare === 'function' && grid?.width && grid?.height && !atPoints) {
     const cells = new Map();
     for (let row = 0; row < grid.height; row++) {
       for (let col = 0; col < grid.width; col++) {
@@ -234,7 +246,15 @@ export function cellMapper(game, state, grid = null) {
   const [ax, ay] = axes;
   // Games that carry coordinates as strings ("61") keep getting strings.
   const asString = typeof sample[ax] === 'string';
-  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.round(n) : null; };
+  const continuous = live.some(u => {
+    const p = u.position;
+    return p && typeof p === 'object' && [p[ax], p[ay]].some(v => !Number.isInteger(Number(v)));
+  });
+  const num = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return continuous ? Math.floor(n) : Math.round(n);
+  };
   const out = (v) => (asString ? String(v) : v);
   return {
     placeable: true,
@@ -243,7 +263,9 @@ export function cellMapper(game, state, grid = null) {
       const col = num(pos[ax]); const row = num(pos[ay]);
       return col == null || row == null ? null : [col, row];
     },
-    fromCell: (col, row) => ({ [ax]: out(col), [ay]: out(row) }),
+    fromCell: (col, row) => (continuous
+      ? { [ax]: out(col + 0.5), [ay]: out(row + 0.5) }
+      : { [ax]: out(col), [ay]: out(row) }),
   };
 }
 
@@ -259,6 +281,18 @@ export function cellMapper(game, state, grid = null) {
 export function setupPreview(game, players, config = {}) {
   const resolved = game.resolveSetupConfig ? game.resolveSetupConfig(config) : config;
   const base = game.createInitialState(players, resolved);
+  return describeSetup(game, base, { config: resolved });
+}
+
+/**
+ * What the setup editor draws for any position `base` — an opening (setupPreview),
+ * or a game in progress laid out under settings being edited
+ * (engine/reconfigure.js livePreview). `extraTypes` are unit types a roster may
+ * name beyond the ones `base` has units of — the new settings' opening types, for
+ * a game whose last knight has been taken.
+ */
+export function describeSetup(game, base, { config = {}, extraTypes = [] } = {}) {
+  const resolved = config;
   let grid = null;
   try { grid = game.toGrid ? game.toGrid(base) : null; } catch { grid = null; }
   const map = cellMapper(game, base, grid);
@@ -290,7 +324,7 @@ export function setupPreview(game, players, config = {}) {
   return {
     config: resolved,
     placeable: map.placeable,
-    unitTypes: setupUnitTypes(game, base),
+    unitTypes: [...new Set([...setupUnitTypes(game, base), ...extraTypes])],
     roster,
     // Only the board's shape, its colours — the editor draws its own tokens from
     // the roster, so the (potentially large) per-cell payload stays lean — and the
