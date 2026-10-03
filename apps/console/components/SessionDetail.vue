@@ -1,9 +1,10 @@
 <script setup>
 // A live session: who is seated and how, where it has got to, and the way into
-// it in the play UI. Ending one here deletes it from the server; its recording
+// it — a browser tab of its own or a tab beside the console, as the settings say. Ending one here deletes it from the server; its recording
 // stays on disk.
 import { computed, ref } from 'vue'
 import { api, playUrl } from '../api.js'
+import { useSessionOpener } from '../opener.js'
 import ConfirmButton from './ConfirmButton.vue'
 import SeatList from './SeatList.vue'
 
@@ -11,6 +12,7 @@ const props = defineProps({ record: Object, fields: Object, rows: Object })
 const emit = defineEmits(['changed', 'close', 'open'])
 
 const recording = computed(() => (props.rows?.recordings ?? []).find((r) => r.record.id === props.record.id))
+const opener = useSessionOpener()
 const busy = ref(false)
 const error = ref('')
 
@@ -27,7 +29,7 @@ async function remove() {
 <template>
   <div class="cx-stack">
     <div class="cx-row">
-      <a class="cx-btn cx-btn--primary" :href="playUrl.session(record.id)" target="_blank" rel="noopener">Open in the play UI ↗</a>
+      <a class="cx-btn cx-btn--primary" :href="playUrl.session(record.id)" target="_blank" rel="noopener" @click="opener.follow($event, record.id)">{{ opener.inNewTab() ? 'Open in the play UI ↗' : 'Open session' }}</a>
       <button v-if="recording" type="button" class="cx-btn" @click="emit('open', recording)">Recording</button>
     </div>
 

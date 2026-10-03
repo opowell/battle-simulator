@@ -9,6 +9,7 @@ import FileEditor from './FileEditor.vue'
 import SessionDetail from './SessionDetail.vue'
 import RecordingDetail from './RecordingDetail.vue'
 import ScenarioDetail from './ScenarioDetail.vue'
+import SettingDetail from './SettingDetail.vue'
 import FieldList from './FieldList.vue'
 
 // `rows` is every row by entity, for a detail that lists related records.
@@ -21,6 +22,7 @@ const detailFor = {
   sessions: SessionDetail,
   recordings: RecordingDetail,
   scenarios: ScenarioDetail,
+  settings: SettingDetail,
 }
 </script>
 
@@ -32,7 +34,7 @@ const detailFor = {
         <Art v-if="row.fields.art" :value="row.fields.art" :size="44" />
         <div>
           <h2>{{ row.fields.name }}</h2>
-          <div class="cx-kicker">{{ row.entityLabel }} · {{ row.fields.gameTitle }}</div>
+          <div class="cx-kicker">{{ row.entityLabel }}<template v-if="row.fields.gameTitle"> · {{ row.fields.gameTitle }}</template></div>
         </div>
       </header>
       <component

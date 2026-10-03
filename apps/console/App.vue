@@ -1,15 +1,20 @@
 <script setup>
 // The console: appfr's WindowFrame holding a DataShell over every object the
-// server knows about (catalog.js), with each record opened beside it as a tab.
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { DataShell, WindowFrame, hasPanel, headless, insertPanel, panelNode, removePanel, row, setActivePanel, setSizesAt } from 'header-content-layout'
-import { api, basePath } from './api.js'
+// server knows about (catalog.js), with each record opened beside it as a tab,
+// and each session opened inside the console as a tab beside the whole of that.
+import { computed, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue'
+import { DataShell, WindowFrame, group, hasPanel, headless, insertPanel, panelNode, removePanel, row, setActivePanel, setSizesAt } from 'header-content-layout'
+import { api, basePath, playUrl } from './api.js'
 import { buildSchema } from './schema.js'
 import { buildRows } from './rows.js'
 import { createCatalogSource } from './source.js'
+import { settings } from './settings.js'
+import { OPEN_SESSION } from './opener.js'
 import Art from './components/Art.vue'
 import RecordPanel from './components/RecordPanel.vue'
 import CreatePanel from './components/CreatePanel.vue'
+import GameSummaryCards from './components/GameSummaryCards.vue'
+import SessionPlay from './components/SessionPlay.vue'
 
 const THEME = 'dark'
 
@@ -21,14 +26,23 @@ const loading = ref(false)
 
 const rowsById = computed(() => new Map(Object.values(rows.value ?? {}).flat().map((r) => [r.id, r])))
 
+let catalog = null
+
+function rebuild() {
+  rows.value = buildRows(catalog, settings)
+  // A new source is what makes the shell ask again — the list and every card.
+  source.value = createCatalogSource(rows.value)
+}
+
+// A setting is a row too, so changing one is a change to the results.
+watch(settings, () => { if (catalog) rebuild() })
+
 async function refresh() {
   loading.value = true
   try {
-    const catalog = await api.catalog()
-    rows.value = buildRows(catalog)
+    catalog = await api.catalog()
     schema.value = buildSchema(catalog, { Art })
-    // A new source is what makes the shell ask again — the list and every card.
-    source.value = createCatalogSource(rows.value)
+    rebuild()
     closeTabsOfGone(catalog)
     loadError.value = ''
   } catch (e) {
@@ -44,8 +58,8 @@ onMounted(() => { refresh(); document.addEventListener('visibilitychange', onVis
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 
 // ── panels ───────────────────────────────────────────────────
-// `opened` is what is open beside the browser: a record (by row id) or a form
-// making a new one of something (by entity key).
+// `opened` is what is open beside the browser: a record (by row id), a form
+// making a new one of something (by entity key), or a session being played.
 const opened = ref([])
 // The window itself draws no bar: the browser and the records are what is in it.
 // The browser is headless too: it is the page, not a window on it, and a bar
@@ -53,16 +67,22 @@ const opened = ref([])
 const home = () => headless(row([headless(panelNode('browse'))]))
 const layout = ref(home())
 
+// A session's tab is named after the session once the catalog has it.
+const sessionTitle = (item) => rowsById.value.get(`sessions:${item.sessionId}`)?.fields.name ?? 'Session'
+
 const panels = computed(() => [
   { id: 'browse', title: 'Browse', fixed: true, closable: false },
-  ...opened.value.map((item) => ({ id: item.id, title: item.title, subtitle: item.subtitle, closable: true })),
+  ...opened.value.map((item) => item.kind === 'session'
+    ? { id: item.id, title: sessionTitle(item), closable: true }
+    : { id: item.id, title: item.title, subtitle: item.subtitle, closable: true }),
 ])
 
-function open(item) {
+/** @param focus  false leaves whichever top-level tab is showing where it is */
+function open(item, { focus = true } = {}) {
   if (!opened.value.some((o) => o.id === item.id)) {
     // Records share one strip of tabs beside the browser rather than each
     // taking a new column of the window.
-    const peer = opened.value.find((o) => hasPanel(layout.value, o.id))
+    const peer = opened.value.find((o) => o.kind !== 'session' && hasPanel(layout.value, o.id))
     opened.value = [...opened.value, item]
     if (peer) {
       layout.value = insertPanel(layout.value, item.id, peer.id, 'center')
@@ -73,16 +93,36 @@ function open(item) {
       layout.value = split.kind === 'split' && split.children.length === 2 ? setSizesAt(split, [], [0.6, 0.4]) : split
     }
   }
-  layout.value = setActivePanel(layout.value, item.id)
+  if (focus) layout.value = setActivePanel(layout.value, item.id)
 }
+
+/**
+ * A session opened inside the console. Sessions are tabs of the window's top
+ * level, beside the browser and its records as a whole: a game wants the full
+ * width, and switching back to the console finds it as it was left.
+ */
+function openSession(sessionId) {
+  const id = `play:${sessionId}`
+  if (!opened.value.some((o) => o.id === id)) {
+    const peer = opened.value.find((o) => o.kind === 'session' && hasPanel(layout.value, o.id))
+    opened.value = [...opened.value, { id, kind: 'session', sessionId }]
+    // The first one turns the window into tabs: the console (everything there
+    // was, named so its tab says so) and the session.
+    layout.value = peer
+      ? insertPanel(layout.value, id, peer.id, 'center')
+      : group([{ ...layout.value, title: 'Console' }, id], id)
+  }
+  layout.value = setActivePanel(layout.value, id)
+}
+provide(OPEN_SESSION, openSession)
 
 function close(id) {
   opened.value = opened.value.filter((o) => o.id !== id)
   layout.value = removePanel(layout.value, id) ?? home()
 }
 
-function openRow(r) {
-  open({ id: `rec:${r.id}`, kind: 'record', rowId: r.id, game: r.record.game, title: r.fields.name, subtitle: r.entityLabel })
+function openRow(r, options) {
+  open({ id: `rec:${r.id}`, kind: 'record', rowId: r.id, game: r.record.game, title: r.fields.name, subtitle: r.entityLabel }, options)
 }
 
 /** A deleted game takes every tab of its own with it — its files, units, sessions. */
@@ -98,7 +138,8 @@ async function openCreated(rowId, replacing) {
   await refresh()
   const r = rowsById.value.get(rowId)
   if (replacing) close(replacing)
-  if (r) openRow(r)
+  // A session that went straight into play here keeps its tab in front.
+  if (r) openRow(r, { focus: !(r.entityKey === 'sessions' && hasPanel(layout.value, `play:${r.record.id}`)) })
 }
 
 function openCreate(entity) {
@@ -106,6 +147,7 @@ function openCreate(entity) {
 }
 
 const itemFor = (id) => opened.value.find((o) => o.id === id)
+const gameRows = computed(() => rows.value?.games ?? [])
 </script>
 
 <template>
@@ -127,10 +169,14 @@ const itemFor = (id) => opened.value.find((o) => o.id === id)
         :source="source"
         :theme="THEME"
         :defaults="{ sort: 'age', dir: 'asc' }"
-        row-press="open"
         @activate="openRow"
         @create="openCreate"
       >
+        <!-- Pressing a game narrows to it (its type declares a scope); every
+             other row opens. The game itself then heads the cards. -->
+        <template #cards-before>
+          <GameSummaryCards :games="gameRows" @open="openRow" @changed="refresh" />
+        </template>
         <template #actions>
           <button type="button" class="cx-btn cx-btn--quiet" :disabled="loading" title="Reload everything from the server" @click="refresh">
             {{ loading ? 'Loading…' : 'Refresh' }}
@@ -153,6 +199,17 @@ const itemFor = (id) => opened.value.find((o) => o.id === id)
         :rows="rows"
         @created="(rowId) => openCreated(rowId, panel.id)"
       />
+      <SessionPlay v-else-if="itemFor(panel.id)?.kind === 'session'" :session-id="itemFor(panel.id).sessionId" />
+    </template>
+    <template #actions="{ panel }">
+      <a
+        v-if="itemFor(panel.id)?.kind === 'session'"
+        class="cx-btn cx-btn--quiet"
+        :href="playUrl.session(itemFor(panel.id).sessionId)"
+        target="_blank"
+        rel="noopener"
+        title="Open this session in a browser tab of its own"
+      >↗</a>
     </template>
   </WindowFrame>
 </template>
@@ -200,7 +257,9 @@ const itemFor = (id) => opened.value.find((o) => o.id === id)
 }
 .cx-btn:hover { background: var(--dc-bg-2); }
 .cx-btn[disabled] { opacity: .45; pointer-events: none; }
-.cx-btn--primary { background: var(--dc-accent); border-color: var(--dc-accent); color: var(--dc-accent-contrast); }
+/* Doubled, to outrank the shell's own reset of a button's colour: a primary
+   button on a card inside the shell is still one. */
+.cx-btn.cx-btn--primary { background: var(--dc-accent); border-color: var(--dc-accent); color: var(--dc-accent-contrast); }
 .cx-btn--primary:hover { background: var(--dc-accent); filter: brightness(1.08); }
 .cx-btn--danger { color: var(--dc-danger); border-color: var(--dc-danger-bg); }
 .cx-btn--quiet { border-color: transparent; background: transparent; color: var(--dc-fg-1); }
@@ -216,6 +275,10 @@ const itemFor = (id) => opened.value.find((o) => o.id === id)
 .cx-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 .cx-code { margin: 0; padding: 10px 12px; overflow: auto; max-height: 320px; font: 12px/1.5 var(--dc-mono); background: var(--dc-bg-1); border: 1px solid var(--dc-line); border-radius: var(--dc-radius-sm, 4px); white-space: pre; }
+
+/* A record's picture on its card: small, beside the name rather than over it,
+   and pixel art kept crisp. */
+.cx-window .dc-card .dc-card__image { width: 40px; height: 40px; image-rendering: pixelated; }
 
 /* Status words appfr's pill does not colour itself: the domain's own, mapped
    onto the same four tokens its ok / running / review / failed use. */

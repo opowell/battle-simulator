@@ -5,6 +5,7 @@
 import { onMounted, ref } from 'vue'
 import { api, playUrl } from '../api.js'
 import { defaultSeats, sessionRequest } from '../sessions.js'
+import { useSessionOpener } from '../opener.js'
 
 const props = defineProps({ record: Object })
 const emit = defineEmits(['created'])
@@ -16,20 +17,21 @@ onMounted(async () => {
   catch (e) { error.value = e.message }
 })
 
+const opener = useSessionOpener()
 const busy = ref(false)
 
 async function start() {
   busy.value = true; error.value = ''
-  // The tab opens now, while the click still counts as one, or a popup blocker
-  // would stop it once the session has been created.
-  const tab = window.open('', '_blank')
+  // Begun now, while the click still counts as one: a browser tab opened once
+  // the session exists would be stopped by a popup blocker.
+  const pending = opener.begin()
   try {
     const { scenario } = props.record
     const created = await api.createSession(sessionRequest(game.value, scenario, defaultSeats(game.value, scenario)))
-    if (tab) { tab.opener = null; tab.location.href = playUrl.session(created.id) }
+    pending.go(created.id)
     emit('created', `sessions:${created.id}`)
   } catch (e) {
-    tab?.close()
+    pending.cancel()
     error.value = e.message
   }
   busy.value = false
@@ -41,7 +43,7 @@ async function start() {
     <p v-if="record.description">{{ record.description }}</p>
     <div class="cx-row">
       <button type="button" class="cx-btn cx-btn--primary" :disabled="busy || !game" @click="start">
-        {{ busy ? 'Starting…' : 'Start session ↗' }}
+        {{ busy ? 'Starting…' : 'Start session' }}{{ opener.inNewTab() ? ' ↗' : '' }}
       </button>
       <a v-if="game" class="cx-btn" :href="playUrl.game(game.name)" target="_blank" rel="noopener">Other seats or options, in the play UI ↗</a>
     </div>

@@ -5,6 +5,7 @@
 // record itself, which is what a detail panel opens.
 
 import { asset } from './api.js'
+import { SETTINGS, settingText } from './settings.js'
 
 const players = (list) => list.map((p) => p.name).join(' v ') || 'no players'
 
@@ -15,7 +16,8 @@ const outcome = (result, list) => {
   return `${winner?.name ?? result.winnerId} won`
 }
 
-export function buildRows(catalog) {
+/** @param values  the settings' current values (settings.js) */
+export function buildRows(catalog, values) {
   const title = new Map(catalog.games.map((g) => [g.name, g.title]))
   const gameTitle = (game) => (Array.isArray(game) ? 'every game' : title.get(game) ?? game)
   // A game's picture is its preview asset; the art cell falls back to a letter
@@ -129,6 +131,15 @@ export function buildRows(catalog) {
       ext: f.path.split('.').pop(),
       size: f.size,
       nonTest: !/\.test\.[cm]?js$/.test(f.path),
+    })),
+
+    // Not about any game: an empty `game` keeps them out of a narrowed query.
+    settings: SETTINGS.map((def) => ({
+      id: `settings:${def.key}`,
+      entityKey: 'settings',
+      entityLabel: 'Setting',
+      record: def,
+      fields: { game: [], gameTitle: '', name: def.label, ref: settingText(def, values[def.key]), description: def.description },
     })),
   }
 }

@@ -2,12 +2,15 @@
 //
 // Every entity's rows carry a `game` field (the game's key; a list for agents and
 // engine options, which several games offer), and `games` declares it as its
-// scope. So a game row's → narrows the whole corpus to that game, and its numbers
-// (Sessions 3, Units 6, …) drill into exactly those rows.
+// scope. So pressing a game narrows the whole corpus to that game (every other
+// kind of row opens instead), and its numbers (Sessions 3, Units 6, …) drill
+// into exactly those rows.
 //
 // Sorting: each entity lists its own sorts, the first being its default, and
 // every sort reads in the order its name says when ascending (the console's
 // default direction) — names A→Z, numbers low→high, and `age` youngest first.
+
+import { SETTINGS } from './settings.js'
 
 const chips = (key, label, options, extra = {}) => ({ kind: 'chips', key, label, options, ...extra })
 const toggle = (key, label, text) => ({ kind: 'toggle', key, label, text })
@@ -30,7 +33,9 @@ const distinct = (values) => [...new Set(values.filter((v) => v != null && v !==
  * @param {object} parts    host components the columns render: { Art }
  */
 export function buildSchema(catalog, { Art }) {
-  const art = { key: 'art', kind: 'component', component: Art, width: '44px' }
+  // The `image` role is what puts the picture on a record's card; in the table
+  // the cell is still Art, which falls back to a letter where there is none.
+  const art = { key: 'art', role: 'image', kind: 'component', component: Art, width: '44px', value: (row) => row.fields.art?.src ?? '' }
   const gameNames = catalog.games.map((g) => g.name)
   const byGame = chips('game', 'Game', gameNames)
 
@@ -211,6 +216,20 @@ export function buildSchema(catalog, { Art }) {
         chips('ext', 'Type', distinct(catalog.files.map((f) => f.path.split('.').pop()))),
         toggle('nonTest', 'Tests', 'Hide test files'),
       ],
+    },
+    {
+      // The console's own preferences (settings.js), kept in this browser.
+      key: 'settings',
+      label: 'Settings',
+      count: count(SETTINGS.length),
+      columns: [
+        ordinal,
+        identity('Setting'),
+        reference('Value', { width: '90px' }),
+        { key: 'description', label: 'What it does', hideBelow: 760 },
+      ],
+      sorts: [{ key: 'name', label: 'name' }],
+      facets: [],
     },
   ]
 
