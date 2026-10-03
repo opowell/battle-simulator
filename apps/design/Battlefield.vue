@@ -17,12 +17,10 @@ import AnalysisPanel     from './battlefield/AnalysisPanel.vue';
 import DatabasePanel     from './battlefield/DatabasePanel.vue';
 import BottomBar         from './battlefield/BottomBar.vue';
 import Minimap           from './battlefield/Minimap.vue';
-import MenuOverlay       from './battlefield/MenuOverlay.vue';
-import GameSettingsOverlay  from './battlefield/GameSettingsOverlay.vue';
+import GamePanels        from './battlefield/GamePanels.vue';
 import SettingsChangeNotice from './battlefield/SettingsChangeNotice.vue';
 import GameOverOverlay   from './battlefield/GameOverOverlay.vue';
 import UnitInfoOverlay   from './battlefield/UnitInfoOverlay.vue';
-import HelpOverlay       from './battlefield/HelpOverlay.vue';
 import AbilityInfoOverlay from './battlefield/AbilityInfoOverlay.vue';
 import CityInspectorOverlay from './battlefield/CityInspectorOverlay.vue';
 import ObserverPerspective from './battlefield/ObserverPerspective.vue';
@@ -44,6 +42,7 @@ const props = defineProps({
   revealFields:  { type: Array, default: () => [] },
   revealLog:     { type: Array, default: () => [] },
   theme:         String,
+  themes:        { type: Array, default: () => [] },
   fog:           { type: Boolean, default: false },
   gamesCount:    { type: Number, default: 0 },
   // This game's definition as GET /games serves it (options, agents, seat
@@ -71,7 +70,7 @@ const props = defineProps({
   // non-live field playback) — App.vue owns it, the footer's speed control sets it.
   playbackSpeed:      { type: Number, default: 1 },
 });
-const emit = defineEmits(['exit', 'open-settings', 'submit-action', 'submit-actions', 'resign', 'set-marker', 'set-plan', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
+const emit = defineEmits(['exit', 'set-theme', 'submit-action', 'submit-actions', 'resign', 'set-marker', 'set-plan', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -117,9 +116,41 @@ const showRuler  = ref(false);
 const showSidebar = ref(true);
 const showAiAnalysis = ref(true);
 const showHpBars = ref(true);
-const showMenu   = ref(false);
-const showGameSettings = ref(false);
-const showHelp   = ref(false);
+// The panels open on the desk (battlefield/GamePanels.vue), in the order opened.
+// They are windows rather than modals, so none of them covers the board's keys.
+const openPanels = ref([]);
+const gamePanels = ref(null);
+const panelFlag = (id) => computed({
+  get: () => openPanels.value.includes(id),
+  set: (on) => {
+    if (on) gamePanels.value?.show(id);
+    else openPanels.value = openPanels.value.filter(x => x !== id);
+  },
+});
+const showMenu = panelFlag('menu');
+const showHelp = panelFlag('help');
+// A unit in hand from the Add units panel ({ ownerId, type }): board clicks place it.
+const placingUnit = ref(null);
+const canShowHelp = computed(() => !!(ui.value?.help || KEYS.helpGroups(ui.value?.keys).length));
+const menuProps = computed(() => ({
+  serverErr: props.serverErr, gamesCount: props.gamesCount,
+  showRuler: showRuler.value, showHpBars: showHpBars.value,
+  showSidebar: showSidebar.value, showAiAnalysis: showAiAnalysis.value,
+  canSurrender: !!analysisPlayerId.value && props.liveState?.status === 'active',
+  canChangeSettings: props.liveState?.status === 'active' && !!props.gameDef,
+  canShowHelp: canShowHelp.value,
+  observerPlayers: isObserver.value ? observerPlayers.value : [],
+  teams: props.field?.teams ?? [], observerView: props.observerView,
+}));
+function onMenu(name, arg) {
+  if (name === 'exit') emit('exit');
+  else if (name === 'toggle-ruler') showRuler.value = !showRuler.value;
+  else if (name === 'toggle-hp-bars') showHpBars.value = !showHpBars.value;
+  else if (name === 'toggle-sidebar') showSidebar.value = !showSidebar.value;
+  else if (name === 'toggle-ai-analysis') showAiAnalysis.value = !showAiAnalysis.value;
+  else if (name === 'surrender') confirmSurrender();
+  else if (name === 'set-observer-view') emit('set-observer-view', arg);
+}
 
 // ── selection ─────────────────────────────────────────────────
 const selectedId = ref(null);
@@ -1789,6 +1820,7 @@ function handleTokenSelect(id) {
 }
 
 function handleSqClick(col, row, x, y, mods) {
+  if (placingUnit.value && gamePanels.value?.place(col, row)) return;
   if (props.field.ui?.territoryClick) { handleTerritoryClick(x, y, mods ?? {}); return; }
   if (inspectTerrain.value) {
     // Armed via the "Inspect terrain…" toggle: clicks look up terrain info instead of
@@ -2180,8 +2212,8 @@ const openPanel = ref(null);
 // city screen can't found a city underneath it. Escape is handled ahead of this and
 // always gets through; panel keys stay live while a panel is up, so the advisor keys
 // switch between advisors the way the original's F-keys do.
-const overlayOpen = computed(() => !!(showMenu.value || showHelp.value || infoUnit.value
-  || infoAbility.value || openPanel.value || selectedCity.value || showGameSettings.value));
+const overlayOpen = computed(() => !!(infoUnit.value
+  || infoAbility.value || openPanel.value || selectedCity.value));
 
 // ── auto end turn ─────────────────────────────────────────────
 // Civ1 never had an "end turn" key: the turn ended by itself once every unit had its
@@ -2329,7 +2361,7 @@ function keyCommand(command) {
 function onKeyDown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Escape') {
-    if (showGameSettings.value)  showGameSettings.value = false;
+    if (placingUnit.value)       gamePanels.value?.disarm();
     else if (aiming.value)       aiming.value = null;
     else if (infoAbility.value)  infoAbility.value = null;
     else if (infoUnit.value)     infoUnit.value = null;
@@ -2350,8 +2382,8 @@ function onKeyDown(e) {
   // between advisors the way the original's F-keys do; on the city screen, commands and
   // advisor keys (step to the next city, leave for an advisor) but no unit orders or
   // movement — there is no unit selected there, only the city.
-  const cityScreenOnly = selectedCity.value && !openPanel.value && !showMenu.value
-    && !showHelp.value && !infoUnit.value && !infoAbility.value;
+  const cityScreenOnly = selectedCity.value && !openPanel.value
+    && !infoUnit.value && !infoAbility.value;
   const allowed = !overlayOpen.value
     || (openPanel.value && intent?.kind === 'panel')
     || (cityScreenOnly && (intent?.kind === 'command' || intent?.kind === 'panel'));
@@ -2407,6 +2439,9 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- The battle screen and its panels' desk side by side: docked, the desk is a
+       column beside the screen; floating, it is laid over the whole of it. -->
+  <div class="bf-shell">
   <div class="bf-root">
 
     <div class="bf-main">
@@ -2464,7 +2499,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Stage -->
-      <div ref="stageEl" class="bf-stage-area" @wheel="handleWheel">
+      <div ref="stageEl" class="bf-stage-area" :class="{ 'bf-stage-area--placing': placingUnit }" @wheel="handleWheel">
         <div v-if="forking" class="bf-fork-banner">
           <span>Exploring a forked line — not the real game</span>
           <span v-if="forkError" class="bf-fork-err">{{ forkError }}</span>
@@ -2541,7 +2576,7 @@ onUnmounted(() => {
            ui.showRightSidebar: false — every panel below goes with it, including
            the ones that appear on their own schedule (the database at game over).
            The one control with no other home, the observer's perspective switcher,
-           is in MenuOverlay too, so hiding this column never strands an observer. -->
+           is in the Menu panel too, so hiding this column never strands an observer. -->
       <div v-if="showSidebar" class="bf-col bf-col--right">
         <ObserverPerspective v-if="isObserver"
           :players="observerPlayers" :teams="field.teams" :value="observerView"
@@ -2606,26 +2641,13 @@ onUnmounted(() => {
       @zoom-in="zoomBy(ZOOM_STEP)" @zoom-out="zoomBy(1 / ZOOM_STEP)"/>
   </div>
 
-  <MenuOverlay
-    :show="showMenu" :serverErr="serverErr" :gamesCount="gamesCount"
-    :showRuler="showRuler" :showHpBars="showHpBars"
-    :showSidebar="showSidebar" :showAiAnalysis="showAiAnalysis"
-    :canSurrender="!!analysisPlayerId && liveState?.status === 'active'"
-    :observerPlayers="isObserver ? observerPlayers : []"
-    :teams="field?.teams ?? []" :observerView="observerView"
-    @close="showMenu = false"
-    @exit="$emit('exit')"
-    @set-observer-view="v => $emit('set-observer-view', v)"
-    @open-settings="$emit('open-settings')"
-    :canChangeSettings="liveState?.status === 'active' && !!gameDef"
-    @open-game-settings="showGameSettings = true"
-    @toggle-ruler="showRuler = !showRuler"
-    @toggle-hp-bars="showHpBars = !showHpBars"
-    @toggle-sidebar="showSidebar = !showSidebar"
-    @toggle-ai-analysis="showAiAnalysis = !showAiAnalysis"
-    @surrender="confirmSurrender"/>
-  <GameSettingsOverlay :show="showGameSettings" :live-state="liveState" :game-def="gameDef"
-                       @close="showGameSettings = false"/>
+  <GamePanels ref="gamePanels" v-model:open="openPanels"
+    :menu="menuProps" :live-state="liveState" :game-def="gameDef"
+    :ui="ui" :game="field.game" :teams="field?.teams ?? []"
+    :theme="theme" :themes="themes"
+    @menu="onMenu" @set-theme="$emit('set-theme', $event)" @arm="placingUnit = $event"/>
+  </div>
+
   <SettingsChangeNotice :live-state="liveState" :game-def="gameDef"/>
 
   <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
@@ -2644,17 +2666,14 @@ onUnmounted(() => {
     @close="infoUnit = null"
     @open-ability-info="openAbilityInfo"/>
 
-  <HelpOverlay
-    :show="showHelp" :ui="ui" :game="field.game"
-    @close="showHelp = false"/>
-
   <AbilityInfoOverlay
     :ability="infoAbility"
     @close="infoAbility = null"/>
 </template>
 
 <style scoped>
-.bf-root { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.bf-shell { height: 100%; display: flex; position: relative; overflow: hidden; }
+.bf-root { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .bf-main { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .bf-col { width: 240px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--bg1); }
 /* The left column scrolls in .bf-col-body, not as a whole, so whatever sits after
@@ -2663,6 +2682,8 @@ onUnmounted(() => {
 .bf-col-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .bf-col--right { border-left: 1px solid var(--line); }
 .bf-stage-area { flex: 1; position: relative; overflow: hidden; }
+/* A unit in hand from the Add units panel: the board takes it where clicked. */
+.bf-stage-area--placing, .bf-stage-area--placing :deep(*) { cursor: copy !important; }
 .bf-empty { padding: 12px 14px; font-size: 11px; color: var(--faint); }
 .bf-inspect-btn { margin: 0 14px 12px; width: calc(100% - 28px); }
 .bf-inspect-btn--on { border-color: var(--accent); color: var(--accent); }

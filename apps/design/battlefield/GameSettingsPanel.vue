@@ -4,18 +4,18 @@
 // board. The same form the setup page uses (GameSetupFields), opened on the
 // session's settings as they are now; only what was changed is sent, and the
 // server works out how each change lands (POST /sessions/:id/reconfigure).
-import { ref, computed, watch } from 'vue';
+// A panel (see PanelDesk): `close` asks the host to close it once applied.
+import { ref, computed } from 'vue';
 import GameSetupFields from '../GameSetupFields.vue';
 
 const props = defineProps({
-  show:      Boolean,
   liveState: { type: Object, default: null },
   // The game's definition as GET /games serves it: options, agents, seat limits.
   gameDef:   { type: Object, default: null },
 });
 const emit = defineEmits(['close']);
 
-// Taken when the overlay opens and held while it is open: the game moves on
+// Taken when the panel opens and held while it is open: the game moves on
 // underneath, and a form re-seeding itself mid-edit would lose the edit.
 const initial = ref(null);
 const liveSession = ref(null);
@@ -23,8 +23,7 @@ const form = ref(null);
 const busy = ref(false);
 const error = ref('');
 
-watch(() => props.show, (open) => {
-  if (!open || !props.liveState) return;
+if (props.liveState) {
   const { startingUnits, ...config } = props.liveState.params?.config ?? {};
   initial.value = {
     gameOpts: config,
@@ -32,9 +31,7 @@ watch(() => props.show, (open) => {
     maxTurns: config.maxTurns ?? null,
   };
   liveSession.value = { id: props.liveState.id, by: props.liveState.viewerId ?? null };
-  form.value = null;
-  error.value = '';
-}, { immediate: true });
+}
 
 const body = computed(() => {
   const f = form.value;
@@ -76,42 +73,28 @@ async function apply() {
 </script>
 
 <template>
-  <teleport to="body">
-    <div v-if="show && gameDef && initial" class="gso-scrim" @click.self="emit('close')">
-      <div class="gso-panel" role="dialog" aria-label="Game settings">
-        <div class="gso-head">
-          <div>
-            <div class="gso-title">Game settings</div>
-            <div class="gso-sub">Changes apply to the game in progress, and everyone in it is told what changed.</div>
-          </div>
-          <button class="gso-close" @click="emit('close')" aria-label="Close">×</button>
-        </div>
-        <div class="gso-body">
-          <GameSetupFields :game="gameDef" :initial="initial" :live-session="liveSession"
-                           @update:config="form = $event"/>
-        </div>
-        <div class="gso-foot">
-          <span v-if="error" class="gso-err">{{ error }}</span>
-          <span v-else class="gso-count">{{ changeCount ? `${changeCount} change${changeCount === 1 ? '' : 's'}` : 'Nothing changed yet' }}</span>
-          <button class="btn btn-ghost btn-sm" @click="emit('close')">Cancel</button>
-          <button class="btn btn-primary btn-sm" :disabled="!changeCount || busy" @click="apply">
-            {{ busy ? 'Applying…' : 'Apply to this game' }}
-          </button>
-        </div>
-      </div>
+  <div v-if="gameDef && initial" class="gso">
+    <div class="gso-sub">Changes apply to the game in progress, and everyone in it is told what changed.</div>
+    <div class="gso-body">
+      <GameSetupFields :game="gameDef" :initial="initial" :live-session="liveSession"
+                       @update:config="form = $event"/>
     </div>
-  </teleport>
+    <div class="gso-foot">
+      <span v-if="error" class="gso-err">{{ error }}</span>
+      <span v-else class="gso-count">{{ changeCount ? `${changeCount} change${changeCount === 1 ? '' : 's'}` : 'Nothing changed yet' }}</span>
+      <button class="btn btn-ghost btn-sm" @click="emit('close')">Cancel</button>
+      <button class="btn btn-primary btn-sm" :disabled="!changeCount || busy" @click="apply">
+        {{ busy ? 'Applying…' : 'Apply to this game' }}
+      </button>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.gso-scrim{position:fixed;inset:0;z-index:1200;background:rgba(4,7,10,.72);display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(3px)}
-.gso-panel{width:min(640px,100%);max-height:calc(100vh - 48px);display:flex;flex-direction:column;background:var(--bg1);border:1px solid var(--line2);border-radius:var(--r2);box-shadow:0 24px 64px -12px rgba(0,0,0,.85)}
-.gso-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 18px 12px;border-bottom:1px solid var(--line)}
-.gso-title{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
-.gso-sub{font-size:11px;color:var(--dim);margin-top:4px}
-.gso-close{border:1px solid var(--line2);background:var(--bg2);color:var(--dim);width:28px;height:28px;border-radius:var(--r);cursor:pointer;font-size:16px;line-height:1}
-.gso-body{padding:16px 18px;overflow:auto;min-height:0}
-.gso-foot{display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--line)}
+.gso{height:100%;display:flex;flex-direction:column;min-height:0}
+.gso-sub{font-size:11px;color:var(--dim);padding:10px 16px;border-bottom:1px solid var(--line)}
+.gso-body{padding:14px 16px;overflow:auto;min-height:0;flex:1}
+.gso-foot{display:flex;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--line)}
 .gso-count{flex:1;font-size:11px;color:var(--dim)}
 .gso-err{flex:1;font-size:11px;color:var(--danger)}
 </style>

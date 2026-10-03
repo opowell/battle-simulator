@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router';
 import Lobby       from './Lobby.vue';
 import GamePage    from './GamePage.vue';
 import Battlefield from './Battlefield.vue';
+import ThemePicker from './ThemePicker.vue';
 
 const router = useRouter();
 const route  = useRoute();
@@ -1556,21 +1557,8 @@ async function restartGame() {
           </div>
           <div class="panel">
             <div class="panel-h"><span class="panel-t">Theme</span></div>
-            <div class="panel-b app-theme-list">
-              <button v-for="th in THEMES" :key="th.id"
-                      :class="['scenrow', 'app-theme-row', theme === th.id && 'sel']"
-                      @click="theme = th.id">
-                <div class="scenmark">
-                  <div class="app-swatch app-swatch--accent" :style="{background:th.accent}"/>
-                </div>
-                <div>
-                  <div class="app-theme-label">{{th.label}}</div>
-                  <div class="mono app-theme-id">{{th.id}}</div>
-                </div>
-                <div class="app-team-swatches">
-                  <div v-for="c in th.teams" :key="c" class="app-swatch app-swatch--team" :style="{background:c}"/>
-                </div>
-              </button>
+            <div class="panel-b">
+              <ThemePicker :themes="THEMES" v-model="theme"/>
             </div>
           </div>
         </div>
@@ -1601,6 +1589,7 @@ async function restartGame() {
                    :reveal-fields="revealFields"
                    :reveal-log="revealLog"
                    :theme="theme"
+                   :themes="THEMES"
                    :fog="liveState?.fog ?? false"
                    :games-count="apiGames.length"
                    :game-def="apiGames.find(g => g.name === liveState?.game) ?? null"
@@ -1614,7 +1603,7 @@ async function restartGame() {
                    :playback-speed="playbackSpeed"
                    @exit="exitBattle"
                    @new-game="restartGame"
-                   @open-settings="openSettings"
+                   @set-theme="theme = $event"
                    @submit-action="submitAction"
                    @submit-actions="submitActions"
                    @resign="resign"
@@ -1650,13 +1639,5 @@ async function restartGame() {
 .app-settings-inner { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 20px; }
 .app-settings-head { display: flex; align-items: center; gap: 14px; }
 .app-settings-title { font-size: 12px; font-weight: 700; letter-spacing: .12em; }
-.app-theme-list { display: flex; flex-direction: column; gap: 8px; }
-.app-theme-row { text-align: left; }
-.app-theme-label { font-size: 14px; font-weight: 600; }
-.app-theme-id { font-size: 11px; color: var(--dim); }
-.app-team-swatches { display: flex; gap: 5px; align-items: center; }
-.app-swatch { border-radius: 50%; }
-.app-swatch--accent { width: 14px; height: 14px; }
-.app-swatch--team { width: 16px; height: 16px; }
 .app-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--dim); }
 </style>

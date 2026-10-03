@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Battle Simulator</title>
 <link rel="stylesheet" href="./vendor/fonts/fonts.css"/>
+<!-- appfr (vendor/appfr, served at /appfr/): the game screen's panels are its
+     WindowFrame. Its built ES modules import "vue", which the map points at this
+     page's own global Vue (vendor/vue-esm.js) so there is only ever one copy. -->
+<link rel="stylesheet" href="../../appfr/style.css"/>
+<script type="importmap">
+{
+  "imports": {
+    "vue": "./vendor/vue-esm.js",
+    "header-content-layout": "../../appfr/index.js"
+  }
+}
+</script>
 <style>
 :root{
   --bg0:#0a0d10; --bg1:#10151a; --bg2:#161c23; --bg3:#1c242c;
@@ -223,6 +235,16 @@ input[type=range]{padding:0;width:100%}
 <script src="./confetti.js"></script>
 <script src="./chess-sound.js"></script>
 <script>
+// appfr arrives as an ES module, which runs after every classic script here; the
+// app's SFCs are only compiled once it has, so `import … from 'header-content-layout'`
+// in one of them always finds it in the loader's module cache.
+window.__appfr = new Promise((resolve, reject) => { window.__appfrLoaded = { resolve, reject }; });
+</script>
+<script type="module">
+import * as appfr from 'header-content-layout';
+window.__appfrLoaded.resolve(appfr);
+</script>
+<script>
 (function () {
   const { loadModule } = window['vue3-sfc-loader'];
 
@@ -279,7 +301,10 @@ input[type=range]{padding:0;width:100%}
 
   const app = Vue.createApp({
     components: {
-      App: Vue.defineAsyncComponent(() => loadModule('./App.vue', sfcOptions)),
+      App: Vue.defineAsyncComponent(() => window.__appfr.then((appfr) => {
+        sfcOptions.moduleCache['header-content-layout'] = appfr;
+        return loadModule('./App.vue', sfcOptions);
+      })),
     },
     template: '<App/>',
   });
