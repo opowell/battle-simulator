@@ -12,7 +12,7 @@ import { IMPROVEMENTS, WONDERS, SPACESHIP, improvementDef } from './improvements
 import { mintId, takenIds } from './ids.js';
 import { GOVERNMENTS } from './governments.js';
 import { computeCity, cityMaintenance, foodBox } from './city.js';
-import { findAdjacentFree } from './map.js';
+import { findAdjacentFree, wrapWidth } from './map.js';
 
 // A fresh civilization: Despotism, no advances, a small starting treasury, taxes at
 // 50/50 tax/science with no luxuries, and no research target yet.
@@ -69,7 +69,7 @@ export function buildOwnerCtx(state, ownerId) {
   }
 
   return {
-    board: state.board, width: state.board.width,
+    board: state.board, width: wrapWidth(state.board),
     gov, govId: civ.government, techs: known,
     wonderIds, wonderEffects,
     capitalPos: capital?.position ?? null,

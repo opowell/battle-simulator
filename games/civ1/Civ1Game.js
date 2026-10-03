@@ -2,7 +2,7 @@ import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat, pickDefender } from './combat.js';
-import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, makeZoneOfControl, renderMap, wrapX } from './map.js';
+import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, makeZoneOfControl, renderMap, wrapX, wrapWidth, boardWraps } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
 import { mintId, takenIds } from './ids.js';
@@ -228,7 +228,7 @@ function getLegalActions(state, playerId) {
         const squares = new Map();   // "x,y" -> the enemies standing there
         for (const enemy of units) {
           if (!enemy.alive || enemy.ownerId === playerId) continue;
-          const dx = wrapDX(enemy.position.x, unit.position.x, board.width);
+          const dx = wrapDX(enemy.position.x, unit.position.x, wrapWidth(board));
           const dy = Math.abs(enemy.position.y - unit.position.y);
           if (dx > 1 || dy > 1 || (dx + dy) === 0) continue;
           const k = `${enemy.position.x},${enemy.position.y}`;
@@ -681,7 +681,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
       }
       return u;
     });
-    units = wakeSentryUnits(units, nextPlayerId, board.width);
+    units = wakeSentryUnits(units, nextPlayerId, wrapWidth(board));
     units = runQueuedMoves(units, nextPlayerId,
       (to, unit, pid, curUnits) => isMoveTargetLegal(to, board, curUnits, cities, pid, unit),
       (curUnits, pid, unit, to) => {
@@ -749,7 +749,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
     const defender = units.find(u => u.id === action.targetId);
     if (!attacker || !defender) return state;
     const center = defender.position;
-    const inBlast = pos => wrapDX(pos.x, center.x, board.width) <= 1 && Math.abs(pos.y - center.y) <= 1;
+    const inBlast = pos => wrapDX(pos.x, center.x, wrapWidth(board)) <= 1 && Math.abs(pos.y - center.y) <= 1;
 
     const intercepted = cities.some(c => inBlast(c.position) && (c.buildings ?? []).includes('sdi-defense'));
     if (intercepted) {
@@ -1024,8 +1024,7 @@ function renderState(state) {
 // Hand-built boards (ASCII art + unit placements) authored in fixedMaps.js.
 // Build a full initial state from one of those map definitions.
 function createFixedMapState(map, players, config) {
-  const { width, height, tiles } = parseFixedMap(map);
-  const board = { width, height, tiles };
+  const board = parseFixedMap(map);
   const sides = [players[0], players[1]];
 
   let idCtr = 0;
@@ -1218,13 +1217,14 @@ const CITY_VISION = 2;
 // getVisibleState — the unit-by-unit distance scan this replaces was quadratic in
 // the size of the war, on that hot path.
 function sightedTiles(state, playerId) {
-  const { width: W, height: H } = state.board;
+  const { height: H } = state.board;
+  const WW = wrapWidth(state.board);
   const seen = new Set();
   const add = (pos, r) => {
     for (let dy = -r; dy <= r; dy++) {
       const y = pos.y + dy;
       if (y < 0 || y >= H) continue;                 // no wrap north/south, unlike east/west
-      for (let dx = -r; dx <= r; dx++) seen.add(`${wrapX(pos.x + dx, W)},${y}`);
+      for (let dx = -r; dx <= r; dx++) seen.add(`${wrapX(pos.x + dx, WW)},${y}`);
     }
   };
   for (const u of state.units)  if (u.alive && u.ownerId === playerId) add(u.position, UNIT_VISION);
@@ -1273,6 +1273,7 @@ function markExplored(state, playerId) {
   if (!explored) return state;   // a hand-built state keeping no record: nothing to do
   if (state.gameSpecific.observed) return state;   // somebody's view, not the world
   const { width: W, height: H } = state.board;
+  const WW = wrapWidth(state.board);
   const bits = explored[playerId] ?? '';
   // Walked as boxes of indices rather than through sightedTiles' set of "x,y" keys:
   // this runs on every node the search expands, and building a set of strings only to
@@ -1283,7 +1284,9 @@ function markExplored(state, playerId) {
       const y = pos.y + dy;
       if (y < 0 || y >= H) continue;
       for (let dx = -r; dx <= r; dx++) {
-        const i = exploredIndex(wrapX(pos.x + dx, W), y, W);
+        const x = wrapX(pos.x + dx, WW);
+        if (x < 0 || x >= W) continue;                // off the edge of a board that doesn't wrap
+        const i = exploredIndex(x, y, W);
         if ((out ?? bits)[i] === EXPLORED) continue;
         if (!out) out = (bits.length === W * H ? bits : bits.padEnd(W * H, '0')).split('');
         out[i] = EXPLORED;
@@ -1545,7 +1548,7 @@ function getActionDuration(state, action) {
     const unit = state.units.find(u => u.id === action.unitId);
     if (!unit) return 1;
     const from = action.from ?? unit.position;
-    const dist = chebyshevWrapped(action.to, from, state.board.width);
+    const dist = chebyshevWrapped(action.to, from, wrapWidth(state.board));
     const st = state.gameSpecific.spacetime ?? { turnDuration: 1 };
     return ST.travelTime(kinematics, unit, state, st, dist);
   }
@@ -1910,6 +1913,8 @@ export const Civ1Game = {
   toGrid(state) {
     const { board, units = [], cities = [] } = state;
     const { width, height, tiles } = board;
+    // The width the neighbour lookups below wrap at (Infinity: a board that doesn't).
+    const ww = wrapWidth(board);
     const pidIdx = {};
     (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
     // Barbarians hold no seat, so they take the owner index just past the last one —
@@ -1993,7 +1998,7 @@ export const Civ1Game = {
     // the sea. Order n,e,s,w matches the sprite filenames (e.g. river_nes.png).
     // Neighbour lookups wrap horizontally so the east/west seam renders seamlessly.
     const isLand = (x, y) => {
-      const t = tiles[`${wrapX(x, width)},${y}`];
+      const t = tiles[`${wrapX(x, ww)},${y}`];
       return !!t && t.terrain !== 'ocean';
     };
     // Land terrain blends with its like neighbours exactly as the original does: each
@@ -2001,7 +2006,7 @@ export const Civ1Game = {
     // (n,e,s,w in the filename, e.g. forest_nes.png). Bit order N,E,S,W was recovered
     // from the real game's own art the same way as the coast — see coastSprites.js.
     const terrainSprite = (x, y, terrain) => {
-      const same = (nx, ny) => tiles[`${wrapX(nx, width)},${ny}`]?.terrain === terrain;
+      const same = (nx, ny) => tiles[`${wrapX(nx, ww)},${ny}`]?.terrain === terrain;
       let d = '';
       if (same(x, y - 1)) d += 'n';
       if (same(x + 1, y)) d += 'e';
@@ -2010,7 +2015,7 @@ export const Civ1Game = {
       return `${BASE}/terrain/${terrain}${d ? `_${d}` : ''}`;
     };
     const riverOrSea = (x, y) => {
-      const t = tiles[`${wrapX(x, width)},${y}`];
+      const t = tiles[`${wrapX(x, ww)},${y}`];
       return !!t && (t.hasRiver || t.terrain === 'ocean');
     };
     const riverSprite = (x, y) => {
@@ -2026,8 +2031,8 @@ export const Civ1Game = {
     // stacked. Eight directional sprites (road_n .. road_nw, lifted from SP257.PIC);
     // an unconnected road draws nothing, as in the game.
     const ROAD_DIRS = [['n',0,-1],['ne',1,-1],['e',1,0],['se',1,1],['s',0,1],['sw',-1,1],['w',-1,0],['nw',-1,-1]];
-    const hasRoad = (x, y) => !!tiles[`${wrapX(x, width)},${y}`]?.hasRoad;
-    const hasRail = (x, y) => !!tiles[`${wrapX(x, width)},${y}`]?.hasRail;
+    const hasRoad = (x, y) => !!tiles[`${wrapX(x, ww)},${y}`]?.hasRoad;
+    const hasRail = (x, y) => !!tiles[`${wrapX(x, ww)},${y}`]?.hasRail;
     // A railroaded square draws rail segments to its railroaded neighbours and plain
     // road segments to the merely roaded ones, so track visibly ends where the line
     // ends instead of the whole road turning into railway. rail_* is the road art
@@ -2042,7 +2047,7 @@ export const Civ1Game = {
           : `${BASE}/terrain/road_${d}`);
     };
 
-    const isOcean = (x, y) => tiles[`${wrapX(x, width)},${y}`]?.terrain === 'ocean';
+    const isOcean = (x, y) => tiles[`${wrapX(x, ww)},${y}`]?.terrain === 'ocean';
 
     // Coastline: the real Civ1 ocean tile for this square — one of 16, picked by
     // which of the four cardinal neighbours are land (see coastSprites.js). The
@@ -2216,7 +2221,7 @@ export const Civ1Game = {
         const radius = FAT_CROSS.map(([dx, dy]) => {
           const ry = c.position.y + dy;
           if (ry < 0 || ry >= height) return { dx, dy, offBoard: true };
-          const rx = wrapX(c.position.x + dx, width);
+          const rx = wrapX(c.position.x + dx, ww);
           const key = `${rx},${ry}`;
           const tile = tiles[key];
           if (!tile) return { dx, dy, offBoard: true };
@@ -2389,7 +2394,7 @@ export const Civ1Game = {
     // times, next to the turn counter (GameHeader.vue). Computed per snapshot from
     // state.turnNumber, so scrubbing the history timeline moves the calendar too.
     return {
-      width, height, cells, wrap: true, civ, cities: citiesOut, military, statusChips, extraTeams,
+      width, height, cells, wrap: boardWraps(board), civ, cities: citiesOut, military, statusChips, extraTeams,
       turnLabel: objectiveLabel(state) ?? yearLabel(state.turnNumber),
       // Per-session view settings, layered over the static `ui` above (see App.vue's
       // buildField): whether a played turn ends itself, as the setup form asked.

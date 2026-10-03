@@ -16,6 +16,7 @@ import { chebyshevWrapped, BUILDABLE } from './Civ1Game.js';
 import {
   productionContext, chooseProductionAction, defenceStrength, RESEARCH_PRIORITY,
 } from './production.js';
+import { wrapWidth } from './map.js';
 import { siegeRole, siegeAttackFloor, siegeAttackWant, isMounted, atSiegeCity, chooseSiegeProduction } from './objective.js';
 
 // Both priority lists and the production scorer live in production.js, shared with
@@ -212,7 +213,7 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
   return {
     id,
     chooseAction(state, legalActions) {
-      const W = state.board.width;
+      const W = wrapWidth(state.board);
       const myId = state.activePlayers[0];
       const unitById = new Map(state.units.map(u => [u.id, u]));
       // A fixed battle's objective, if this is one (objective.js) — null in the open game.
@@ -429,7 +430,11 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
       }
 
       if (moves.length) {
-        const center = { x: state.board.width / 2, y: state.board.height / 2 };
+        // Nothing in sight: drift toward the middle of the world — except a besieged
+        // city's horsemen, who wait by the walls for something to ride out at rather
+        // than wandering off to meet the whole army in the open.
+        const center = siege?.role === 'defender' ? siege.cityPos
+          : { x: state.board.width / 2, y: state.board.height / 2 };
         const inward = m => chebyshevWrapped(m.to, center, W) + stackCost(m.to);
         return moves.reduce((best, m) => inward(m) < inward(best) ? m : best);
       }

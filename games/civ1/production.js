@@ -45,6 +45,7 @@
 // ---------------------------------------------------------------------------
 
 import { UNITS } from './units.js';
+import { wrapWidth } from './map.js';
 import { TERRAIN } from './terrain.js';
 import { computeCity } from './city.js';
 import { buildOwnerCtx, buildCost } from './economy.js';
@@ -189,7 +190,7 @@ function cityDefenceFactor(state, city, hasWalls) {
  * exact either way.
  */
 export function productionContext(state, city, playerId, { cityTarget = 6 } = {}) {
-  const W = state.board.width;
+  const W = wrapWidth(state.board);
   const myCities = state.cities.filter(c => c.ownerId === playerId);
   const otherCityKeys = new Set(
     myCities.filter(c => c.id !== city.id).map(c => `${c.position.x},${c.position.y}`));
