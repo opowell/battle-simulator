@@ -10,6 +10,7 @@ import { tilesToShapes } from '../terrainShapes.js';
 import { lineCost, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { parsePos, num, posToWire } from '../coord.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
 
@@ -429,6 +430,25 @@ export const CombatMissionGame = {
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
   ],
   createInitialState,
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return UNIT_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
+  },
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // rifle squad: 10 hp, 5 attack, range 5, 2 moves; armour is read one higher than
+  // it is, so a squad's 0 is one point of defence and a Tiger's 7 is eight.
+  foreignUnits: tableUnits({
+    table: UNIT_DEFS,
+    scale: { hp: 10, attack: 5, defense: 1, range: 5, move: 2 },
+    read: (e) => ({ hp: e.hp, attack: e.attack, defense: (e.armor ?? 0) + 1, range: e.range, move: e.moveRange, domain: 'land' }),
+    write: (e, s) => ({
+      ...e, hp: whole(s.hp), attack: whole(s.attack), armor: whole(s.defense - 1, 0),
+      range: whole(s.range), moveRange: whole(s.move),
+    }),
+    art: (type) => ({
+      imagePath: UNIT_PORTRAITS.has(type) ? `/images/combatmission/units/${type}` : null,
+      glyph: UNIT_DEFS[type]?.symbol, name: UNIT_DEFS[type]?.label ?? type,
+    }),
+  }),
   getLegalActions,
   isActionLegal,
   getSearchActions,

@@ -6,6 +6,14 @@ import { resolveAttack, resolveAttackVsBuilding, inRange, chebyshev, effectiveRa
 import { generateMap, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
 import { getSc2Belief } from './belief.js';
 import { scSpriteLayers } from '../starcraftSprite.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
+
+// What makes a unit something other than a plain fighter — a type a unit from
+// another game must not play as (see foreignUnits below).
+const NOT_A_CHASSIS = /^(worker|supply-\d+|self-destruct|anti-air|transport-\d+|temporary)$/;
+// What it keeps of its chassis: what the unit IS (light, armoured, biological, how
+// it hits) — never an ability to use (stim, blink, siege, a once-a-game Yamato).
+const PASSIVE_TAG = /^(light|armored|bio|massive|splash|bounce|bonus-.+)$/;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1053,6 +1061,27 @@ export const Sc2Game = {
   ],
   colors: { open: '#6a7a50', elevated: '#8a7060', ramp: '#9a8868', minerals: '#2060a0', vespene: '#20884a', obstacle: '#3a2818' },
   createInitialState,
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return UNITS[type] ? makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0) : null;
+  },
+  // Units from other games (engine/foreignUnits.js) — read as SC1's are: the marine
+  // (45 hp here, 6 damage, range 4, 2 moves) is one point of each stat, shields
+  // count as hp, armour is read one higher than it is, and a foreign unit plays as
+  // a fighting unit rather than a worker, supplier, suicide or anti-air-only one.
+  foreignUnits: tableUnits({
+    table: UNITS,
+    scale: { hp: 45, attack: 6, defense: 1, range: 4, move: 2 },
+    read: (e) => ({
+      hp: e.hp + (e.shields ?? 0), attack: e.attack, defense: (e.armor ?? 0) + 1, range: e.range, move: e.moves,
+      domain: e.domain === 'air' ? 'air' : 'land',
+    }),
+    write: (e, s) => ({
+      ...e, hp: whole(s.hp), shields: 0, attack: whole(s.attack, s.attack > 0 ? 1 : 0), armor: whole(s.defense - 1, 0),
+      range: whole(s.range), moves: whole(s.move), special: e.special.filter(t => PASSIVE_TAG.test(t)),
+    }),
+    chassis: (_type, e) => e.attack > 0 && !e.special.some(t => NOT_A_CHASSIS.test(t)),
+    art: (type) => ({ imagePath: UNIT_PORTRAITS.has(type) ? `/images/sc2/units/${type}` : null, glyph: type[0].toUpperCase(), name: type }),
+  }),
   getLegalActions,
   applyActions,
   getResult,

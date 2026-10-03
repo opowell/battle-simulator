@@ -22,7 +22,8 @@ import { fileURLToPath }         from 'node:url';
 import { WebSocketServer } from './vendor/ws/wrapper.mjs';
 import { GridTimeline } from './engine/gridFrames.js';
 
-import { GameEngine, rosterError, rosterFromState, setupPreview, SETUP_KEY } from './engine/index.js';
+import { GameEngine, rosterError, rosterFromState, setupPreview, cellMapper, SETUP_KEY } from './engine/index.js';
+import { registerGames, dressGrid } from './engine/foreignUnits.js';
 import { planReconfigure, carriedRoster, rebuiltState, editedState, livePreview } from './engine/reconfigure.js';
 import { validate as validateAction } from './engine/ActionValidator.js';
 import * as gameEditor from './gameEditor.js';
@@ -305,6 +306,10 @@ const GAMES = {
   surviv:        { game: SurvivGame,        minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'blue', name: 'Blue' }, { id: 'red', name: 'Red' }] },
   memoir44:      { game: Memoir44Game,      minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
 };
+
+// Every game may field units of the others (engine/foreignUnits.js) — those that
+// declare `foreignUnits` lend theirs and take the others' in.
+registerGames(GAMES);
 
 // ---------------------------------------------------------------------------
 // Session management
@@ -652,7 +657,7 @@ class Session {
     try {
       const { game } = GAMES[this.gameName];
       if (!state || !game.toGrid) return null;
-      return applyAxisLabels(game, game.toGrid(state));
+      return renderGrid(game, state);
     } catch { return null; }
   }
 
@@ -686,7 +691,7 @@ class Session {
     if (!dead.length) return;
     let preGrid = null;
     if (game.toGrid) {
-      try { preGrid = applyAxisLabels(game, game.toGrid(preState)); } catch { preGrid = null; }
+      try { preGrid = renderGrid(game, preState); } catch { preGrid = null; }
     }
     const players = this.params.players ?? [];
     for (const u of dead) {
@@ -1398,7 +1403,7 @@ class Session {
       planActions: (!fogNoPlayer && playerId && game.planFrontier && rawState)
         ? game.planFrontier(rawState, playerId) : null,
       rendered: fogNoPlayer ? null : (rawState ? game.renderState(viewState) : null),
-      grid: fogNoPlayer ? null : (viewState && game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null),
+      grid: fogNoPlayer ? null : (viewState && game.toGrid ? renderGrid(game, viewState) : null),
       // Every unit lost so far that this viewer is entitled to know about — see
       // _recordCasualties. Observers and non-fog games get the whole list
       // unconditionally (nothing to hide); a fog player gets their own losses
@@ -1487,6 +1492,15 @@ function applyAxisLabels(game, grid) {
   if (x) grid.xLabels = x;
   if (y) grid.yLabels = y;
   return grid;
+}
+
+// What a client is sent to draw `state`: the game's own toGrid, with its static axis
+// labels, and every unit from another game drawn as itself rather than as the type
+// it plays as here (engine/foreignUnits.js dressGrid).
+function renderGrid(game, state) {
+  let grid = game.toGrid(state);
+  if (state?.units?.some(u => u?.origin)) grid = dressGrid(game, state, grid, cellMapper(game, state, grid).toCell);
+  return applyAxisLabels(game, grid);
 }
 
 function readBody(req) {
@@ -2326,7 +2340,7 @@ async function handleForkMove(req, res, id) {
   const newState = game.applyActions(state, [{ playerId, action }]);
   send(res, 200, {
     state: newState,
-    grid: applyAxisLabels(game, game.toGrid(newState)),
+    grid: renderGrid(game, newState),
     legalActions: game.getLegalActions(newState, newState.activePlayers[0]),
     activePlayers: newState.activePlayers,
     turnNumber: newState.turnNumber ?? null,
@@ -2477,7 +2491,7 @@ async function handlePosition(res, id, url) {
   send(res, 200, {
     ply, playerId,
     legalActions: playerId ? game.getLegalActions(state, playerId) : [],
-    grid: game.toGrid ? applyAxisLabels(game, game.toGrid(viewState)) : null,
+    grid: game.toGrid ? renderGrid(game, viewState) : null,
   });
 }
 

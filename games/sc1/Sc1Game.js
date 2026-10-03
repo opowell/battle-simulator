@@ -9,6 +9,14 @@ import { lineCost, isClearOfUnits } from '../continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 import { scSpriteLayers, scImageSpriteLayers, scImageHitRFrac, scBuildingSpriteLayers, scBuildingImageSpriteLayers, scBuildingSize } from '../starcraftSprite.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
+
+// What makes a unit something other than a plain fighter — a type a unit from
+// another game must not play as (see foreignUnits below).
+const NOT_A_CHASSIS = /^(worker|supply-\d+|self-destruct|anti-air|transport-\d+)$/;
+// What it keeps of its chassis: what the unit IS (light, armoured, biological, how
+// it hits) — never an ability to use (cloak, siege, a once-a-game Yamato).
+const PASSIVE_TAG = /^(light|armored|bio|massive|splash|bounce|bonus-.+)$/;
 
 // Unit types with a sprite in images/units/. Each PNG stores its player-color
 // region as a magenta ramp; the design app tints it to the owner's team color at
@@ -856,6 +864,29 @@ export const Sc1Game = {
       options: [{ value: 'original', label: 'Original (1998)' }, { value: 'remastered', label: 'Remastered (2017)' }] },
   ],
   createInitialState,
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return UNITS[type] ? makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0) : null;
+  },
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // marine: 40 hp, 6 damage, range 4, 2 moves. Shields count as hp, and armour is
+  // read one higher than it is, so a marine's 0 is one point of defence rather than
+  // none and scales like every other stat. A foreign unit plays as a fighting unit
+  // — not a worker, a supply unit, one that blows itself up or one that can only
+  // shoot at aircraft.
+  foreignUnits: tableUnits({
+    table: UNITS,
+    scale: { hp: 40, attack: 6, defense: 1, range: 4, move: 2 },
+    read: (e) => ({
+      hp: e.hp + (e.shields ?? 0), attack: e.attack, defense: (e.armor ?? 0) + 1, range: e.range, move: e.moves,
+      domain: e.domain === 'air' ? 'air' : 'land',
+    }),
+    write: (e, s) => ({
+      ...e, hp: whole(s.hp), shields: 0, attack: whole(s.attack, s.attack > 0 ? 1 : 0), armor: whole(s.defense - 1, 0),
+      range: whole(s.range), moves: whole(s.move), special: e.special.filter(t => PASSIVE_TAG.test(t)),
+    }),
+    chassis: (_type, e) => e.attack > 0 && !e.special.some(t => NOT_A_CHASSIS.test(t)),
+    art: (type) => ({ imagePath: UNIT_SPRITES.has(type) ? `/images/sc1/units/${type}` : null, glyph: type[0].toUpperCase(), name: type }),
+  }),
   getLegalActions,
   isActionLegal,
   applyActions,

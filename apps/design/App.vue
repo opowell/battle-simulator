@@ -830,6 +830,10 @@ function buildField(g, s) {
       imagePath:     c.imagePath,
       portraitPath:  c.portraitPath,
       mainImagePath: c.mainImagePath,
+      // A unit from another game ({ game, type, chassis } — engine/foreignUnits.js):
+      // its picture is its own game's, which knows nothing of this board's sides, so
+      // the renderer stands it on a plate of its team's colour (battlefield/HtmlUnit.vue).
+      origin:        c.origin,
       // Layered composite sprite (body/hands/held weapon/team ring/equipment badges,
       // each independently offset+rotated) — see apps/design/SchematicLayer.vue's
       // generic renderer and e.g. games/surviv/SurvivGame.js's spriteLayers().

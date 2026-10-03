@@ -1314,6 +1314,12 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             <rect :x="-unitR(u)" :y="-unitR(u)"
                   :width="unitR(u)*2" :height="unitR(u)*2"
                   fill="transparent" class="sl-allevents"/>
+            <!-- A unit from another game stands on a plate of its team's colour: its picture
+                 is its own game's, drawn with no idea which side it is on here (App.vue). -->
+            <rect v-if="u.origin" :x="-unitR(u)" :y="-unitR(u)"
+                  :width="unitR(u)*2" :height="unitR(u)*2" :rx="unitR(u)*0.45"
+                  :fill="u.teamObj.raw" fill-opacity="0.28" :stroke="u.teamObj.raw" stroke-width="2"
+                  class="sl-noevents"/>
             <image :x="-unitR(u)" :y="-unitR(u)"
                    :width="unitR(u)*2" :height="unitR(u)*2"
                    :href="teamSpriteHref(u.imagePath, u.teamObj?.raw, field.ui?.recolorTeamSprites)"

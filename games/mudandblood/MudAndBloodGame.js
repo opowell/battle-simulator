@@ -2,8 +2,9 @@ import { unitStrengthEval } from '../evalHelpers.js';
 import { createMap, renderMap } from './map.js';
 import { getReachable, manhattan } from './grid.js';
 import { calcHitChance, rollHit, rollDamage } from './combat.js';
-import { createUnit } from './units.js';
+import { createUnit, UNIT_DEFS } from './units.js';
 import { getMudAndBloodBelief } from './belief.js';
+import { whole, meanOf, rescaleRoll } from '../../engine/foreignUnits.js';
 
 // ---------------------------------------------------------------------------
 // Wave definitions — each wave index = wave number - 1
@@ -124,6 +125,30 @@ export const MudAndBloodGame = {
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within range', type: 'boolean', default: false },
   ],
+
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return UNIT_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
+  },
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // rifleman: 8 hp, 4 damage a hit (its 3–5 roll), range 10, 2 moves; there is no
+  // armour. A unit's rules are read off the unit itself (attrs), so that is where
+  // its stats are written — and it plays as a plain soldier, never the medic or the
+  // officer, whose healing and command would come with it.
+  foreignUnits: {
+    scale: { hp: 8, attack: 4, range: 10, move: 2 },
+    profiles: () => Object.fromEntries(Object.entries(UNIT_DEFS).map(([type, d]) => [type, {
+      hp: d.maxHP, attack: meanOf(d.damage), range: d.maxRange, move: d.moveRange, domain: 'land',
+      ...(d.canHeal || d.isOfficer ? { chassis: false } : {}),
+    }])),
+    adopt: (u, s) => ({
+      ...u, hp: whole(s.hp), maxHp: whole(s.hp),
+      attrs: { ...u.attrs, damage: rescaleRoll(u.attrs.damage, s.attack), maxRange: whole(s.range), moveRange: whole(s.move) },
+    }),
+    realize: (type, s) => ({
+      hp: whole(s.hp), attack: meanOf(rescaleRoll(UNIT_DEFS[type].damage, s.attack)), range: whole(s.range), move: whole(s.move),
+    }),
+    art: (type) => ({ imagePath: `/images/mudandblood/units/${type}`, glyph: UNIT_DEFS[type]?.symbol, name: type }),
+  },
 
   createInitialState(players, config = {}) {
     const [alliesPlayer, axisPlayer] = players;

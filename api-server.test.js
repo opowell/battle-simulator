@@ -405,6 +405,40 @@ test('a roster the game cannot build is refused with a reason', async () => {
   assert.match(bad.error ?? '', /not a starting unit type/);
 });
 
+test('a session can field units of other games, drawn as themselves', async () => {
+  const players = [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }];
+  const preview = await post('/games/chess/setup', { players, config: {} });
+  const sc1 = preview.foreign.find(g => g.game === 'sc1');
+  assert.ok(sc1, 'chess should be offered SC1\'s units');
+  assert.equal(sc1.units.find(u => u.type === 'zergling').plays.white.chassis, 'pawn');
+
+  const roster = [
+    ...preview.roster.map(({ id, ownerId, type, position }) => ({ id, ownerId, type, position })),
+    { ownerId: 'white', type: 'zergling', game: 'sc1', position: 'e4' },
+  ];
+  const s = await post('/sessions', {
+    game: 'chess',
+    players: [{ id: 'white', agent: 'human' }, { id: 'black', agent: 'human' }],
+    config: { startingUnits: roster },
+  });
+  const snap = await get(`/sessions/${s.id}?player=white`);
+  const e4 = snap.grid.cells.find(c => c.x === 4 && c.y === 4);
+  assert.equal(e4.imagePath, '/images/sc1/units/zergling', 'drawn as a zergling, not as the pawn it plays as');
+  assert.deepEqual(e4.origin, { game: 'sc1', type: 'zergling', chassis: 'pawn' });
+  assert.ok(snap.legalActions.some(a => a.from === 'e4'), 'and it moves, as a pawn');
+
+  // The in-game editor reads it back as the zergling it was asked for.
+  const live = await post(`/sessions/${s.id}/setup`, { config: {}, by: 'white' });
+  assert.deepEqual(live.roster.filter(u => u.game).map(u => [u.game, u.type]), [['sc1', 'zergling']]);
+
+  const bad = await post('/sessions', {
+    game: 'chess',
+    players: [{ id: 'white', agent: 'human' }, { id: 'black', agent: 'human' }],
+    config: { startingUnits: [...roster, { ownerId: 'black', type: 'dragon', game: 'sc1', position: 'e5' }] },
+  });
+  assert.match(bad.error ?? '', /not a unit of SC1/);
+});
+
 test('the console catalog lists every game and what it defines, and sees a session as it starts', async () => {
   const games = await get('/games');
   const before = await get('/catalog');

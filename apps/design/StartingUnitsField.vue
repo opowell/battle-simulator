@@ -32,7 +32,7 @@ const on       = ref(false);
 const loading  = ref(false);
 const error    = ref('');
 const preview  = ref(null);
-const roster   = ref([]);          // [{ id?, ownerId, type, position, cell, glyph, imagePath }]
+const roster   = ref([]);          // [{ id?, ownerId, type, game?, position, cell, glyph, imagePath }]
 const selected = ref(null);
 // The inputs the roster in hand was built from — so a re-fetch happens when the
 // board could have changed underneath it, and not merely because we ourselves
@@ -105,6 +105,36 @@ const tokens = computed(() => roster.value.map(u => ({ ...u, color: colorOf(u.ow
 
 const imgSrc = (path) => window.api.imgSrc(path);
 
+// ── units of other games ─────────────────────────────────────────────────────
+// A roster entry may name a unit of another game ({ type, game }), which then plays
+// under this game's rules as the nearest of its own types, its stats converted by
+// the two games' conversion factors (engine/foreignUnits.js). In the pickers below
+// such a unit is the one value "game:type"; this game's own types are bare.
+const foreignGroups = computed(() => preview.value?.foreign ?? []);
+const valueOf = (u) => (u.game ? `${u.game}:${u.type}` : u.type);
+const parseValue = (v) => {
+  const i = v.indexOf(':');
+  return i < 0 ? { type: v, game: undefined } : { game: v.slice(0, i), type: v.slice(i + 1) };
+};
+const foreignInfo = (game, type) => foreignGroups.value.find(g => g.game === game)?.units.find(u => u.type === type) ?? null;
+// The other games' units a side can field (a type of this game may carry only one
+// side's units — Doom's marine and its demons fight differently).
+const foreignFor = (ownerId) => foreignGroups.value
+  .map(g => ({ ...g, units: g.units.filter(u => u.plays[ownerId]) }))
+  .filter(g => g.units.length);
+const gameTitle = (game) => foreignGroups.value.find(g => g.game === game)?.title ?? game;
+
+const STAT_LABEL = { hp: 'hp', attack: 'atk', defense: 'def', range: 'rng', move: 'mv' };
+const statLine = (stats) => Object.entries(stats ?? {}).map(([k, v]) => `${STAT_LABEL[k] ?? k} ${v}`).join(' · ');
+/** What a unit of another game turns into here, in a line: its chassis, and its stats in this game's numbers. */
+function foreignTitle(u) {
+  const info = foreignInfo(u.game, u.type);
+  const plays = info?.plays?.[u.ownerId];
+  if (!info || !plays) return `${u.type}, from ${gameTitle(u.game)}`;
+  return `${info.name}, from ${gameTitle(u.game)} (${statLine(info.source)})\n`
+    + `Plays as ${plays.chassisName} here: ${statLine(plays.stats)}`;
+}
+
 const squareLabel = (u) => (typeof u.position === 'string' ? u.position
   : u.cell ? `${u.cell[0]},${u.cell[1]}` : '—');
 
@@ -143,17 +173,19 @@ function cellPosition([col, row], like) {
   return cell?.pos ?? like?.position ?? null;
 }
 
-function addUnit(ownerId, type) {
-  if (!type) return;
+function addUnit(ownerId, value) {
+  if (!value) return;
+  const { type, game } = parseValue(value);
   // Next to that side's other units — an added unit should turn up where its army
   // is, not in a corner of the map — and selected, ready to be put somewhere else.
   const home = roster.value.find(u => u.ownerId === ownerId);
   const key = 'new' + (added++);
+  const art = game ? foreignInfo(game, type) : null;
   roster.value = [...roster.value, {
-    key, ownerId, type,
+    key, ownerId, type, game,
     position: home?.position ?? null,
     cell: home?.cell ?? null,
-    glyph: null, imagePath: null,
+    glyph: art?.glyph ?? null, imagePath: art?.imagePath ?? null,
   }];
   selected.value = key;
 }
@@ -163,10 +195,12 @@ function removeUnit(u) {
   selected.value = null;
 }
 
-function setType(u, type) {
+function setType(u, value) {
+  const { type, game } = parseValue(value);
+  const art = game ? foreignInfo(game, type) : null;
   // A different unit is a different unit: drop the id so the server builds a new
   // one of that type rather than trying to keep the old one's stats.
-  put(idx(u), { type, id: undefined, key: u.key ?? ('new' + (added++)), glyph: null, imagePath: null });
+  put(idx(u), { type, game, id: undefined, key: u.key ?? ('new' + (added++)), glyph: art?.glyph ?? null, imagePath: art?.imagePath ?? null });
 }
 
 function reset() {
@@ -177,7 +211,7 @@ function reset() {
 // What the form sends: the edited roster, or nothing at all when the switch is off.
 watch([on, roster], () => {
   emit('update:units', on.value && roster.value.length
-    ? roster.value.map(({ ownerId, type, position, id }) => (id ? { id, ownerId, type, position } : { ownerId, type, position }))
+    ? roster.value.map(({ ownerId, type, game, position, id }) => ({ ...(id ? { id } : {}), ownerId, type, ...(game ? { game } : {}), position }))
     : null);
 }, { deep: true });
 </script>
@@ -219,6 +253,10 @@ watch([on, roster], () => {
             <select class="gsf-input su-add" :value="''" @change="addUnit(g.ownerId, $event.target.value); $event.target.value = ''">
               <option value="">+ Add unit…</option>
               <option v-for="t in preview.unitTypes" :key="t" :value="t">{{ t }}</option>
+              <optgroup v-for="fg in foreignFor(g.ownerId)" :key="fg.game" :label="'From ' + fg.title">
+                <option v-for="fu in fg.units" :key="fu.type" :value="fg.game + ':' + fu.type"
+                        :title="foreignTitle({ ...fu, game: fg.game, ownerId: g.ownerId })">{{ fu.name }} → {{ fu.plays[g.ownerId].chassisName }}</option>
+              </optgroup>
             </select>
           </div>
           <div v-for="u in g.units" :key="u.key ?? u.id" class="su-row"
@@ -228,10 +266,15 @@ watch([on, roster], () => {
               <img v-if="u.imagePath" :src="imgSrc(u.imagePath)" alt=""/>
               <template v-else>{{ (u.glyph || u.type[0]).toUpperCase() }}</template>
             </span>
-            <select class="gsf-input su-type" :value="u.type" @click.stop
+            <select class="gsf-input su-type" :value="valueOf(u)" @click.stop
+                    :title="u.game ? foreignTitle(u) : ''"
                     @change="setType(u, $event.target.value)">
               <option v-for="t in preview.unitTypes" :key="t" :value="t">{{ t }}</option>
+              <optgroup v-for="fg in foreignFor(u.ownerId)" :key="fg.game" :label="'From ' + fg.title">
+                <option v-for="fu in fg.units" :key="fu.type" :value="fg.game + ':' + fu.type">{{ fu.name }} → {{ fu.plays[u.ownerId].chassisName }}</option>
+              </optgroup>
             </select>
+            <span v-if="u.game" class="su-from" :title="foreignTitle(u)">{{ gameTitle(u.game) }}</span>
             <span class="mono su-sq">{{ squareLabel(u) }}</span>
             <button class="iconbtn su-rm" @click.stop="removeUnit(u)" title="Remove">
               <BsIcon name="trash" :size="13" color="var(--dim)"/>
@@ -263,6 +306,7 @@ watch([on, roster], () => {
   font-size:10px;font-weight:700;color:#08121a;overflow:hidden}
 .su-token img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
 .su-type{padding:3px 6px;font-size:11px;flex:1;min-width:0}
+.su-from{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;white-space:nowrap;flex:none}
 .su-sq{font-size:11px;color:var(--dim);min-width:46px;text-align:right}
 .su-rm{width:24px;height:24px}
 .su-reset{align-self:flex-start;margin-top:4px}

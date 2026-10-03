@@ -1,6 +1,7 @@
 import { chebyshev, reachableSquares } from './grid.js';
 import { UNIT_STATS, calculateDamage } from './combat.js';
 import { getTacticalBelief } from './belief.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
 
 // ---------------------------------------------------------------------------
 // Default scenario
@@ -118,6 +119,24 @@ export const TacticalGame = {
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
   ],
+
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return UNIT_STATS[type] ? makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0) : null;
+  },
+
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // warrior — the standard infantryman — except for range, where a warrior only
+  // reaches the next square: there it is the archer's.
+  foreignUnits: tableUnits({
+    table: UNIT_STATS,
+    scale: { hp: 30, attack: 8, defense: 4, range: 3, move: 2 },
+    read: (e) => ({ hp: e.maxHp, attack: e.attack, defense: e.defense, range: e.attackRange, move: e.moveRange, domain: 'land' }),
+    write: (e, s) => ({
+      ...e, hp: whole(s.hp), maxHp: whole(s.hp), attack: whole(s.attack), defense: whole(s.defense, 0),
+      attackRange: whole(s.range), moveRange: whole(s.move),
+    }),
+    art: (type) => ({ glyph: type[0].toUpperCase(), name: type }),
+  }),
 
   createInitialState(players, config = {}) {
     const boardConfig = { ...DEFAULT_CONFIG, ...config };

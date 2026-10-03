@@ -33,7 +33,14 @@
  *
  * Positions are opaque game values ('e4', {x,y}, {col,row}, …). `cellMapper`
  * translates between them and grid cells for the UI, without any game knowing.
+ *
+ * An entry may also name a unit of ANOTHER game — { ownerId, type: 'marine',
+ * game: 'sc1', position } — which then plays under this game's rules as the
+ * closest of its own types, with its stats converted by each game's conversion
+ * factor (engine/foreignUnits.js). On the board it reads back the same way.
  */
+
+import { foreignEntryError, foreignKey, mintForeign, nameOfGame, originOf, dressGrid, foreignCatalog } from './foreignUnits.js';
 
 /** Config key carrying the custom roster. */
 export const SETUP_KEY = 'startingUnits';
@@ -52,18 +59,40 @@ export function buildInitialState(game, players, config = {}) {
 
 /**
  * The customisable roster of a state: every live unit, in board order.
- * `id` is the handle a caller sends back to say "this same unit".
+ * `id` is the handle a caller sends back to say "this same unit". A unit from
+ * another game is named the way it was asked for — its own game and type, not
+ * the chassis it plays as here.
  */
 export function rosterFromState(state) {
   return (state?.units ?? [])
     .filter(u => u && u.alive !== false)
-    .map(u => ({ id: u.id, ownerId: u.ownerId, type: u.type, position: u.position ?? null }));
+    .map((u) => {
+      const origin = originOf(u);
+      return origin
+        ? { id: u.id, ownerId: u.ownerId, type: origin.type, game: origin.game, position: u.position ?? null }
+        : { id: u.id, ownerId: u.ownerId, type: u.type, position: u.position ?? null };
+    });
 }
 
-/** Every unit type a roster may name: the ones the game opens with, plus any the game offers. */
+/** Whether a roster entry names a unit of another game than `game`. */
+const isForeign = (game, entry) => entry?.game != null && entry.game !== nameOfGame(game);
+
+/** Whether `unit` is the one `entry` describes: same owner, same kind of unit. */
+function sameKind(game, unit, entry) {
+  if (unit.ownerId !== entry.ownerId) return false;
+  const origin = originOf(unit);
+  if (isForeign(game, entry)) return !!origin && origin.game === entry.game && origin.type === entry.type;
+  return !origin && unit.type === entry.type;
+}
+
+/**
+ * Every unit type of the game's OWN a roster may name: the ones the game opens
+ * with, plus any the game offers. (Units of other games are listed apart — see
+ * describeSetup's `foreign`.)
+ */
 export function setupUnitTypes(game, state) {
   const offered = typeof game?.setupUnitTypes === 'function' ? game.setupUnitTypes(state) : null;
-  const present = [...new Set((state?.units ?? []).filter(u => u && u.alive !== false).map(u => u.type))];
+  const present = [...new Set((state?.units ?? []).filter(u => u && u.alive !== false && !originOf(u)).map(u => u.type))];
   return [...new Set([...(offered ?? []), ...present])];
 }
 
@@ -91,6 +120,11 @@ export function rosterError(game, base, roster, players = base?.players ?? []) {
   for (const [i, e] of roster.entries()) {
     if (!e || typeof e !== 'object') return `startingUnits[${i}] must be an object`;
     if (!sides.has(e.ownerId)) return `startingUnits[${i}]: "${e.ownerId}" owns nothing in this game`;
+    if (isForeign(game, e)) {
+      const problem = foreignEntryError(game, base, e);
+      if (problem) return `startingUnits[${i}]: ${problem}`;
+      continue;
+    }
     if (!types.has(e.type)) return `startingUnits[${i}]: "${e.type}" is not a starting unit type of this game`;
   }
   // Wiping a side out entirely isn't a handicap, it's a game that can't be played:
@@ -131,9 +165,13 @@ export function applyRoster(game, base, roster, config = {}, { midGame = false }
 
   const units = roster.map((entry) => {
     const kept = entry.id != null && !claimed.has(entry.id) ? byId.get(entry.id) : undefined;
-    if (kept && kept.ownerId === entry.ownerId && kept.type === entry.type) {
+    if (kept && sameKind(game, kept, entry)) {
       claimed.add(entry.id);
       return place(kept, entry.position);
+    }
+    if (isForeign(game, entry)) {
+      const id = freshId(foreignKey(entry.game, entry.type).replace(':', '-'));
+      return place(mintForeign(game, base, entry, id, (spec, chassis) => build(game, base, spec, chassis)), entry.position);
     }
     return place(mint(game, base, entry, freshId), entry.position);
   });
@@ -179,12 +217,23 @@ function mint(game, base, entry, freshId) {
   // free to ignore the one it is offered, and two units sharing an id would break
   // everything downstream that addresses a unit by it.
   const id = freshId(entry.type);
-  const made = game.createSetupUnit?.(base, { ...entry, id });
-  if (made) return { ...made, id, ownerId: entry.ownerId, type: entry.type, alive: true };
-  const live = (base.units ?? []).filter(u => u && u.alive !== false && u.type === entry.type);
-  const template = live.find(u => u.ownerId === entry.ownerId) ?? live[0];
-  if (!template) throw new Error(`startingUnits: no way to build a "${entry.type}" for ${entry.ownerId}`);
-  return { ...structuredClone(template), id, ownerId: entry.ownerId, alive: true };
+  return { ...build(game, base, { ...entry, id }, entry.type), id, ownerId: entry.ownerId, type: entry.type, alive: true };
+}
+
+/**
+ * One unit for `spec` ({ id, ownerId, type, position }): the game's own factory's,
+ * else a copy of a live `templateType` unit already on the board — the owner's own
+ * if it has one. `templateType` is the spec's type for a unit of the game's own,
+ * and the chassis for one from another game (whose spec names the foreign type the
+ * game's table now knows, which no unit on the board is yet).
+ */
+function build(game, base, spec, templateType) {
+  const made = game.createSetupUnit?.(base, spec);
+  if (made) return { ...made, id: spec.id, ownerId: spec.ownerId, alive: true };
+  const live = (base.units ?? []).filter(u => u && u.alive !== false && u.type === templateType && !originOf(u));
+  const template = live.find(u => u.ownerId === spec.ownerId) ?? live[0];
+  if (!template) throw new Error(`startingUnits: no way to build a "${spec.type}" for ${spec.ownerId}`);
+  return { ...structuredClone(template), id: spec.id, ownerId: spec.ownerId, alive: true };
 }
 
 /** `unit` standing at `position` — keeping whatever else its own position carried. */
@@ -296,6 +345,7 @@ export function describeSetup(game, base, { config = {}, extraTypes = [] } = {})
   let grid = null;
   try { grid = game.toGrid ? game.toGrid(base) : null; } catch { grid = null; }
   const map = cellMapper(game, base, grid);
+  grid = dressGrid(game, base, grid, map.toCell);
   // A game's renderer says where a unit's art is in one of three ways: a cell that
   // names it, an entry in a positioned `units` list, or simply the cell it stands
   // on (glyph + owner, no id). All three are read, in that order of precision.
@@ -325,6 +375,10 @@ export function describeSetup(game, base, { config = {}, extraTypes = [] } = {})
     config: resolved,
     placeable: map.placeable,
     unitTypes: [...new Set([...setupUnitTypes(game, base), ...extraTypes])],
+    // Units of the other games this one can take in, grouped by game, each with
+    // the chassis it would play as here and its stats converted to this game's
+    // numbers (engine/foreignUnits.js). Empty for a game that takes none.
+    foreign: foreignCatalog(game, base),
     roster,
     // Only the board's shape, its colours — the editor draws its own tokens from
     // the roster, so the (potentially large) per-cell payload stays lean — and the

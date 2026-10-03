@@ -3,8 +3,9 @@ import { createMap, renderMap } from './map.js';
 import { getReachable, manhattan } from './grid.js';
 import { hasLOS } from './los.js';
 import { calcHitChance, rollHit, rollDamage } from './combat.js';
-import { createUnit } from './units.js';
+import { createUnit, UNIT_DEFS } from './units.js';
 import { getXcomBelief } from './belief.js';
+import { whole, meanOf, rescaleRoll } from '../../engine/foreignUnits.js';
 
 function defaultUnits(playerIds) {
   const [xcomId, aliensId] = playerIds;
@@ -41,6 +42,22 @@ export const XComGame = {
   // cover reads as physical objects. Units are full-body sprites standing on their tile;
   // no facing (X-Com units don't track heading), so the facing chevron is off. IsoLayer.vue.
   ui: { isometric: true, showFacing: false },
+
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return UNIT_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
+  },
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // rookie soldier: 8 hp, 4 damage a hit (its 3–5 roll), 3 moves. X-Com has no
+  // armour, and no range either — anything in sight can be shot at. A unit's rules
+  // are read off the unit itself (attrs), so that is where its stats are written.
+  foreignUnits: {
+    scale: { hp: 8, attack: 4, move: 3 },
+    profiles: () => Object.fromEntries(Object.entries(UNIT_DEFS).map(([type, d]) => (
+      [type, { hp: d.maxHP, attack: meanOf(d.damage), move: d.moveRange, domain: 'land' }]))),
+    adopt: (u, s) => ({ ...u, hp: whole(s.hp), attrs: { ...u.attrs, damage: rescaleRoll(u.attrs.damage, s.attack), moveRange: whole(s.move) } }),
+    realize: (type, s) => ({ hp: whole(s.hp), attack: meanOf(rescaleRoll(UNIT_DEFS[type].damage, s.attack)), move: whole(s.move) }),
+    art: (type) => ({ imagePath: `/images/xcom/${type}`, glyph: UNIT_DEFS[type]?.symbol, name: type }),
+  },
 
   createInitialState(players, config = {}) {
     const units = defaultUnits(players.map(p => p.id));

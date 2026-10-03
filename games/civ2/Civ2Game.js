@@ -5,6 +5,11 @@ import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
 import { assets, cityImg } from './assets/index.js';
 import { getCiv2Belief } from './belief.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
+
+// Specials that make a unit something other than a soldier — what a unit from
+// another game must not pick up by playing as one (see foreignUnits below).
+const CIVILIAN_SPECIALS = new Set(['found-city', 'build-road', 'diplomacy', 'espionage', 'explore', 'one-use', 'missile', 'carries-air-8']);
 
 // Shortest horizontal distance between two columns on a map that wraps east/west.
 function wrapDX(ax, bx, width) {
@@ -477,6 +482,20 @@ export const Civ2Game = {
   createSetupUnit(state, { id, ownerId, type, position }) {
     return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0, UNITS[type]?.moves);
   },
+  // Units from other games (engine/foreignUnits.js) — read as civ1's are: an ancient
+  // line unit is one point of each stat, every attack is melee, and a foreign unit plays
+  // as a fighting land or sea type (no settlers' or spies' specials, no fuel).
+  foreignUnits: tableUnits({
+    table: UNITS,
+    scale: { hp: 10, attack: 2, defense: 2, range: 4, move: 1 },
+    read: (e) => ({ hp: e.hp, attack: e.attack, defense: e.defense, range: 1, move: e.moves, domain: e.domain }),
+    write: (e, s) => ({
+      ...e, hp: whole(s.hp), attack: whole(s.attack, s.attack > 0 ? 1 : 0), defense: whole(s.defense),
+      moves: whole(s.move),
+    }),
+    chassis: (_type, e) => e.domain !== 'air' && e.attack > 0 && !e.special.some(t => CIVILIAN_SPECIALS.has(t)),
+    art: (type) => ({ imagePath: assets.units?.[type]?.img ?? null, glyph: type[0].toUpperCase(), name: type }),
+  }),
 
   getLegalActions,
   applyActions,

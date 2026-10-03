@@ -22,6 +22,11 @@ import {
 } from './barbarians.js';
 import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '../moveQueue.js';
 import * as ST from '../spacetime.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
+
+// Specials that make a unit something other than a soldier — what a unit from
+// another game must not pick up by playing as one (see foreignUnits below).
+const CIVILIAN_SPECIALS = new Set(['found-city', 'diplomacy', 'help-build-wonder', 'nuclear', 'carries-air-8']);
 
 const BASE = '/images/civ1';
 
@@ -1879,6 +1884,23 @@ export const Civ1Game = {
   createSetupUnit(state, { id, ownerId, type, position }) {
     return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0, UNITS[type]?.moves);
   },
+  // Units from other games (engine/foreignUnits.js). The conversion factor is an
+  // ancient line unit — 10 hp, attack and defence 2, one move. Every attack is made
+  // on the next square: a melee reach, which the common vocabulary counts as a
+  // quarter of a standard rifle's. A foreign unit plays as a FIGHTING type, on
+  // land or at sea: never a settler, diplomat or caravan, whose specials would come
+  // with it, nor an aircraft, which civ1 loses when its fuel runs out.
+  foreignUnits: tableUnits({
+    table: UNITS,
+    scale: { hp: 10, attack: 2, defense: 2, range: 4, move: 1 },
+    read: (e) => ({ hp: e.hp, attack: e.attack, defense: e.defense, range: 1, move: e.moves, domain: e.domain }),
+    write: (e, s) => ({
+      ...e, hp: whole(s.hp), attack: whole(s.attack, s.attack > 0 ? 1 : 0), defense: whole(s.defense),
+      moves: whole(s.move), tech: null,
+    }),
+    chassis: (_type, e) => e.domain !== 'air' && e.attack > 0 && !e.special.some(t => CIVILIAN_SPECIALS.has(t)),
+    art: (type) => ({ imagePath: `${BASE}/units/${type}`, glyph: type[0].toUpperCase(), name: type }),
+  }),
   // What each seat has SEEN is seeded from where its units stand, so a moved,
   // added or deleted starting unit changes the hole it opens in the fog.
   // An opening is explored from scratch; units added to a game in progress only

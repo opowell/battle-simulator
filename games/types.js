@@ -118,6 +118,30 @@
  *   returning null (or omitting it) falls back to cloning a same-type unit
  *   already in the opening position.
  *
+ * @property {object} [foreignUnits]
+ *   Optional. Units from OTHER games in this one's sessions, and this game's units
+ *   in theirs (engine/foreignUnits.js has the whole story). A roster entry then
+ *   names its game beside its type — { ownerId, type: 'marine', game: 'sc1', position }
+ *   — and the unit plays under the session's rules as the nearest of this game's
+ *   own types (its chassis), with its stats converted, drawn as itself. Fields:
+ *     scale       the CONVERSION FACTOR: what one point of each common stat (hp,
+ *                 attack, defense, range, move) is worth in this game's own numbers —
+ *                 in practice, its standard line infantryman. A stat converts as
+ *                 value × host.scale / source.scale.
+ *     profiles()  { type: { hp, attack, defense, range, move, domain, chassis?, owners? } }
+ *                 every type it lends out or can carry a foreign unit as, in its own
+ *                 numbers; `chassis: false` keeps a type back (a settler's specials
+ *                 would come with it), `owners` limits it to the sides that can play it.
+ *     art(type, seat)   { imagePath, glyph, name } — how its unit looks on another board.
+ *     table + write(entry, stats)   for rules that read stats from a type table: the
+ *                 foreign type is registered there (non-enumerably) as the chassis's
+ *                 entry with the converted stats written in. tableUnits() builds all
+ *                 of the above from the table and a read/write pair.
+ *     adopt(unit, stats)   for rules that read stats off the unit (attrs): writes them.
+ *     realize(chassis, stats)   what a unit given `stats` really ends up with, for
+ *                 showing (tableUnits derives it).
+ *   A game without it neither lends units nor takes them.
+ *
  * @property {(config: object) => object} [resolveSetupConfig]
  *   Optional. The session config with anything the game would otherwise roll fresh
  *   on each createInitialState call pinned down (civ1/civ2: a blank map seed).

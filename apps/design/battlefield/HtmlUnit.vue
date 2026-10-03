@@ -98,10 +98,14 @@ const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value 
     <div v-else class="hl-body"
          :class="[
            unit.imagePath ? 'hl-body--sprite' : 'hl-marker hl-marker--' + shape,
+           unit.imagePath && unit.origin ? 'hl-body--plate' : '',
            ringClass,
          ]"
          :style="{
            width: r*2+'px', height: r*2+'px',
+           // A unit from another game stands on a plate of its team's colour: its
+           // picture is its own game's, drawn with no idea which side it is on here.
+           ...(unit.imagePath && unit.origin ? { '--plate': unit.teamObj?.raw ?? '#888' } : {}),
            ...(unit.imagePath ? {} : {
              background: shape === 'triangle' ? 'transparent' : (active ? unit.teamObj.raw : rdr.unitFill),
              borderColor: active ? 'white' : unit.teamObj.raw,
@@ -143,6 +147,11 @@ const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value 
 .hl-body { position: relative; display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex: none; }
 .hl-dead { font-weight: 700; opacity: 0.4; }
 .hl-sprite { width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; }
+.hl-body--plate {
+  border: 2px solid var(--plate); border-radius: 22%;
+  background: color-mix(in srgb, var(--plate) 28%, transparent);
+}
+.hl-body--plate .hl-sprite { width: 86%; height: 86%; object-fit: contain; }
 .hl-letter { font-weight: 800; line-height: 1; }
 
 .hl-marker { border: 2px solid currentColor; }
