@@ -21,10 +21,8 @@ strongly-green pixel to the owning player's colour at render time (civ1 sets
 `ui.recolorTeamSprites`), so the green field *is* the team flag. A sprite drawn
 without one renders identically for both players.
 
-The 28 icons of the original 1991 roster are the authentic ones. `archers`,
-`crusaders`, `cav-modern`, `infantry`, `marines`, `paratroopers`, `helicopter`
-and `destroyer` are units this engine added beyond that roster, so their icons
-were drawn here in the same palette and frames.
+These are the 28 icons of the original 1991 roster, one per unit — the roster is
+the original's and nothing else (see `units.js`).
 
 `combat_1`–`combat_8` are the original explosion animation frames, kept as
 source art; they are not units.

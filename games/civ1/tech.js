@@ -97,9 +97,14 @@ export const ALL_TECH_IDS = Object.keys(TECHS);
 // square, see Civ1Game.js). Fusion Power's original effect — removing the Nuclear
 // Plant meltdown risk — has nothing to attach to here, since this engine models
 // neither pollution nor meltdowns, so it stays a connector.
+//
+// Feudalism and The Corporation are connectors in the original too: no 1991 unit,
+// improvement or wonder requires either (CivOne's tables). They only looked otherwise
+// here while the roster carried Civ II's Crusaders and Paratroopers behind them.
 export const PURE_PREREQ = new Set([
   'alphabet', 'medicine', 'engineering', 'physics', 'atomic-theory',
   'electricity', 'chemistry', 'explosives', 'fusion-power',
+  'feudalism', 'the-corporation',
 ]);
 
 // A tech is researchable when every prerequisite is already known and it is not

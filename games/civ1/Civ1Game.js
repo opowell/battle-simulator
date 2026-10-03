@@ -199,7 +199,7 @@ function makeUnit(id, ownerId, type, x, y, movesLeft) {
 // at the ancient units the era actually offers — exposing every unit in units.js
 // would just mean everyone builds Armor from turn 1. Settlers are the important
 // entry: without them there is no expansion and no way to win.
-export const BUILDABLE = ['settlers', 'militia', 'phalanx', 'archers', 'legion', 'cavalry', 'chariot', 'catapult'];
+export const BUILDABLE = ['settlers', 'militia', 'phalanx', 'legion', 'cavalry', 'chariot', 'catapult'];
 
 // ── Legal actions ─────────────────────────────────────────────────────────────
 

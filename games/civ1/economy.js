@@ -403,10 +403,10 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
 // Successor unit for Leonardo's Workshop upgrades — old type -> the modern unit of the
 // same role. Each successor is gated by its own advance (checked at upgrade time).
 const UNIT_UPGRADE = {
-  militia: 'phalanx', phalanx: 'musketeers', musketeers: 'riflemen', riflemen: 'infantry',
-  archers: 'legion', legion: 'musketeers', catapult: 'cannon', cannon: 'artillery',
-  cavalry: 'knights', chariot: 'knights', knights: 'cav-modern', crusaders: 'cav-modern',
-  trireme: 'sail', sail: 'frigate', frigate: 'ironclad', ironclad: 'destroyer',
+  militia: 'phalanx', phalanx: 'musketeers', musketeers: 'riflemen',
+  legion: 'musketeers', catapult: 'cannon', cannon: 'artillery',
+  cavalry: 'knights', chariot: 'knights', knights: 'armor',
+  trireme: 'sail', sail: 'frigate', frigate: 'ironclad', ironclad: 'cruiser',
 };
 
 // Effects that fire the moment a wonder is completed (as opposed to the ongoing

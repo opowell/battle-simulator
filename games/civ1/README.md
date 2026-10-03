@@ -49,9 +49,72 @@ all. No two cities in a world ever share a name, whoever founds them.
 
 ## Units
 
-All units have `firepower: 1` (damage per combat hit). Combat continues round-by-round until one side reaches 0 HP.
+The 28 units of the 1991 original and no others, at its own attack, defence, moves, cost and required advance (transcribed from CivOne — see `units.js`). All units have `firepower: 1` (damage per combat hit). Combat continues round-by-round until one side reaches 0 HP; HP is this engine's, not the original's.
 
-### Terrain Improvement & Diplomacy
+### Terrain Improvement, Diplomacy & Trade
+
+| Type | ATK | DEF | Move | HP | Cost | Specials |
+|---|---|---|---|---|---|---|
+| `settlers` | 0 | 1 | 1 | 20 | 40 | `found-city`, `build-road`, `irrigate`, `mine` |
+| `diplomat` | 0 | 0 | 2 | 10 | 30 | `diplomacy`, `bribe`, `sabotage`, `ignore-zoc` |
+| `caravan` | 0 | 1 | 1 | 10 | 50 | `help-build-wonder`, `ignore-zoc` |
+
+### Ancient Land
+
+| Type | ATK | DEF | Move | HP | Cost | Specials |
+|---|---|---|---|---|---|---|
+| `militia` | 1 | 1 | 1 | 10 | 10 |  |
+| `phalanx` | 1 | 2 | 1 | 10 | 20 |  |
+| `legion` | 3 | 1 | 1 | 10 | 20 |  |
+| `catapult` | 6 | 1 | 1 | 10 | 40 | `bombard` |
+| `cavalry` | 2 | 1 | 2 | 10 | 20 | `mounted` |
+| `chariot` | 4 | 1 | 2 | 10 | 40 | `mounted` |
+
+### Medieval Land
+
+| Type | ATK | DEF | Move | HP | Cost | Specials |
+|---|---|---|---|---|---|---|
+| `knights` | 4 | 2 | 2 | 10 | 40 | `mounted` |
+
+### Renaissance & Industrial Land
+
+| Type | ATK | DEF | Move | HP | Cost | Specials |
+|---|---|---|---|---|---|---|
+| `musketeers` | 2 | 3 | 1 | 20 | 30 |  |
+| `cannon` | 8 | 1 | 1 | 20 | 40 | `bombard` |
+| `riflemen` | 3 | 5 | 1 | 20 | 30 |  |
+| `artillery` | 12 | 2 | 2 | 20 | 60 | `bombard` |
+
+### Modern Land
+
+| Type | ATK | DEF | Move | HP | Cost | Specials |
+|---|---|---|---|---|---|---|
+| `armor` | 10 | 5 | 3 | 30 | 80 |  |
+| `mech-inf` | 6 | 6 | 3 | 30 | 50 |  |
+
+### Missile & Air
+
+| Type | ATK | DEF | Move | HP | Cost | Specials |
+|---|---|---|---|---|---|---|
+| `nuclear` | 99 | 0 | 16 | 10 | 160 | `nuclear` — needs the Manhattan Project; detonates over its target |
+| `fighter` | 4 | 2 | 10 | 20 | 60 | `intercept` |
+| `bomber` | 12 | 1 | 8 | 20 | 120 | `strategic-bomb` |
+
+### Sea
+
+| Type | ATK | DEF | Move | HP | Cost | Specials |
+|---|---|---|---|---|---|---|
+| `trireme` | 1 | 0 | 3 | 10 | 40 | `coastal-only`, `transport-2` |
+| `sail` | 1 | 1 | 3 | 10 | 40 | `transport-3` |
+| `frigate` | 2 | 2 | 3 | 10 | 40 | `bombard` |
+| `ironclad` | 4 | 4 | 4 | 20 | 60 |  |
+| `submarine` | 8 | 2 | 3 | 20 | 50 | `stealth` |
+| `transport` | 0 | 3 | 4 | 20 | 50 | `transport-8` |
+| `cruiser` | 6 | 6 | 6 | 20 | 80 | `bombard` |
+| `battleship` | 18 | 12 | 4 | 40 | 160 | `bombard` |
+| `carrier` | 1 | 12 | 5 | 40 | 160 | `carries-air-8` |
+
+## Terrain Improvement & Diplomacy
 
 | Type | ATK | DEF | Move | HP | Cost | Specials |
 |---|---|---|---|---|---|---|

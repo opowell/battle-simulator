@@ -154,9 +154,9 @@ test('civ1 zoc: an ocean square at either end lifts it — a landing is never bl
   // The same step, (9,10) -> (9,9), with an enemy at (10,10) covering both ends. The
   // only difference between the two worlds is whether the mover starts on water.
   const enemy = unit('e', 'p2', 'phalanx', 10, 10);
-  const marine = unit('m', 'p1', 'marines', 9, 10);
+  const lander = unit('m', 'p1', 'legion', 9, 10);
   const blockedOn = (board) =>
-    makeZoneOfControl(board, [enemy], [], 'p1')(marine, { x: 9, y: 10 }, { x: 9, y: 9 });
+    makeZoneOfControl(board, [enemy], [], 'p1')(lander, { x: 9, y: 10 }, { x: 9, y: 9 });
 
   const wet = world({ terrainAt: (k) => (k === '9,10' ? 'ocean' : 'grassland') }).board;
   assert.equal(blockedOn(wet), false, 'coming ashore is never blockaded');

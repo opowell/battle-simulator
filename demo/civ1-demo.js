@@ -48,7 +48,7 @@ if (isAuto) {
 } else {
   engine._init();
   console.log('Civilization I — you command Player 1 (uppercase symbols), computer commands Player 2 (lowercase).');
-  console.log('Symbols: 1/2=city | S=settlers M=militia P=phalanx A=archers L=legion C=cavalry ...');
+  console.log('Symbols: 1/2=city | S=settlers M=militia P=phalanx L=legion C=cavalry ...');
   console.log('Terrain: ~=ocean ^=arctic t=tundra d=desert .=plains ,=grass f=forest n=hills A=mtns\n');
   while (!engine.result) {
     console.log('\n' + Civ1Game.renderState(engine.state));

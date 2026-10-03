@@ -7,6 +7,7 @@ import { makeCiv1Agent } from './ai.js';
 import { siegeRole } from './objective.js';
 import { civ1SearchActions } from './searchActions.js';
 import { getFixedMap } from './fixedMaps.js';
+import { UNITS } from './units.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -51,12 +52,8 @@ test('siege: the whole battlefield is known ground to both sides, units still fo
   assert.ok(!Object.values(view.board.tiles).some(t => t.terrain === 'unknown'));
 });
 
-test('siege: every unit is one the 1991 game had (no archers, crusaders, marines…)', () => {
-  // The original's land roster, by this engine's ids ('cav-modern' is its Cavalry,
-  // 'cavalry' the ancient horsemen it has none of — so neither is here).
-  const ORIGINAL = new Set(['settlers', 'militia', 'phalanx', 'legion', 'chariot', 'knights', 'catapult',
-    'musketeers', 'cannon', 'riflemen', 'artillery', 'armor', 'mech-inf', 'diplomat', 'caravan']);
-  for (const u of getFixedMap('siege').units) assert.ok(ORIGINAL.has(u.type), u.type);
+test('siege: every unit is one the 1991 game had (UNITS is that roster — units.test.js)', () => {
+  for (const u of getFixedMap('siege').units) assert.ok(UNITS[u.type], u.type);
 });
 
 test('siege: the battlefield does not wrap — its east and west edges are edges', async () => {

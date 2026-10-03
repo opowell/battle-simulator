@@ -80,8 +80,9 @@ export function resolveBarbarianLevel(config = {}) {
 
 // An uprising's units are era-appropriate: barbarians raid with what the civ they are
 // raiding could field. Best (highest attack) type on this ladder whose advance the
-// target already knows — militia needs none, so there is always an answer.
-const RAIDER_LADDER = ['militia', 'legion', 'chariot', 'knights', 'crusaders', 'cav-modern', 'armor'];
+// target already knows — militia needs none, so there is always an answer. On a tie
+// the later rung wins (knights over the chariot they replaced).
+const RAIDER_LADDER = ['militia', 'legion', 'chariot', 'knights', 'cannon', 'armor'];
 
 // Uprisings appear this far from the city they are coming for: far enough that the
 // defender gets a turn's warning, close enough to be a threat and not a wanderer.
@@ -188,7 +189,7 @@ function raiderType(state, targetOwnerId) {
   for (const t of RAIDER_LADDER) {
     const req = UNITS[t].tech;
     if (req && !techs.has(req)) continue;
-    if (UNITS[t].attack > UNITS[best].attack) best = t;
+    if (UNITS[t].attack >= UNITS[best].attack) best = t;
   }
   return best;
 }
