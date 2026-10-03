@@ -2,6 +2,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import HtmlUnit from './battlefield/HtmlUnit.vue';
 import FogOverlay from './battlefield/FogOverlay.vue';
+import HtmlBattleFx from './battlefield/HtmlBattleFx.vue';
 // HTML/CSS renderer for square tile grids with cell-placeable units — used automatically
 // wherever it can fully draw the board (see Battlefield.vue's useHtmlRenderer). A lighter
 // renderer than SchematicLayer's SVG for the common square-grid case; boards it can't draw
@@ -68,6 +69,9 @@ const props = defineProps({
   // can actually see never changes; these are explicitly a hypothesis, and are
   // styled apart from the player's own hand-placed markers to keep that clear.
   beliefMarkers:    { type: Array, default: () => [] },
+  // The fights being played out (App.vue's battleFx): { ghosts, blasts } in board
+  // squares, or null. Drawn over the units by HtmlBattleFx — see battleItems below.
+  battleFx:         { type: Object, default: null },
 });
 const emit = defineEmits(['select', 'sq-click', 'set-marker']);
 const imgSrc   = window.api.imgSrc;
@@ -299,6 +303,40 @@ function unitTween(u) {
   if (!u.tweenDx && !u.tweenDy) return null;
   return { dx: (u.tweenDx ?? 0) * cellPx.value, dy: (u.tweenDy ?? 0) * cellPx.value };
 }
+// How a token ranks against its neighbours. A piece in motion — sliding, or lunging at
+// the square it attacks — is drawn over whatever it passes, the defender it lunges at
+// included (it would otherwise go UNDER any square that comes later in the grid); the
+// pieces of a shared square stack in their listed order (see the template); the rest
+// keep HtmlUnit's own.
+const Z_MOVING = 20;
+function unitZ(c, u, i) {
+  if (u.tweenDx || u.tweenDy) return { zIndex: Z_MOVING };
+  return c.units.length > 1 ? { zIndex: 2 + i } : null;
+}
+
+// The fights (props.battleFx), placed: each ghost and explosion frame on its square's
+// top-left corner, sized to the square. Ghosts sit just under the moving pieces, so a
+// live attacker lunges over the defender it is killing; a ghost attacker over its ghost
+// defender (it is listed after it); and the explosion over everything. On a wrapping
+// map the duplicated fringe columns show the same squares twice, so an item near the
+// seam is drawn in both copies, as the cells' own units are.
+const battleItems = computed(() => {
+  const fx = props.battleFx;
+  if (!fx) return [];
+  const pad = wrapPad.value, w = W.value, size = cellPx.value;
+  const copies = (x) => !pad ? [x]
+    : [x - w, x, x + w].filter(cx => cx + 1 > -pad && cx < w + pad);
+  const sprite = unitR({ imagePath: true });
+  const out = [];
+  const place = (item, x, y, extra) => {
+    for (const cx of copies(x)) {
+      out.push({ ...extra, key: `${item.key}@${cx}`, left: px(cx), top: py(y), size });
+    }
+  };
+  for (const g of fx.ghosts ?? []) place(g, g.x, g.y, { unit: g.unit, r: unitR(g.unit), z: g.lunging ? Z_MOVING + 1 : Z_MOVING - 1 });
+  for (const b of fx.blasts ?? []) place(b, b.x, b.y, { src: b.src, r: sprite, z: Z_MOVING + 2 });
+  return out;
+});
 
 // Under vision fog a hidden tile is painted with the fog colour and its art withheld.
 // Persistent-vision games (see exploredTiles prop, e.g. civ1) remember any tile ever
@@ -718,7 +756,7 @@ function handleUnitClick(e, u) {
              a city — civ1's garrison, the one the turn is waiting on — would otherwise
              be painted under the plaque it is standing on however late it is drawn. -->
         <HtmlUnit v-for="(u, i) in c.units" :key="u.id"
-          :style="c.units.length > 1 ? { zIndex: 2 + i } : null"
+          :style="unitZ(c, u, i)"
           :unit="u" :r="unitR(u)" :rdr="rdr" :shape="unitShape(u)"
           :tween="unitTween(u)"
           :showHp="showHpBars"
@@ -761,6 +799,10 @@ function handleUnitClick(e, u) {
         </div>
       </div>
     </template>
+
+    <!-- The fights on the board: ghosts of fighters it no longer draws, and explosions -->
+    <HtmlBattleFx v-if="battleItems.length" :items="battleItems" :rdr="rdr"
+                  :recolor="field.ui?.recolorTeamSprites"/>
 
     <!-- Continuous-map fog veil, drawn over the board+units (see continuousFogOn above) -->
     <svg v-if="continuousFogOn" class="hl-noevents" :width="boxW" :height="boxH"

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 // boardMoves.js is a classic browser global (no ESM export, so vue3-sfc-loader can
 // load it); importing it for its side effect publishes the API on globalThis.MOVES.
 await import('./boardMoves.js');
-const { movedTokens } = globalThis.MOVES;
+const { movedTokens, newBattles } = globalThis.MOVES;
 
 // A square-grid board: cells laid out row by row, each `{ x, y, unitId?, fixture? }`.
 const grid = (cells, extra = {}) => ({ cells, ...extra });
@@ -53,4 +53,37 @@ test('continuous boards read the parallel units channel', () => {
   assert.deepEqual(movedTokens(before, after).get('u1'),
     { from: { x: 1.5, y: 2 }, to: { x: 4.25, y: 2 } });
   assert.equal(movedTokens(before, before).size, 0);
+});
+
+// ── newBattles ─────────────────────────────────────────────────────────────────
+// A game's running record of recent fights (toGrid `battles`), numbered upward.
+const fight = (id) => ({ id, from: { x: 0, y: 0 }, at: { x: 1, y: 0 }, won: true });
+const ids = (list) => list.map(b => b.id);
+
+test('newBattles: the fights numbered past the last board, oldest first', () => {
+  const before = grid([], { battles: [fight(1), fight(2)] });
+  const after  = grid([], { battles: [fight(4), fight(2), fight(3)] });
+  assert.deepEqual(ids(newBattles(before, after)), [3, 4]);
+});
+
+test('newBattles: a board that had no record yet makes everything new', () => {
+  assert.deepEqual(ids(newBattles(grid([]), grid([], { battles: [fight(1)] }))), [1]);
+  assert.deepEqual(newBattles(grid([]), grid([])), []);
+});
+
+// Under fog a viewer is only handed the fights they witnessed, judged on the board in
+// front of them — so an old fight can turn up in the record when a unit walks into
+// sight of where it happened. That is not a fight happening now.
+test('newBattles: an old fight that has only now come into view is not replayed', () => {
+  const before = grid([], { battles: [fight(5)] });
+  const after  = grid([], { battles: [fight(3), fight(5), fight(6)] });
+  assert.deepEqual(ids(newBattles(before, after)), [6]);
+});
+
+// A take-back rewinds the record along with everything else; the board after it
+// must still animate the next real fight rather than wait for the old numbering.
+test('newBattles: after a rewind, numbering is judged against the rewound board', () => {
+  const rewound = grid([], { battles: [fight(1)] });
+  const replayed = grid([], { battles: [fight(1), fight(2)] });
+  assert.deepEqual(ids(newBattles(rewound, replayed)), [2]);
 });

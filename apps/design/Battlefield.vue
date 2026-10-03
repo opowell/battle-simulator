@@ -38,6 +38,9 @@ const props = defineProps({
   field:         Object,
   unitFx:        { type: Object, default: () => ({}) },
   territoryFx:   { type: Object, default: () => ({}) },
+  // The fights being played out on the board (App.vue's battleFx): fighters it no longer
+  // draws itself, and the explosion frame showing. Null when nothing is being fought.
+  battleFx:      { type: Object, default: null },
   historyFields: { type: Array, default: () => [] },
   revealFields:  { type: Array, default: () => [] },
   revealLog:     { type: Array, default: () => [] },
@@ -1557,7 +1560,9 @@ const moveUnitId = computed(() =>
 // claiming to be up for orders. Free-selection games (civ1) have no turn-scoped active
 // unit, so there the blink follows whatever was clicked.
 const blinkUnitId = computed(() => {
-  if (!isPending.value) return null;
+  // Not while a fight is on the board: nothing is waiting on an order then, and the
+  // unit in hand is as often as not the attacker, which would blink out of its own fight.
+  if (!isPending.value || props.battleFx) return null;
   const id = ui.value.freeSelection ? selectedId.value : activeUnitId.value;
   if (!id) return null;
   const u = displayUnits.value.find(x => x.id === id);
@@ -1954,14 +1959,32 @@ const selectedUnit = computed(() => displayUnits.value.find(u => u.id === select
 // anything else — another unit, or a city — is a selection change, not a unit
 // finishing its turn, and used to have its selection yanked straight back to the
 // nearest unit still wanting orders.
+//
+// Except while a fight is on the board (battleFx): a unit that has just attacked has
+// finished too, but the board is still showing what its attack did, and centring the
+// map on the next unit would pan away from it. The hand-over waits for the fight, and
+// for the winner's advance onto the square it took, which plays after it — as the
+// original's does — and is dropped if the player picks something meanwhile.
+// Only a fight holds it: an ordinary move's slide is short, and holding the hand-over
+// for every one would swallow the next keypress of anyone moving units quickly.
+const advanceOff = ref(null);
 watch(() => [selectedId.value, selectedUnit.value?.needsOrders],
       ([id, needsOrders], [prevId, prev] = []) => {
   if (!ui.value.autoAdvanceUnit || !isPending.value || id !== prevId
       || prev !== true || needsOrders === true) return;
-  const next = unitWantingOrders(selectedId.value);
+  if (props.battleFx) { advanceOff.value = id; return; }
+  advanceFrom(id);
+});
+watch([advanceOff, () => props.battleFx, () => props.animating], ([id, fighting, busy]) => {
+  if (!id || fighting || busy) return;
+  advanceOff.value = null;
+  if (selectedId.value === id && isPending.value) advanceFrom(id);
+});
+function advanceFrom(id) {
+  const next = unitWantingOrders(id);
   if (next) handOverUnit(next);
   else selectedId.value = null;
-});
+}
 
 // The player's first unit that still wants orders, skipping `exceptId` — the one that
 // just finished, when advancing off it.
@@ -2553,6 +2576,7 @@ onUnmounted(() => {
           :center="viewCenter"
           :suggestionArrows="suggestionArrows"
           :beliefMarkers="beliefMarkers"
+          :battleFx="(atLatest && !revealAll) ? battleFx : null"
           @select="selectUnit"
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"/>

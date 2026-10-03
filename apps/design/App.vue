@@ -33,6 +33,7 @@ const sessionMeta = ref({});
 // later turn never renders (or flashes) ahead of an earlier turn still playing.
 // Beats: { kind:'hop', hops:[{unitId, steps:[{x,y}], times?:[0..1]}], slide, durationMs? }
 //      | { kind:'fx', flashes:[{unitId,fx}] }
+//      | { kind:'battle', battle, spec }   (one fight — see ui.battleAnimation below)
 //
 // A hop beat carries a LIST of movers, not one, because a beat is an instant and
 // some games move more than one piece in it. A turn-based game gives every mover a
@@ -72,8 +73,37 @@ function hopPose(hop, anim) {
   const frac = t1 > t0 ? Math.min(1, Math.max(0, (p - t0) / (t1 - t0))) : (p >= t1 ? 1 : 0);
   return { a: pts[i], b: pts[i + 1], frac };
 }
-const hopFor = (beat, unitId) => beat?.hops.find(h => h.unitId === unitId) ?? null;
+const hopFor = (beat, unitId) => beat?.hops?.find(h => h.unitId === unitId) ?? null;
 const animQueue = ref([]);   // pending beats, not yet started
+
+// ── battles ───────────────────────────────────────────────────
+// A game that declares ui.battleAnimation has its fights played out the way the old
+// strategy games played them (civ1's is the 1991 original's): the attacker slides
+// `lunge` of a square toward the square it attacks, is put straight back, and then
+// the `frames` of an explosion play over whoever lost, which is still standing there
+// underneath until the last frame — only then is it gone. The fights come from the
+// board's own running record (grid.battles — see boardMoves.js newBattles), not the
+// log, since a fogged player's log never shows them the moves that hit them.
+//   spec:   { lunge (fraction of a square), lungeMs, frames: [imagePath…], frameMs }
+//   battle: { id, from, at, won, attacker, defender } — the fighters as board tokens
+// The fight on screen, while there is one: which beat, and how far into it — the
+// lunge (`p` 0-1 of the way out) or the explosion (`frame`, an index into frames).
+const battleAnim = ref(null);   // { beat, phase: 'lunge'|'blast', p, frame }
+// The shift (in squares) a lunge puts on its attacker at `p` of the way out: along
+// each axis toward the target, as the original steps its sprite pixel by pixel. A
+// wrapping world's seam is crossed the short way round, so an attack across it
+// lunges over the seam rather than back across the whole map.
+function lungeShift(battle, spec, p, world) {
+  let dx = battle.at.x - battle.from.x;
+  const dy = battle.at.y - battle.from.y;
+  if (world?.wrap && Math.abs(dx) > world.w / 2) dx -= Math.sign(dx) * world.w;
+  const reach = (spec.lunge ?? 0.5) * p;
+  return { dx: Math.sign(dx) * reach, dy: Math.sign(dy) * reach };
+}
+const battleBeats = () => [
+  ...(battleAnim.value ? [battleAnim.value.beat] : []),
+  ...animQueue.value.filter(q => q.kind === 'battle'),
+];
 // True from the moment an 'fx' beat starts until its full delay (flashes + any
 // pause) has elapsed. Without this, a beat appended to animQueue mid-flight (the
 // watcher below calls playNext() as soon as it queues anything) would start
@@ -230,12 +260,12 @@ let manualStep = false;
 let parkedTurn = null, parkedSeq = -1;
 
 let ackedSeq = -1, shownSeq = -1, shownAt = 0, ackTimer = null;
-const animating = () => !!hopAnim.value || fxBusy.value || !!replayAnim.value || animQueue.value.length > 0;
+const animating = () => !!hopAnim.value || fxBusy.value || !!battleAnim.value || !!replayAnim.value || animQueue.value.length > 0;
 // The same thing as a reactive value, for anything that has to wait out the animation
 // rather than poll it — Battlefield holds the "your turn" chime until the board has
 // finished showing what the last player did (see its chime watcher).
 const animatingNow = computed(() =>
-  !!hopAnim.value || fxBusy.value || !!replayAnim.value || animQueue.value.length > 0);
+  !!hopAnim.value || fxBusy.value || !!battleAnim.value || !!replayAnim.value || animQueue.value.length > 0);
 function maybeAckAdvance() {
   const s = liveState.value;
   if (!s || !s.observerPaced || !s.awaitingAdvance || s.status !== 'active') return;
@@ -301,10 +331,10 @@ function buildHopPath(from, to, diagonal = false) {
 }
 
 function playNext() {
-  if (hopAnim.value || fxBusy.value || animQueue.value.length === 0) {
+  if (hopAnim.value || fxBusy.value || battleAnim.value || animQueue.value.length === 0) {
     // Idle (queue drained, nothing mid-flight) — the shown step has fully
     // animated, so ack it in observer lock-step mode.
-    if (!hopAnim.value && !fxBusy.value && animQueue.value.length === 0) {
+    if (!hopAnim.value && !fxBusy.value && !battleAnim.value && animQueue.value.length === 0) {
       clearColourHolds();
       maybeAckAdvance();
     }
@@ -334,6 +364,7 @@ function playNext() {
     animTimer = setTimeout(() => { fxBusy.value = false; playNext(); }, delay / playbackSpeed.value);
     return;
   }
+  if (beat.kind === 'battle') { startBattle(beat); return; }
   hopAnim.value = { hops: beat.hops, step: 0, p: 0, slide: beat.slide, durationMs: beat.durationMs };
   if (beat.slide) startSlide();
   else animTimer = setTimeout(advanceHop, HOP_STEP_MS);
@@ -389,6 +420,49 @@ function endSlide(token) {
   clearTimeout(animTimer);
   hopAnim.value = null;
   playNext();
+}
+
+// One fight (see battleAnim above): the lunge out, redrawn every animation frame like
+// a slide, then the explosion a frame at a time. The attacker is back home the moment
+// the lunge ends — the original does not slide it back. Both halves scale with the
+// footer's playback speed, and the lunge has the same hidden-tab backstop as a slide.
+let battleRaf = 0, battleToken = 0;
+function startBattle(beat) {
+  const token = ++battleToken;
+  const { spec } = beat;
+  const lungeMs = Math.max(1, (spec.lungeMs ?? 400) / playbackSpeed.value);
+  const frameMs = Math.max(1, (spec.frameMs ?? 72) / playbackSpeed.value);
+  const frames = spec.frames ?? [];
+  battleAnim.value = { beat, phase: 'lunge', p: 0, frame: -1 };
+  const blast = (i) => {
+    if (token !== battleToken) return;
+    if (i >= frames.length) {
+      battleToken++;
+      battleAnim.value = null;
+      playNext();
+      return;
+    }
+    battleAnim.value = { beat, phase: 'blast', p: 0, frame: i };
+    animTimer = setTimeout(() => blast(i + 1), frameMs);
+  };
+  let lunged = false;
+  const struck = () => {
+    if (lunged || token !== battleToken) return;
+    lunged = true;
+    cancelAnimationFrame(battleRaf);
+    clearTimeout(animTimer);
+    blast(0);
+  };
+  const t0 = performance.now();
+  const frame = () => {
+    if (lunged || token !== battleToken) return;
+    const p = Math.min(1, (performance.now() - t0) / lungeMs);
+    if (p >= 1) { struck(); return; }
+    battleAnim.value = { beat, phase: 'lunge', p, frame: -1 };
+    battleRaf = requestAnimationFrame(frame);
+  };
+  animTimer = setTimeout(struck, lungeMs + 250);
+  battleRaf = requestAnimationFrame(frame);
 }
 
 watch(liveState, (newState, oldState) => {
@@ -592,13 +666,55 @@ watch(liveState, (newState, oldState) => {
       groupBeat.hops.push(hop);
     } else beats.push({ kind: 'hop', hops: [hop], slide: smooth });
   };
+
+  // Fights (ui.battleAnimation — see battleAnim): every one the board's record holds
+  // that the last board had not shown. Where the viewer's log has the attack, the fight
+  // plays in its place; the rest — an enemy's attacks, which a fogged log leaves out,
+  // and fights inside some other action (civ1's barbarian raids, inside an end-turn) —
+  // play after the log's own beats, in the order they were fought.
+  const battleSpec = ui.battleAnimation ?? null;
+  const fights = battleSpec ? MOVES.newBattles(oldState.grid, newState.grid) : [];
+  // The square a piece is drawn as itself on — not as a fixture (a civ1 city carries
+  // its garrison's id, but it is the CITY that is drawn there; see boardMoves.js).
+  const ownSquare = (grid, id) => grid.cells.find(c =>
+    (c.unitId === id && !c.fixture) || (c.stack ?? []).some(s => s.unitId === id && !s.fixture)) ?? null;
+  // An attacker has to be standing on the square it struck from when its fight plays,
+  // but `moved` only knows where it started this update and where it ended up — so its
+  // journey is split around the fight: up to the square, the fight, then on to where
+  // the board has it now (the square it took, as a rule). `standing` is where the
+  // beats queued so far leave it. A piece the board does not draw as itself any more
+  // (dead, out of sight, gone into a city) has no token to walk; its fight draws it.
+  const standing = new Map();
+  const walk = (unitId, to) => {
+    const from = standing.get(unitId) ?? moved.get(unitId)?.from;
+    standing.set(unitId, to);
+    claimed.add(unitId);
+    if (!hopsOn || !from || (from.x === to.x && from.y === to.y)) return;
+    if (Math.abs(to.x - from.x) > halfW || !ownSquare(newState.grid, unitId)) return;
+    beats.push({ kind: 'hop', hops: [{ unitId, steps: buildHopPath(from, to, diagonal) }], slide: smooth });
+  };
+  const pushBattle = (battle) => {
+    const id = battle.attacker.unitId;
+    walk(id, battle.from);
+    beats.push({ kind: 'battle', battle, spec: battleSpec });
+    if (fights.some(f => f.attacker.unitId === id)) return; // it fights again later on
+    const end = ownSquare(newState.grid, id);
+    if (end) walk(id, { x: end.x, y: end.y });
+  };
+
   // A clock advance is not attributed to the piece that moved — the action that ran
   // the clock is somebody's `wait` — so on one clock the movers are collected up
   // front, ahead of the entry loop, instead of trailing after its flashes.
   if (hopsOn && together) for (const unitId of moved.keys()) pushHop(unitId);
   for (const entry of newEntries) {
     const action = entry.playerActions?.[0]?.action;
-    if (hopsOn && action?.unitId && moved.has(action.unitId) && !claimed.has(action.unitId)) pushHop(action.unitId);
+    const fight = action?.unitId ? fights.findIndex(f => f.attacker.unitId === action.unitId) : -1;
+    if (fight >= 0) {
+      // A piece with a fight to come: its attack plays the fight, and the moves before
+      // it only take it as far as the square it attacks from.
+      if (FX_ACTION_TYPES.has(action.type)) pushBattle(fights.splice(fight, 1)[0]);
+      else walk(action.unitId, fights[fight].from);
+    } else if (hopsOn && action?.unitId && moved.has(action.unitId) && !claimed.has(action.unitId)) pushHop(action.unitId);
 
     if (fxOn) {
       const flashes = [];
@@ -657,6 +773,8 @@ watch(liveState, (newState, oldState) => {
       if (attackerIdx != null) runningOwner.set(action.to, attackerIdx);
     }
   }
+  // The fights no log entry accounted for, oldest first (see `fights` above).
+  while (fights.length) pushBattle(fights.shift());
   // Any remaining moved units (e.g. fx off, or moves the log didn't attribute) hop last.
   if (hopsOn) for (const unitId of moved.keys()) if (!claimed.has(unitId)) pushHop(unitId);
 
@@ -860,6 +978,10 @@ function buildField(g, s) {
       // nothing to badge.
       badge:         c.badge,
       badgeLabel:    c.badgeLabel,
+      // The token is the square's own art standing in for the piece whose id it
+      // carries (civ1's city over its garrison — see boardMoves.js): animations that
+      // move a piece by id leave it where it is.
+      fixture:       c.fixture,
       // Per-unit money (CS buy phase) — a game's toGrid may set it; drives the buy
       // panel's affordability display. Absent for games with no economy.
       money:         c.money,
@@ -986,7 +1108,20 @@ const activeField = computed(() => {
   // Discrete hop steps are cell indices (centre at +0.5); continuous steps are already
   // exact board points (see the move watcher above), so no offset.
   const off = field.locationType === 'continuous' ? 0 : 0.5;
+  const fighting = battleAnim.value;
   field.units = field.units.map(u => {
+    // A fixture is drawn as the square's own art (a civ1 city carrying its garrison's
+    // id): it never travels with the piece whose id it carries.
+    if (u.fixture) return u;
+    // The attacker of the fight on screen: on the square it struck from, pushed along
+    // its lunge while that lasts (see lungeShift) — in the same two forms as a slide.
+    if (fighting?.beat.battle.attacker.unitId === u.id) {
+      const { battle, spec } = fighting.beat;
+      const x = battle.from.x + off, y = battle.from.y + off;
+      if (fighting.phase !== 'lunge') return { ...u, path: [[x, y]] };
+      const { dx, dy } = lungeShift(battle, spec, fighting.p, field.world);
+      return { ...u, path: [[x + dx, y + dy]], baseX: x, baseY: y, tweenDx: dx, tweenDy: dy };
+    }
     const moving = hopFor(hopAnim.value, u.id);
     if (moving) {
       const { a, b, frac } = hopPose(moving, hopAnim.value);
@@ -1000,9 +1135,12 @@ const activeField = computed(() => {
       // rounded away and the unit jumps a whole square at a time after all.
       return { ...unit, baseX: a.x + off, baseY: a.y + off, tweenDx: dx, tweenDy: dy };
     }
-    const queued = animQueue.value.find(q => q.kind === 'hop' && hopFor(q, u.id));
+    // Waiting its turn: where the first beat still to come for it starts — the start of
+    // its next hop, or the square its next fight is struck from.
+    const queued = animQueue.value.find(q => q.kind === 'hop' ? hopFor(q, u.id)
+      : q.kind === 'battle' && q.battle.attacker.unitId === u.id);
     if (queued) {
-      const { x, y } = hopFor(queued, u.id).steps[0];
+      const { x, y } = queued.kind === 'hop' ? hopFor(queued, u.id).steps[0] : queued.battle.from;
       return { ...u, path: [[x + off, y + off]] };
     }
     return u;
@@ -1022,6 +1160,52 @@ const activeField = computed(() => {
   }
 
   return field;
+});
+
+// What the board draws over itself for the fights on screen and still to come (see
+// battleAnim), or null when there are none:
+//   • ghosts — the fighters the board no longer draws as themselves: the loser, gone
+//     from it the moment the update arrived, and an attacker that died, was never in
+//     view before it struck, or has since gone into a city. Each holds its square
+//     (the attacker's lunging with it) until its own fight is over, so a loser is still
+//     standing there when its explosion plays, and is gone after it — not before.
+//   • blasts — the explosion frame now showing, over the loser's square.
+// Positions are board squares; the renderer places them (see HtmlLayer's battleFx).
+const battleFx = computed(() => {
+  const beats = battleBeats();
+  const field = activeField.value;
+  if (!beats.length || !field) return null;
+  const drawn = new Set(field.units.filter(u => !u.fixture).map(u => u.id));
+  const ghostOf = (token, key) => {
+    const team = field.teams[(token.owner ?? 1) - 1] ?? field.teams[0];
+    return {
+      id: key, team: team?.id, teamObj: team,
+      name: token.unitName ?? token.glyph ?? '?', type: (token.glyph ?? '?').toLowerCase(),
+      imagePath: token.imagePath ?? null, hp: 1, hpMax: 1, currentHp: 1,
+    };
+  };
+  const ghosts = [], blasts = [];
+  // One piece, one ghost: a unit that fights twice in one update (two turns bundled)
+  // is drawn by the earliest of its fights still to finish, not by each of them.
+  const ghosted = new Set();
+  for (const beat of beats) {
+    const b = beat.battle;
+    const now = battleAnim.value?.beat === beat ? battleAnim.value : null;
+    const lostAt = b.won ? b.at : b.from;
+    // The defender under the attacker: the attacker is drawn over it, as it lunges in.
+    if (b.won && !drawn.has(b.defender.unitId) && !ghosted.has(b.defender.unitId)) {
+      ghosted.add(b.defender.unitId);
+      ghosts.push({ key: `${b.id}d`, unit: ghostOf(b.defender, `ghost:${b.id}d`), x: b.at.x, y: b.at.y, lunging: false });
+    }
+    if (!drawn.has(b.attacker.unitId) && !ghosted.has(b.attacker.unitId)) {
+      ghosted.add(b.attacker.unitId);
+      const shift = now?.phase === 'lunge' ? lungeShift(b, beat.spec, now.p, field.world) : { dx: 0, dy: 0 };
+      ghosts.push({ key: `${b.id}a`, unit: ghostOf(b.attacker, `ghost:${b.id}a`),
+                    x: b.from.x + shift.dx, y: b.from.y + shift.dy, lunging: !!(shift.dx || shift.dy) });
+    }
+    if (now?.phase === 'blast') blasts.push({ key: `${b.id}x${now.frame}`, x: lostAt.x, y: lostAt.y, src: beat.spec.frames[now.frame] });
+  }
+  return { ghosts, blasts };
 });
 
 // ── live updates ─────────────────────────────────────────────
@@ -1541,6 +1725,7 @@ async function restartGame() {
                    :field="activeField"
                    :unit-fx="unitFx"
                    :territory-fx="territoryFx"
+                   :battle-fx="battleFx"
                    :history-fields="historyFields"
                    :reveal-fields="revealFields"
                    :reveal-log="revealLog"
