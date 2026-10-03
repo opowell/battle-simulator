@@ -2,8 +2,9 @@
 // The console: appfr's WindowFrame holding a DataShell over every object the
 // server knows about (catalog.js), with each record opened beside it as a tab,
 // and each session opened inside the console as a tab beside the whole of that.
+// What is open, and where, is held in the URL with the query.
 import { computed, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue'
-import { DataShell, WindowFrame, group, hasPanel, headless, insertPanel, panelNode, removePanel, row, setActivePanel, setSizesAt } from 'header-content-layout'
+import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, panelIds, panelNode, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'header-content-layout'
 import { api, basePath, playUrl } from './api.js'
 import { buildSchema } from './schema.js'
 import { buildRows } from './rows.js'
@@ -58,42 +59,67 @@ onMounted(() => { refresh(); document.addEventListener('visibilitychange', onVis
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 
 // ── panels ───────────────────────────────────────────────────
-// `opened` is what is open beside the browser: a record (by row id), a form
-// making a new one of something (by entity key), or a session being played.
-const opened = ref([])
 // The window itself draws no bar: the browser and the records are what is in it.
 // The browser is headless too: it is the page, not a window on it, and a bar
 // saying "Browse" over it says nothing.
 const home = () => headless(row([headless(panelNode('browse'))]))
 const layout = ref(home())
 
-// A session's tab is named after the session once the catalog has it.
-const sessionTitle = (item) => rowsById.value.get(`sessions:${item.sessionId}`)?.fields.name ?? 'Session'
+// One route for the page, so the shell's query and the layout each keep the
+// other's parameters. The layout is read from it here, before the window renders.
+const route = createHistoryAdapter()
+provide(ROUTE_ADAPTER_KEY, route)
+onBeforeUnmount(() => route.dispose?.())
+useLayoutRoute(layout, { adapter: route, home })
+
+/**
+ * What is open beside the browser, read off the layout's panel ids: a record
+ * (`rec:<row id>`), a form making a new one of something (`new:<entity key>`),
+ * or a session being played (`play:<session id>`). The id is all there is, so a
+ * URL naming the panels — a reload, Back, a link — is enough to open them again.
+ */
+function itemOf(id) {
+  if (id.startsWith('rec:')) return { id, kind: 'record', rowId: id.slice(4) }
+  if (id.startsWith('new:')) return { id, kind: 'create', entityKey: id.slice(4) }
+  if (id.startsWith('play:')) return { id, kind: 'session', sessionId: id.slice(5) }
+  return null
+}
+const opened = computed(() => panelIds(layout.value).map(itemOf).filter(Boolean))
+
+function titleOf(item) {
+  if (item.kind === 'session') {
+    // Named after the session once the catalog has it.
+    return { title: rowsById.value.get(`sessions:${item.sessionId}`)?.fields.name ?? 'Session' }
+  }
+  if (item.kind === 'create') {
+    const entity = schema.value?.entities.find((e) => e.key === item.entityKey)
+    return { title: entity?.create?.replace('…', '') ?? 'New', subtitle: entity?.label }
+  }
+  const r = rowsById.value.get(item.rowId)
+  return { title: r?.fields.name ?? item.rowId, subtitle: r?.entityLabel }
+}
 
 const panels = computed(() => [
   { id: 'browse', title: 'Browse', fixed: true, closable: false },
-  ...opened.value.map((item) => item.kind === 'session'
-    ? { id: item.id, title: sessionTitle(item), closable: true }
-    : { id: item.id, title: item.title, subtitle: item.subtitle, closable: true }),
+  ...opened.value.map((item) => ({ id: item.id, ...titleOf(item), closable: true })),
 ])
 
 /** @param focus  false leaves whichever top-level tab is showing where it is */
-function open(item, { focus = true } = {}) {
-  if (!opened.value.some((o) => o.id === item.id)) {
+function open(id, { focus = true } = {}) {
+  if (!hasPanel(layout.value, id)) {
     // Records share one strip of tabs beside the browser rather than each
     // taking a new column of the window.
-    const peer = opened.value.find((o) => o.kind !== 'session' && hasPanel(layout.value, o.id))
-    opened.value = [...opened.value, item]
+    const peer = opened.value.find((o) => o.kind !== 'session')
     if (peer) {
-      layout.value = insertPanel(layout.value, item.id, peer.id, 'center')
+      layout.value = insertPanel(layout.value, id, peer.id, 'center')
     } else {
       // The first record splits off the browser's right, leaving the browser
       // the larger share: its table has more columns to keep on screen.
-      const split = insertPanel(layout.value, item.id, 'browse', 'right')
+      const split = insertPanel(layout.value, id, 'browse', 'right')
       layout.value = split.kind === 'split' && split.children.length === 2 ? setSizesAt(split, [], [0.6, 0.4]) : split
     }
   }
-  if (focus) layout.value = setActivePanel(layout.value, item.id)
+  if (focus) layout.value = setActivePanel(layout.value, id)
 }
 
 /**
@@ -103,9 +129,8 @@ function open(item, { focus = true } = {}) {
  */
 function openSession(sessionId) {
   const id = `play:${sessionId}`
-  if (!opened.value.some((o) => o.id === id)) {
-    const peer = opened.value.find((o) => o.kind === 'session' && hasPanel(layout.value, o.id))
-    opened.value = [...opened.value, { id, kind: 'session', sessionId }]
+  if (!hasPanel(layout.value, id)) {
+    const peer = opened.value.find((o) => o.kind === 'session')
     // The first one turns the window into tabs: the console (everything there
     // was, named so its tab says so) and the session.
     layout.value = peer
@@ -117,19 +142,32 @@ function openSession(sessionId) {
 provide(OPEN_SESSION, openSession)
 
 function close(id) {
-  opened.value = opened.value.filter((o) => o.id !== id)
   layout.value = removePanel(layout.value, id) ?? home()
 }
 
 function openRow(r, options) {
-  open({ id: `rec:${r.id}`, kind: 'record', rowId: r.id, game: r.record.game, title: r.fields.name, subtitle: r.entityLabel }, options)
+  open(`rec:${r.id}`, options)
 }
+
+/**
+ * The game each open record belongs to, as last seen: the row of a record
+ * whose game has just been deleted is gone with it, and with it the game.
+ */
+const gameOfRecord = new Map()
+watch([opened, rowsById], () => {
+  for (const item of opened.value) {
+    const game = item.kind === 'record' ? rowsById.value.get(item.rowId)?.record.game : undefined
+    if (game !== undefined) gameOfRecord.set(item.rowId, game)
+  }
+}, { immediate: true })
 
 /** A deleted game takes every tab of its own with it — its files, units, sessions. */
 function closeTabsOfGone(catalog) {
   const games = new Set(catalog.games.map((g) => g.name))
   for (const item of opened.value) {
-    if (item.kind === 'record' && typeof item.game === 'string' && !games.has(item.game)) close(item.id)
+    if (item.kind !== 'record') continue
+    const game = rowsById.value.get(item.rowId)?.record.game ?? gameOfRecord.get(item.rowId)
+    if (typeof game === 'string' && !games.has(game)) close(item.id)
   }
 }
 
@@ -143,7 +181,7 @@ async function openCreated(rowId, replacing) {
 }
 
 function openCreate(entity) {
-  open({ id: `new:${entity.key}`, kind: 'create', entityKey: entity.key, title: entity.create.replace('…', ''), subtitle: entity.label })
+  open(`new:${entity.key}`)
 }
 
 const itemFor = (id) => opened.value.find((o) => o.id === id)
