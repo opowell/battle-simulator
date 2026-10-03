@@ -24,5 +24,5 @@ without one renders identically for both players.
 These are the 28 icons of the original 1991 roster, one per unit — the roster is
 the original's and nothing else (see `units.js`).
 
-`combat_1`–`combat_8` are the original explosion animation frames, kept as
-source art; they are not units.
+`combat_1`–`combat_8` are the original explosion animation frames (SP257.PIC), not
+units: the board plays them over the loser of a fight (`ui.battleAnimation`).

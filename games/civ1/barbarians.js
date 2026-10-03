@@ -117,14 +117,16 @@ function isLandTile(tile) {
  * applyMove(units, cities, board, playerId, unit, to) and
  * resolveAttack(state, units, cities, attackerId, targetId, rng).
  *
- * Returns { units, cities, nextId } — the caller assembles the state.
+ * Returns { units, cities, nextId, battles } — the caller assembles the state.
+ * `battles` are the fights the raid resolved, in order (see resolveAttack's record),
+ * so the board can show them being fought rather than just their casualties.
  */
 export function barbarianPhase(state, rng, deps) {
   const spec = BARBARIAN_LEVELS[state.gameSpecific?.barbarians];
   let units = state.units;
   let cities = state.cities;
   let nextId = state.gameSpecific.nextId;
-  if (!spec || spec.band === 0) return { units, cities, nextId };
+  if (!spec || spec.band === 0) return { units, cities, nextId, battles: [] };
 
   if (isUprisingTurn(spec, state.turnNumber) && countBarbarians(units) < spec.maxUnits) {
     const risen = uprising({ ...state, units, cities }, spec, rng, deps.makeUnit, nextId);
@@ -132,8 +134,9 @@ export function barbarianPhase(state, rng, deps) {
     nextId = risen.nextId;
   }
 
-  ({ units, cities } = raid({ ...state, units, cities }, rng, deps));
-  return { units, cities, nextId };
+  let battles;
+  ({ units, cities, battles } = raid({ ...state, units, cities }, rng, deps));
+  return { units, cities, nextId, battles };
 }
 
 function isUprisingTurn(spec, turnNumber) {
@@ -227,6 +230,7 @@ function raid(state, rng, deps) {
   const { board } = state;
   let units = state.units;
   let cities = state.cities;
+  const battles = [];
 
   const ids = units
     .filter(u => u.alive && u.ownerId === BARBARIAN_ID)
@@ -247,7 +251,9 @@ function raid(state, rng, deps) {
 
       const victim = adjacentVictim(unit, units, cities, wrapWidth(board));
       if (victim) {
-        ({ units, cities } = deps.resolveAttack({ ...state, units, cities }, units, cities, id, victim.id, rng));
+        let battle;
+        ({ units, cities, battle } = deps.resolveAttack({ ...state, units, cities }, units, cities, id, victim.id, rng));
+        if (battle) battles.push(battle);
         break; // an attack spends the whole turn, win or lose
       }
 
@@ -257,7 +263,7 @@ function raid(state, rng, deps) {
     }
   }
 
-  return { units, cities };
+  return { units, cities, battles };
 }
 
 // The neighbouring unit this raider goes for: whoever is holding a city first (that is

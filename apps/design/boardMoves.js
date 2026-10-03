@@ -70,5 +70,21 @@
     return moved;
   }
 
-  root.MOVES = { movedTokens };
+  /**
+   * The fights in `newGrid.battles` that `oldGrid` had not shown yet, oldest first.
+   *
+   * A game keeps a short running record of recent fights on the board (see a game's
+   * toGrid `battles`: `{ id, from, at, won, attacker, defender }`, ids counting up),
+   * because one update can carry a whole bundle of turns and a fogged viewer's log
+   * leaves out the opponent's moves entirely — the record is how the fights in
+   * between get shown at all. "Not shown yet" is "numbered past anything the last
+   * board had", not "absent from it": a fight that was out of sight on the last
+   * board and has since come into view is old news, not a new fight.
+   */
+  function newBattles(oldGrid, newGrid) {
+    const seen = Math.max(0, ...(oldGrid?.battles ?? []).map(b => b.id));
+    return (newGrid?.battles ?? []).filter(b => b.id > seen).sort((a, b) => a.id - b.id);
+  }
+
+  root.MOVES = { movedTokens, newBattles };
 })(typeof window !== 'undefined' ? window : globalThis);

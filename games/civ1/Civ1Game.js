@@ -457,6 +457,11 @@ function isMoveTargetLegal(to, board, units, cities, playerId, unit) {
 // best takes the blow (pickDefender), which is the rule that makes stacking mean
 // anything. Callers may name any unit on the square — a stale action, a barbarian's
 // pick, an agent planning under fog — and the square answers with its real defender.
+//
+// Alongside the new units/cities it hands back `battle`, a record of the fight as it
+// would be watched: where the attacker struck from and at, who met whom, and who won
+// (see logBattles). Nothing in the rules reads it — it is what lets the board play
+// the original's attack animation for a fight it only otherwise sees the dead of.
 function resolveAttack(state, units, cities, attackerId, targetId, rng) {
   const attacker = units.find(u => u.id === attackerId);
   const named = units.find(u => u.id === targetId);
@@ -468,6 +473,11 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
   targetId = defender.id;
 
   const result = resolveCombat(attacker, defender, { ...state, units, cities }, rng);
+  const fighter = u => ({ id: u.id, type: u.type, ownerId: u.ownerId });
+  const battle = {
+    from: attacker.position, at: defender.position, won: result.attackerSurvived,
+    attacker: fighter(attacker), defender: fighter(defender),
+  };
 
   units = units.map(u => {
     if (u.id === attackerId) {
@@ -505,7 +515,21 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
     }
   }
 
-  return { units, cities };
+  return { units, cities, battle };
+}
+
+// The last few fights, kept on the state for the board to animate (toGrid's
+// `battles`). A state is a snapshot and one snapshot can follow a whole bundle of
+// actions — an AI's turn, a barbarian raid inside an end-turn — so this is a short
+// running record rather than "the fight that just happened", numbered so a viewer
+// can tell the fights it has not shown yet from the ones it has. It is also the only
+// trace of an enemy's attack a fogged player ever gets: their log hides the move.
+const BATTLES_KEPT = 32;
+function logBattles(gameSpecific, battles) {
+  if (!battles.length) return gameSpecific;
+  const kept = gameSpecific.battles ?? [];
+  let n = kept.at(-1)?.n ?? 0;
+  return { ...gameSpecific, battles: [...kept, ...battles.map(b => ({ ...b, n: ++n }))].slice(-BATTLES_KEPT) };
 }
 
 const reaches = (unit, board, units, cities, playerId, to) =>
@@ -640,6 +664,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
       if (nextIdx === 0) newTurn = state.turnNumber + 1;
     }
     let nextPlayerId = playerIds[nextIdx];
+    let raided = [];
 
     // Barbarians. Once the rotation has been all the way round, the uncivilised
     // tribes take their own turn: any uprising due rises up, and every raider already
@@ -655,6 +680,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
       units = barb.units;
       cities = barb.cities;
       nextId = barb.nextId;
+      raided = barb.battles;
       // The rotation above was decided before the raiders moved, and they may have
       // just sacked the last city of the very civ it picked. Hop on again rather
       // than handing the turn to an empire that no longer exists. The turn counter
@@ -702,7 +728,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
       activePlayers: [nextPlayerId],
       turnNumber: newTurn,
       lastActions: playerActions,
-      gameSpecific: { ...state.gameSpecific, ...worldPatch, nextId, civ },
+      gameSpecific: logBattles({ ...state.gameSpecific, ...worldPatch, nextId, civ }, raided),
     };
   }
 
@@ -775,7 +801,8 @@ function applyOneAction(state, playerActions, rng = Math.random) {
   if (action.type === 'attack') {
     if (!units.some(u => u.id === action.unitId) || !units.some(u => u.id === action.targetId)) return state;
     const fought = resolveAttack(state, units, cities, action.unitId, action.targetId, rng);
-    return { ...state, units: fought.units, cities: fought.cities, lastActions: playerActions };
+    return { ...state, units: fought.units, cities: fought.cities, lastActions: playerActions,
+             gameSpecific: logBattles(state.gameSpecific, fought.battle ? [fought.battle] : []) };
   }
 
   // ── set-production ────────────────────────────────────────────────────────
@@ -1399,6 +1426,13 @@ function getVisibleState(state, playerId) {
       // would need its own copy of the board (knownBoard) for no gain — an agent
       // learns nothing from ground it has only imagined walking.
       observed: true,
+      // The fights this player witnessed (see logBattles): the ones they fought in —
+      // a unit sees its neighbours, so both squares were in view, even if the unit
+      // that saw them is the one that died — and any in plain sight now. The rest are
+      // somebody else's war.
+      battles: state.gameSpecific.battles?.filter(b =>
+        b.attacker.ownerId === playerId || b.defender.ownerId === playerId
+        || canSee(b.from) || canSee(b.at)),
     },
     lastActions: state.lastActions?.filter(pa => pa.playerId === playerId) ?? null,
   };
@@ -1636,6 +1670,19 @@ export const Civ1Game = {
     // moving a tile at a time, sliding is what makes it readable which unit moved
     // and which way it went. Same pace as a hop: one step per square.
     moveAnimation: 'slide',
+    // A fight is played the way the 1991 game plays it (its combat routine, CIV.EXE
+    // segment 29f3 as disassembled by OpenCivOne): the attacker slides 10 pixels of
+    // its 16 toward the defender, 11 steps of 2 timer ticks; is redrawn at home, with
+    // no slide back; then the 8-frame explosion (combat_1…8, the original SP257 art)
+    // plays over whoever lost, 4 ticks a frame, with the loser still drawn underneath,
+    // and only then is it gone. A tick is taken as ~18ms, which keeps the original's
+    // 2:4 pacing and reads at a browser's frame rate. See apps/design/App.vue.
+    battleAnimation: {
+      lunge: 10 / 16,
+      lungeMs: 400,
+      frames: [1, 2, 3, 4, 5, 6, 7, 8].map(i => `${BASE}/units/combat_${i}`),
+      frameMs: 72,
+    },
     // Player colors, taken from the original game's civ palette. RED IS RESERVED FOR
     // THE BARBARIANS in Civ1 and never belongs to a civ, so it's absent here — a red
     // unit or city on this map means barbarians, whoever else is playing. The generic
@@ -2408,6 +2455,20 @@ export const Civ1Game = {
     // and go.
     const extraTeams = BARBARIAN_LEVELS[state.gameSpecific.barbarians]?.band ? [BARBARIAN_TEAM] : [];
 
+    // The recent fights (logBattles), for the board's attack animation — see
+    // ui.battleAnimation. Each fighter is drawn like any other piece, so it travels as
+    // the same token fields a cell uses: the loser is gone from `cells` by the time a
+    // viewer sees the fight, and so is a winner who was never in view before it struck.
+    // Under fog this is already only what the viewer witnessed (getVisibleState).
+    const battleToken = u => ({
+      unitId: u.id, glyph: u.type[0].toUpperCase(), unitName: u.type,
+      imagePath: `${BASE}/units/${u.type}`, owner: pidIdx[u.ownerId] ?? 0,
+    });
+    const battles = (state.gameSpecific.battles ?? []).map(b => ({
+      id: b.n, from: b.from, at: b.at, won: b.won,
+      attacker: battleToken(b.attacker), defender: battleToken(b.defender),
+    }));
+
     // wrap: true tells the client the map is a horizontal cylinder (see wrapX above) —
     // Battlefield's click-to-pan centres on any column instead of clamping near the
     // east/west seam, and HtmlLayer draws duplicate columns there so panning stays seamless.
@@ -2416,7 +2477,7 @@ export const Civ1Game = {
     // times, next to the turn counter (GameHeader.vue). Computed per snapshot from
     // state.turnNumber, so scrubbing the history timeline moves the calendar too.
     return {
-      width, height, cells, wrap: boardWraps(board), civ, cities: citiesOut, military, statusChips, extraTeams,
+      width, height, cells, wrap: boardWraps(board), civ, cities: citiesOut, military, statusChips, extraTeams, battles,
       turnLabel: objectiveLabel(state) ?? yearLabel(state.turnNumber),
       // Per-session view settings, layered over the static `ui` above (see App.vue's
       // buildField): whether a played turn ends itself, as the setup form asked.
