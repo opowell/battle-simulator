@@ -56,8 +56,9 @@ export function scSpriteLayers(type, def) {
   return layers;
 }
 
-// Map sprite for a unit that has real art (SC1's games/sc1/images/map/, the in-game
-// sprites from the StarCraft fandom wiki — see that folder's SOURCES.md): the picture
+// Map sprite for a unit that has real art (SC1's games/sc1/images/map-original/ and
+// map-remastered/, the in-game sprites from the StarCraft fandom wiki — see
+// games/sc1/images/SPRITES.md): the picture
 // standing on a team-coloured base ring. The art is not recoloured: each sprite was
 // captured in whatever player colour its screenshot happened to use (purple, red,
 // none at all on Protoss gold), so tinting would mark some units and not others. The
@@ -83,6 +84,18 @@ export function scImageSpriteLayers(src, def) {
 // should still pick the marine.
 export function scImageHitRFrac(def) {
   return imageScale(def) * 1.2;
+}
+
+// Building counterpart to scImageSpriteLayers: the structure's art on a team-outlined
+// footprint plate (a building's token is square, so its owner mark is too). The art
+// overhangs the plate a little, as a building's sprite overhangs its footprint in the
+// game. Sized by the token itself (scBuildingSize → the renderers' sizeFrac).
+export function scBuildingImageSpriteLayers(src) {
+  return [
+    { shape: 'rect', wFrac: 2, hFrac: 2, anchorX: 0.5, anchorY: 0.5, rxFrac: 0.18,
+      fill: '#0000002e', stroke: 'team', strokeWidth: 2, dx: 0, dy: 0, rot: 0 },
+    { src, wFrac: 2.3, hFrac: 2.3, anchorX: 0.5, anchorY: 0.5, dx: 0, dy: 0, rot: 0 },
+  ];
 }
 
 // How big a structure's token draws, as a multiple of the standard unit token (the

@@ -7,7 +7,7 @@ import { generateMap, findAdjacentFree, getReachableTiles, renderMap, isPassable
 import { getSc1Belief } from './belief.js';
 import { lineCost, isClearOfUnits } from '../continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
-import { scSpriteLayers, scImageSpriteLayers, scImageHitRFrac, scBuildingSpriteLayers, scBuildingSize } from '../starcraftSprite.js';
+import { scSpriteLayers, scImageSpriteLayers, scImageHitRFrac, scBuildingSpriteLayers, scBuildingImageSpriteLayers, scBuildingSize } from '../starcraftSprite.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 
 // Unit types with a sprite in images/units/. Each PNG stores its player-color
@@ -21,16 +21,28 @@ const UNIT_SPRITES = new Set([
   'civilian', 'kerrigan',
 ]);
 
-// Unit types with map art in images/map/ — the in-game sprite from each unit's
-// StarCraft fandom wiki page, background removed (see images/map/SOURCES.md). Every
-// type in units.js has one; the set is what keeps a unit added later from asking for a
-// picture that isn't there (it falls back to the primitive token instead).
+// Types with map art, in two sets — images/map-original/ (the 1998 sprites) and
+// images/map-remastered/ (the 2017 Remastered art) — the in-game image from the
+// StarCraft fandom wiki, background removed (see images/SPRITES.md). Every type in
+// units.js and buildings.js has one in both folders; the set is what keeps a type added
+// later from asking for a picture that isn't there (it falls back to the primitive
+// token instead).
 const MAP_SPRITES = new Set([
   'scv', 'marine', 'firebat', 'ghost', 'vulture', 'siege-tank', 'goliath', 'wraith',
   'battlecruiser', 'drone', 'zergling', 'hydralisk', 'lurker', 'mutalisk', 'scourge',
   'ultralisk', 'overlord', 'probe', 'zealot', 'dragoon', 'high-templar', 'dark-templar',
   'archon', 'corsair', 'carrier', 'arbiter',
+  'command-center', 'supply-depot', 'refinery', 'barracks', 'factory', 'starport',
+  'engineering-bay', 'missile-turret', 'bunker', 'hatchery', 'lair', 'hive', 'extractor',
+  'spawning-pool', 'hydralisk-den', 'spire', 'sunken-colony', 'spore-colony',
+  'ultralisk-cavern', 'nexus', 'pylon', 'assimilator', 'gateway', 'cybernetics-core',
+  'forge', 'photon-cannon', 'templar-archives', 'stargate', 'robotics-facility',
 ]);
+const SPRITE_SETS = ['original', 'remastered'];
+const spriteSrc = (state, type) => {
+  const set = SPRITE_SETS.includes(state.gameSpecific?.spriteSet) ? state.gameSpecific.spriteSet : 'original';
+  return `/images/sc1/map-${set}/${type}`;
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -750,6 +762,10 @@ export function createInitialState(players, config = {}) {
         [p2.id]: { minerals: 50, gas: 0 },
       },
       fogOfWar: config.fogOfWar ?? false,
+      // Which art the map draws (the spriteSet option). Kept in the state rather than
+      // read off the session's config because toGrid only ever sees the state — and
+      // here a change made mid-game lands as a plain gameSpecific patch.
+      spriteSet: config.spriteSet ?? 'original',
       // Snapshot of all starting units and buildings — used by belief.js to seed
       // the fog tracker with common-knowledge starting positions.
       startRoster: {
@@ -815,10 +831,9 @@ export const Sc1Game = {
   name: 'SC1',
   // Unit sprites carry a magenta player-color ramp; the design app tints each to its
   // owner's team color at render time — used only for the side-panel portrait (see
-  // toGrid's portraitPath). The map draws each unit's in-game art from images/map/ on a
-  // team-coloured ring (games/starcraftSprite.js's scImageSpriteLayers); buildings are
-  // still primitive plated tokens with their type letter. SC1 has no tracked unit
-  // heading, so showFacing is off for the same reason chess/civ1/xcom disable it: a
+  // toGrid's portraitPath). The map draws every unit and building as its in-game art
+  // (original or Remastered — the spriteSet option) on a team-coloured ring or plate
+  // (games/starcraftSprite.js's scImageSpriteLayers). SC1 has no tracked unit heading, so showFacing is off for the same reason chess/civ1/xcom disable it: a
   // decorative, meaningless arrow isn't worth it.
   // No right-hand column: an RTS army of dozens of units and buildings doesn't fit a
   // per-unit roster card, and the map wants every pixel of a 48x40 board. What's there
@@ -836,6 +851,9 @@ export const Sc1Game = {
   colors: { open: '#6a7a50', elevated: '#8a7060', ramp: '#9a8868', minerals: '#2060a0', vespene: '#20884a', obstacle: '#3a2818' },
   gameOptions: [
     MAP_ZOOM_OPTION,
+    { id: 'spriteSet', label: 'Unit art', type: 'select', default: 'original',
+      description: 'How units and buildings look on the map: the original 1998 sprites, or the 2017 Remastered art',
+      options: [{ value: 'original', label: 'Original (1998)' }, { value: 'remastered', label: 'Remastered (2017)' }] },
   ],
   createInitialState,
   getLegalActions,
@@ -892,7 +910,7 @@ export const Sc1Game = {
         maxHp:     u.maxHp,
         moveRange: u.movesLeft,
         spriteLayers: MAP_SPRITES.has(u.type)
-          ? scImageSpriteLayers(`/images/sc1/map/${u.type}`, UNITS[u.type])
+          ? scImageSpriteLayers(spriteSrc(state, u.type), UNITS[u.type])
           : scSpriteLayers(u.type, UNITS[u.type]),
         hitRFrac: MAP_SPRITES.has(u.type) ? scImageHitRFrac(UNITS[u.type]) : undefined,
         // Portrait-only (see the `ui` comment above) — only the side-panel portrait
@@ -903,9 +921,9 @@ export const Sc1Game = {
 
     // Buildings don't move, so they render as stationary tokens pinned to their
     // tile centre — the same spot they occupied as a grid cell before this game
-    // went continuous. They draw as plated structures, several times the size of a
-    // unit (see games/starcraftSprite.js) — a command center is a landmark on the
-    // map, not another disc the same size as the worker standing next to it.
+    // went continuous. They draw several times the size of a unit (see
+    // games/starcraftSprite.js) — a command center is a landmark on the map, not
+    // another disc the same size as the worker standing next to it.
     const buildingList = buildings.filter(b => b.alive).map(b => ({
       id: b.id, x: String(b.position.x + 0.5), y: String(b.position.y + 0.5),
       glyph:    b.type[0].toUpperCase(),
@@ -913,7 +931,9 @@ export const Sc1Game = {
       owner:    pidIdx[b.ownerId] ?? 0,
       hp:       b.hp,
       maxHp:    b.maxHp,
-      spriteLayers: scBuildingSpriteLayers(b.type, BUILDINGS[b.type] ?? {}),
+      spriteLayers: MAP_SPRITES.has(b.type)
+        ? scBuildingImageSpriteLayers(spriteSrc(state, b.type))
+        : scBuildingSpriteLayers(b.type, BUILDINGS[b.type] ?? {}),
       sizeFrac:     scBuildingSize(BUILDINGS[b.type] ?? {}),
     }));
 
