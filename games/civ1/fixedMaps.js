@@ -25,6 +25,8 @@
 //              are over, or by wiping out the attacking army first
 //   revealed   true: both sides know the whole battlefield's terrain from the
 //              start (units are still fogged)
+//   wrap       false: the map's east and west edges are edges, not one seam — a
+//              battlefield is a place, not a world
 //   config     the scenario menu entry's config (seats, fog, …), as on any scenario
 
 // Character → engine terrain. `.` is water; the engine has no separate "coast"
@@ -222,50 +224,43 @@ export const FIXED_MAPS = [
     // West to east: the attackers' open staging plains, a wooded ridge north and
     // south with a pair of hills on the river crossing between them, the city's two
     // hill outworks, and the city itself on the river mouth with the sea at its back
-    // — so it can only be approached from the west.
-    //
-    // The sea behind the city is wider than it needs to look, on purpose. Civ1's world
-    // wraps east to west, and on a narrow map going round the back of the world is the
-    // SHORTER way between two squares — 10 tiles from the attackers' camp to the city
-    // that way against 14 the direct way. Land units cannot actually cross it, but every
-    // distance the agents plan with is the wrapped one, and on a 24-wide map they marched
-    // the siege train west to the shore. At 40 wide, any two land squares (x 1..20) are
-    // closer the direct way.
+    // — so it can only be approached from the west. The map does not wrap.
     rows: [
-      '........................................',
-      '.PGGGGPGGFFPGGGGPHMM....................',
-      '.GPGGGGPGFFFPGGGGPMMG...................',
-      '.GGPGGGGFFFGGPGGGGPGF...................',
-      '.GGGPGGGGFFGGGPHHGGPG...................',
-      '.PPPPPPGGGPGGGGPGGGGP...................',
-      '.PPPPPPGGGGPHGGGPGGGG...................',
-      '.PPPPPPPGGGGPGGGGPGG....................',
-      '.PPPPPPGPGGGHPGGGGGGG...................',
-      '.PPPPPPGGPGGGGPGGGGPG...................',
-      '.GGGGPGGGFFGGGGHHGGGP...................',
-      '.PGGGGPGFFFPGGGGPGGGF...................',
-      '.GPGGGGPGFFFPGGGGPMMG...................',
-      '.GGPGGGGPFFGGPGGGHMM....................',
-      '........................................',
+      '........................',
+      '.PGGGGPGGFFPGGGGPHMM....',
+      '.GPGGGGPGFFFPGGGGPMMG...',
+      '.GGPGGGGFFFGGPGGGGPGF...',
+      '.GGGPGGGGFFGGGPHHGGPG...',
+      '.PPPPPPGGGPGGGGPGGGGP...',
+      '.PPPPPPGGGGPHGGGPGGGG...',
+      '.PPPPPPPGGGGPGGGGPGG....',
+      '.PPPPPPGPGGGHPGGGGGGG...',
+      '.PPPPPPGGPGGGGPGGGGPG...',
+      '.GGGGPGGGFFGGGGHHGGGP...',
+      '.PGGGGPGFFFPGGGGPGGGF...',
+      '.GPGGGGPGFFFPGGGGPMMG...',
+      '.GGPGGGGPFFGGPGGGHMM....',
+      '........................',
     ],
     rivers: [
-      '                                        ',
-      '                                        ',
-      '                                        ',
-      '                                        ',
-      '                                        ',
-      '                                        ',
-      '                                        ',
-      '       ~~~~~~~~~~                       ',
-      '                                        ',
-      '                                        ',
-      '                                        ',
-      '                                        ',
-      '                                        ',
-      '                                        ',
-      '                                        ',
+      '                        ',
+      '                        ',
+      '                        ',
+      '                        ',
+      '                        ',
+      '                        ',
+      '                        ',
+      '       ~~~~~~~~~~       ',
+      '                        ',
+      '                        ',
+      '                        ',
+      '                        ',
+      '                        ',
+      '                        ',
+      '                        ',
     ],
     revealed: true,
+    wrap: false,
     cities: [
       { side: 2, x: 17, y: 7, size: 3, buildings: ['palace'] },
     ],
@@ -290,8 +285,8 @@ export const FIXED_MAPS = [
       { side: 1, type: 'chariot',  x: 6, y: 5 },
       { side: 1, type: 'chariot',  x: 6, y: 9 },
       { side: 1, type: 'chariot',  x: 7, y: 9 },
-      { side: 1, type: 'archers',  x: 6, y: 7 },
-      { side: 1, type: 'archers',  x: 5, y: 7 },
+      { side: 1, type: 'legion',   x: 6, y: 7 },
+      { side: 1, type: 'legion',   x: 5, y: 7 },
       // ── The defenders (side 2) ────────────────────────────────────────────────
       // The garrison, dug in.
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true, veteran: true },
@@ -299,14 +294,14 @@ export const FIXED_MAPS = [
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'archers',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'archers',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'archers',  x: 17, y: 7, fortified: true },
+      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
+      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
+      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
       // The two hill outworks north and south of the approach.
       { side: 2, type: 'phalanx',  x: 15, y: 4, fortified: true },
-      { side: 2, type: 'archers',  x: 16, y: 4, fortified: true },
+      { side: 2, type: 'phalanx',  x: 16, y: 4, fortified: true },
       { side: 2, type: 'phalanx',  x: 15, y: 10, fortified: true },
-      { side: 2, type: 'archers',  x: 16, y: 10, fortified: true },
+      { side: 2, type: 'phalanx',  x: 16, y: 10, fortified: true },
       // Pickets on the hills either side of the river crossing.
       { side: 2, type: 'legion',   x: 12, y: 6, fortified: true },
       { side: 2, type: 'legion',   x: 12, y: 8, fortified: true },
@@ -339,7 +334,7 @@ export function parseFixedMap(map) {
       tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver, fortress: false };
     }
   }
-  return { width, height, tiles };
+  return { width, height, tiles, ...(map.wrap === false ? { wrap: false } : {}) };
 }
 
 export function getFixedMap(id) {

@@ -310,6 +310,14 @@ function tileFogged(tile) {
   return !(props.exploredTiles?.has(key));
 }
 
+// Known but not in sight right now: the terrain is drawn (it is remembered), under a
+// half-dark veil, so "what is out there" and "what I can see" read apart at a glance.
+function tileRemembered(tile) {
+  if (!squareFogVisibleSet.value || !props.exploredTiles) return false;
+  const key = `${tile.x},${tile.y}`;
+  return !squareFogVisibleSet.value.has(key) && props.exploredTiles.has(key);
+}
+
 // Sprites drawn on top of the terrain, each transparent except for the feature itself.
 // `overlayImage` may be a single path or a list painted in order — civ1 stacks a river
 // plus one segment per road direction (see SchematicLayer's tileOverlayImages).
@@ -379,6 +387,7 @@ const cells = computed(() => {
         coast:   (tile && !tileFogged(tile) && tile.coastSprite) ? imgSrc(tile.coastSprite.image) : null,
         bg:      (tile && !tileFogged(tile) && tile.bgImage)     ? imgSrc(tile.bgImage)           : null,
         overlays: tileOverlays(tile),
+        remembered: !!tile && tileRemembered(tile),
         fogged:  !!gridFogVisibleSet.value && !gridFogVisibleSet.value.has(k),
         vision:  !!vis && vis.has(k),
         marker:  markers.get(k) ?? null,
@@ -698,6 +707,7 @@ function handleUnitClick(e, u) {
         <img v-for="(ov, oi) in c.overlays" :key="'ov'+oi"
              class="hl-fill hl-pixel hl-cover" :src="ov" draggable="false"/>
         <div v-if="c.checker" class="hl-fill hl-checker"/>
+        <div v-if="c.remembered" class="hl-fill hl-remembered"/>
         <!-- gridFog veil (vision fog is already baked into c.color) -->
         <div v-if="c.fogged"  class="hl-fill" :style="{ background: rdr.fogA }"/>
         <div v-if="c.vision"  class="hl-fill hl-vision"/>
@@ -907,6 +917,8 @@ function handleUnitClick(e, u) {
    would paint its selection tint over whole cells and sprites (SchematicLayer's SVG is
    immune; real DOM is not). Images additionally opt out of native drag via draggable="false". */
 .hl-root { position: absolute; inset: 0; overflow: hidden; user-select: none; }
+/* Known ground out of current sight (persistent fog): remembered, but dimmed. */
+.hl-remembered { background: rgba(0, 0, 0, 0.45); pointer-events: none; }
 .hl-noevents { pointer-events: none; }
 
 /* Positioned units (field.positioned): a zero-size anchor at the unit's exact pixel point,

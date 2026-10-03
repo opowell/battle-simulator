@@ -41,6 +41,7 @@
 import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
 import { killDesire } from './ai.js';
+import { wrapX, wrapWidth } from './map.js';
 import {
   productionContext, rankProductionActions, RESEARCH_PRIORITY,
 } from './production.js';
@@ -87,11 +88,11 @@ const MIN_WIN_PROB = 0.4;
  * settling here now.
  */
 export function siteValue(state, pos) {
-  const W = state.board.width;
+  const W = wrapWidth(state.board);
   let v = 0;
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
-      const x = ((pos.x + dx) % W + W) % W;
+      const x = wrapX(pos.x + dx, W);
       const tile = state.board.tiles[`${x},${pos.y + dy}`];
       const t = TERRAIN[tile?.terrain];
       if (!t) continue;
@@ -203,7 +204,7 @@ function focusUnit(obs, playerId) {
 }
 
 function unitActions(legal, obs, playerId, unit) {
-  const W = obs.board.width;
+  const W = wrapWidth(obs.board);
   const mine = legal.filter(a => a.unitId === unit.id);
   const out = [];
 

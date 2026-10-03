@@ -51,14 +51,40 @@ test('siege: the whole battlefield is known ground to both sides, units still fo
   assert.ok(!Object.values(view.board.tiles).some(t => t.terrain === 'unknown'));
 });
 
-test('siege: the sea behind the city is wide enough that the wrapped way round is never shorter', () => {
-  const map = getFixedMap('siege');
-  const W = map.rows[0].length;
-  const landX = [];
-  map.rows.forEach(r => [...r].forEach((ch, x) => { if (ch !== '.') landX.push(x); }));
-  const span = Math.max(...landX) - Math.min(...landX);
-  assert.ok(W - span > span, `land spans ${span} columns of a ${W}-wide map`);
-  assert.ok(map.rows.every(r => r.length === W) && map.rivers.every(r => r.length === W));
+test('siege: every unit is one the 1991 game had (no archers, crusaders, marines…)', () => {
+  // The original's land roster, by this engine's ids ('cav-modern' is its Cavalry,
+  // 'cavalry' the ancient horsemen it has none of — so neither is here).
+  const ORIGINAL = new Set(['settlers', 'militia', 'phalanx', 'legion', 'chariot', 'knights', 'catapult',
+    'musketeers', 'cannon', 'riflemen', 'artillery', 'armor', 'mech-inf', 'diplomat', 'caravan']);
+  for (const u of getFixedMap('siege').units) assert.ok(ORIGINAL.has(u.type), u.type);
+});
+
+test('siege: the battlefield does not wrap — its east and west edges are edges', async () => {
+  const s = siege();
+  assert.equal(s.board.wrap, false);
+  assert.equal(Civ1Game.toGrid(s).wrap, false);
+  const { wrapWidth } = await import('./map.js');
+  assert.equal(wrapWidth(s.board), Infinity);
+  // A unit on the west shore cannot step "west" onto the far east column.
+  const { getReachableTiles } = await import('./map.js');
+  const scout = { ...s.units.find(u => u.ownerId === 'p1' && u.type === 'knights'), position: { x: 1, y: 7 }, movesLeft: 2 };
+  const reach = getReachableTiles(scout, s.board, [scout], 'p1', s.cities);
+  assert.ok(reach.every(t => t.x >= 0 && t.x < s.board.width), JSON.stringify(reach));
+  // Sight stops at the edge too: nothing off the map is ever marked explored.
+  assert.equal(s.gameSpecific.explored.p1.length, s.board.width * s.board.height);
+  // The open game still wraps.
+  const open = Civ1Game.createInitialState(players(), { seed: 3 });
+  assert.equal(open.board.wrap, undefined);
+  assert.equal(Civ1Game.toGrid(open).wrap, true);
+});
+
+test('siege: an agent\'s distances do not go round the back of the world', async () => {
+  const { chebyshevWrapped } = await import('./Civ1Game.js');
+  const { wrapWidth } = await import('./map.js');
+  const s = siege();
+  // Attackers' camp to the city: 10 columns, the direct way — the wrapped way was shorter.
+  assert.equal(chebyshevWrapped({ x: 7, y: 7 }, { x: 17, y: 7 }, wrapWidth(s.board)), 10);
+  assert.equal(chebyshevWrapped({ x: 1, y: 7 }, { x: 20, y: 7 }, wrapWidth(s.board)), 19);
 });
 
 test('siege: taking the city wins for the attacker', () => {

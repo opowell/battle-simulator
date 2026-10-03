@@ -36,6 +36,7 @@ import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
 import { siteValue } from './searchActions.js';
 import { siegeRole } from './objective.js';
+import { wrapWidth } from './map.js';
 
 function chebyshev(a, b, width) {
   const dx = Math.abs(a.x - b.x);
@@ -64,7 +65,7 @@ const SIEGE_PULL = 8;
 // matter. Materiel terms dominate; positional terms are deliberately an order of
 // magnitude smaller — they break ties between moves, they don't buy trades.
 function sideScore(state, playerId, oppId) {
-  const W = state.board.width;
+  const W = wrapWidth(state.board);
   const units = state.units.filter(u => u.alive && u.ownerId === playerId);
   const cities = state.cities.filter(c => c.ownerId === playerId);
   const oppCities = oppId ? state.cities.filter(c => c.ownerId === oppId) : [];

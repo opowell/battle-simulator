@@ -13,7 +13,18 @@ export function mulberry32(seed) {
 
 // Wrap an x coordinate into [0, width) — the world is a cylinder that wraps
 // horizontally (east/west), so the left and right edges are the same seam.
-export function wrapX(x, width) { return ((x % width) + width) % width; }
+// An infinite width is a board that does not wrap (see wrapWidth): x is left alone,
+// and a square off either edge simply has no tile.
+export function wrapX(x, width) { return width === Infinity ? x : ((x % width) + width) % width; }
+
+// Whether a board wraps east/west. Every world the generator makes does; a hand-built
+// battlefield (fixedMaps.js) may say `wrap: false`, and then its edges are edges.
+export const boardWraps = board => board?.wrap !== false;
+
+// The width to wrap at, for wrapX and for every cylindrical distance in the game
+// (min(dx, width - dx)): the board's own width, or Infinity on a board that does not
+// wrap — which turns each of those into plain dx without any of them knowing why.
+export function wrapWidth(board) { return boardWraps(board) ? board.width : Infinity; }
 
 // ── Original Civ1 map generation ───────────────────────────────────────────
 //
@@ -303,7 +314,7 @@ export function findStartPos(tiles, width, height, xRange, rng) {
 export function findAdjacentFree(pos, board, units) {
   const occupied = new Set(units.filter(u => u.alive).map(u => `${u.position.x},${u.position.y}`));
   for (const [dx, dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]]) {
-    const nx = wrapX(pos.x + dx, board.width), ny = pos.y + dy;
+    const nx = wrapX(pos.x + dx, wrapWidth(board)), ny = pos.y + dy;
     if (ny < 0 || ny >= board.height) continue;
     const k = `${nx},${ny}`;
     const t = board.tiles[k];
@@ -363,7 +374,7 @@ export function makeZoneOfControl(board, allUnits, cities, playerId) {
     for (const [dx, dy] of ZOC_DIRS) {
       const ny = u.position.y + dy;
       if (ny < 0 || ny >= board.height) continue;
-      const k = `${wrapX(u.position.x + dx, board.width)},${ny}`;
+      const k = `${wrapX(u.position.x + dx, wrapWidth(board))},${ny}`;
       let at = coverage.get(k);
       if (!at) coverage.set(k, at = new Set());
       at.add(src);
@@ -423,7 +434,7 @@ export function getReachableTiles(unit, board, allUnits, playerId, cities = []) 
     for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]]) {
       const ny = pos.y + dy;
       if (ny < 0 || ny >= board.height) continue;
-      const next = { x: wrapX(pos.x + dx, board.width), y: ny };
+      const next = { x: wrapX(pos.x + dx, wrapWidth(board)), y: ny };
       const k = key(next);
 
       const tile = board.tiles[k];

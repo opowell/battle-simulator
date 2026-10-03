@@ -19,7 +19,7 @@
 import { UNITS } from './units.js';
 import { mintId, takenIds } from './ids.js';
 import { TERRAIN } from './terrain.js';
-import { wrapX, makeZoneOfControl } from './map.js';
+import { wrapX, wrapWidth, makeZoneOfControl } from './map.js';
 
 // The owner id barbarian pieces carry. Never a member of state.players — every
 // `ownerId !== playerId` test in the game already treats them as hostile to everyone,
@@ -196,7 +196,7 @@ function raiderType(state, targetOwnerId) {
 // Empty, walkable, city-free land in the ring SPAWN_MIN..SPAWN_MAX around a city.
 function spawnSpots(state, center) {
   const { board } = state;
-  const W = board.width, H = board.height;
+  const W = wrapWidth(board), H = board.height;
   const occupied = new Set(state.units.filter(u => u.alive).map(u => key(u.position)));
   const cityTiles = new Set(state.cities.map(c => key(c.position)));
 
@@ -244,7 +244,7 @@ function raid(state, rng, deps) {
       const unit = units.find(u => u.id === id);
       if (!unit || !unit.alive || unit.movesLeft <= 0) break;
 
-      const victim = adjacentVictim(unit, units, cities, board.width);
+      const victim = adjacentVictim(unit, units, cities, wrapWidth(board));
       if (victim) {
         ({ units, cities } = deps.resolveAttack({ ...state, units, cities }, units, cities, id, victim.id, rng));
         break; // an attack spends the whole turn, win or lose
@@ -276,7 +276,7 @@ function adjacentVictim(unit, units, cities, width) {
 // path search: raiders are supposed to be crude, and a band that walks into a mountain
 // range and mills about there is behaving like the original's.
 function nextStep(unit, units, cities, board) {
-  const W = board.width;
+  const W = wrapWidth(board);
   const goal = raidGoal(unit, units, cities, W);
   if (!goal) return null;
 
