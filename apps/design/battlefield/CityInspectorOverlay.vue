@@ -152,10 +152,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
                   <img :src="teamSpriteHref(u.image, team?.raw, recolor)"
                        class="ci-unit-img" draggable="false"/>
                   <!-- The standing order this defender is on, in the same idiom the board
-                       uses for a unit out in the open (a frame round it, or a letter in
+                       uses for a unit out in the open (a picture over it, or a letter in
                        the corner — see battlefield/HtmlUnit.vue). A garrison never gets
                        that mark on the map, because the city's own token wins the square. -->
-                  <span v-if="u.statusMark?.frame" class="ci-unit-frame"/>
+                  <img v-if="u.statusMark?.overlay" :src="imgSrc(u.statusMark.overlay)"
+                       class="ci-unit-img ci-unit-overlay" draggable="false"/>
                   <span v-if="u.statusMark?.glyph" class="ci-unit-glyph">{{ u.statusMark.glyph }}</span>
                 </button>
               </div>
@@ -225,12 +226,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
 .ci-unit-img { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
 /* Standing-order marks, drawn over the sprite without taking a layout slot — the tile
    stays a plain 44px button whether the unit is on an order or not. Both sit inside the
-   button's own border, so the amber "wants orders" edge is still readable around them. */
-.ci-unit-frame {
-  position: absolute; inset: 2px; box-sizing: border-box; pointer-events: none;
-  border: 2px solid rgba(255,255,255,0.95);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.6);
-}
+   button's own border, so the amber "wants orders" edge is still readable around them.
+   The overlay takes the sprite's own box and fit, so the two pixel grids coincide. */
+.ci-unit-overlay { position: absolute; inset: 0; pointer-events: none; }
 .ci-unit-glyph {
   position: absolute; top: 0; right: 2px; pointer-events: none;
   font-size: 15px; font-weight: 800; line-height: 1.1; color: #fff;

@@ -7,8 +7,12 @@ PNG in here.
 
 ## Conventions
 
-A 15×15 canvas (a few of the originals are 16×16), drawn from a 13-colour
-palette. Three frames are in use:
+A 15×15 canvas, drawn from a 13-colour palette — every icon, with no exceptions:
+a fortified unit has the original's wall (`../map/fortify.png`, also 15×15) painted
+over its icon at the same scale, and the two only line up pixel for pixel on a shared
+canvas (`units.test.js` holds this). The original sheet's cells are 16×16, but their
+16th column and row are the sheet's cyan grid line, not art — crop it off when adding
+an icon. Three frames are in use:
 
 | frame | example | shape |
 | --- | --- | --- |

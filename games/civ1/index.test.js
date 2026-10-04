@@ -318,9 +318,9 @@ test('civ1: the military roster lists each unit, with the id, place and stats a 
 // ---------------------------------------------------------------------------
 
 // The original draws its three standing-order states differently: an "F" over a unit
-// still digging in, a frame round one that is dug in, an "S" over a sentry. toGrid
-// reports which of those a square wears (statusMark) — see HtmlUnit.vue.
-test('civ1: fortifying wears an F, and is a frame by the time the turn comes back round', () => {
+// still digging in, its fortification wall painted over one that is dug in, an "S" over
+// a sentry. toGrid reports which of those a square wears (statusMark) — see HtmlUnit.vue.
+test('civ1: fortifying wears an F, and the wall by the time the turn comes back round', () => {
   const state = Civ1Game.createInitialState(players());
   const unit = state.units.find(u => u.ownerId === 'p1');
   const cellOf = s => Civ1Game.toGrid(s).cells.find(c => c.unitId === unit.id);
@@ -328,18 +328,18 @@ test('civ1: fortifying wears an F, and is a frame by the time the turn comes bac
   const digging = Civ1Game.applyActions(state,
     [{ playerId: 'p1', action: { type: 'fortify', unitId: unit.id } }]);
   assert.equal(cellOf(digging).statusMark?.glyph, 'F', 'still digging in: a letter');
-  assert.ok(!cellOf(digging).statusMark?.frame);
+  assert.ok(!cellOf(digging).statusMark?.overlay);
   assert.deepEqual(cellOf(digging).statusEffects, ['fortifying']);
   assert.ok(!digging.units.find(u => u.id === unit.id).attrs.fortified,
     'digging in is not yet dug in — no bonus this turn (see combat.js)');
 
-  // A round later the order has finished: the letter goes, the frame arrives, and only
+  // A round later the order has finished: the letter goes, the wall arrives, and only
   // now is the unit fortified.
   const dugIn = endTurn(endTurn(digging, 'p1'), 'p2');
   const after = dugIn.units.find(u => u.id === unit.id).attrs;
   assert.equal(after.fortified, true);
   assert.ok(!after.fortifying, 'the two halves of the order are exclusive');
-  assert.equal(cellOf(dugIn).statusMark?.frame, true, 'dug in: a frame, no letter');
+  assert.equal(cellOf(dugIn).statusMark?.overlay, '/images/civ1/map/fortify', 'dug in: the wall, no letter');
   assert.ok(!cellOf(dugIn).statusMark?.glyph);
   assert.deepEqual(cellOf(dugIn).statusEffects, ['fortified']);
 });

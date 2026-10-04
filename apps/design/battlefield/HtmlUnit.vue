@@ -41,6 +41,7 @@ const props = defineProps({
 });
 defineEmits(['click', 'mousedown']);
 const teamSpriteHref = window.teamSpriteHref;
+const imgSrc = window.api.imgSrc;
 
 // A transform (not margins/insets) so the slide never reflows the cell, and no CSS
 // transition — the offset is already recomputed every animation frame by the
@@ -131,10 +132,11 @@ const stackOffset = computed(() => Math.max(1, Math.round(props.r * 2 / 16)) + '
             :style="{ fontFamily: rdr.font, fontSize: labelFontSize(unit)+'px' }">{{ unitLabel(unit) }}</span>
 
       <!-- Standing order (civ1's fortifying/sentry/fortified — see App.vue's statusMark):
-           a frame drawn round the body, a letter in its corner, or both. Both sit on top
-           of the body without a layout slot of their own, so the sprite under them is
-           never nudged and the mark reads the same whatever that token is. -->
-      <div v-if="unit.statusMark?.frame" class="hl-statusframe" :title="unit.statusMark.title"/>
+           a picture painted over the body, a letter in its corner, or both. Both sit on
+           top of the body without a layout slot of their own, so the sprite under them
+           is never nudged and the mark reads the same whatever that token is. -->
+      <img v-if="unit.statusMark?.overlay" class="hl-statusoverlay" draggable="false"
+           :src="imgSrc(unit.statusMark.overlay)" :title="unit.statusMark.title"/>
       <span v-if="unit.statusMark?.glyph" class="hl-statusglyph"
             :title="unit.statusMark.title"
             :style="{ fontFamily: rdr.font, fontSize: (r * 0.8)+'px' }">{{ unit.statusMark.glyph }}</span>
@@ -183,16 +185,14 @@ img.hl-stackcopy { width: 100%; height: 100%; }
 .hl-ring-selected { outline: 1.5px dashed rgba(255,255,255,0.75); outline-offset: 4px; }
 .hl-ring-hover    { outline: 1.5px solid rgba(255,255,255,0.5); outline-offset: 4px; }
 
-/* Status marks. The frame sits just OUTSIDE the body (and inherits its border-radius, so
-   a circular marker gets a circular frame): unit sprites tend to carry a pale edge of
-   their own, and a frame drawn on that edge is read as part of the art rather than as a
-   state. The dark line either side of the white one keeps it legible over both pale
-   terrain and a pale sprite. Neither mark is hit-testable — the token under it stays
-   clickable, including the part the glyph covers. */
-.hl-statusframe {
-  position: absolute; inset: -3px; box-sizing: border-box; pointer-events: none;
-  border: 2px solid rgba(255,255,255,0.95); border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.6);
+/* Status marks. The overlay is drawn exactly over the sprite, in the sprite's own pixel
+   grid: it is art made for the same canvas (civ1's fortification is a 15×15 wall over a
+   15×15 icon), so stretching both to the body box lines their pixels up. Neither mark
+   is hit-testable — the token under it stays clickable, including the part the glyph
+   covers. */
+.hl-statusoverlay {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  image-rendering: pixelated; pointer-events: none;
 }
 .hl-statusglyph {
   position: absolute; top: -2px; right: -1px; pointer-events: none;

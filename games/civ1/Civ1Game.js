@@ -127,15 +127,17 @@ function wakeSentryUnits(units, playerId, boardWidth) {
 // How a unit's standing order is drawn ON the map (toGrid hands this to the generic
 // renderer as `statusMark`, see apps/design/battlefield/HtmlUnit.vue). The original
 // game's own three answers: a unit still digging in wears an "F", a sentried one an
-// "S", and one that is dug in gets a frame drawn round it instead of a letter — the
-// state you leave a stack of defenders in is the one that costs no ink to read.
+// "S", and one that is dug in has the original's fortification painted over it instead
+// of a letter — the grey crenellated wall of map/fortify.png, the same 15×15 grid as
+// the unit icon, covering the icon's own bevelled edge. The state you leave a stack of
+// defenders in is the one that costs no ink to read.
 // Only one order can stand at a time (each of fortify/sentry clears the other, and
 // fortifying/fortified are the two halves of one order), so a mark is a single answer,
 // not a set.
 function statusMarkFor(unit) {
   if (unit.attrs?.sentry) return { glyph: 'S', title: 'Sentry — wakes when an enemy comes into view' };
   if (unit.attrs?.fortifying) return { glyph: 'F', title: 'Fortifying — no defence bonus until next turn' };
-  if (unit.attrs?.fortified) return { frame: true, title: 'Fortified — +50% defence' };
+  if (unit.attrs?.fortified) return { overlay: `${BASE}/map/fortify`, title: 'Fortified — +50% defence' };
   return undefined;
 }
 

@@ -4,7 +4,7 @@
 // constructor reads base(price in tens of shields, attack, defence, moves).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { UNITS } from './units.js';
 import { TECHS } from './tech.js';
 
@@ -61,4 +61,14 @@ test('civ1 units: every unit has its icon, and no icon is left for a unit that i
   for (const gone of ['archers', 'crusaders', 'cav-modern', 'infantry', 'paratroopers', 'marines', 'helicopter', 'destroyer']) {
     assert.ok(!existsSync(new URL(`${gone}.png`, dir)), `${gone}.png should be gone`);
   }
+});
+
+// A fortified unit has the original's wall (map/fortify.png) painted over its icon, both
+// stretched to the same box (see HtmlUnit.vue's statusMark overlay) — so the two only
+// line up pixel for pixel while every icon is drawn on the wall's own 15×15 canvas.
+test('civ1 units: every icon shares the fortification wall\'s 15x15 canvas', () => {
+  const size = url => { const b = readFileSync(url); return [b.readUInt32BE(16), b.readUInt32BE(20)]; };
+  assert.deepEqual(size(new URL('./images/map/fortify.png', import.meta.url)), [15, 15]);
+  const dir = new URL('./images/units/', import.meta.url);
+  for (const id of Object.keys(UNITS)) assert.deepEqual(size(new URL(`${id}.png`, dir)), [15, 15], `${id}.png`);
 });
