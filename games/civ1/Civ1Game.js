@@ -1168,8 +1168,12 @@ function createFixedMapState(map, players, config) {
       civ,
       tribes,
       ...(objective ? { objective } : {}),
-      // A battlefield both generals have surveyed: seedExploration marks all of it.
-      ...(map.revealed ? { revealMap: true } : {}),
+      // A battlefield both generals have surveyed: seedExploration marks all of it, and
+      // the cities standing on it are on everyone's map from turn 1 (getVisibleState) —
+      // a siege's attacker knows where the walls are before it can see them.
+      ...(map.revealed ? { revealMap: true, knownCities: cities.map(c => c.id) } : {}),
+      // How far back the board opens (toGrid's ui.openingSpan).
+      ...(map.openingSpan ? { openingSpan: map.openingSpan } : {}),
       rules: resolveRules(config),
       // Barbarian activity level (see barbarians.js). Only the id is stored — the
       // schedule it selects lives in the module, so it never has to survive a
@@ -1503,6 +1507,9 @@ function getVisibleState(state, playerId) {
   // their cities are visible even in the dark.
   const effects = wonderEffectsFor(state.cities, playerId);
   const embassy = effects.has('embassy-all');
+  // A revealed battlefield's cities (fixedMaps.js) are known to everyone from the
+  // start — where they stand, not who is inside: their garrisons stay fogged.
+  const known = new Set(state.gameSpecific.knownCities ?? []);
 
   // Anti-cheat: never expose a rival's private ledger (advances, treasury, research,
   // spaceship) to the agent choosing this player's move. Their civ record is replaced
@@ -1571,7 +1578,13 @@ function getVisibleState(state, playerId) {
     board:  knownBoard(state.board, state.gameSpecific.explored?.[playerId], playerId,
                        state.gameSpecific.remembered?.[playerId]),
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
-    cities: state.cities.filter(c => c.ownerId  === playerId || embassy || canSee(c.position)),
+    // A rival city known without being in sight (an embassy, a revealed battlefield)
+    // is marked `unseen`: its square is on the map, but whoever stands in it is not —
+    // toGrid then says its garrison is unknown rather than reading the empty square
+    // the fog leaves as "undefended".
+    cities: state.cities
+      .filter(c => c.ownerId === playerId || embassy || known.has(c.id) || canSee(c.position))
+      .map(c => c.ownerId === playerId || canSee(c.position) ? c : { ...c, unseen: true }),
   });
 }
 
@@ -2311,6 +2324,10 @@ export const Civ1Game = {
           // the square is a real piece again: it may move, and the city token underneath
           // carries the fixture flag instead.)
           fixture: drawsCity ? true : undefined,
+          // A city this viewer knows without having it in sight (getVisibleState's
+          // `unseen` — a revealed battlefield's): the client draws only what is near the
+          // viewer's own units, so it is told this one is on their map regardless.
+          known: city?.unseen ? true : undefined,
           // Ocean draws no terrain sprite — coastSprite (below) supplies the real
           // ocean tile. Land draws its authentic tile, blended with like neighbours.
           bgImage: (tile.terrain === 'ocean' || tile.terrain === 'unknown') ? null
@@ -2520,7 +2537,9 @@ export const Civ1Game = {
         // it (Battlefield.vue's garrisonPick), which is why each entry carries the unit's
         // id and whether it is still waiting on orders — the box says which of them the
         // turn is still owed, the same thing the board's next-unit key chases.
-        garrison: units.filter(u => u.alive && u.position.x === c.position.x && u.position.y === c.position.y)
+        // A city known but out of sight (getVisibleState's `unseen`) has a garrison
+        // nobody can count: null, which the screen reads as "out of sight".
+        garrison: c.unseen ? null : units.filter(u => u.alive && u.position.x === c.position.x && u.position.y === c.position.y)
           .map(u => ({
             id: u.id, type: u.type, image: `${BASE}/units/${u.type}`, hp: u.hp, maxHp: u.maxHp,
             needsOrders: u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry,
@@ -2630,10 +2649,12 @@ export const Civ1Game = {
       // On a revealed battlefield (fixedMaps.js) every square is known ground from
       // turn 1. The client builds its terrain memory from its own units' sightings
       // (Battlefield.vue's exploredTileSet), so it has to be told, or it blacks out
-      // everything they have not yet stood next to.
+      // everything they have not yet stood next to. A fixed map can also set how many
+      // tiles across the board opens on (Battlefield.vue's openingView).
       ui: {
         autoEndTurn: state.gameSpecific?.autoEndTurn !== false,
         ...(state.gameSpecific?.revealMap ? { terrainKnown: true } : {}),
+        ...(state.gameSpecific?.openingSpan ? { openingSpan: state.gameSpecific.openingSpan } : {}),
       },
     };
   },

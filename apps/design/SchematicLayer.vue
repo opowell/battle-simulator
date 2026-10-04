@@ -807,7 +807,7 @@ function hpColor(frac, raw) {
 
 function isVisible(u) {
   if (!props.fog || props.revealAll) return true; // reveal mode: every piece shown, no fog
-  if (u.friendly) return true;
+  if (u.friendly || u.known) return true;
   if (gridFogVisibleSet.value) return gridFogVisibleSet.value.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
   return u.visible;
 }

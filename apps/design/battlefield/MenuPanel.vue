@@ -18,6 +18,9 @@ defineProps({
   // A game still being played, whose settings (and units) can be changed from here.
   canChangeSettings: Boolean,
   canShowHelp: Boolean,
+  // The board's own panels this game has (see GamePanels' hostPanels), reopened from here.
+  hasOrders:  Boolean,
+  hasMinimap: Boolean,
   // How panels are shown: 'float' over the board, or 'dock'ed in a column beside it.
   panelMode: { type: String, default: 'float' },
   // Observer-only; omitted (empty) for a seated player, which hides the section.
@@ -61,6 +64,12 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
       <button class="btn btn-ghost mp-btn" @click="$emit('toggle-ai-analysis')">
         <BsIcon name="eye" :size="14" :color="showAiAnalysis ? 'var(--accent)' : 'var(--dim)'"/>
         {{showAiAnalysis ? 'Hide AI analysis' : 'Show AI analysis'}}
+      </button>
+      <button v-if="hasOrders" class="btn btn-ghost mp-btn" @click="$emit('open-panel', 'orders')">
+        <BsIcon name="check" :size="14" color="var(--dim)"/> Orders
+      </button>
+      <button v-if="hasMinimap" class="btn btn-ghost mp-btn" @click="$emit('open-panel', 'minimap')">
+        <BsIcon name="crosshair" :size="14" color="var(--dim)"/> Minimap
       </button>
       <button v-if="canChangeSettings" class="btn btn-ghost mp-btn" @click="$emit('open-panel', 'game-settings')">
         <BsIcon name="sliders" :size="14" color="var(--accent)"/> Game settings

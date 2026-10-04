@@ -160,6 +160,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
                   <span v-if="u.statusMark?.glyph" class="ci-unit-glyph">{{ u.statusMark.glyph }}</span>
                 </button>
               </div>
+              <!-- null: the city is known but out of sight, so who holds it is not. -->
+              <div v-else-if="city.garrison === null" class="ci-none">out of sight</div>
               <div v-else class="ci-none">undefended</div>
             </section>
           </div>

@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, watchEffect, onUnmounted } from 'vue';
+import { ref, computed, watchEffect, onMounted, onUnmounted } from 'vue';
 // Overview map for zoom/pan games (the `mapZoom` option — see Battlefield.vue's zoom
-// state), drawn in the stage's bottom-right corner. A zoomed-in map shows a few dozen
+// state), in a panel of its own docked beside the board. A zoomed-in map shows a few dozen
 // tiles of a board that may be 100 wide, so this is the only view of where those tiles
 // sit in the world, and the fastest way to jump somewhere far away.
 //
@@ -41,9 +41,20 @@ const props = defineProps({
 });
 const emit = defineEmits(['goto']);
 
-// Box the map is fitted into. Small enough to stay out of the way of the board it
-// overlays; the map keeps its own aspect ratio inside it, so a wide world is short.
-const MAX_W = 180, MAX_H = 150;
+// The map fills the box it is given (its panel — see GamePanels), keeping its own
+// aspect ratio inside it, so a wide world is short. Until that box has been measured
+// it is drawn at a small default.
+const boxEl = ref(null);
+const box = ref({ w: 180, h: 150 });
+let boxObserver = null;
+onMounted(() => {
+  boxObserver = new ResizeObserver(([entry]) => {
+    const { width, height } = entry.contentRect;
+    if (width > 0 && height > 0) box.value = { w: width, h: height };
+  });
+  boxObserver.observe(boxEl.value);
+});
+onUnmounted(() => boxObserver?.disconnect());
 
 const W = computed(() => props.field?.world?.w ?? 0);
 const H = computed(() => props.field?.world?.h ?? 0);
@@ -51,8 +62,9 @@ const wrap = computed(() => !!props.field?.world?.wrap);
 
 // px per world tile on the minimap (not rounded — a 3.4px tile stays 3.4px so the drawn
 // map is exactly the world's aspect ratio; the fills below overdraw to hide the seams).
+// The 2px are the border round it.
 const s = computed(() => (W.value && H.value)
-  ? Math.min(MAX_W / W.value, MAX_H / H.value) : 0);
+  ? Math.max(0, Math.min((box.value.w - 2) / W.value, (box.value.h - 2) / H.value)) : 0);
 const cssW = computed(() => Math.round(W.value * s.value));
 const cssH = computed(() => Math.round(H.value * s.value));
 
@@ -80,7 +92,7 @@ function tileHidden(t) {
 // tile doesn't keep showing whoever used to stand on it — current sight only.
 function isVisible(u) {
   if (!props.fog || props.revealAll) return true;
-  if (u.friendly) return true;
+  if (u.friendly || u.known) return true;
   if (fogVisibleSet.value) return fogVisibleSet.value.has(`${Math.floor(u.x)},${Math.floor(u.y)}`);
   return u.visible;
 }
@@ -221,23 +233,24 @@ onUnmounted(() => { if (rafId) cancelAnimationFrame(rafId); });
 </script>
 
 <template>
-  <div class="mm" :style="{ width: cssW + 'px', height: cssH + 'px' }">
-    <canvas ref="canvasEl" class="mm-canvas" :class="{ 'mm-dragging': dragging }"
-            :style="{ width: cssW + 'px', height: cssH + 'px' }"
-            title="Click or drag to pan · double-click to zoom in · shift+double-click to zoom out"
-            @pointerdown="onPointerDown" @pointermove="onPointerMove"
-            @pointerup="endDrag" @pointercancel="endDrag"
-            @dblclick="onDblClick"/>
+  <div ref="boxEl" class="mm-box">
+    <div class="mm" :style="{ width: cssW + 2 + 'px', height: cssH + 2 + 'px' }">
+      <canvas ref="canvasEl" class="mm-canvas" :class="{ 'mm-dragging': dragging }"
+              :style="{ width: cssW + 'px', height: cssH + 'px' }"
+              title="Click or drag to pan · double-click to zoom in · shift+double-click to zoom out"
+              @pointerdown="onPointerDown" @pointermove="onPointerMove"
+              @pointerup="endDrag" @pointercancel="endDrag"
+              @dblclick="onDblClick"/>
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* The left sidebar's footer: it sits below the column's scrolling region (see
-   Battlefield's .bf-col-body), so it's always at the bottom without floating
-   over the panels above — nothing ever scrolls under it. flex-shrink guards
-   against a short viewport squashing it. */
+/* The whole of its panel, the map centred in it. Absolutely placed so the map's own
+   size never feeds back into the box it is measured from. */
+.mm-box { position: absolute; inset: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .mm {
-  margin: 10px auto; flex-shrink: 0;
+  flex-shrink: 0; box-sizing: border-box;
   border: 1px solid var(--line); border-radius: var(--r);
   background: var(--bg1);
   overflow: hidden;

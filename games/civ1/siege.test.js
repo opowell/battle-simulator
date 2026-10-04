@@ -76,6 +76,35 @@ test('siege: the whole battlefield is known ground to both sides, units still fo
   assert.ok(!Object.values(view.board.tiles).some(t => t.terrain === 'unknown'));
 });
 
+test('siege: the city is on the attacker\'s map from turn 1, but not who is holding it', () => {
+  const s = siege();
+  const view = Civ1Game.getVisibleState(s, 'p1');
+  assert.deepEqual(view.cities.map(c => c.id), [cityOf(s).id], 'the city is known before it is in sight');
+  assert.equal(view.cities[0].unseen, true);
+  assert.ok(!view.units.some(u => u.ownerId === 'p2'), 'its garrison is still fogged');
+  const grid = Civ1Game.toGrid(view);
+  assert.equal(grid.cities.length, 1);
+  assert.equal(grid.cities[0].garrison, null, 'an unseen garrison is unknown, not "undefended"');
+  // The defender's own view of its city is the whole truth.
+  const at = cityOf(s).position;
+  const held = s.units.filter(u => u.position.x === at.x && u.position.y === at.y).length;
+  const own = Civ1Game.toGrid(Civ1Game.getVisibleState(s, 'p2')).cities[0];
+  assert.equal(own.garrison.length, held);
+  // Walk an attacker up beside the walls: now the garrison is in sight.
+  const near = { ...s, units: s.units.map(u => u.id === 'u0' ? { ...u, position: { x: at.x - 1, y: at.y } } : u) };
+  const seen = Civ1Game.getVisibleState(near, 'p1');
+  assert.equal(seen.cities[0].unseen, undefined);
+  assert.equal(Civ1Game.toGrid(seen).cities[0].garrison.length, held);
+  // An open game's cities are found, not known.
+  const open = Civ1Game.createInitialState(players(), { seed: 3 });
+  assert.equal(open.gameSpecific.knownCities, undefined);
+});
+
+test('siege: the board opens far enough back to show the field, not just the army', () => {
+  assert.equal(Civ1Game.toGrid(siege()).ui.openingSpan, 20);
+  assert.equal(Civ1Game.toGrid(Civ1Game.createInitialState(players(), { seed: 3 })).ui.openingSpan, undefined);
+});
+
 test('siege: every unit is one the 1991 game had (UNITS is that roster — units.test.js)', () => {
   for (const u of getFixedMap('siege').units) assert.ok(UNITS[u.type], u.type);
 });

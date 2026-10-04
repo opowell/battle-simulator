@@ -988,6 +988,10 @@ function buildField(g, s) {
       // carries (civ1's city over its garrison — see boardMoves.js): animations that
       // move a piece by id leave it where it is.
       fixture:       c.fixture,
+      // A token the viewer knows is there without seeing it (civ1: a revealed
+      // battlefield's cities) — drawn through the fog, where the rest is only drawn in
+      // sight of the viewer's own pieces (see the renderers' isVisible).
+      known:         c.known,
       // Per-unit money (CS buy phase) — a game's toGrid may set it; drives the buy
       // panel's affordability display. Absent for games with no economy.
       money:         c.money,

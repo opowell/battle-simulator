@@ -30,8 +30,10 @@
 //              attacker wins by capturing the defender's city (and so destroying
 //              them); the defender wins by still holding it once `turns` rounds
 //              are over, or by wiping out the attacking army first
-//   revealed   true: both sides know the whole battlefield's terrain from the
-//              start (units are still fogged)
+//   revealed   true: both sides know the whole battlefield's terrain, and where
+//              its cities stand, from the start (units are still fogged)
+//   openingSpan  how many tiles across the board opens on, at least (the client's
+//              default frames the viewer's units in about 10)
 //   wrap       false: the map's east and west edges are edges, not one seam — a
 //              battlefield is a place, not a world
 //   config     the scenario menu entry's config (seats, fog, …), as on any scenario
@@ -314,6 +316,9 @@ export const FIXED_MAPS = [
     ],
     revealed: true,
     wrap: false,
+    // Twice the default framing: the army fills ten tiles, and the battle is the
+    // whole field between it and the walls.
+    openingSpan: 20,
     fortresses: [
       [13, 7], [13, 9],             // the river crossing
       [16, 5], [17, 5],             // the northern outwork

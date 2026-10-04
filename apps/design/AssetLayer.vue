@@ -43,7 +43,7 @@ function zoneColor(kind) {
        : '#8a96a1';
 }
 
-function isVisible(u) { return !props.fog || u.visible; }
+function isVisible(u) { return !props.fog || u.visible || !!u.known; }
 
 function hasMoveIntent(u) {
   if (u.dead || !isVisible(u)) return false;

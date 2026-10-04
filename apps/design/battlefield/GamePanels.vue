@@ -3,6 +3,10 @@
 // the desk they are shown on (PanelDesk: floating over the board by default, or
 // docked beside it, as the menu's "Panels" switch says).
 //
+// Orders and Minimap are panels too, but pinned to the docked column whatever that
+// switch says, and their bodies are the host's (slots of the same names): they are
+// the board's own controls, wired to its state, and only shown here.
+//
 // Which are open is the host's (`v-model:open`, ids in the order opened), so the
 // board can ask for one from a key or a button; how they are shown is kept here,
 // per browser.
@@ -22,6 +26,12 @@ const props = defineProps({
   ui:        { type: Object, default: () => ({}) },
   game:      { type: String, default: '' },
   teams:     { type: Array, default: () => [] },
+  // Which of the host's own panels this game has at all ('orders', 'minimap').
+  hostPanels: { type: Array, default: () => [] },
+  // What the orders panel is called (an observer has none to give: 'Overview').
+  ordersTitle: { type: String, default: 'Orders' },
+  // ...and the phase of the turn it is giving them in, if the game has phases.
+  ordersSubtitle: { type: String, default: '' },
 });
 const emit = defineEmits(['update:open', 'menu', 'arm']);
 
@@ -34,6 +44,8 @@ const DEFS = computed(() => ({
   'game-settings': { title: 'Game settings', w: 620, h: 640 },
   'help':          { title: props.ui?.help?.title ?? props.game, subtitle: 'How to play', w: 460, h: 520 },
   'add-units':     { title: 'Add units', w: 300, h: 440 },
+  ...(props.hostPanels.includes('orders')  ? { 'orders':  { title: props.ordersTitle, subtitle: props.ordersSubtitle || undefined, h: 460, dock: true } } : {}),
+  ...(props.hostPanels.includes('minimap') ? { 'minimap': { title: 'Minimap', h: 220, dock: true } } : {}),
 }));
 const panels = computed(() => props.open.filter(id => DEFS.value[id]).map(id => ({ id, ...DEFS.value[id] })));
 
@@ -81,5 +93,7 @@ defineExpose({
     <template #add-units>
       <AddUnitsPanel ref="addUnits" :live-state="liveState" :teams="teams" @arm="emit('arm', $event)"/>
     </template>
+    <template #orders><slot name="orders"/></template>
+    <template #minimap><slot name="minimap"/></template>
   </PanelDesk>
 </template>

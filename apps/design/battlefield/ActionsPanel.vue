@@ -47,6 +47,9 @@ const props = defineProps({
   // Battlefield's isObserver). There are no orders for them to give, so the panel
   // keeps only what is worth reading: the overview screens and the final result.
   observing:        { type: Boolean, default: false },
+  // Whether it names itself. Docked in a panel of its own (GamePanels' Orders) the
+  // panel's bar does that; standing in the left column, this heading does.
+  titled:           { type: Boolean, default: true },
   // Whose empire the overview screens describe. Null follows the player currently
   // to move, which is what a seated player wants (it is always them). An observer
   // is never told a pending player — the server only names seats it is waiting on,
@@ -299,8 +302,8 @@ function fmtAction(action) {
 </script>
 
 <template>
-  <div v-if="hasContent" class="ap">
-    <div class="panel-t ap-title">
+  <div v-if="hasContent" class="ap" :class="{ 'ap--titled': titled }">
+    <div v-if="titled" class="panel-t ap-title">
       {{ observing ? 'Overview' : 'Actions' }}
       <span v-if="liveState.phase" class="mono ap-phase">
         · {{liveState.phase}}
@@ -406,26 +409,32 @@ function fmtAction(action) {
       </template>
       <div v-else class="ap-waiting">{{ awaitingStep ? 'Paused — press Next to play the turn.' : 'Waiting for AI…' }}</div>
     </template>
-    <RatesOverlay :show="panel === 'rates'" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
-                  @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
-    <ScienceOverlay :show="panel === 'science'" :civ="myCiv" :researchActions="researchActions"
-                  @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
-    <CitiesOverlay :show="panel === 'cities'" :cities="cities" :playerId="overviewId"
-                  @close="$emit('update:panel', null)" @goto="g => $emit('goto', g)"/>
-    <MilitaryOverlay :show="panel === 'military'" :military="military" :playerId="overviewId"
-                  @close="$emit('update:panel', null)" @select-unit="id => $emit('goto-unit', id)"/>
+    <!-- The advisors are full-screen. Sent to <body> because this panel sits in an
+         appfr pane, and a pane (container-type) is the box a position:fixed scrim
+         inside it would fill. -->
+    <Teleport to="body">
+      <RatesOverlay :show="panel === 'rates'" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
+                    @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
+      <ScienceOverlay :show="panel === 'science'" :civ="myCiv" :researchActions="researchActions"
+                    @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
+      <CitiesOverlay :show="panel === 'cities'" :cities="cities" :playerId="overviewId"
+                    @close="$emit('update:panel', null)" @goto="g => $emit('goto', g)"/>
+      <MilitaryOverlay :show="panel === 'military'" :military="military" :playerId="overviewId"
+                    @close="$emit('update:panel', null)" @select-unit="id => $emit('goto-unit', id)"/>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
-.ap { padding: 12px 14px; border-top: 1px solid var(--line); }
+.ap { padding: 12px 14px; }
+.ap--titled { border-top: 1px solid var(--line); }
 .ap-title { margin-bottom: 8px; }
+.ap-phase { font-weight: 400; color: var(--faint); }
 /* The global `.action-btn + .action-btn` margin is for stacked lists; in this
    grid it would only skip the first cell, so the row heights come out uneven. */
 .ap-empire { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
 .ap-empire .action-btn { margin-top: 0; }
 .ap-btn--sm { justify-content: center; padding: 5px 0; }
-.ap-phase { font-weight: 400; color: var(--faint); }
 .ap-done { font-size: 12px; color: var(--ok); }
 .ap-past { font-size: 11px; color: var(--accent); background: rgba(66,198,230,.08); border: 1px solid rgba(66,198,230,.2); border-radius: var(--r); padding: 7px 10px; }
 .ap-prompt { font-size: 11px; color: var(--dim); margin-bottom: 8px; }

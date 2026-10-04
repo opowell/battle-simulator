@@ -8,6 +8,7 @@ import HtmlHexLayer      from './HtmlHexLayer.vue';
 import GameHeader        from './battlefield/GameHeader.vue';
 import SelectedUnitDetail from './battlefield/SelectedUnitDetail.vue';
 import SelectedSquareDetail from './battlefield/SelectedSquareDetail.vue';
+import SquareUnits       from './battlefield/SquareUnits.vue';
 import ActionsPanel      from './battlefield/ActionsPanel.vue';
 import RosterPanel       from './battlefield/RosterPanel.vue';
 import UnitsLostPanel    from './battlefield/UnitsLostPanel.vue';
@@ -140,6 +141,7 @@ const menuProps = computed(() => ({
   canSurrender: !!analysisPlayerId.value && props.liveState?.status === 'active',
   canChangeSettings: props.liveState?.status === 'active' && !!props.gameDef,
   canShowHelp: canShowHelp.value,
+  hasOrders: ordersDocked.value, hasMinimap: hostPanels.value.includes('minimap'),
   observerPlayers: isObserver.value ? observerPlayers.value : [],
   teams: props.field?.teams ?? [], observerView: props.observerView,
 }));
@@ -1106,6 +1108,49 @@ const isLive          = computed(() => !!props.liveState);
 const isPending       = computed(() => isLive.value && props.liveState.pendingPlayer &&
                                       props.liveState.humanPlayers?.includes(props.liveState.pendingPlayer));
 const isDone          = computed(() => isLive.value && props.liveState.status !== 'active');
+
+// The board's own panels on the desk (GamePanels' hostPanels), pinned to its docked
+// column: the orders a turn is played with, and the overview map. Only a map that
+// zooms gets them — a world panned across, whose turns are many orders to many
+// units; a fixed board (chess) keeps its orders in the left column instead, rather
+// than giving up a column of its width to them.
+// Each opens by itself the first time a session has it — orders before the minimap,
+// ahead of anything already open, so the column reads top-down in that order — and
+// once closed stays closed for that session, reopened from the menu.
+// (An observer has no orders to give: their panel is the empire overview, which only
+// a game with one has — the same test ActionsPanel's hasContent makes.)
+const hasOrders = computed(() => isLive.value && (!isObserver.value || !!props.field?.civ || isDone.value));
+const hostPanels = computed(() => zoomEnabled.value
+  ? [...(hasOrders.value ? ['orders'] : []), 'minimap']
+  : []);
+const ordersDocked = computed(() => hostPanels.value.includes('orders'));
+// ActionsPanel's wiring, shared by its two homes (the docked panel, the left column).
+const ordersProps = computed(() => ({
+  isDone: isDone.value, atLatest: atLatest.value, isPending: isPending.value,
+  selectedId: selectedId.value, activeUnitId: activeUnitId.value, ui: ui.value,
+  unitMoves: unitMoves.value, queuingMoves: queuingMoves.value, displayedActions: displayedActions.value,
+  pendingPlayerId: pendingPlayerId.value, liveState: props.liveState, units: displayUnits.value,
+  awaitingStep: props.awaitingStep,
+  aiming: aiming.value, civ: props.field.civ, cities: props.field.cities, military: props.field.military,
+  panel: openPanel.value,
+  observing: isObserver.value, overviewPlayerId: overviewPlayerId.value,
+  variantSpec: pairVariantSpec.value, variantValues: pairVariantValues.value, variantValue: pairVariant.value,
+  // In the left column it names itself; docked, the panel's own bar does.
+  titled: !ordersDocked.value,
+}));
+const ordersOn = computed(() => ({
+  'submit': submitAction, 'aim': startAim, 'cancel-aim': cancelAim, 'goto': handleGoto,
+  'goto-unit': handleGotoUnit, 'next-unit': selectNextUnit, 'deselect': deselectUnit,
+  'set-variant': (v) => { pairVariant.value = v; },
+  'update:panel': (v) => { openPanel.value = v; },
+}));
+const hostPanelsShown = new Set();
+watch([() => props.liveState?.id ?? props.field?.game, hostPanels], ([key, avail]) => {
+  const fresh = avail.filter(id => !hostPanelsShown.has(`${key}:${id}`));
+  if (!fresh.length) return;
+  for (const id of fresh) hostPanelsShown.add(`${key}:${id}`);
+  openPanels.value = [...fresh, ...openPanels.value.filter(id => !fresh.includes(id))];
+}, { immediate: true });
 // Which action set the board interacts against. Three different positions can be
 // on screen and each has its own:
 //   • a fork — the sandbox's own moves, from the last /fork-move response;
@@ -1284,10 +1329,17 @@ function openingView() {
   const span = ui.value.openingSpan ?? OPENING_SPAN;
   const spanX = Math.max(box.x1 - box.x0 + OPENING_MARGIN * 2, span);
   const spanY = Math.max(box.y1 - box.y0 + OPENING_MARGIN * 2, span);
-  const px = Math.min(stageW.value / spanX, stageH.value / spanY);
+  const px = Math.min(MAX_TILE_PX, Math.max(MIN_TILE_PX,
+    Math.min(stageW.value / spanX, stageH.value / spanY)));
+  // Along an axis the whole board fits on at this size, the board sits in the middle
+  // of the view rather than pushed off to one side by where the units happen to stand.
+  const world = props.field.world;
   return {
-    px: Math.min(MAX_TILE_PX, Math.max(MIN_TILE_PX, px)),
-    center: { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 },
+    px,
+    center: {
+      x: world.w * px <= stageW.value ? world.w / 2 : (box.x0 + box.x1) / 2,
+      y: world.h * px <= stageH.value ? world.h / 2 : (box.y0 + box.y1) / 2,
+    },
   };
 }
 
@@ -1949,6 +2001,19 @@ function handleSqClick(col, row, x, y, mods) {
 
 const selectedUnit = computed(() => displayUnits.value.find(u => u.id === selectedId.value) || null);
 
+// Everyone standing on the selected unit's square, top of the stack first (buildField
+// lists a square's pieces bottom-up, the order the board draws them in). A stacking
+// board shows only the top, so the side panel lists the rest (SquareUnits). Square
+// grids only: elsewhere two units never share "a square" to begin with.
+const unitsHere = computed(() => {
+  const u = selectedUnit.value;
+  if (!u || u.dead || u.x == null || !isGridBoard.value) return [];
+  const x = Math.floor(u.x), y = Math.floor(u.y);
+  return displayUnits.value
+    .filter(o => !o.dead && !o.fixture && Math.floor(o.x) === x && Math.floor(o.y) === y)
+    .reverse();
+});
+
 // Auto-advance to another unit that still wants orders once the selected one no
 // longer does (civ1: it used up its moves, or was just given a standing fortify/
 // sentry order — see Civ1Game.js's toGrid `needsOrders`). Opt-in via ui.autoAdvanceUnit
@@ -2001,9 +2066,15 @@ function unitWantingOrders(exceptId) {
 // EMPTY city's token is the city and nothing else (`needsOrders` is only ever stamped on
 // a real unit), so that one still selects as a city.
 function handOverUnit(u) {
+  takeUnit(u);
+  centerOn(u.x, u.y);
+}
+
+// Picks a unit up by id where it stands — a garrison through garrisonPick, so it
+// arrives as the unit rather than as its city screen.
+function takeUnit(u) {
   if (u.needsOrders != null && cityAt(Math.floor(u.x), Math.floor(u.y))) selectGarrisonUnit(u.id);
   else selectUnit(u.id);
-  centerOn(u.x, u.y);
 }
 
 // ...and the same jump at the other end: a turn opens with the first unit that wants
@@ -2476,8 +2547,7 @@ onUnmounted(() => {
 
     <div class="bf-main">
 
-      <!-- Left panel: the panels scroll in their own region so the minimap below
-           them is a real footer — it never overlaps the actions it used to sit on. -->
+      <!-- Left panel: the game, and whatever is selected on its board. -->
       <div class="bf-col bf-col--left">
         <div class="bf-col-body">
           <GameHeader
@@ -2496,36 +2566,18 @@ onUnmounted(() => {
           <div v-else-if="!selectedCity" class="bf-empty">
             Select a unit{{ (field.shapes?.length || field.hasTerrain) ? ', or "Inspect terrain…" then a tile,' : '' }} to view details.
           </div>
+          <SquareUnits v-if="selectedUnit && !selectedCity && unitsHere.length > 1"
+            :units="unitsHere" :selectedId="selectedId" :field="field"
+            @select="takeUnit"/>
           <button v-if="field.shapes?.length || field.hasTerrain"
             class="action-btn bf-inspect-btn" :class="{ 'bf-inspect-btn--on': inspectTerrain }"
             @click="toggleInspectTerrain">
             {{ inspectTerrain ? 'Cancel inspect' : 'Inspect terrain…' }}
           </button>
-
-          <ActionsPanel v-if="isLive"
-            :isDone="isDone" :atLatest="atLatest" :isPending="isPending"
-            :selectedId="selectedId" :activeUnitId="activeUnitId" :ui="ui"
-            :unitMoves="unitMoves" :queuingMoves="queuingMoves" :displayedActions="displayedActions"
-            :pendingPlayerId="pendingPlayerId" :liveState="liveState" :units="displayUnits"
-            :awaitingStep="awaitingStep"
-            :aiming="aiming" :civ="field.civ" :cities="field.cities" :military="field.military"
-            :panel="openPanel"
-            :observing="isObserver" :overviewPlayerId="overviewPlayerId"
-            :variantSpec="pairVariantSpec" :variantValues="pairVariantValues" :variantValue="pairVariant"
-            @submit="submitAction" @aim="startAim" @cancel-aim="cancelAim" @goto="handleGoto"
-            @goto-unit="handleGotoUnit" @next-unit="selectNextUnit" @deselect="deselectUnit"
-            @set-variant="pairVariant = $event"
-            @update:panel="openPanel = $event"/>
+          <!-- A map that zooms has its orders (and minimap) in panels of their own,
+               docked beside the board (GamePanels' hostPanels, below). -->
+          <ActionsPanel v-if="isLive && !ordersDocked" v-bind="ordersProps" v-on="ordersOn"/>
         </div>
-
-        <!-- Overview map + jump-to control, for the same games that get zoom/pan.
-             The column's own footer, below the scrolling panels (see .mm). -->
-        <Minimap v-if="zoomEnabled"
-          :field="displayField" :units="renderUnits" :rdr="rdr"
-          :center="viewCenter" :tilePx="tilePx" :stageW="stageW" :stageH="stageH"
-          :fog="fog" :revealAll="layerRevealAll" :viewerOverride="perspectiveViewer"
-          :exploredTiles="exploredTileSet"
-          @goto="handleMinimapGoto"/>
       </div>
 
       <!-- Stage -->
@@ -2675,7 +2727,22 @@ onUnmounted(() => {
   <GamePanels ref="gamePanels" v-model:open="openPanels"
     :menu="menuProps" :live-state="liveState" :game-def="gameDef"
     :ui="ui" :game="field.game" :teams="field?.teams ?? []"
-    @menu="onMenu" @arm="placingUnit = $event"/>
+    :host-panels="hostPanels" :orders-title="isObserver ? 'Overview' : 'Orders'"
+    :orders-subtitle="liveState?.phase ?? ''"
+    @menu="onMenu" @arm="placingUnit = $event">
+    <template #orders>
+      <ActionsPanel v-if="isLive && ordersDocked" v-bind="ordersProps" v-on="ordersOn"/>
+    </template>
+    <!-- Overview map + jump-to control, for the same games that get zoom/pan. -->
+    <template #minimap>
+      <Minimap v-if="zoomEnabled"
+        :field="displayField" :units="renderUnits" :rdr="rdr"
+        :center="viewCenter" :tilePx="tilePx" :stageW="stageW" :stageH="stageH"
+        :fog="fog" :revealAll="layerRevealAll" :viewerOverride="perspectiveViewer"
+        :exploredTiles="exploredTileSet"
+        @goto="handleMinimapGoto"/>
+    </template>
+  </GamePanels>
   </div>
 
   <SettingsChangeNotice :live-state="liveState" :game-def="gameDef"/>
@@ -2706,8 +2773,8 @@ onUnmounted(() => {
 .bf-root { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .bf-main { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .bf-col { width: 240px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--bg1); }
-/* The left column scrolls in .bf-col-body, not as a whole, so whatever sits after
-   the body (the minimap) is a footer the scrolling content can never run under. */
+/* The left column scrolls in .bf-col-body, not as a whole, so anything ever put after
+   the body is a footer the scrolling content can never run under. */
 .bf-col--left { border-right: 1px solid var(--line); overflow: hidden; }
 .bf-col-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .bf-col--right { border-left: 1px solid var(--line); }

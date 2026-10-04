@@ -9,6 +9,10 @@
 //          appfr panes (split, tabbed, dragged about — appfr's own menu on the
 //          column's bar). Choosing "Desktop" from that menu floats them again.
 //
+// A panel that says `dock: true` is pinned to the column whatever the mode: the
+// column is then there even while everything else floats, holding just those —
+// the tools a turn is played with stand beside the board, never over it.
+//
 // Which panels are open is the host's: `panels` lists them, a window's close
 // button asks for one to go (`close`), and this keeps the arrangement in step —
 // a newly opened panel turns up as a window where it was last left (or centred),
@@ -20,8 +24,8 @@ import {
 } from 'header-content-layout';
 
 const props = defineProps({
-  // The open panels, in the order they were opened: [{ id, title, subtitle?, w?, h? }].
-  // w/h are the size a window first opens at.
+  // The open panels, in the order they were opened: [{ id, title, subtitle?, w?, h?, dock? }].
+  // w/h are the size a window first opens at (h is also its share of the column).
   panels: { type: Array, default: () => [] },
   mode:   { type: String, default: 'float' },
 });
@@ -31,8 +35,13 @@ const DOCK_TITLE = 'Panels';
 const RECTS_KEY = 'bs_panel_rects';
 const DOCK_W_KEY = 'bs_dock_width';
 
-const root = ref(null);
-const layout = ref(null);
+const floatEl = ref(null);
+// The two arrangements: the windows over the board, and the column beside it.
+const floatLayout = ref(null);
+const dockLayout = ref(null);
+
+const docked   = computed(() => props.panels.filter(p => p.dock || props.mode === 'dock'));
+const floating = computed(() => props.panels.filter(p => !p.dock && props.mode !== 'dock'));
 
 const readJson = (key, fallback) => {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -52,7 +61,7 @@ function remember(id, rect) {
 function rectFor(def, taken) {
   // The desk's parent, not the desk: a desk with nothing open yet is hidden, and
   // measures nothing. Floating, the desk covers its parent exactly.
-  const box = root.value?.parentElement?.getBoundingClientRect() ?? { width: 1200, height: 800 };
+  const box = floatEl.value?.parentElement?.getBoundingClientRect() ?? { width: 1200, height: 800 };
   const saved = rects[def.id];
   const w = Math.min(saved?.w ?? def.w ?? 360, Math.max(160, box.width - 16));
   const h = Math.min(saved?.h ?? def.h ?? 320, Math.max(120, box.height - 16));
@@ -74,9 +83,9 @@ function rectFor(def, taken) {
 }
 
 const byId = computed(() => new Map(props.panels.map(p => [p.id, p])));
-const slotted = computed(() => props.panels.map(p => ({ id: p.id, slot: 'panel-' + p.id })));
+const slots = (list) => list.map(p => ({ id: p.id, slot: 'panel-' + p.id }));
 
-function floatLayout(ids) {
+function floatOf(ids) {
   const taken = [];
   const frames = ids.map((id) => {
     const rect = rectFor(byId.value.get(id) ?? { id }, taken);
@@ -86,57 +95,76 @@ function floatLayout(ids) {
   return headless(float(frames));
 }
 
-const dockLayout = (ids) => column(ids.map(panelNode), undefined, DOCK_TITLE);
-
-// Squares the arrangement with the panels that are open: closed ones leave it,
-// newly opened ones join it the way this mode adds them.
-function sync() {
-  const ids = props.panels.map(p => p.id);
-  let next = layout.value;
+// An arrangement with the panels no longer meant to be in it taken out — null once
+// nothing is left, so an emptied column or desktop is started afresh, not added to.
+function keepOnly(layout, ids) {
+  let next = layout;
   if (next) for (const id of panelIds(next)) if (!ids.includes(id)) next = next && removePanel(next, id);
-  // An emptied column or desktop is started afresh rather than added to.
-  if (next && !panelIds(next).length) next = null;
-  const present = next ? panelIds(next) : [];
-  const missing = ids.filter(id => !present.includes(id));
-  if (!missing.length) { layout.value = next; return; }
-  if (props.mode === 'float') {
-    const base = next && isFloat(next) ? next : headless(float([]));
-    const taken = base.frames.map(f => f.rect);
-    next = { ...base, frames: [...base.frames, ...missing.map((id) => {
-      const rect = rectFor(byId.value.get(id), taken);
-      taken.push(rect);
-      return frame(panelNode(id), rect);
-    })] };
-  } else {
-    next = next ?? dockLayout([missing.shift()]);
-    for (const id of missing) next = insertPanel(next, id, panelIds(next).at(-1), 'bottom');
-  }
-  layout.value = next;
+  return next && panelIds(next).length ? next : null;
 }
 
-watch(() => props.panels.map(p => p.id).join('|'), sync, { immediate: true });
+// Squares each arrangement with the panels meant to be in it: closed ones leave,
+// newly opened ones join the way that arrangement adds them.
+function syncFloat() {
+  const ids = floating.value.map(p => p.id);
+  const kept = keepOnly(floatLayout.value, ids);
+  const present = kept ? panelIds(kept) : [];
+  const missing = ids.filter(id => !present.includes(id));
+  if (!missing.length) { floatLayout.value = kept; return; }
+  const base = kept && isFloat(kept) ? kept : headless(float([]));
+  const taken = base.frames.map(f => f.rect);
+  floatLayout.value = { ...base, frames: [...base.frames, ...missing.map((id) => {
+    const rect = rectFor(byId.value.get(id), taken);
+    taken.push(rect);
+    return frame(panelNode(id), rect);
+  })] };
+}
 
-// Switching modes rebuilds the arrangement in the new shape, every open panel kept.
-watch(() => props.mode, (mode) => {
-  const ids = layout.value ? panelIds(layout.value) : [];
-  layout.value = ids.length ? (mode === 'float' ? floatLayout(ids) : dockLayout(ids)) : null;
-});
+function syncDock() {
+  const ids = docked.value.map(p => p.id);
+  let next = keepOnly(dockLayout.value, ids);
+  const present = next ? panelIds(next) : [];
+  const missing = ids.filter(id => !present.includes(id));
+  if (!missing.length) { dockLayout.value = next; return; }
+  next = next ?? column([panelNode(missing.shift())], undefined, DOCK_TITLE);
+  for (const id of missing) next = insertPanel(next, id, panelIds(next).at(-1), 'bottom');
+  // A column of single panels shares its height by what each asked for, so a small
+  // panel (the minimap) is not handed as much of it as a long one (the orders).
+  if (next.kind === 'split' && next.children.every(c => c.kind === 'group' && c.panels.length === 1)) {
+    next = { ...next, sizes: next.children.map(c => byId.value.get(c.panels[0])?.h ?? 320) };
+  }
+  dockLayout.value = next;
+}
+
+watch(() => floating.value.map(p => p.id).join('|'), syncFloat, { immediate: true });
+watch(() => docked.value.map(p => p.id).join('|'), syncDock, { immediate: true });
+
+// While everything else floats, the column holds only pinned panels, and its menu
+// offers no way to float it — they are pinned. Docked, it is everyone's column, and
+// "Desktop" from its menu floats the rest (onDockLayout).
+const dockShown = computed(() => dockLayout.value
+  && { ...dockLayout.value, fixedView: props.mode !== 'dock' });
+
+function onFloatLayout(next) { floatLayout.value = next; }
 
 // "Desktop" chosen from the column's own menu floats the panels: the desk follows,
 // and the desktop loses the bar it would otherwise draw across the top of the board.
-function onLayout(next) {
+// The pinned panels leave it again for a column of their own once the mode has
+// flipped (syncFloat / syncDock).
+function onDockLayout(next) {
   if (next && isFloat(next) && props.mode === 'dock') {
-    layout.value = headless({ ...next, title: undefined });
+    floatLayout.value = headless({ ...next, title: undefined, fixedView: undefined });
+    dockLayout.value = null;
     emit('update:mode', 'float');
     return;
   }
-  layout.value = next;
+  dockLayout.value = next ? { ...next, fixedView: undefined } : next;
 }
 
 function onFrameChange({ panel, rect }) { remember(panel, rect); }
 
 function onClose(id) {
-  const held = layout.value && frameOf(layout.value, id);
+  const held = floatLayout.value && frameOf(floatLayout.value, id);
   if (held) remember(id, held.rect);
   emit('close', id);
 }
@@ -144,9 +172,11 @@ function onClose(id) {
 // Brings an open panel forward: to the front (and unrolled) as a window, or to
 // the top of its tabs in the column.
 function focus(id) {
-  if (!layout.value) return;
-  if (isFloat(layout.value)) layout.value = minimizeFrame(raiseFrame(layout.value, id), id, false);
-  else layout.value = setActivePanel(layout.value, id);
+  if (floatLayout.value && panelIds(floatLayout.value).includes(id)) {
+    floatLayout.value = minimizeFrame(raiseFrame(floatLayout.value, id), id, false);
+  } else if (dockLayout.value) {
+    dockLayout.value = setActivePanel(dockLayout.value, id);
+  }
 }
 defineExpose({ focus });
 
@@ -171,7 +201,7 @@ function endResize() {
 onUnmounted(endResize);
 
 // A window left outside the desk by a smaller screen is brought back inside it.
-onMounted(() => { if (props.mode === 'float' && layout.value) layout.value = floatLayout(panelIds(layout.value)); });
+onMounted(() => { if (floatLayout.value) floatLayout.value = floatOf(panelIds(floatLayout.value)); });
 
 // appfr's tokens drawn from the play UI's own theme variables, so a window wears
 // whichever theme is on (index.html's :root blocks) rather than appfr's palette.
@@ -188,15 +218,25 @@ const tokens = {
 </script>
 
 <template>
-  <div ref="root" class="pd" :class="'pd--' + mode"
-       :style="mode === 'dock' ? { width: dockWidth + 'px' } : null"
-       v-show="panels.length">
-    <div v-if="mode === 'dock'" class="pd-resize" @pointerdown.prevent="startResize"/>
-    <WindowFrame v-if="layout" class="pd-frame" theme="dark" :tokens="tokens"
-                 :panels="panels" :layout="layout" movable resizable closable
+  <!-- The column first: it is a flex item beside the board. The desktop after it is
+       laid over the whole shell, column included. -->
+  <div v-show="dockLayout" class="pd pd--dock" :style="{ width: dockWidth + 'px' }">
+    <div class="pd-resize" @pointerdown.prevent="startResize"/>
+    <WindowFrame v-if="dockLayout" class="pd-frame" theme="dark" :tokens="tokens"
+                 :panels="docked" :layout="dockShown" movable resizable closable
+                 :min-panel-size="120"
+                 @update:layout="onDockLayout" @panel-close="onClose">
+      <template v-for="p in slots(docked)" :key="p.id" #[p.slot]>
+        <div class="pd-body"><slot :name="p.id"/></div>
+      </template>
+    </WindowFrame>
+  </div>
+  <div ref="floatEl" v-show="floatLayout" class="pd pd--float">
+    <WindowFrame v-if="floatLayout" class="pd-frame" theme="dark" :tokens="tokens"
+                 :panels="floating" :layout="floatLayout" movable resizable closable
                  :min-panel-size="140"
-                 @update:layout="onLayout" @frame-change="onFrameChange" @panel-close="onClose">
-      <template v-for="p in slotted" :key="p.id" #[p.slot]>
+                 @update:layout="onFloatLayout" @frame-change="onFrameChange" @panel-close="onClose">
+      <template v-for="p in slots(floating)" :key="p.id" #[p.slot]>
         <div class="pd-body"><slot :name="p.id"/></div>
       </template>
     </WindowFrame>
@@ -207,7 +247,7 @@ const tokens = {
 .pd--float { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
 .pd--dock { position: relative; flex: none; height: 100%; border-left: 1px solid var(--line); background: var(--bg0); }
 .pd-frame { height: 100%; }
-.pd-body { height: 100%; overflow: auto; font-family: var(--ui); color: var(--txt); }
+.pd-body { position: relative; height: 100%; overflow: auto; font-family: var(--ui); color: var(--txt); }
 .pd-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
 .pd-resize:hover { background: var(--accent-d); }
 
