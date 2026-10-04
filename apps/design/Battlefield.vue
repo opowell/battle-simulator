@@ -72,7 +72,7 @@ const props = defineProps({
   // non-live field playback) — App.vue owns it, the footer's speed control sets it.
   playbackSpeed:      { type: Number, default: 1 },
 });
-const emit = defineEmits(['exit', 'submit-action', 'submit-actions', 'resign', 'set-marker', 'set-plan', 'new-game', 'fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
+const emit = defineEmits(['exit', 'submit-action', 'submit-actions', 'resign', 'set-marker', 'set-plan', 'new-game', 'play-scenario','fork-move', 'exit-fork', 'undo', 'view-ply', 'set-paused', 'set-ai-delay', 'set-observer-view', 'set-pause-after-playback', 'step-forward', 'stop-replay', 'set-playback-speed']);
 
 // An observer session: no human seats and observing is allowed (or the server
 // already flagged this snapshot as an observer view). Only these get the
@@ -874,6 +874,14 @@ const REASON_LABELS = {
 const reasonLabel = computed(() => {
   const r = props.liveState?.result?.reason;
   return REASON_LABELS[r] ?? r ?? '';
+});
+
+// The scenario a game's own scenario entry suggests playing once this one is over
+// (its `next`), offered by the game-over dialog. Null when it names none.
+const nextScenario = computed(() => {
+  const scenarios = props.gameDef?.scenarios ?? [];
+  const id = scenarios.find(s => s.id === props.liveState?.params?.config?.scenario)?.next;
+  return scenarios.find(s => s.id === id) ?? null;
 });
 
 // ── unit info overlay ─────────────────────────────────────────
@@ -2756,7 +2764,9 @@ onUnmounted(() => {
     :winnerTeam="winnerTeam" :reasonLabel="reasonLabel" :field="field"
     @dismiss="dismissedResult = true"
     @exit="$emit('exit')"
-    @new-game="$emit('new-game')"/>
+    @new-game="$emit('new-game')"
+    :nextScenario="nextScenario"
+    @play-next="id => $emit('play-scenario', id)"/>
 
   <UnitInfoOverlay
     :unit="infoUnit"

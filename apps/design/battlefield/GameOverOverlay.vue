@@ -6,8 +6,10 @@ defineProps({
   winnerTeam:  { type: Object, default: null },
   reasonLabel: { type: String, default: '' },
   field:       Object,
+  // The scenario this one suggests playing next ({ id, name }), if it names one.
+  nextScenario: { type: Object, default: null },
 });
-defineEmits(['dismiss', 'exit', 'new-game']);
+defineEmits(['dismiss', 'exit', 'new-game', 'play-next']);
 </script>
 
 <template>
@@ -70,7 +72,10 @@ defineEmits(['dismiss', 'exit', 'new-game']);
         <div class="go-actions">
           <button class="btn btn-ghost btn-sm" @click="$emit('dismiss')">Dismiss</button>
           <button class="btn btn-ghost btn-sm" @click="$emit('exit')">Back to Lobby</button>
-          <button class="btn btn-sm" @click="$emit('new-game')">Start new game</button>
+          <button class="btn btn-sm" :class="{ 'btn-ghost': nextScenario }" @click="$emit('new-game')">Start new game</button>
+          <button v-if="nextScenario" class="btn btn-sm" @click="$emit('play-next', nextScenario.id)">
+            Next: {{ nextScenario.name }}
+          </button>
         </div>
       </div>
     </div>

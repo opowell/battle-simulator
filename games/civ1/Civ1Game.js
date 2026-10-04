@@ -1946,7 +1946,10 @@ export const Civ1Game = {
       },
     },
     // Hand-built fixed maps (see fixedMaps.js).
-    ...FIXED_MAPS.map(m => ({ id: m.id, name: m.name, description: m.description, config: m.config ?? {} })),
+    ...FIXED_MAPS.map(m => ({
+      id: m.id, name: m.name, description: m.description, config: m.config ?? {},
+      ...(m.next ? { next: m.next } : {}),
+    })),
     // An exhibition rather than a game: both seats are AI and none is yours, which
     // is exactly the condition the server puts on observer lock-step (api-server.js
     // Session.observerPaced) — it computes one step, waits for the watching client

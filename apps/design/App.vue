@@ -1697,6 +1697,29 @@ async function restartGame() {
     refresh();
   } catch (e) { serverErr.value = e.message; }
 }
+
+// Another scenario of the same game — the one a finished game suggests next — set
+// up as the lobby would set it up: its own config and seats laid over the settings
+// this game was played with. Starting units belong to the map they were picked for,
+// so they stay behind, as does the old scenario's turn limit.
+async function playScenario(scenarioId) {
+  const params = liveState.value?.params;
+  const apiGame = apiGames.value.find(g => g.name === params?.game);
+  const sc = apiGame?.scenarios?.find(s => s.id === scenarioId);
+  if (!sc) return;
+  const ov = gameDefaults.scenarioOverrides(sc);
+  // `fog` is createSession's copy of `fogOfWar`, made again from the merged options —
+  // a stale one carried over would outvote the new scenario's own fog setting.
+  const { startingUnits, scenario, maxTurns, fog, ...kept } = params.config ?? {};
+  stopPoll();
+  await createSession({
+    game: params.game,
+    gameOpts: { ...(fog != null ? { fogOfWar: fog } : {}), ...kept, ...ov.config },
+    maxTurns: ov.maxTurns,
+    scenario: sc.id,
+    players: ov.players ? gameDefaults.makeSlots(apiGame, null, ov.players) : params.players,
+  });
+}
 </script>
 
 <template>
@@ -1755,6 +1778,7 @@ async function restartGame() {
                    :playback-speed="playbackSpeed"
                    @exit="exitBattle"
                    @new-game="restartGame"
+                   @play-scenario="playScenario"
                    @submit-action="submitAction"
                    @submit-actions="submitActions"
                    @resign="resign"

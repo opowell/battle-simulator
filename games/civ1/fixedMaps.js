@@ -37,6 +37,8 @@
 //   wrap       false: the map's east and west edges are edges, not one seam — a
 //              battlefield is a place, not a world
 //   config     the scenario menu entry's config (seats, fog, …), as on any scenario
+//   next       the id of the battle to suggest once this one is over (the end-of-game
+//              dialog offers it), climbing the ladder below towards the Siege
 
 import { IRRIGABLE, MINEABLE } from './city.js';
 
@@ -246,6 +248,7 @@ export const FIXED_MAPS = [
   {
     id: 'outpost',
     name: 'Outpost',
+    next: 'border-town',
     description: 'Very easy: three legions have 10 turns to take a frontier village held by one militia',
     rows: [
       '..........',
@@ -275,6 +278,7 @@ export const FIXED_MAPS = [
   {
     id: 'border-town',
     name: 'Border Town',
+    next: 'river-fort',
     description: 'Easy: four legions and two horsemen have 12 turns to take a town held by a phalanx and a militia, dug in',
     rows: [
       '.............',
@@ -310,6 +314,7 @@ export const FIXED_MAPS = [
   {
     id: 'river-fort',
     name: 'River Fort',
+    next: 'twin-forts',
     description: 'Moderate: eleven units with two catapults have 12 turns to take a river town, past a fort on the hill that guards the crossing',
     // The fort's hill sits on the straight road to the town: go through it (x2 for the
     // fort, x2 for the hill) or round it under its zone of control.
@@ -368,6 +373,7 @@ export const FIXED_MAPS = [
   {
     id: 'twin-forts',
     name: 'Twin Forts',
+    next: 'highland-pass',
     description: 'Hard: fourteen units have 15 turns to take a harbour town behind two hill forts, whose chariot rides out at anything left in the open',
     // Two hill forts either side of the one way in, two squares apart: the road between
     // them is under both their zones of control. Behind the walls, a chariot waits for
@@ -426,6 +432,7 @@ export const FIXED_MAPS = [
   {
     id: 'highland-pass',
     name: 'Highland Pass',
+    next: 'siege',
     description: 'Very hard: twenty units have 16 turns to take a city at the head of a pass, held by three forts and eleven defenders with knights to sally',
     // The Siege in small: a fort on the river crossing, a hill outwork either side of the
     // approach, a garrison dug in, and riders behind the walls.

@@ -23,6 +23,13 @@ test('battle ladder: listed easiest first, ending with the Siege', () => {
   assert.deepEqual(ids, LADDER);
 });
 
+test('battle ladder: each menu entry suggests the next rung up (the game-over dialog offers it)', () => {
+  const entry = id => Civ1Game.scenarios.find(s => s.id === id);
+  for (let i = 0; i < LADDER.length - 1; i++) assert.equal(entry(LADDER[i]).next, LADDER[i + 1], LADDER[i]);
+  assert.equal(entry('siege').next, undefined, 'the top of the ladder');
+  for (const s of Civ1Game.scenarios) if (s.next) assert.ok(entry(s.next), `${s.id} -> ${s.next}`);
+});
+
 test('battle ladder: every rung is bigger than the last — field, armies and the clock', () => {
   for (let i = 1; i < LADDER.length; i++) {
     const [a, b] = [getFixedMap(LADDER[i - 1]), getFixedMap(LADDER[i])];
