@@ -436,6 +436,51 @@ Heuristic vs heuristic, fog on, 150 games per variant of the city:
 Walls stop the shrinking but also triple the garrison's defence against land units, and
 the heuristic attacker cannot crack that at all. Rebalancing the scenario is open.
 
+## Siege: forts, sorties and a bigger army (2026-10-04)
+
+The user asked for forts on the outlying hills held by dug-in units, a defender that holds
+them and can counter-attack, and an attacker that outnumbers the defender. What landed:
+
+- **Fortresses**, by the original's rules (OpenCivOne segment 29f3): a land defender in
+  one fights at x2 *instead of* the fortify x1.5 (the routine picks one multiplier), and
+  a beaten defender there dies alone, as in a city. Fixed maps take `fortresses`; the
+  Siege has one on each of its six hills before the city.
+- **The roster**: 28 attackers (6 catapults, 12 legions, 3 phalanxes, 5 knights, 2
+  chariots) against 20 (city: 7 phalanxes, a legion; the crossing forts: a phalanx and
+  a legion each; the outworks: a phalanx in each of 4 forts; 2 knights and 2 chariots).
+- **The heuristic defender** (ai.js): a foot soldier in a fort holds it for life
+  (objective.js `holdsFort`, mirrored in the search pruner); the horsemen garrison the
+  city and **sortie** — one step out, then a blow, only at P >= 0.65 and only when the
+  kill pays for the rider standing outside the walls afterwards (charged at half its
+  value); foot soldiers may strike out of the city now that a winner stays put.
+- **kill_desire counts stack death** (`stakeOf`): a blow on open ground is worth the whole
+  stack it wipes out; in a city or a fort only its defender. Global, not siege-only —
+  field stacks are rare in the open game (the stack penalty), so the effect there is small.
+- **The heuristic attacker** marches on the city along a ZOC-aware path
+  (map.js `marchDistances`) — steering by straight-line distance left the column pacing
+  along the forts' zone of control until time ran out — and **musters** two squares out
+  (`STAGE_DIST`), out of reach of the one-move strikers inside, until 60% of the army is
+  within two squares of that ring or 8 turns remain.
+
+Measured with `node demo/civ1-siege-bench.mjs N` (heuristic both sides, fog on). Garrison
+strikers decide this scenario: anything that steps up beside the walls stands unfortified
+on open ground for the defender's turn, and a catapult inside kills it, stack and all,
+~19 times in 20. Variants tried (`--swap`), attacker win rate:
+
+| defender's city strikers (+ the forts' 2 legions) | attacker wins |
+| --- | --- |
+| 3 catapults, 4 knights (first cut) | 0% (30 games) |
+| 1 catapult, 2 knights + 2 chariots | 10% (40) |
+| no catapult, 4 knights | 20% (40) |
+| no catapult, 2 knights + 2 chariots, 1 legion (**as built**) | **25%** (71/280) |
+| ...plus a third chariot | 2% (60) |
+| ...with legions instead of phalanxes in the outwork forts | 2-3% (60) |
+
+As built the attacker loses ~25 of its 28 units a game and the defender ~15; the
+defender's forts are all still manned at turn 5, and the horsemen ride ~5 sorties a game,
+winning ~95% of them. The heuristic attacker is a weak siege general (it still feeds its
+army to the walls one wave at a time), so a human attacker should fare better than 25%.
+
 ## Revised order
 
 The original plan had `set-production` last, as an unlock for the personality material. That

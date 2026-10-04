@@ -504,14 +504,14 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
   if (result.attackerSurvived) {
     const defPos = defender.position;
     // Stack death, as in the original: lose the defence of an open square and every
-    // unit on it dies with the defender. A city (in the original, a fortress too — this
-    // game has none) is the exception: only the loser dies there, so a garrison has to
-    // be killed off one unit at a time — and once the last of it is dead the city stands
-    // empty, still its owner's, until someone walks in.
+    // unit on it dies with the defender. A city or a fortress is the exception (the
+    // original deletes the stack only when the square is neither): only the loser dies
+    // there, so a garrison has to be killed off one unit at a time — and once the last
+    // of a city's is dead the city stands empty, still its owner's, until someone walks in.
     const city = cities.find(c => c.position.x === defPos.x && c.position.y === defPos.y);
-    if (!city) {
+    if (!city && !state.board.tiles[`${defPos.x},${defPos.y}`]?.fortress) {
       units = units.map(u => (u.id !== attackerId && at(u, defPos)) ? { ...u, alive: false, hp: 0 } : u);
-    } else if (beatenGarrisonCostsACitizen(state, city, attacker)) {
+    } else if (city && beatenGarrisonCostsACitizen(state, city, attacker)) {
       // …and every defender beaten there costs the city a citizen. One that had only
       // the one left is razed: gone from the map, and every unit it supported with it.
       ({ units, cities } = city.size > 1
@@ -1643,6 +1643,7 @@ function terrainInfo(tile, x = null, y = null) {
   if (tile?.hasRail) parts.push('railroad');
   else if (tile?.hasRoad) parts.push('road');
   if (tile?.hasRiver) parts.push('river');
+  if (tile?.fortress) parts.push('fortress: land defenders x2 (instead of fortifying), and only the loser of a fight dies');
   return { name, description: parts.join(' · ') };
 }
 
@@ -2037,8 +2038,11 @@ export const Civ1Game = {
     // the pick never wobbles between two identical units.
     const wantsOrders = u => u.movesLeft > 0
       && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry;
+    // (In a fortress digging in earns nothing — the fort's own bonus replaces it, see
+    // combat.js — so there it does not rank anyone above anyone.)
     const defenceRank = u => UNITS[u.type].defense
-      * (u.attrs?.fortified ? 1.5 : 1) * (u.attrs?.veteran ? 1.5 : 1);
+      * (u.attrs?.fortified && !tiles[`${u.position.x},${u.position.y}`]?.fortress ? 1.5 : 1)
+      * (u.attrs?.veteran ? 1.5 : 1);
     const cmap = {};
     const stackAt = {};
     for (const u of units) {
@@ -2226,6 +2230,10 @@ export const Civ1Game = {
             ...(tile.hasRiver ? [riverSprite(x, y)] : []),
             ...roadSprites(x, y),
             ...(specialAt(x, y, tile.terrain) ? [`${BASE}/terrain/${specialAt(x, y, tile.terrain).icon}`] : []),
+            // A fortress last, as the original's draw-cell routine paints it: after the
+            // resources, before any unit standing in it (the original's own sprite, from
+            // map/fort.png, set in the square's top-left corner as CIV.EXE draws it).
+            ...(tile.fortress ? [`${BASE}/map/fortress`] : []),
           ],
           owner: u ? (pidIdx[u.ownerId] ?? 0) : city ? (pidIdx[city.ownerId] ?? 0) : 0,
           // All ocean tiles paint deep flat colour — coastSprite (above) draws the

@@ -11,13 +11,16 @@
 // reverse-engineering never recovered its weights, so we use Freeciv's.
 
 import { UNITS } from './units.js';
-import { getCombatStrengths } from './combat.js';
+import { TERRAIN } from './terrain.js';
+import { getCombatStrengths, pickDefender } from './combat.js';
 import { chebyshevWrapped, BUILDABLE } from './Civ1Game.js';
 import {
   productionContext, chooseProductionAction, defenceStrength, RESEARCH_PRIORITY,
 } from './production.js';
-import { wrapWidth } from './map.js';
-import { siegeRole, siegeAttackFloor, siegeAttackWant, isMounted, atSiegeCity, chooseSiegeProduction } from './objective.js';
+import { wrapWidth, marchDistances } from './map.js';
+import {
+  siegeRole, siegeAttackFloor, siegeAttackWant, isMounted, atSiegeCity, chooseSiegeProduction, holdsFort,
+} from './objective.js';
 
 // Both priority lists and the production scorer live in production.js, shared with
 // the search's pruner (searchActions.js) so the two agents cannot drift apart.
@@ -59,6 +62,24 @@ export function winProbability(p, atkHp, defHp) {
 const shieldValue = unit => UNITS[unit.type]?.cost ?? 10;
 
 /**
+ * What beating `defender` destroys, in shields: the defender alone in a city or a
+ * fortress, but on open ground everyone standing with it — the whole stack dies with
+ * its defender there (Civ1Game's resolveAttack). Counting only the defender priced a
+ * blow that wipes out a siege train and its escort at the escort's value alone.
+ */
+export function stakeOf(defender, state) {
+  const pos = defender.position;
+  const sheltered = state.board.tiles[`${pos.x},${pos.y}`]?.fortress
+    || state.cities.some(c => c.position.x === pos.x && c.position.y === pos.y);
+  if (sheltered) return shieldValue(defender);
+  let stake = 0;
+  for (const u of state.units) {
+    if (u.alive && u.ownerId === defender.ownerId && u.position.x === pos.x && u.position.y === pos.y) stake += shieldValue(u);
+  }
+  return Math.max(stake, shieldValue(defender));
+}
+
+/**
  * Freeciv's kill_desire, in shields: what we stand to destroy times our chance
  * of destroying it, less what we stand to lose times the chance we lose it.
  * `delay` is turns until the blow lands (0 for an attack available right now).
@@ -67,7 +88,7 @@ export function killDesire(attacker, defender, state, delay = 0) {
   const { att, def } = getCombatStrengths(attacker, defender, state);
   const p = att / (att + def);
   const P = winProbability(p, attacker.hp, defender.hp);
-  const profit = shieldValue(defender) * P - shieldValue(attacker) * (1 - P);
+  const profit = stakeOf(defender, state) * P - shieldValue(attacker) * (1 - P);
   return { want: amortize(profit, delay), P };
 }
 
@@ -208,6 +229,61 @@ function chooseResearch(researchActions, current) {
   return researchActions[0] ?? null;
 }
 
+// Taking a city: the attackers' staging ring, in movement points from the city (two
+// squares of open ground — beyond a one-move striker inside the walls, which can only
+// hit the squares beside them, and one step from the walls, so the assault reaches
+// them in a single move rather than spending a turn on the way), and when the
+// assault goes in: once ASSAULT_SHARE of the army stands at the ring or within
+// STAGE_DEPTH behind it (the ring is only so many squares long, and the rest of the
+// army queues up behind it), or with ASSAULT_TURNS left on the clock whoever is there
+// goes anyway.
+const STAGE_DIST = 2;
+const STAGE_DEPTH = 2;
+const ASSAULT_SHARE = 0.6;
+const ASSAULT_TURNS = 8;
+
+// A sortie: a horseman in the besieged city steps out to strike at something two
+// squares off, which it can only reach by leaving the walls — and then it stands
+// outside them, spent, for the attackers' turn. So the blow is priced like any other
+// (kill_desire, with the whole stack it would wipe out — stakeOf) and then charged
+// SORTIE_EXPOSURE of the rider's own value for the night outside; it rides only when
+// what is left is still a profit, and only at odds of SORTIE_MIN_WIN_PROB or better.
+// What it is for is a siege train caught in the open: catapults defend at 1.
+const SORTIE_MIN_WIN_PROB = 0.65;
+const SORTIE_EXPOSURE = 0.5;
+
+function sortie(unit, legalActions, state, myId) {
+  if (unit.movesLeft < 2) return null;   // a step out and a blow
+  const enemiesAt = new Map();
+  for (const u of state.units) {
+    if (!u.alive || u.ownerId === myId) continue;
+    const k = `${u.position.x},${u.position.y}`;
+    if (!enemiesAt.has(k)) enemiesAt.set(k, []);
+    enemiesAt.get(k).push(u);
+  }
+  let best = null, bestWant = 0;
+  for (const m of legalActions) {
+    if (m.type !== 'move' || m.unitId !== unit.id) continue;
+    // One step out, with a move still in hand to strike with. A move action can cover
+    // several squares, and a rider that spends its turn getting somewhere strikes
+    // nothing until the attackers have had their turn at it.
+    if (Math.max(Math.abs(m.to.x - unit.position.x), Math.abs(m.to.y - unit.position.y)) !== 1) continue;
+    const cost = TERRAIN[state.board.tiles[`${m.to.x},${m.to.y}`]?.terrain]?.moveCost ?? Infinity;
+    if (cost >= unit.movesLeft) continue;
+    const rider = { ...unit, position: m.to, movesLeft: unit.movesLeft - cost };
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const stack = enemiesAt.get(`${m.to.x + dx},${m.to.y + dy}`);
+      if (!stack || (dx === 0 && dy === 0)) continue;
+      const defender = pickDefender(rider, stack, state);
+      const { want, P } = killDesire(rider, defender, state);
+      if (P < SORTIE_MIN_WIN_PROB) continue;
+      const net = want - shieldValue(unit) * SORTIE_EXPOSURE;
+      if (net > bestWant) { bestWant = net; best = m; }
+    }
+  }
+  return best;
+}
+
 export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cityTarget = CITY_TARGET,
                                 stackPenalty = STACK_PENALTY } = {}) {
   return {
@@ -283,9 +359,9 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         const defender = unitById.get(a.targetId);
         if (!attacker || !defender) continue;
         let { want, P } = killDesire(attacker, defender, state);
-        // Holding the city: a winner moves onto the square it emptied, so a foot
-        // soldier striking out of the walls walks out of them. The horsemen sally.
-        if (siege?.role === 'defender' && inSiegeCity(attacker.position) && !isMounted(attacker.type)) continue;
+        // (A winner stays where it struck from — Civ1Game's resolveAttack — so the
+        // besieged city's legion and the forts' legions strike from behind their walls
+        // without leaving them.)
         // Taking it: the garrison is the objective, not a trade — every blow that
         // lands is a defender the assault no longer has to get through (objective.js).
         if (siege?.role === 'attacker' && inSiegeCity(defender.position)) {
@@ -328,13 +404,26 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         return (minePos.has(k) && !myCityPos.has(k)) ? stackPenalty : 0;
       };
 
-      const garrison = new Map(); // unitId -> city position it is holding
+      const garrison = new Map(); // unitId -> city (or fort) position it is holding
       const claimed = new Set();
+      // Holding a siege, the forts come first: whoever stands in one stays in it, dug in,
+      // for as long as it lives (objective.js holdsFort). That is all a fort is for —
+      // every turn the attackers spend getting past it or digging it out is a turn off
+      // their clock — and it is what the next rule would otherwise undo, by calling
+      // every foot soldier on the map home on turn one.
+      if (siege?.role === 'defender') {
+        for (const u of myUnits) {
+          if (!holdsFort(state, u)) continue;
+          garrison.set(u.id, u.position);
+          claimed.add(u.id);
+        }
+      }
       for (const city of myCities) {
-        // The besieged city keeps every foot soldier it can call in, from anywhere.
+        // The besieged city keeps everyone else it can call in, from anywhere — the
+        // horsemen too, which ride out from it (sortie, below) and come back to it.
         if (siege?.role === 'defender' && city.id === siege.cityId) {
           for (const u of myUnits) {
-            if (claimed.has(u.id) || isMounted(u.type) || defenceStrength(u.type) <= 0) continue;
+            if (claimed.has(u.id) || defenceStrength(u.type) <= 0) continue;
             garrison.set(u.id, city.position);
             claimed.add(u.id);
           }
@@ -359,6 +448,10 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         const unit = unitById.get(unitId);
         if (!unit) continue;
         const atHome = unit.position.x === cityPos.x && unit.position.y === cityPos.y;
+        // A horseman in the besieged city rides out at a blow worth the ride (sortie).
+        const ride = atHome && siege?.role === 'defender' && isMounted(unit.type)
+          && sortie(unit, legalActions, state, myId);
+        if (ride) return ride;
         if (atHome) {
           // Under siege a garrison digs in rather than just standing there.
           const dig = siege?.role === 'defender'
@@ -397,16 +490,51 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         if (here && nearestOwnCity(here) > 1) return found; // boxed in; take what we can get
       }
 
+      // Garrisoned units are spoken for; everyone else advances.
+      const moves = legalActions.filter(a => a.type === 'move' && !garrison.has(a.unitId));
+
+      // ── The siege: march on the city ──────────────────────────────────────
+      // Its square is known before anyone has seen it (objective.js), and it is the only
+      // place worth marching to — a fort or a picket that has to be dealt with is dealt
+      // with by the attacks above, from wherever the march brings a unit alongside it.
+      // The way there is found, not steered by straight-line distance (marchDistances):
+      // the forts' zones of control wall off the direct road, and a column steered at
+      // the city walked up to that wall and paced back and forth along it until the
+      // clock ran out. A unit with no step that gets it closer stays where it is.
+      if (siege?.role === 'attacker') {
+        const fields = new Map();   // per unit type: ZOC applies by type (ignore-zoc)
+        const field = u => {
+          if (!fields.has(u.type)) {
+            fields.set(u.type, marchDistances(siege.cityPos, u, state.board, state.units, myId, state.cities));
+          }
+          return fields.get(u.type);
+        };
+        // …and it goes in together. Until the assault, nobody steps inside the staging
+        // ring (STAGE_DIST): anything that comes up to the walls on its own spends the
+        // defenders' turn standing beside them, where everything inside that can strike
+        // takes it apart a stack at a time — the knights, which outpace everyone,
+        // first. The assault starts once most of the army is at the
+        // ring, or when the clock leaves no time to wait for the rest.
+        const mine = state.units.filter(u => u.alive && u.ownerId === myId);
+        const staged = mine.filter(u => (field(u).get(`${u.position.x},${u.position.y}`) ?? Infinity) <= STAGE_DIST + STAGE_DEPTH).length;
+        const assault = staged >= ASSAULT_SHARE * mine.length || siege.turnsLeft <= ASSAULT_TURNS;
+        let bestMove = null, bestGain = 0;
+        for (const m of moves) {
+          const unit = unitById.get(m.unitId);
+          const f = field(unit);
+          const here = f.get(`${m.from.x},${m.from.y}`) ?? Infinity;
+          const there = f.get(`${m.to.x},${m.to.y}`) ?? Infinity;
+          if (there === Infinity || (!assault && there < STAGE_DIST)) continue;
+          const gain = (here === Infinity ? 0 : here - there) - stackCost(m.to);
+          if (gain > bestGain) { bestGain = gain; bestMove = m; }
+        }
+        return bestMove ?? { type: 'end-turn', unitId: '__player__' };
+      }
+
       // ── Move: close on the nearest target, in turns rather than tiles ────
       const enemies = state.units.filter(u => u.alive && u.ownerId !== myId);
       const enemyCities = state.cities.filter(c => c.ownerId !== myId);
       const targets = [...enemies.map(u => u.position), ...enemyCities.map(c => c.position)];
-      // The city under siege is a target before anyone has seen it: where it stands
-      // is common knowledge (objective.js).
-      if (siege?.role === 'attacker' && !enemyCities.some(c => inSiegeCity(c.position))) targets.push(siege.cityPos);
-
-      // Garrisoned units are spoken for; everyone else advances.
-      const moves = legalActions.filter(a => a.type === 'move' && !garrison.has(a.unitId));
       if (moves.length && targets.length) {
         const byUnit = new Map();
         for (const m of moves) {

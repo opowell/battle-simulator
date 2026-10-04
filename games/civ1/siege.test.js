@@ -20,10 +20,10 @@ const endTurn = (state, playerId) =>
   Civ1Game.applyActions(state, [{ playerId, action: { type: 'end-turn', unitId: '__player__' } }]);
 const cityOf = s => s.cities.find(c => c.id === s.gameSpecific.objective.cityId);
 
-test('siege: twenty units a side, and the defender opens holding the city', () => {
+test('siege: the attackers outnumber the defenders, 28 to 20, and the defender opens holding the city', () => {
   const s = siege();
   const count = id => s.units.filter(u => u.ownerId === id).length;
-  assert.equal(count('p1'), 20);
+  assert.equal(count('p1'), 28);
   assert.equal(count('p2'), 20);
   assert.equal(s.cities.length, 1);
   const city = cityOf(s);
@@ -175,4 +175,80 @@ test('siege: plays out to a decision inside the turn limit', async () => {
   while (!engine.result) { const { done } = await engine.step(); if (done) break; }
   assert.ok(['city-taken', 'city-held', 'civilization-destroyed'].includes(engine.result.reason), engine.result.reason);
   assert.ok(engine.state.turnNumber <= 21);
+});
+
+// ── Forts, sorties and the march (ai.js) ────────────────────────────────────
+
+test('siege: the heuristic defender holds its forts — nobody in one is called home', async () => {
+  const engine = new GameEngine(Civ1Game, [
+    { id: 'p1', name: 'A', agent: makeCiv1Agent() },
+    { id: 'p2', name: 'D', agent: makeCiv1Agent() },
+  ], { seed: 3, scenario: 'siege', fogOfWar: true });
+  engine._init();
+  const fort = u => engine.state.board.tiles[`${u.position.x},${u.position.y}`].fortress;
+  const holders = engine.state.units.filter(u => u.ownerId === 'p2' && fort(u)).map(u => [u.id, { ...u.position }]);
+  assert.equal(holders.length, 8);
+  while (!engine.result && engine.state.turnNumber < 6) await engine.step();
+  for (const [id, pos] of holders) {
+    const u = engine.state.units.find(x => x.id === id);
+    if (u.alive) assert.deepEqual(u.position, pos, `${u.type} ${id} stayed in its fort`);
+  }
+});
+
+test('siege: a horseman in the city rides out at a siege train caught in the open', () => {
+  let s = endTurn(siege(), 'p1');   // the defender's turn
+  const knight = s.units.find(u => u.ownerId === 'p2' && u.type === 'knights');
+  const catapult = s.units.find(u => u.ownerId === 'p1' && u.type === 'catapult');
+  const phalanx = s.units.find(u => u.ownerId === 'p1' && u.type === 'phalanx');
+  s = {
+    ...s,
+    units: [
+      ...s.units.map(u => u.id === knight.id ? { ...u, position: { x: 17, y: 7 }, movesLeft: 2 } : u),
+      // Two squares out on open ground: a catapult with a phalanx to guard it — a stack
+      // that dies together if its guard loses.
+      { ...catapult, id: 'cat', position: { x: 15, y: 7 }, attrs: {} },
+      { ...phalanx, id: 'guard', position: { x: 15, y: 7 }, attrs: {} },
+    ],
+  };
+  const agent = makeCiv1Agent();
+  for (let i = 0; i < 200; i++) {
+    const act = agent.chooseAction(s, Civ1Game.getLegalActions(s, 'p2'));
+    if (act.unitId === knight.id) {
+      assert.equal(act.type, 'move', JSON.stringify(act));
+      assert.equal(Math.max(Math.abs(act.to.x - 17), Math.abs(act.to.y - 7)), 1, 'one step out of the walls');
+      assert.equal(Math.max(Math.abs(act.to.x - 15), Math.abs(act.to.y - 7)), 1, 'to strike at the train');
+      return;
+    }
+    assert.notEqual(act.type, 'end-turn', 'the turn ended without the knight riding out');
+    s = Civ1Game.applyActions(s, [{ playerId: 'p2', action: act }]);
+  }
+  assert.fail('the knight was never given an order');
+});
+
+test('killDesire: a blow on open ground is worth the whole stack, in a fort or city only its defender', async () => {
+  const { stakeOf } = await import('./ai.js');
+  const s = siege();
+  // The fort at the river crossing holds a phalanx and a legion: only the loser dies.
+  const fortDefender = s.units.find(u => u.position.x === 12 && u.position.y === 6);
+  assert.equal(stakeOf(fortDefender, s), UNITS[fortDefender.type].cost);
+  // Move the pair onto open ground and the blow takes both.
+  const open = { ...s, units: s.units.map(u => (u.position.x === 12 && u.position.y === 6) ? { ...u, position: { x: 13, y: 6 } } : u) };
+  const both = open.units.filter(u => u.position.x === 13 && u.position.y === 6);
+  assert.equal(both.length, 2);
+  assert.equal(stakeOf(both[0], open), both.reduce((t, u) => t + UNITS[u.type].cost, 0));
+});
+
+test('marchDistances: a march finds the way round a zone of control', async () => {
+  const { marchDistances, makeZoneOfControl } = await import('./map.js');
+  const s = siege();
+  const legion = s.units.find(u => u.ownerId === 'p1' && u.type === 'legion');
+  const field = marchDistances({ x: 17, y: 7 }, legion, s.board, s.units, 'p1', s.cities);
+  // The river crossing between the two forts is shut: a unit beside both cannot step
+  // to another square beside both. The way on is round the outside of them.
+  const zoc = makeZoneOfControl(s.board, s.units, s.cities, 'p1');
+  assert.equal(zoc(legion, { x: 11, y: 7 }, { x: 12, y: 7 }), true, 'the crossing is shut');
+  assert.ok(field.get('11,7') < Infinity, 'but the city can still be reached from it');
+  assert.ok(field.get('11,7') > 6, 'the long way round — the city is six squares off in a straight line');
+  // The square between the forts is a dead end: every step out of it is beside them.
+  assert.equal(field.has('12,7'), false);
 });

@@ -19,6 +19,8 @@
 //
 // A battle rather than a world needs a few more pieces, all optional:
 //   cities     `{ side, x, y, name?, size?, buildings? }` standing from turn 1
+//   fortresses `[x, y]` squares with a fortress already built on them (see combat.js:
+//              land defenders x2 instead of fortifying, and no stack death)
 //   objective  `{ type: 'take-city', attacker: 1|2, defender: 1|2, turns }` — the
 //              attacker wins by capturing the defender's city (and so destroying
 //              them); the defender wins by still holding it once `turns` rounds
@@ -220,11 +222,15 @@ export const FIXED_MAPS = [
   {
     id: 'siege',
     name: 'Siege',
-    description: 'A fixed battle: your army of 20 — catapults, legions, knights — has 20 turns to take a coastal city held by 20 defenders',
+    description: 'A fixed battle: your army of 28 — catapults, legions, knights — has 20 turns to take a coastal city held by 20 defenders, with forts on the hills before it and horsemen to sally',
     // West to east: the attackers' open staging plains, a wooded ridge north and
     // south with a pair of hills on the river crossing between them, the city's two
     // hill outworks, and the city itself on the river mouth with the sea at its back
     // — so it can only be approached from the west. The map does not wrap.
+    // Every hill before the city carries a fortress (combat.js: x2 for whoever holds it,
+    // and a beaten defender dies alone), so the outworks have to be taken a man at a
+    // time or walked past under their zone of control — and a fort the attacker takes
+    // is a fort it can hold.
     rows: [
       '........................',
       '.PGGGGPGGFFPGGGGPHMM....',
@@ -261,34 +267,51 @@ export const FIXED_MAPS = [
     ],
     revealed: true,
     wrap: false,
+    fortresses: [
+      [12, 6], [12, 8],             // the river crossing
+      [15, 4], [16, 4],             // the northern outwork
+      [15, 10], [16, 10],           // the southern outwork
+    ],
     cities: [
       { side: 2, x: 17, y: 7, size: 3, buildings: ['palace'] },
     ],
     objective: { type: 'take-city', attacker: 1, defender: 2, turns: 20 },
     units: [
-      // ── The attackers (side 1): a siege train with its escort, on the plains ──
+      // ── The attackers (side 1): 28 — a siege train with its escort, on the plains ──
       { side: 1, type: 'catapult', x: 7, y: 6, veteran: true },
       { side: 1, type: 'catapult', x: 7, y: 7, veteran: true },
       { side: 1, type: 'catapult', x: 7, y: 8, veteran: true },
       { side: 1, type: 'catapult', x: 6, y: 6 },
+      { side: 1, type: 'catapult', x: 6, y: 7 },
       { side: 1, type: 'catapult', x: 6, y: 8 },
+      { side: 1, type: 'legion',   x: 8, y: 4 },
       { side: 1, type: 'legion',   x: 8, y: 5 },
       { side: 1, type: 'legion',   x: 8, y: 6 },
       { side: 1, type: 'legion',   x: 8, y: 7 },
       { side: 1, type: 'legion',   x: 8, y: 8 },
       { side: 1, type: 'legion',   x: 8, y: 9 },
+      { side: 1, type: 'legion',   x: 8, y: 10 },
       { side: 1, type: 'legion',   x: 7, y: 5 },
-      { side: 1, type: 'knights',  x: 9, y: 5 },
-      { side: 1, type: 'knights',  x: 9, y: 6 },
-      { side: 1, type: 'knights',  x: 9, y: 8 },
-      { side: 1, type: 'knights',  x: 9, y: 9 },
-      { side: 1, type: 'chariot',  x: 6, y: 5 },
-      { side: 1, type: 'chariot',  x: 6, y: 9 },
-      { side: 1, type: 'chariot',  x: 7, y: 9 },
-      { side: 1, type: 'legion',   x: 6, y: 7 },
+      { side: 1, type: 'legion',   x: 7, y: 9 },
+      { side: 1, type: 'legion',   x: 5, y: 6 },
       { side: 1, type: 'legion',   x: 5, y: 7 },
-      // ── The defenders (side 2) ────────────────────────────────────────────────
-      // The garrison, dug in.
+      { side: 1, type: 'legion',   x: 5, y: 8 },
+      // The siege train's guard: the catapults defend at 1, and the defenders ride out.
+      { side: 1, type: 'phalanx',  x: 5, y: 5 },
+      { side: 1, type: 'phalanx',  x: 5, y: 9 },
+      { side: 1, type: 'phalanx',  x: 4, y: 7 },
+      { side: 1, type: 'knights',  x: 9, y: 4 },
+      { side: 1, type: 'knights',  x: 9, y: 6 },
+      { side: 1, type: 'knights',  x: 9, y: 7 },
+      { side: 1, type: 'knights',  x: 9, y: 8 },
+      { side: 1, type: 'knights',  x: 9, y: 10 },
+      { side: 1, type: 'chariot',  x: 6, y: 4 },
+      { side: 1, type: 'chariot',  x: 6, y: 10 },
+      // ── The defenders (side 2): 20 ──────────────────────────────────────────────
+      // The garrison: phalanxes dug in, and a legion to strike at whatever comes up to
+      // the walls. (No catapults: anything that steps up beside a city strikes from on
+      // open ground, and a garrison catapult kills it, stack and all, nineteen times in
+      // twenty — three of them made the walls unapproachable. See demo/civ1-siege-bench.)
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true, veteran: true },
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
@@ -296,22 +319,23 @@ export const FIXED_MAPS = [
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
       { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
-      // The two hill outworks north and south of the approach.
+      { side: 2, type: 'legion',   x: 17, y: 7, fortified: true },
+      // The forts at the river crossing: a phalanx to hold each and a legion to strike
+      // at whatever tries to slip past.
+      { side: 2, type: 'phalanx',  x: 12, y: 6, fortified: true },
+      { side: 2, type: 'legion',   x: 12, y: 6, fortified: true },
+      { side: 2, type: 'phalanx',  x: 12, y: 8, fortified: true },
+      { side: 2, type: 'legion',   x: 12, y: 8, fortified: true },
+      // The hill outworks north and south of the approach, one fort apiece.
       { side: 2, type: 'phalanx',  x: 15, y: 4, fortified: true },
       { side: 2, type: 'phalanx',  x: 16, y: 4, fortified: true },
       { side: 2, type: 'phalanx',  x: 15, y: 10, fortified: true },
       { side: 2, type: 'phalanx',  x: 16, y: 10, fortified: true },
-      // Pickets on the hills either side of the river crossing.
-      { side: 2, type: 'legion',   x: 12, y: 6, fortified: true },
-      { side: 2, type: 'legion',   x: 12, y: 8, fortified: true },
-      // A mounted reserve behind the walls, to sally against the siege train.
-      { side: 2, type: 'chariot',  x: 18, y: 6 },
+      // A mounted reserve behind the walls, to ride out at the siege train.
+      { side: 2, type: 'knights',  x: 18, y: 6 },
       { side: 2, type: 'chariot',  x: 18, y: 8 },
-      { side: 2, type: 'knights',  x: 19, y: 6 },
+      { side: 2, type: 'chariot',  x: 19, y: 6 },
       { side: 2, type: 'knights',  x: 19, y: 8 },
-      { side: 2, type: 'legion',   x: 16, y: 6, fortified: true },
-      { side: 2, type: 'legion',   x: 16, y: 8, fortified: true },
     ],
     config: {
       players: [{ name: 'You' }, { name: 'Defender', agent: 'civ1-heuristic' }],
@@ -334,6 +358,7 @@ export function parseFixedMap(map) {
       tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver, fortress: false };
     }
   }
+  for (const [x, y] of map.fortresses ?? []) tiles[`${x},${y}`].fortress = true;
   return { width, height, tiles, ...(map.wrap === false ? { wrap: false } : {}) };
 }
 

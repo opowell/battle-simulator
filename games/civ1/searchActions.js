@@ -45,7 +45,9 @@ import { wrapX, wrapWidth } from './map.js';
 import {
   productionContext, rankProductionActions, RESEARCH_PRIORITY,
 } from './production.js';
-import { siegeRole, siegeAttackFloor, siegeAttackWant, isMounted, atSiegeCity, chooseSiegeProduction } from './objective.js';
+import {
+  siegeRole, siegeAttackFloor, siegeAttackWant, isMounted, atSiegeCity, chooseSiegeProduction, holdsFort,
+} from './objective.js';
 
 // Horizontally-wrapped Chebyshev distance. Deliberately re-derived here rather
 // than imported from Civ1Game.js: this module is installed onto the game object
@@ -209,11 +211,12 @@ function unitActions(legal, obs, playerId, unit) {
   const out = [];
 
   // A fixed battle's objective (objective.js). A foot soldier inside the besieged
-  // city holds it: it may dig in or stand, and nothing else — an attack out of the
-  // walls that wins walks the winner out of them, and the leaf value cannot see far
-  // enough ahead to know what that cost.
+  // city, or in one of the forts before it, holds it: it may dig in or stand, and
+  // nothing else — the leaf value cannot see far enough ahead to know what giving up
+  // a dug-in square costs.
   const siege = siegeRole(obs, playerId);
-  const holding = siege?.role === 'defender' && !isMounted(unit.type) && atSiegeCity(siege, unit.position);
+  const holding = siege?.role === 'defender'
+    && ((!isMounted(unit.type) && atSiegeCity(siege, unit.position)) || holdsFort(obs, unit));
   if (holding) {
     const stay = mine.filter(a => a.type === 'fortify' || a.type === 'skip-unit');
     if (stay.length) return stay;

@@ -10,6 +10,7 @@
 // is common knowledge, so the attacker knows where to march before it can see it.
 
 import { UNITS } from './units.js';
+import { inFortress } from './combat.js';
 
 /**
  * @returns {null | { role: 'attacker'|'defender', cityId, cityPos, turnsLeft }}
@@ -52,6 +53,14 @@ export const isMounted = type => (UNITS[type]?.special ?? []).includes('mounted'
 
 export const atSiegeCity = (siege, pos) =>
   siege != null && pos.x === siege.cityPos.x && pos.y === siege.cityPos.y;
+
+/**
+ * Whether `unit` is one of a fort's holders: a foot soldier standing in a fortress
+ * (combat.js inFortress). A besieged side's holders stay put and dig in — the time
+ * the attackers spend on a fort is the fort's whole point. Horsemen are passing
+ * through: they belong to the city, and ride out from it.
+ */
+export const holdsFort = (state, unit) => !isMounted(unit.type) && inFortress(state, unit);
 
 /**
  * What the besieged city should build: the stoutest land defender on offer,

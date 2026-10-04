@@ -31,13 +31,31 @@ export function getCombatStrengths(attacker, defender, state) {
   if (attacker.attrs?.veteran) att *= 1.5;
   if (defender.attrs?.veteran) def *= 1.5;
 
+  // A fortress doubles a land defender's strength (the original's combat routine, CIV.EXE
+  // segment 29f3, OpenCivOne F0_29f3_000e) — INSTEAD of the fortify bonus, not on top
+  // of it: that routine picks one of three multipliers, fortress x2, else fortified x1.5,
+  // else none. A city square doesn't count as one (see inFortress).
+  if (inFortress(state, defender)) def *= 2;
   // Fortify bonus: +50% defense while dug in (attrs.fortified — see Civ1Game.js's
   // 'fortify' action; cleared the moment the unit gets a fresh order). A unit that
   // was ordered to dig in this turn is only attrs.fortifying and gets nothing yet:
   // the bonus arrives when the order finishes, on its owner's next turn.
-  if (defender.attrs?.fortified) def *= 1.5;
+  else if (defender.attrs?.fortified) def *= 1.5;
 
   return { att, def };
+}
+
+/**
+ * Whether `unit` is holding a fortress: a land unit on a square with one, outside a city
+ * (a city has its own rules — and no square is both in this game). A fortress is what
+ * its holders get instead of digging in, and the one open square whose stack does not
+ * all die with its defender (Civ1Game's resolveAttack).
+ */
+export function inFortress(state, unit) {
+  const pos = unit.position;
+  if (!state.board.tiles[`${pos.x},${pos.y}`]?.fortress) return false;
+  if (UNITS[unit.type]?.domain !== 'land') return false;
+  return !state.cities.some(c => c.position.x === pos.x && c.position.y === pos.y);
 }
 
 /**

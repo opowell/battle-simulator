@@ -492,6 +492,56 @@ export function getReachableTiles(unit, board, allUnits, playerId, cities = []) 
   return reachable;
 }
 
+/**
+ * How far every square is from `goal` for a land unit like `unit`, in movement points
+ * over however many turns it takes: a Dijkstra run backwards from the goal over the
+ * same steps getReachableTiles allows — around enemy units, and never across a zone of
+ * control (makeZoneOfControl), which is what a march of more than one turn has to know.
+ * Steering by straight-line distance walks a column up to a blockade and leaves it
+ * stepping back and forth along the line; this finds the way round it. The goal itself
+ * may hold an enemy (a city to be stormed). Squares with no way to the goal are absent.
+ *
+ * @returns {Map<string, number>} "x,y" -> movement points to the goal
+ */
+export function marchDistances(goal, unit, board, allUnits, playerId, cities = []) {
+  const key = p => `${p.x},${p.y}`;
+  const W = wrapWidth(board);
+  const enemyPos = new Set(allUnits.filter(u => u.alive && u.ownerId !== playerId).map(u => key(u.position)));
+  const zocBlocks = makeZoneOfControl(board, allUnits, cities, playerId);
+  const goalK = key(goal);
+  const enterable = (k) => {
+    const td = TERRAIN[board.tiles[k]?.terrain];
+    return !!td && td.passable.land && (k === goalK || !enemyPos.has(k));
+  };
+  const stepCost = (k) => {
+    const t = board.tiles[k];
+    return t.hasRail ? 0 : t.hasRoad ? 1 / 3 : TERRAIN[t.terrain].moveCost;
+  };
+
+  const dist = new Map([[goalK, 0]]);
+  const queue = [{ pos: goal, d: 0 }];
+  while (queue.length) {
+    queue.sort((a, b) => a.d - b.d);
+    const { pos: to, d } = queue.shift();
+    if (d > dist.get(key(to))) continue;
+    const toK = key(to);
+    for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]]) {
+      const ny = to.y - dy;
+      if (ny < 0 || ny >= board.height) continue;
+      const from = { x: wrapX(to.x - dx, W), y: ny };
+      const fromK = key(from);
+      if (!enterable(fromK) || fromK === goalK) continue;
+      if (zocBlocks(unit, from, to)) continue;
+      const nd = d + stepCost(toK);
+      if (nd < (dist.get(fromK) ?? Infinity)) {
+        dist.set(fromK, nd);
+        queue.push({ pos: from, d: nd });
+      }
+    }
+  }
+  return dist;
+}
+
 export function renderMap(state) {
   const { board, units, cities } = state;
   const { width, height } = board;
