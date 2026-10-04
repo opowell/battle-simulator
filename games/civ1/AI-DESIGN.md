@@ -481,6 +481,48 @@ defender's forts are all still manned at turn 5, and the horsemen ride ~5 sortie
 winning ~95% of them. The heuristic attacker is a weak siege general (it still feeds its
 army to the walls one wave at a time), so a human attacker should fare better than 25%.
 
+## Siege: an island, roads, and a city with a past (2026-10-04)
+
+Three changes, kept at the forts' balance rather than re-deciding it:
+
+- **Attacks on part of a move** (combat.js `attackThirds`): fewer than three thirds of a
+  move left strikes at that fraction of strength, as the original's combat routine does
+  (and asks "Attack at 1/3 strength?"). Both agents hold such a blow at the city while
+  there are turns in hand (objective.js `waitsForFullStrength`). Before that rule the
+  heuristic attacker stepped one road square and threw its catapults at the walls at
+  2/3, losing more of those blows than it won.
+- **The map** is an island instead of a rectangle (everything shifted +1,+1 into 26x17),
+  with roads, irrigated bottom land (fixed maps' `tileImprovements` layer) and the city
+  at the head of an estuary. Every road reaches the city from **behind**: a road on a
+  square beside the walls on the attackers' side is a sortie lane — a horseman steps
+  out for a third of a move, strikes at full strength, and steps back in the same turn
+  (any move left is enough to make a step). Irrigation changes nothing measurable.
+- **The city** has a granary, temple, marketplace and library, and still no walls or
+  barracks.
+
+Heuristic v heuristic, fog on, size-3 city unless stated:
+
+| variant | attacker wins |
+| --- | --- |
+| the forts' map, as merged (rectangle, no roads) | 25% (71/280, their measurement) |
+| island, roads touching the city on both sides | 16% (31/200) |
+| island, no roads at all | 37% (74/200) |
+| island, the crossing road only cut back | 17% (34/200) |
+| island, roads round the back, palace only | 22% (133/600) |
+| ...+ granary, temple, marketplace, library (**as built**) | 21% (83/400); 22% (88/400) on `demo/civ1-siege-bench.mjs` |
+| ...the same without the granary | 20% (79/400) |
+| ...+ barracks, granary, temple | 15-16% (98/600) |
+| ...size 4 | 14% (27/200); 6% with barracks |
+| City Walls (before the forts, 20 attackers, garrisons of 8, 4 or 2) | 0% (0/120 each) |
+
+The sortie count is the mechanism showing through: 0.80 sorties a game with roads
+beside the walls, 0.29 with them round the back (`demo/civ1-siege-bench.mjs`). As built
+the attacker loses ~26 of its 28 units a game, the defender ~12.
+
+Barracks is the only building that moves the number: everything the city trains comes
+out a veteran. Walls end the siege outright — they stop a beaten garrison costing
+citizens and treble its defence against land units.
+
 ## Revised order
 
 The original plan had `set-production` last, as an unlock for the personality material. That

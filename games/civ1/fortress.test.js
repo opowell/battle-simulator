@@ -82,7 +82,7 @@ test('civ1 fortress: a fixed map may build them in, and the siege has one on eve
   const map = getFixedMap('siege');
   const board = parseFixedMap(map);
   const forts = Object.entries(board.tiles).filter(([, t]) => t.fortress).map(([k]) => k).sort();
-  assert.deepEqual(forts, ['12,6', '12,8', '15,10', '15,4', '16,10', '16,4']);
+  assert.deepEqual(forts, ['13,7', '13,9', '16,11', '16,5', '17,11', '17,5']);
   for (const k of forts) assert.equal(board.tiles[k].terrain, 'hills', k);
   // …each held from the start.
   const s = Civ1Game.createInitialState(players(), { scenario: 'siege' });

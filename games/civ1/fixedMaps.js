@@ -238,119 +238,157 @@ export const FIXED_MAPS = [
     id: 'siege',
     name: 'Siege',
     description: 'A fixed battle: your army of 28 — catapults, legions, knights — has 20 turns to take a coastal city held by 20 defenders, with forts on the hills before it and horsemen to sally',
-    // West to east: the attackers' open staging plains, a wooded ridge north and
-    // south with a pair of hills on the river crossing between them, the city's two
-    // hill outworks, and the city itself on the river mouth with the sea at its back
-    // — so it can only be approached from the west. The map does not wrap.
+    // An island, west to east: the attackers' open staging plains under a knoll, a
+    // wooded ridge north and south with a pair of hills on the river crossing between
+    // them, the city's two hill outworks over the north bay and the southern inlet, and
+    // the city itself at the head of the estuary, between two headlands, with the sea
+    // at its back — so it can only be approached from the west. The map does not wrap.
     // Every hill before the city carries a fortress (combat.js: x2 for whoever holds it,
     // and a beaten defender dies alone), so the outworks have to be taken a man at a
     // time or walked past under their zone of control — and a fort the attacker takes
     // is a fort it can hold.
     rows: [
-      '........................',
-      '.PGGGGPGGFFPGGGGPHMM....',
-      '.GPGGGGPGFFFPGGGGPMMG...',
-      '.GGPGGGGFFFGGPGGGGPGF...',
-      '.GGGPGGGGFFGGGPHHGGPG...',
-      '.PPPPPPGGGPGGGGPGGGGP...',
-      '.PPPPPPGGGGPHGGGPGGGG...',
-      '.PPPPPPPGGGGPGGGGPGG....',
-      '.PPPPPPGPGGGHPGGGGGGG...',
-      '.PPPPPPGGPGGGGPGGGGPG...',
-      '.GGGGPGGGFFGGGGHHGGGP...',
-      '.PGGGGPGFFFPGGGGPGGGF...',
-      '.GPGGGGPGFFFPGGGGPMMG...',
-      '.GGPGGGGPFFGGPGGGHMM....',
-      '........................',
+      '..........................',
+      '.....GPHG.........HMM.....',
+      '...GGGGPGGFFP....PHMMG....',
+      '..GPGGGGPGFFFPG.GGPMMGGG..',
+      '..GGPGGGGFFFGGPGGGGPGFFGH.',
+      '.GGGGPGGGGFFGGGPHHGGPGGG..',
+      '.PPPPPPPGGGPGGGGPGGGGPG...',
+      '..PPPPPPGGGGPHGGGPGGGG....',
+      '.PPPPPPPPGGGGPGGGGP.......',
+      '..PPPPPPGPGGGHPGGGGGGG....',
+      '.PPPPPPPGGPGGGGPGGGGPGG...',
+      '..GGGGPGGGFFGGGGHHGGGPGGG.',
+      '...GGGGPGFFFPGGGGPGGGFFG..',
+      '.....GGGPG..FPGGGGPMMG....',
+      '......GG.....GPGGGHMM.....',
+      '...............GGHM.......',
+      '..........................',
     ],
     rivers: [
-      '                        ',
-      '                        ',
-      '                        ',
-      '                        ',
-      '                        ',
-      '                        ',
-      '                        ',
-      '       ~~~~~~~~~~       ',
-      '                        ',
-      '                        ',
-      '                        ',
-      '                        ',
-      '                        ',
-      '                        ',
-      '                        ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '        ~~~~~~~~~~        ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+    ],
+    // Settlers' work, all of it known to both sides from the start (Civ1Game's remembered
+    // ground): the bottom land on both banks is under irrigation, and a road runs from the
+    // crossing forts along the north bank and out to both outworks. Every road reaches the
+    // city from BEHIND it, through its two eastern neighbours. A road on a square beside
+    // the walls on the attackers' side lets a horseman step out for a third of a move,
+    // strike at full strength and step back in the same turn; with one on each side of
+    // the city the heuristic attacker took it 16% of the time (200 games), against 22%
+    // (600) with the roads round the back (demo/civ1-siege-bench.mjs, AI-DESIGN.md).
+    tileImprovements: [
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                 =        ',
+      '                 =+i      ',
+      '            ==+++ii=      ',
+      '                ii=       ',
+      '              iiiii=      ',
+      '                  +i      ',
+      '                 =        ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
+      '                          ',
     ],
     revealed: true,
     wrap: false,
     fortresses: [
-      [12, 6], [12, 8],             // the river crossing
-      [15, 4], [16, 4],             // the northern outwork
-      [15, 10], [16, 10],           // the southern outwork
+      [13, 7], [13, 9],             // the river crossing
+      [16, 5], [17, 5],             // the northern outwork
+      [16, 11], [17, 11],           // the southern outwork
     ],
     cities: [
-      { side: 2, x: 17, y: 7, size: 3, buildings: ['palace'] },
+      // A city with a life before the war: granary, temple, market and library. No City
+      // Walls — they stop a beaten garrison costing citizens and treble its defence, and
+      // with them the attacker never took the city, even from a garrison of two (0 of 120
+      // games each, measured before the forts, against 20 attackers). No Barracks either:
+      // the defenders it trains come out veterans, which took the attacker from 21% to
+      // 15% (400 games each). The rest change nothing in a twenty-turn battle.
+      { side: 2, x: 18, y: 8, size: 3, buildings: ['palace', 'granary', 'temple', 'marketplace', 'library'] },
     ],
     objective: { type: 'take-city', attacker: 1, defender: 2, turns: 20 },
     units: [
       // ── The attackers (side 1): 28 — a siege train with its escort, on the plains ──
-      { side: 1, type: 'catapult', x: 7, y: 6, veteran: true },
-      { side: 1, type: 'catapult', x: 7, y: 7, veteran: true },
-      { side: 1, type: 'catapult', x: 7, y: 8, veteran: true },
-      { side: 1, type: 'catapult', x: 6, y: 6 },
-      { side: 1, type: 'catapult', x: 6, y: 7 },
-      { side: 1, type: 'catapult', x: 6, y: 8 },
-      { side: 1, type: 'legion',   x: 8, y: 4 },
-      { side: 1, type: 'legion',   x: 8, y: 5 },
+      { side: 1, type: 'catapult', x: 8, y: 7, veteran: true },
+      { side: 1, type: 'catapult', x: 8, y: 8, veteran: true },
+      { side: 1, type: 'catapult', x: 8, y: 9, veteran: true },
+      { side: 1, type: 'catapult', x: 7, y: 7 },
+      { side: 1, type: 'catapult', x: 7, y: 8 },
+      { side: 1, type: 'catapult', x: 7, y: 9 },
+      { side: 1, type: 'legion',   x: 9, y: 5 },
+      { side: 1, type: 'legion',   x: 9, y: 6 },
+      { side: 1, type: 'legion',   x: 9, y: 7 },
+      { side: 1, type: 'legion',   x: 9, y: 8 },
+      { side: 1, type: 'legion',   x: 9, y: 9 },
+      { side: 1, type: 'legion',   x: 9, y: 10 },
+      { side: 1, type: 'legion',   x: 9, y: 11 },
       { side: 1, type: 'legion',   x: 8, y: 6 },
-      { side: 1, type: 'legion',   x: 8, y: 7 },
-      { side: 1, type: 'legion',   x: 8, y: 8 },
-      { side: 1, type: 'legion',   x: 8, y: 9 },
       { side: 1, type: 'legion',   x: 8, y: 10 },
-      { side: 1, type: 'legion',   x: 7, y: 5 },
-      { side: 1, type: 'legion',   x: 7, y: 9 },
-      { side: 1, type: 'legion',   x: 5, y: 6 },
-      { side: 1, type: 'legion',   x: 5, y: 7 },
-      { side: 1, type: 'legion',   x: 5, y: 8 },
+      { side: 1, type: 'legion',   x: 6, y: 7 },
+      { side: 1, type: 'legion',   x: 6, y: 8 },
+      { side: 1, type: 'legion',   x: 6, y: 9 },
       // The siege train's guard: the catapults defend at 1, and the defenders ride out.
-      { side: 1, type: 'phalanx',  x: 5, y: 5 },
-      { side: 1, type: 'phalanx',  x: 5, y: 9 },
-      { side: 1, type: 'phalanx',  x: 4, y: 7 },
-      { side: 1, type: 'knights',  x: 9, y: 4 },
-      { side: 1, type: 'knights',  x: 9, y: 6 },
-      { side: 1, type: 'knights',  x: 9, y: 7 },
-      { side: 1, type: 'knights',  x: 9, y: 8 },
-      { side: 1, type: 'knights',  x: 9, y: 10 },
-      { side: 1, type: 'chariot',  x: 6, y: 4 },
-      { side: 1, type: 'chariot',  x: 6, y: 10 },
+      { side: 1, type: 'phalanx',  x: 6, y: 6 },
+      { side: 1, type: 'phalanx',  x: 6, y: 10 },
+      { side: 1, type: 'phalanx',  x: 5, y: 8 },
+      { side: 1, type: 'knights',  x: 10, y: 5 },
+      { side: 1, type: 'knights',  x: 10, y: 7 },
+      { side: 1, type: 'knights',  x: 10, y: 8 },
+      { side: 1, type: 'knights',  x: 10, y: 9 },
+      { side: 1, type: 'knights',  x: 10, y: 11 },
+      { side: 1, type: 'chariot',  x: 7, y: 5 },
+      { side: 1, type: 'chariot',  x: 7, y: 11 },
       // ── The defenders (side 2): 20 ──────────────────────────────────────────────
       // The garrison: phalanxes dug in, and a legion to strike at whatever comes up to
       // the walls. (No catapults: anything that steps up beside a city strikes from on
       // open ground, and a garrison catapult kills it, stack and all, nineteen times in
       // twenty — three of them made the walls unapproachable. See demo/civ1-siege-bench.)
-      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true, veteran: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 7, fortified: true },
-      { side: 2, type: 'legion',   x: 17, y: 7, fortified: true },
+      { side: 2, type: 'phalanx',  x: 18, y: 8, fortified: true, veteran: true },
+      { side: 2, type: 'phalanx',  x: 18, y: 8, fortified: true },
+      { side: 2, type: 'phalanx',  x: 18, y: 8, fortified: true },
+      { side: 2, type: 'phalanx',  x: 18, y: 8, fortified: true },
+      { side: 2, type: 'phalanx',  x: 18, y: 8, fortified: true },
+      { side: 2, type: 'phalanx',  x: 18, y: 8, fortified: true },
+      { side: 2, type: 'phalanx',  x: 18, y: 8, fortified: true },
+      { side: 2, type: 'legion',   x: 18, y: 8, fortified: true },
       // The forts at the river crossing: a phalanx to hold each and a legion to strike
       // at whatever tries to slip past.
-      { side: 2, type: 'phalanx',  x: 12, y: 6, fortified: true },
-      { side: 2, type: 'legion',   x: 12, y: 6, fortified: true },
-      { side: 2, type: 'phalanx',  x: 12, y: 8, fortified: true },
-      { side: 2, type: 'legion',   x: 12, y: 8, fortified: true },
+      { side: 2, type: 'phalanx',  x: 13, y: 7, fortified: true },
+      { side: 2, type: 'legion',   x: 13, y: 7, fortified: true },
+      { side: 2, type: 'phalanx',  x: 13, y: 9, fortified: true },
+      { side: 2, type: 'legion',   x: 13, y: 9, fortified: true },
       // The hill outworks north and south of the approach, one fort apiece.
-      { side: 2, type: 'phalanx',  x: 15, y: 4, fortified: true },
-      { side: 2, type: 'phalanx',  x: 16, y: 4, fortified: true },
-      { side: 2, type: 'phalanx',  x: 15, y: 10, fortified: true },
-      { side: 2, type: 'phalanx',  x: 16, y: 10, fortified: true },
+      { side: 2, type: 'phalanx',  x: 16, y: 5, fortified: true },
+      { side: 2, type: 'phalanx',  x: 17, y: 5, fortified: true },
+      { side: 2, type: 'phalanx',  x: 16, y: 11, fortified: true },
+      { side: 2, type: 'phalanx',  x: 17, y: 11, fortified: true },
       // A mounted reserve behind the walls, to ride out at the siege train.
-      { side: 2, type: 'knights',  x: 18, y: 6 },
-      { side: 2, type: 'chariot',  x: 18, y: 8 },
-      { side: 2, type: 'chariot',  x: 19, y: 6 },
-      { side: 2, type: 'knights',  x: 19, y: 8 },
+      { side: 2, type: 'knights',  x: 19, y: 7 },
+      { side: 2, type: 'chariot',  x: 19, y: 9 },
+      { side: 2, type: 'chariot',  x: 20, y: 7 },
+      { side: 2, type: 'knights',  x: 20, y: 9 },
     ],
     config: {
       players: [{ name: 'You' }, { name: 'Defender', agent: 'civ1-heuristic' }],
