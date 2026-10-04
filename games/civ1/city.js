@@ -27,8 +27,8 @@ export const FAT_CROSS = (() => {
 
 // Terrains irrigation and mining act on, matching the original: irrigation adds food
 // on the flatter, wetter squares; mining adds shields on hills and mountains.
-const IRRIGABLE = new Set(['desert', 'grassland', 'plains', 'hills', 'swamp', 'tundra']);
-const MINEABLE = { hills: 2, mountains: 1 };
+export const IRRIGABLE = new Set(['desert', 'grassland', 'plains', 'hills', 'swamp', 'tundra']);
+export const MINEABLE = { hills: 2, mountains: 1 };
 // Roads lay trade on the squares the original gives a trade arrow to.
 const ROAD_TRADE = new Set(['desert', 'grassland', 'plains']);
 

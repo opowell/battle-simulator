@@ -13,6 +13,11 @@
 // '~' marking a tile that has a river (anything else means none). It is a separate
 // layer because a river sits *on* a terrain rather than replacing it.
 //
+// Likewise an optional `tileImprovements` layer for the settlers' work already done
+// on the land (TILE_IMPROVEMENT_LEGEND below; a space or anything else is untouched
+// ground). Only what the terrain takes is applied — a mine on grassland or irrigation
+// on a mountain is dropped, as a settler could not have built it.
+//
 // Starting units are `{ side: 1|2, type, x, y }`; side 1 → players[0],
 // side 2 → players[1]. Coordinates are 0-indexed from the top-left. A unit may
 // also start `veteran` and/or `fortified` (dug in, with the bonus already earned).
@@ -31,6 +36,8 @@
 //              battlefield is a place, not a world
 //   config     the scenario menu entry's config (seats, fog, …), as on any scenario
 
+import { IRRIGABLE, MINEABLE } from './city.js';
+
 // Character → engine terrain. `.` is water; the engine has no separate "coast"
 // or "lake" terrain, so open sea and inland lakes are all 'ocean' (shallow-water
 // shading is a pure rendering effect in toGrid, derived from land-adjacency).
@@ -46,6 +53,14 @@ export const TERRAIN_LEGEND = {
   'A': 'arctic',
   'J': 'jungle',
   'S': 'swamp',
+};
+
+// Character → what settlers have built on a square (the `tileImprovements` layer).
+export const TILE_IMPROVEMENT_LEGEND = {
+  '=': { hasRoad: true },
+  'i': { irrigated: true },
+  'm': { mined: true },
+  '+': { hasRoad: true, irrigated: true },
 };
 
 export const FIXED_MAPS = [
@@ -355,7 +370,12 @@ export function parseFixedMap(map) {
       const ch = rows[y][x];
       const terrain = TERRAIN_LEGEND[ch] ?? 'ocean';
       const hasRiver = map.rivers?.[y]?.[x] === '~';
-      tiles[`${x},${y}`] = { terrain, hasRoad: false, hasRiver, fortress: false };
+      const work = TILE_IMPROVEMENT_LEGEND[map.tileImprovements?.[y]?.[x]] ?? {};
+      tiles[`${x},${y}`] = {
+        terrain, hasRoad: !!work.hasRoad && terrain !== 'ocean', hasRiver, fortress: false,
+        ...(work.irrigated && IRRIGABLE.has(terrain) ? { irrigated: true } : {}),
+        ...(work.mined && MINEABLE[terrain] ? { mined: true } : {}),
+      };
     }
   }
   for (const [x, y] of map.fortresses ?? []) tiles[`${x},${y}`].fortress = true;

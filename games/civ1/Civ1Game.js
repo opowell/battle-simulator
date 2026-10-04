@@ -2232,11 +2232,13 @@ export const Civ1Game = {
           bgImage: (tile.terrain === 'ocean' || tile.terrain === 'unknown') ? null
             : (tile.terrain ? terrainSprite(x, y, tile.terrain) : null),
           coastSprite: tile.terrain === 'ocean' ? coastSprite(x, y) : null,
-          // Rivers first, then any road segments, painted in order over the terrain.
-          // Rivers, then road segments, then this square's special resource (if any) —
-          // painted in order over the terrain.
+          // Rivers, then the settlers' work — irrigation or a mine (the original's
+          // SP257 overlays), then road segments, then this square's special resource
+          // (if any) — painted in order over the terrain.
           overlayImage: [
             ...(tile.hasRiver ? [riverSprite(x, y)] : []),
+            ...(tile.irrigated ? [`${BASE}/improvements/irrigation`] : []),
+            ...(tile.mined ? [`${BASE}/improvements/mine`] : []),
             ...roadSprites(x, y),
             ...(specialAt(x, y, tile.terrain) ? [`${BASE}/terrain/${specialAt(x, y, tile.terrain).icon}`] : []),
             // A fortress last, as the original's draw-cell routine paints it: after the
