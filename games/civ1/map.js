@@ -1,6 +1,6 @@
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
-import { stepThirds, THIRDS } from './moves.js';
+import { stepThirds, roadEnd, THIRDS } from './moves.js';
 
 export function mulberry32(seed) {
   let s = seed >>> 0;
@@ -426,12 +426,29 @@ export function makeZoneOfControl(board, allUnits, cities, playerId) {
  * (an agent reasoning over its own fogged view) want anyway.
  */
 export function getReachableTiles(unit, board, allUnits, playerId, cities = []) {
+  return floodMoves(unit, board, allUnits, playerId, cities).reachable;
+}
+
+/**
+ * The moves `unit` would have left on arriving at `to` by its cheapest way there this
+ * turn, in thirds — or null when it cannot get there. A move may land several squares
+ * away in one order, and it pays for the whole way it walked, step by step, so a road
+ * discount is earned square by square rather than read off the landing square alone.
+ */
+export function thirdsLeftAt(unit, to, board, allUnits, playerId, cities = []) {
+  const { best, reachable } = floodMoves(unit, board, allUnits, playerId, cities);
+  return reachable.some(t => t.x === to.x && t.y === to.y) ? best.get(`${to.x},${to.y}`) : null;
+}
+
+function floodMoves(unit, board, allUnits, playerId, cities) {
   const stats = UNITS[unit.type];
   const { domain } = stats;
   const key = p => `${p.x},${p.y}`;
 
   const enemyPos = new Set(allUnits.filter(u => u.alive && u.ownerId !== playerId).map(u => key(u.position)));
   const zocBlocks = makeZoneOfControl(board, allUnits, cities, playerId);
+  const cityPos = new Set(cities.map(c => key(c.position)));
+  const end = (k) => roadEnd(board.tiles[k], cityPos.has(k));
 
   // Moves left at each square, in whole thirds (moves.js).
   const best = new Map([[key(unit.position), unit.moveThirds]]);
@@ -476,10 +493,10 @@ export function getReachableTiles(unit, board, allUnits, playerId, cities = []) 
       // merely refuse its final destination.
       if (zocBlocks(unit, pos, next)) continue;
 
-      // Civ1 movement costs: railroad is free, road is a third, otherwise the
-      // terrain's own cost — the same table moveCost in Civ1Game.js charges the step
-      // actually taken from (stepThirds).
-      const cost = stepThirds(tile, domain);
+      // Civ1 movement costs: railroad free and road a third when both squares have
+      // one, otherwise the terrain's own cost (stepThirds) — the move action is
+      // charged the moves left here (thirdsLeftAt), so the fill and the rules agree.
+      const cost = stepThirds(end(key(pos)), end(k), domain);
 
       if (ml <= 0) continue;
       const remaining = Math.max(0, ml - cost);
@@ -491,7 +508,7 @@ export function getReachableTiles(unit, board, allUnits, playerId, cities = []) 
     }
   }
 
-  return reachable;
+  return { reachable, best };
 }
 
 /**
@@ -516,7 +533,9 @@ export function marchDistances(goal, unit, board, allUnits, playerId, cities = [
     return !!td && td.passable.land && (k === goalK || !enemyPos.has(k));
   };
   // Counted in whole thirds so the sums are exact, and handed back in moves.
-  const stepCost = (k) => stepThirds(board.tiles[k], 'land');
+  const cityPos = new Set(cities.map(c => key(c.position)));
+  const end = (k) => roadEnd(board.tiles[k], cityPos.has(k));
+  const stepCost = (fromK, toK) => stepThirds(end(fromK), end(toK), 'land');
 
   const dist = new Map([[goalK, 0]]);
   const queue = [{ pos: goal, d: 0 }];
@@ -532,7 +551,7 @@ export function marchDistances(goal, unit, board, allUnits, playerId, cities = [
       const fromK = key(from);
       if (!enterable(fromK) || fromK === goalK) continue;
       if (zocBlocks(unit, from, to)) continue;
-      const nd = d + stepCost(toK);
+      const nd = d + stepCost(fromK, toK);
       if (nd < (dist.get(fromK) ?? Infinity)) {
         dist.set(fromK, nd);
         queue.push({ pos: from, d: nd });

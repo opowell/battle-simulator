@@ -2,7 +2,7 @@ import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
-import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, THIRDS, stepThirds } from './map.js';
+import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, thirdsLeftAt, renderMap, THIRDS } from './map.js';
 import { assets, cityImg } from './assets/index.js';
 import { getCiv2Belief } from './belief.js';
 import { tableUnits, whole } from '../../engine/foreignUnits.js';
@@ -98,7 +98,7 @@ function getLegalActions(state, playerId) {
     const stats = UNITS[unit.type];
 
     // Movement
-    const reachable = getReachableTiles(unit, board, units, playerId);
+    const reachable = getReachableTiles(unit, board, units, playerId, cities);
     for (const to of reachable) {
       actions.push({
         type: 'move', unitId: unit.id, from: unit.position, to,
@@ -186,8 +186,8 @@ function applyActions(state, playerActions, rng = Math.random) {
   // ── move ──────────────────────────────────────────────────────────────────
   if (action.type === 'move') {
     const unit = units.find(u => u.id === action.unitId);
-    const tile = board.tiles[`${action.to.x},${action.to.y}`];
-    const moveThirds = Math.max(0, unit.moveThirds - stepThirds(tile, UNITS[unit.type].domain));
+    // A move may land several squares away; it pays for the cheapest way there.
+    const moveThirds = thirdsLeftAt(unit, action.to, board, units, playerId, cities) ?? 0;
     units = units.map(u =>
       u.id === action.unitId ? { ...u, position: action.to, moveThirds } : u
     );

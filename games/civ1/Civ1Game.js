@@ -2,8 +2,8 @@ import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat, pickDefender, attackThirds } from './combat.js';
-import { THIRDS, fullThirds, stepThirds } from './moves.js';
-import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, makeZoneOfControl, renderMap, wrapX, wrapWidth, boardWraps } from './map.js';
+import { THIRDS, fullThirds } from './moves.js';
+import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, thirdsLeftAt, makeZoneOfControl, renderMap, wrapX, wrapWidth, boardWraps } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
 import { mintId, takenIds } from './ids.js';
@@ -405,22 +405,17 @@ function spaceshipTravelTime(ship) {
 
 // ── Movement (shared by the 'move' action and queued-waypoint execution) ──────
 
-// Single-tile step cost, in thirds (stepThirds in moves.js): air is flat, railroads
-// free, roads a third, otherwise the destination tile's terrain cost. Matches the
-// original: a jump onto a far reachable tile (getReachableTiles floods multiple tiles
-// per turn) is still only charged for the tile actually landed on, not the
-// accumulated path.
-function moveCost(unit, tile) {
-  return stepThirds(tile, UNITS[unit.type].domain);
-}
-
-// Moves `unit` onto `to`, deducting its cost and handling the "walking into an
-// undefended enemy city takes it" rule. Movement onto tiles held by enemy *units*
+// Moves `unit` onto `to`, deducting what the way there cost and handling the "walking
+// into an undefended enemy city takes it" rule. A move may land several squares away
+// (getReachableTiles offers everything in reach this turn), and it pays for the
+// cheapest path it walked, step by step (thirdsLeftAt) — not just the landing square,
+// which would let a road discount be had by landing on a road from open ground. A
+// queued waypoint that is no longer in reach (isMoveTargetLegal checks the square, not
+// the way) spends the turn getting there. Movement onto tiles held by enemy *units*
 // is blocked earlier (map.js getReachableTiles / isMoveTargetLegal below), so
 // reaching an enemy city tile at all means nothing was left standing on it.
 function applyMove(units, cities, board, playerId, unit, to) {
-  const tile = board.tiles[`${to.x},${to.y}`];
-  const moveThirds = Math.max(0, unit.moveThirds - moveCost(unit, tile));
+  const moveThirds = thirdsLeftAt(unit, to, board, units, playerId, cities) ?? 0;
   // Moving is a fresh order: drop any standing fortify/sentry (matches queued
   // waypoints too — this runs for those the same way it does for a direct 'move').
   const newUnits = units.map(u =>

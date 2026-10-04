@@ -280,20 +280,42 @@ export function findAdjacentFree(pos, board, units) {
 // behind, a sliver that read as a move left. Only the UI divides by THIRDS.
 export const THIRDS = 3;
 
-/** What one step onto `tile` costs, in thirds: road a third, railroad nothing, air a flat move. */
-export function stepThirds(tile, domain) {
+/**
+ * What one step from `from` onto `to` costs, in thirds: air a flat move; a railroad
+ * nothing and a road a third, but only with one at BOTH ends (a road speeds you along
+ * it — stepping onto it from open ground pays the terrain); otherwise the destination
+ * terrain's cost. A city square counts as a road end (roadEnd).
+ */
+export function stepThirds(from, to, domain) {
   if (domain === 'air') return THIRDS;
-  if (tile?.hasRailroad) return 0;
-  if (tile?.hasRoad) return 1;
-  return ((tile ? TERRAIN[tile.terrain]?.moveCost : null) ?? 1) * THIRDS;
+  if (from?.hasRailroad && to?.hasRailroad) return 0;
+  if (from?.hasRoad && to?.hasRoad) return 1;
+  return ((to ? TERRAIN[to.terrain]?.moveCost : null) ?? 1) * THIRDS;
 }
+
+/** `tile` as one end of a step: a city square carries a road whatever the map says. */
+const roadEnd = (tile, isCity) => isCity && tile && !tile.hasRoad ? { ...tile, hasRoad: true } : tile;
 
 /**
  * Compute all tiles reachable by a unit given its remaining moveThirds.
  * Uses Dijkstra (max-remaining-moves priority).
  * Air units ignore terrain cost; sea units require ocean tiles; land units require non-ocean.
  */
-export function getReachableTiles(unit, board, allUnits, playerId) {
+export function getReachableTiles(unit, board, allUnits, playerId, cities = []) {
+  return floodMoves(unit, board, allUnits, playerId, cities).reachable;
+}
+
+/**
+ * The moves `unit` would have left on arriving at `to` by its cheapest way there this
+ * turn, in thirds, or null when it cannot get there: a move landing several squares
+ * away pays for the whole way it walked, not just the landing square.
+ */
+export function thirdsLeftAt(unit, to, board, allUnits, playerId, cities = []) {
+  const { best, reachable } = floodMoves(unit, board, allUnits, playerId, cities);
+  return reachable.some(t => t.x === to.x && t.y === to.y) ? best.get(`${to.x},${to.y}`) : null;
+}
+
+function floodMoves(unit, board, allUnits, playerId, cities) {
   const stats = UNITS[unit.type];
   const { domain } = stats;
   const key = p => `${p.x},${p.y}`;
@@ -301,6 +323,8 @@ export function getReachableTiles(unit, board, allUnits, playerId) {
   // Build enemy/friendly sets
   const enemyPos = new Set(allUnits.filter(u => u.alive && u.ownerId !== playerId).map(u => key(u.position)));
   const friendlyPos = new Set(allUnits.filter(u => u.alive && u.ownerId === playerId && u.id !== unit.id).map(u => key(u.position)));
+  const cityPos = new Set(cities.map(c => key(c.position)));
+  const end = (k) => roadEnd(board.tiles[k], cityPos.has(k));
 
   const best = new Map([[key(unit.position), unit.moveThirds]]);
   const queue = [{ pos: unit.position, ml: unit.moveThirds }];
@@ -333,8 +357,8 @@ export function getReachableTiles(unit, board, allUnits, playerId) {
       // Can't stack with own units
       if (friendlyPos.has(k)) continue;
 
-      // Movement cost in thirds: road = 1, railroad = 0, air = always a whole move
-      const cost = stepThirds(tile, domain);
+      // Movement cost in thirds: road = 1, railroad = 0 (with one at both ends), air = always a whole move
+      const cost = stepThirds(end(key(pos)), end(k), domain);
 
       // Civ2 rule: can always enter if ml > 0 (even if cost > ml), just set remaining to 0
       if (ml <= 0) continue;
@@ -347,7 +371,7 @@ export function getReachableTiles(unit, board, allUnits, playerId) {
     }
   }
 
-  return reachable;
+  return { reachable, best };
 }
 
 // ── ASCII Rendering ───────────────────────────────────────────────────────────

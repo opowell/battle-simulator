@@ -14,14 +14,23 @@ export function fullThirds(type) {
 }
 
 /**
- * What one step onto `tile` costs, in thirds: air units pay a flat move, a railroad
- * nothing, a road one third, anything else the destination terrain's own cost. The one
- * table both the rules (the step actually taken) and the flood fills (where a unit may
- * go, how far a goal is) charge from.
+ * What one step from `from` onto `to` costs, in thirds: air units pay a flat move; a
+ * railroad nothing and a road one third, but only when the square being left has one
+ * too — as in the original, a road speeds you ALONG it, so stepping onto one from open
+ * ground (or off it) pays the destination's terrain. Anything else is the destination
+ * terrain's own cost. A city square counts as a road end (the original lays one under
+ * every city) — callers mark it with `city`, see roadEnd. The one table both the rules
+ * (the path actually taken) and the flood fills (where a unit may go, how far a goal
+ * is) charge from.
  */
-export function stepThirds(tile, domain) {
+export function stepThirds(from, to, domain) {
   if (domain === 'air') return THIRDS;
-  if (tile?.hasRail) return 0;
-  if (tile?.hasRoad) return 1;
-  return ((tile ? TERRAIN[tile.terrain]?.moveCost : null) ?? 1) * THIRDS;
+  if (from?.hasRail && to?.hasRail) return 0;
+  if (from?.hasRoad && to?.hasRoad) return 1;
+  return ((to ? TERRAIN[to.terrain]?.moveCost : null) ?? 1) * THIRDS;
+}
+
+/** `tile` as one end of a step: a city square carries a road whatever the map says. */
+export function roadEnd(tile, isCity) {
+  return isCity && tile && !tile.hasRoad ? { ...tile, hasRoad: true } : tile;
 }
