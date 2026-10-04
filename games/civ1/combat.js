@@ -2,6 +2,22 @@ import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
 import { wonderEffectsFor } from './improvements.js';
 
+/**
+ * How much of a move an attacker has to swing with, in whole thirds, capped at 3 (a
+ * full blow). Moves are thirds, but road steps of 1/3 leave floating-point slivers —
+ * three of them off one move leave 1.1e-16, not 0 — so this snaps to the nearest third:
+ * a sliver is no move at all, and offers no attack (getLegalActions).
+ *
+ * A unit with no moves at all (an enemy between its own turns, a defender asked
+ * "what could it do to me") is weighed at full strength: what it would hit with next
+ * turn, which is the only question anyone asks about it.
+ */
+export function attackThirds(unit) {
+  const left = unit.movesLeft;
+  if (!(left > 0)) return 3;
+  return Math.min(3, Math.round(left * 3));
+}
+
 export function getCombatStrengths(attacker, defender, state) {
   const atkStats = UNITS[attacker.type];
   const defStats = UNITS[defender.type];
@@ -30,6 +46,14 @@ export function getCombatStrengths(attacker, defender, state) {
   // Veteran bonus: +50% to both
   if (attacker.attrs?.veteran) att *= 1.5;
   if (defender.attrs?.veteran) def *= 1.5;
+
+  // An attack made on part of a move — what a road leaves over — strikes with that
+  // part of its strength: a third or two thirds. The original's combat routine scales
+  // the attack by RemainingMoves / 3 whenever fewer than three thirds are left (and
+  // CheckPlayerTurn asks "Attack at 1/3 strength?" first — the attack action's label in
+  // Civ1Game.js). Counted in whole thirds (attackThirds), as the original does.
+  const thirds = attackThirds(attacker);
+  if (thirds < 3) att *= thirds / 3;
 
   // A fortress doubles a land defender's strength (the original's combat routine, CIV.EXE
   // segment 29f3, OpenCivOne F0_29f3_000e) — INSTEAD of the fortify bonus, not on top

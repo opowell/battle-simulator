@@ -10,7 +10,7 @@
 // is common knowledge, so the attacker knows where to march before it can see it.
 
 import { UNITS } from './units.js';
-import { inFortress } from './combat.js';
+import { inFortress, attackThirds } from './combat.js';
 
 /**
  * @returns {null | { role: 'attacker'|'defender', cityId, cityPos, turnsLeft }}
@@ -43,6 +43,14 @@ const SIEGE_STAKE = 200;
 
 export function siegeAttackFloor(siege) {
   return siege.turnsLeft <= 2 ? 0 : SIEGE_MIN_WIN_PROB;
+}
+
+// A blow at the city on part of a move — a road step taken first — lands at that part
+// of its strength (combat.js). The garrison is not going anywhere, so with turns in hand
+// the blow waits for next turn's full move, as a player asked "Attack at 2/3 strength?"
+// would; on the last two turns any blow is worth it (siegeAttackFloor).
+export function waitsForFullStrength(siege, attacker) {
+  return siege.turnsLeft > 2 && attackThirds(attacker) < 3;
 }
 
 export function siegeAttackWant(want, P) {

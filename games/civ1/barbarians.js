@@ -20,6 +20,7 @@ import { UNITS } from './units.js';
 import { mintId, takenIds } from './ids.js';
 import { TERRAIN } from './terrain.js';
 import { wrapX, wrapWidth, makeZoneOfControl } from './map.js';
+import { attackThirds } from './combat.js';
 
 // The owner id barbarian pieces carry. Never a member of state.players — every
 // `ownerId !== playerId` test in the game already treats them as hostile to everyone,
@@ -247,7 +248,9 @@ function raid(state, rng, deps) {
     // road can stretch that to 9 third-of-a-point steps).
     for (let guard = 0; guard < 12; guard++) {
       const unit = units.find(u => u.id === id);
-      if (!unit || !unit.alive || unit.movesLeft <= 0) break;
+      // attackThirds, not movesLeft > 0: road steps leave floating-point slivers of a
+      // move, and a sliver would swing at no strength at all (combat.js).
+      if (!unit || !unit.alive || unit.movesLeft <= 0 || attackThirds(unit) === 0) break;
 
       const victim = adjacentVictim(unit, units, cities, wrapWidth(board));
       if (victim) {

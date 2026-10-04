@@ -5,7 +5,8 @@
 // with no citizen left is razed, taking every unit it supported with it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Civ1Game } from './index.js';
+import { Civ1Game, getCombatStrengths } from './index.js';
+import { attackThirds } from './combat.js';
 
 const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 
@@ -97,6 +98,55 @@ test('civ1 attack: a lost attack is still the end of the attacker', () => {
   ] }), 'kn', 'ph', attackerLoses);
   assert.equal(byId(state, 'kn').alive, false);
   assert.equal(byId(state, 'kn').movesLeft, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Part of a move, part of the strength
+// ---------------------------------------------------------------------------
+// The original's combat routine (F0_29f3_000e) scales the attack by RemainingMoves / 3
+// whenever fewer than three thirds are left, and CheckPlayerTurn asks the player
+// "Attack at 1/3 strength?" before letting the blow go.
+
+test('civ1 attack: on a third or two thirds of a move the blow lands at that strength', () => {
+  const state = world({ units: [unit('a', 'p2', 'militia', 6, 5)] });
+  const strength = movesLeft =>
+    getCombatStrengths(unit('cat', 'p1', 'catapult', 5, 5, { movesLeft }), byId(state, 'a'), state).att;
+  assert.equal(strength(1), 6, "a catapult's full attack");
+  assert.equal(strength(2 / 3), 4);
+  assert.equal(strength(1 / 3), 2);
+  assert.equal(strength(1 - 1 / 3 - 1 / 3), 2, 'a road-worn 1/3 counts as exactly a third');
+  assert.equal(strength(2), 6, 'more than a move is no stronger than one');
+  assert.equal(strength(0), 6, 'a unit with no moves left is weighed at what it hits with next turn');
+});
+
+test('civ1 attack: a weakened attack says so on the button, and a full one does not', () => {
+  const at = movesLeft => Civ1Game.getLegalActions(world({ units: [
+    unit('leg', 'p1', 'legion', 5, 5, { movesLeft }),
+    unit('a', 'p2', 'militia', 6, 5),
+  ] }), 'p1').find(a => a.type === 'attack');
+  assert.equal(at(1 / 3).label, 'Attack a at 1/3 strength');
+  assert.equal(at(2 / 3).label, 'Attack a at 2/3 strength');
+  assert.equal(at(1).label, undefined);
+  assert.equal(at(2).label, undefined);
+});
+
+test('civ1 attack: three road steps leave no move to attack with', () => {
+  // Three thirds off one move leave 1.1e-16 in floating point. That sliver is no move:
+  // the original counts in whole thirds, so there is nothing left to swing with.
+  let state = world({ units: [
+    unit('leg', 'p1', 'legion', 5, 5),
+    unit('a', 'p2', 'militia', 9, 5),
+  ] });
+  state = { ...state, board: { ...state.board, tiles: Object.fromEntries(
+    Object.entries(state.board.tiles).map(([k, t]) => [k, { ...t, hasRoad: true }])) } };
+  for (let x = 6; x <= 8; x++) {
+    state = Civ1Game.applyActions(state, [{ playerId: 'p1',
+      action: { type: 'move', unitId: 'leg', from: byId(state, 'leg').position, to: { x, y: 5 } } }]);
+  }
+  assert.deepEqual(byId(state, 'leg').position, { x: 8, y: 5 });
+  assert.ok(byId(state, 'leg').movesLeft < 1e-9);
+  assert.equal(Civ1Game.getLegalActions(state, 'p1').some(a => a.type === 'attack'), false);
+  assert.equal(attackThirds(byId(state, 'leg')), 0);
 });
 
 // ---------------------------------------------------------------------------

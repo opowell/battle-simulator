@@ -1,7 +1,7 @@
 import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
-import { resolveCombat, pickDefender } from './combat.js';
+import { resolveCombat, pickDefender, attackThirds } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, makeZoneOfControl, renderMap, wrapX, wrapWidth, boardWraps } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
@@ -231,7 +231,12 @@ function getLegalActions(state, playerId) {
       // that defender, which is also what an agent weighs its odds against (ai.js) —
       // and resolveAttack re-picks it at resolution time anyway, so an action planned
       // against a stale stack still hits whoever is actually holding the square.
-      if (stats.attack > 0) {
+      // On part of a move the blow lands at that part of its strength (combat.js), which
+      // the original asks about before it lets you swing: "Attack at 1/3 strength?".
+      // Said on the action instead, so the button reads it. A floating-point sliver of a
+      // move (attackThirds rounds it to 0) is no move to attack with.
+      const thirds = attackThirds(unit);
+      if (stats.attack > 0 && thirds > 0) {
         const squares = new Map();   // "x,y" -> the enemies standing there
         for (const enemy of units) {
           if (!enemy.alive || enemy.ownerId === playerId) continue;
@@ -242,9 +247,11 @@ function getLegalActions(state, playerId) {
           if (!squares.has(k)) squares.set(k, []);
           squares.get(k).push(enemy);
         }
+        const weak = thirds < 3 ? ` at ${thirds}/3 strength` : '';
         for (const defenders of squares.values()) {
           const target = pickDefender(unit, defenders, state);
-          actions.push({ type: 'attack', unitId: unit.id, targetId: target.id });
+          actions.push({ type: 'attack', unitId: unit.id, targetId: target.id,
+                         ...(weak ? { label: `Attack ${target.id}${weak}` } : {}) });
         }
       }
 

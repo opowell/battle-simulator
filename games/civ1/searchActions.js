@@ -46,7 +46,8 @@ import {
   productionContext, rankProductionActions, RESEARCH_PRIORITY,
 } from './production.js';
 import {
-  siegeRole, siegeAttackFloor, siegeAttackWant, isMounted, atSiegeCity, chooseSiegeProduction, holdsFort,
+  siegeRole, siegeAttackFloor, siegeAttackWant, waitsForFullStrength, isMounted, atSiegeCity,
+  chooseSiegeProduction, holdsFort,
 } from './objective.js';
 
 // Horizontally-wrapped Chebyshev distance. Deliberately re-derived here rather
@@ -232,7 +233,7 @@ function unitActions(legal, obs, playerId, unit) {
     if (!defender) continue;
     let { want, P } = killDesire(unit, defender, obs);
     if (siege?.role === 'attacker' && atSiegeCity(siege, defender.position)) {
-      if (P < siegeAttackFloor(siege)) continue;
+      if (P < siegeAttackFloor(siege) || waitsForFullStrength(siege, unit)) continue;
       want = siegeAttackWant(want, P);
     } else if (P < MIN_WIN_PROB) continue;
     attacks.push({ action: a, score: want });

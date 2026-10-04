@@ -19,7 +19,8 @@ import {
 } from './production.js';
 import { wrapWidth, marchDistances } from './map.js';
 import {
-  siegeRole, siegeAttackFloor, siegeAttackWant, isMounted, atSiegeCity, chooseSiegeProduction, holdsFort,
+  siegeRole, siegeAttackFloor, siegeAttackWant, waitsForFullStrength, isMounted, atSiegeCity,
+  chooseSiegeProduction, holdsFort,
 } from './objective.js';
 
 // Both priority lists and the production scorer live in production.js, shared with
@@ -365,7 +366,7 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         // Taking it: the garrison is the objective, not a trade — every blow that
         // lands is a defender the assault no longer has to get through (objective.js).
         if (siege?.role === 'attacker' && inSiegeCity(defender.position)) {
-          if (P < siegeAttackFloor(siege)) continue;
+          if (P < siegeAttackFloor(siege) || waitsForFullStrength(siege, attacker)) continue;
           want = siegeAttackWant(want, P);
         } else if (P < minWinProb) continue;
         if (want > bestWant) { bestWant = want; bestAttack = a; }
