@@ -10,6 +10,13 @@ import { settings } from './settings.js'
 
 export const OPEN_SESSION = Symbol('open-session')
 
+/**
+ * The boxes the sessions open in the console are showing in, by session id —
+ * a reactive Map SessionPlay fills while its tab is in front, and SessionFrames
+ * lays each session's iframe over.
+ */
+export const SESSION_SLOTS = Symbol('session-slots')
+
 export function useSessionOpener() {
   const openHere = inject(OPEN_SESSION, null)
   const inNewTab = () => settings.sessionsInNewTab || !openHere

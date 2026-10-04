@@ -3,19 +3,20 @@
 // server knows about (catalog.js), with each record opened beside it as a tab,
 // and each session opened inside the console as a tab beside the whole of that.
 // What is open, and where, is held in the URL with the query.
-import { computed, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch } from 'vue'
 import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, panelIds, panelNode, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'header-content-layout'
 import { api, basePath, playUrl } from './api.js'
 import { buildSchema } from './schema.js'
 import { buildRows } from './rows.js'
 import { createCatalogSource } from './source.js'
 import { settings } from './settings.js'
-import { OPEN_SESSION } from './opener.js'
+import { OPEN_SESSION, SESSION_SLOTS } from './opener.js'
 import Art from './components/Art.vue'
 import RecordPanel from './components/RecordPanel.vue'
 import CreatePanel from './components/CreatePanel.vue'
 import GameSummaryCards from './components/GameSummaryCards.vue'
 import SessionPlay from './components/SessionPlay.vue'
+import SessionFrames from './components/SessionFrames.vue'
 
 const THEME = 'dark'
 
@@ -141,6 +142,41 @@ function openSession(sessionId) {
 }
 provide(OPEN_SESSION, openSession)
 
+// The boxes the open sessions show in; SessionFrames lays the play UI over them.
+const sessionSlots = reactive(new Map())
+provide(SESSION_SLOTS, sessionSlots)
+const sessionIds = computed(() => opened.value.filter((o) => o.kind === 'session').map((o) => o.sessionId))
+
+/** A tab that is a strip holding nothing but one space: that space. */
+const lone = (tab) => (typeof tab !== 'string' && tab.kind === 'group' && tab.panels.length === 1 && typeof tab.panels[0] !== 'string' ? tab.panels[0] : null)
+
+/**
+ * The window once the last session has gone: the console again, not a strip of
+ * one tab still holding it — which the next session would wrap in a strip of
+ * its own, a console inside a console. A console tab nested like that already
+ * (a URL from before this) is lifted out of its extra strip too.
+ */
+function settle(node) {
+  if (node?.kind !== 'group') return node
+  let changed = false
+  const panels = node.panels.map((tab) => {
+    let inner = tab
+    while (lone(inner)) inner = { ...lone(inner), title: inner.title ?? lone(inner).title }
+    if (inner !== tab) changed = true
+    return inner
+  })
+  if (panels.length === 1 && typeof panels[0] !== 'string') {
+    const { title, ...space } = panels[0]
+    return space
+  }
+  return changed ? { ...node, panels } : node
+}
+// Whatever left it so — a close, a tab carried off, a URL.
+watch(layout, (node) => {
+  const settled = settle(node)
+  if (settled !== node) layout.value = settled
+}, { immediate: true })
+
 function close(id) {
   layout.value = removePanel(layout.value, id) ?? home()
 }
@@ -191,70 +227,73 @@ const gameRows = computed(() => rows.value?.games ?? [])
 <template>
   <p v-if="!schema && loadError" class="cx-boot cx-boot--err">Could not load the catalog: {{ loadError }}</p>
   <p v-else-if="!schema" class="cx-boot">Loading the catalog…</p>
-  <WindowFrame
-    v-else
-    v-model:layout="layout"
-    class="cx-window"
-    :panels="panels"
-    :theme="THEME"
-    movable
-    @panel-close="close"
-  >
-    <template #panel="{ panel }">
-      <DataShell
-        v-if="panel.id === 'browse'"
-        :schema="schema"
-        :source="source"
-        :theme="THEME"
-        :defaults="{ sort: 'age', dir: 'asc' }"
-        @activate="openRow"
-        @create="openCreate"
-      >
-        <!-- Pressing a game narrows to it (its type declares a scope); every
-             other row opens. The game itself then heads the cards. -->
-        <template #cards-before>
-          <GameSummaryCards :games="gameRows" @open="openRow" @changed="refresh" />
-        </template>
-        <template #actions>
-          <button type="button" class="cx-btn cx-btn--quiet" :disabled="loading" title="Reload everything from the server" @click="refresh">
-            {{ loading ? 'Loading…' : 'Refresh' }}
-          </button>
-          <a class="cx-btn cx-btn--quiet" :href="`${basePath}/ui/design/`" target="_blank" rel="noopener">Play UI ↗</a>
-        </template>
-      </DataShell>
-      <RecordPanel
-        v-else-if="itemFor(panel.id)?.kind === 'record'"
-        :row="rowsById.get(itemFor(panel.id).rowId) ?? null"
-        :rows="rows"
-        @changed="refresh"
-        @created="(rowId) => openCreated(rowId)"
-        @open="openRow"
-        @close="close(panel.id)"
-      />
-      <CreatePanel
-        v-else-if="itemFor(panel.id)?.kind === 'create'"
-        :entity-key="itemFor(panel.id).entityKey"
-        :rows="rows"
-        @created="(rowId) => openCreated(rowId, panel.id)"
-      />
-      <SessionPlay v-else-if="itemFor(panel.id)?.kind === 'session'" :session-id="itemFor(panel.id).sessionId" />
-    </template>
-    <template #actions="{ panel }">
-      <a
-        v-if="itemFor(panel.id)?.kind === 'session'"
-        class="cx-btn cx-btn--quiet"
-        :href="playUrl.session(itemFor(panel.id).sessionId)"
-        target="_blank"
-        rel="noopener"
-        title="Open this session in a browser tab of its own"
-      >↗</a>
-    </template>
-  </WindowFrame>
+  <div v-else class="cx-root">
+    <WindowFrame
+      v-model:layout="layout"
+      class="cx-window"
+      :panels="panels"
+      :theme="THEME"
+      movable
+      @panel-close="close"
+    >
+      <template #panel="{ panel }">
+        <DataShell
+          v-if="panel.id === 'browse'"
+          :schema="schema"
+          :source="source"
+          :theme="THEME"
+          :defaults="{ sort: 'age', dir: 'asc' }"
+          @activate="openRow"
+          @create="openCreate"
+        >
+          <!-- Pressing a game narrows to it (its type declares a scope); every
+               other row opens. The game itself then heads the cards. -->
+          <template #cards-before>
+            <GameSummaryCards :games="gameRows" @open="openRow" @changed="refresh" />
+          </template>
+          <template #actions>
+            <button type="button" class="cx-btn cx-btn--quiet" :disabled="loading" title="Reload everything from the server" @click="refresh">
+              {{ loading ? 'Loading…' : 'Refresh' }}
+            </button>
+            <a class="cx-btn cx-btn--quiet" :href="`${basePath}/ui/design/`" target="_blank" rel="noopener">Play UI ↗</a>
+          </template>
+        </DataShell>
+        <RecordPanel
+          v-else-if="itemFor(panel.id)?.kind === 'record'"
+          :row="rowsById.get(itemFor(panel.id).rowId) ?? null"
+          :rows="rows"
+          @changed="refresh"
+          @created="(rowId) => openCreated(rowId)"
+          @open="openRow"
+          @close="close(panel.id)"
+        />
+        <CreatePanel
+          v-else-if="itemFor(panel.id)?.kind === 'create'"
+          :entity-key="itemFor(panel.id).entityKey"
+          :rows="rows"
+          @created="(rowId) => openCreated(rowId, panel.id)"
+        />
+        <SessionPlay v-else-if="itemFor(panel.id)?.kind === 'session'" :session-id="itemFor(panel.id).sessionId" />
+      </template>
+      <template #actions="{ panel }">
+        <a
+          v-if="itemFor(panel.id)?.kind === 'session'"
+          class="cx-btn cx-btn--quiet"
+          :href="playUrl.session(itemFor(panel.id).sessionId)"
+          target="_blank"
+          rel="noopener"
+          title="Open this session in a browser tab of its own"
+        >↗</a>
+      </template>
+    </WindowFrame>
+    <SessionFrames :session-ids="sessionIds" :slots="sessionSlots" />
+  </div>
 </template>
 
 <style>
 /* Shared by every panel. Written against appfr's tokens, so the panels wear
    whatever theme the window does. */
+.cx-root { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .cx-window { flex: 1; min-height: 0; }
 
 /* The window runs edge to edge: no inset round it, no box round each pane — the
