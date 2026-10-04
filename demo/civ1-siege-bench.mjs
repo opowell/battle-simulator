@@ -3,8 +3,9 @@
 // Math.random — the seed below only fixes the agents' own tie-breaks — so read the rate
 // over 100+ games, not a handful.
 //
-//   node demo/civ1-siege-bench.mjs <games> [--size N] [--walls]
+//   node demo/civ1-siege-bench.mjs <games> [--map ID] [--size N] [--walls]
 //
+//   --map ID   another take-city battle from the same file (default: siege)
 //   --size N   the city's size (the map says 3): a beaten garrison costs a citizen and
 //              a city with none left is razed, so this is the attacker's win count
 //   --walls    give the city City Walls (no shrinking, x3 defence against land units)
@@ -22,7 +23,8 @@ const arg = (name) => { const i = process.argv.indexOf(name); return i < 0 ? nul
 const SIZE = arg('--size');
 const WALLS = process.argv.includes('--walls');
 
-const map = getFixedMap('siege');
+const MAP = arg('--map') ?? 'siege';
+const map = getFixedMap(MAP);
 const city = map.cities[0];
 if (SIZE != null) city.size = Number(SIZE);
 if (WALLS) city.buildings = [...new Set([...(city.buildings ?? []), 'city-walls'])];
@@ -39,7 +41,7 @@ for (const part of (arg('--swap') ?? '').split(';').filter(Boolean)) {
     if (left > 0 && u.side === 2 && u.x === x && u.y === y && u.type === fromType) { u.type = toType; left--; }
   }
 }
-const forts = map.fortresses.map(([x, y]) => `${x},${y}`);
+const forts = (map.fortresses ?? []).map(([x, y]) => `${x},${y}`);
 
 const tally = { attacker: 0, defender: 0, other: 0, turns: 0, reasons: {} };
 const sum = { attLost: 0, defLost: 0, fortsHeldT5: 0, fortsHeldEnd: 0, fortsTaken: 0, sorties: 0, sortieKills: 0 };
@@ -48,7 +50,7 @@ for (let g = 0; g < GAMES; g++) {
   const engine = new GameEngine(Civ1Game, [
     { id: 'p1', name: 'Attacker', agent: makeCiv1Agent({ id: 'att' }) },
     { id: 'p2', name: 'Defender', agent: makeCiv1Agent({ id: 'def' }) },
-  ], { seed: 1000 + g, scenario: 'siege', fogOfWar: true });
+  ], { seed: 1000 + g, scenario: MAP, fogOfWar: true });
   engine._init();
 
   const held = (s, owner) => forts.filter(k => s.units.some(u => u.alive && u.ownerId === owner && `${u.position.x},${u.position.y}` === k)).length;
@@ -88,7 +90,7 @@ for (let g = 0; g < GAMES; g++) {
 
 const pct = n => `${(100 * n / GAMES).toFixed(0)}%`;
 const avg = n => (n / GAMES).toFixed(2);
-console.log(`siege x${GAMES}  city size ${city.size}${WALLS ? ' + walls' : ''}`);
+console.log(`${MAP} x${GAMES}  city size ${city.size}${WALLS ? ' + walls' : ''}`);
 console.log(`  attacker wins ${tally.attacker} (${pct(tally.attacker)})  defender ${tally.defender} (${pct(tally.defender)})  other ${tally.other}  avg end turn ${avg(tally.turns)}`);
 console.log(`  reasons ${JSON.stringify(tally.reasons)}`);
 console.log(`  units lost/game: attacker ${avg(sum.attLost)}  defender ${avg(sum.defLost)}`);

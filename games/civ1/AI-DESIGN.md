@@ -523,6 +523,30 @@ Barracks is the only building that moves the number: everything the city trains 
 out a veteran. Walls end the siege outright — they stop a beaten garrison costing
 citizens and treble its defence against land units.
 
+## Five battles before the Siege (2026-10-04)
+
+A ladder up to the Siege, every one smaller and easier than it, each bringing in one
+thing more. Measured with `node demo/civ1-siege-bench.mjs N --map ID` (heuristic both
+sides, fog on):
+
+| battle | map | army | turns | adds | attacker wins |
+| --- | --- | --- | --- | --- | --- |
+| `outpost` | 10x6 | 3 v 1 | 10 | walk up and strike | 100% (100/100) |
+| `border-town` | 13x8 | 6 v 2 | 12 | a garrison dug in | 89% (177/200) |
+| `river-fort` | 15x9 | 11 v 4 | 12 | a hill fort, catapults | 75% (150/200) |
+| `twin-forts` | 17x11 | 14 v 8 | 15 | two forts, a sortie rider | 49% (246/500) |
+| `highland-pass` | 20x13 | 20 v 11 | 16 | three forts, knights, the Siege in small | 39% (77/200) |
+| `siege` | 26x17 | 28 v 20 | 20 | | 22% |
+
+Tuning on the way, 100 games each: two fortified phalanxes in the Border Town made it 68%
+(a militia for one of them: 89%); River Fort with ten attackers 57%; Twin Forts with a
+horseman beside the chariot 35% (the attacker's whole army died in 65 of the 100 games
+— sorties at whatever is left in the open), the chariot alone 64%, alone plus a
+fifth phalanx in the city 43%, plus a militia instead (as built) 49%; Highland Pass with five phalanxes in the
+city 26%, too close to the Siege. Most "wins" on the small maps are a razed city
+(`civilization-destroyed`), not a capture: a size-2 or size-3 city loses a citizen to
+every garrison unit beaten.
+
 ## Revised order
 
 The original plan had `set-production` last, as an unlock for the personality material. That
