@@ -6,8 +6,9 @@
 //          over the whole screen whose bare desktop lets every click through to
 //          the board under it; only the windows themselves catch the pointer.
 //   dock   the panels are a column of their own beside the board, sharing it as
-//          appfr panes (split, tabbed, dragged about — appfr's own menu on the
-//          column's bar). Choosing "Desktop" from that menu floats them again.
+//          appfr panes (split, tabbed, dragged about). The column draws no bar of
+//          its own — the panels' own bars head it; the menu's "Panels" switch
+//          floats them again.
 //
 // A panel that says `dock: true` is pinned to the column whatever the mode: the
 // column is then there even while everything else floats, holding just those —
@@ -31,7 +32,6 @@ const props = defineProps({
 });
 const emit = defineEmits(['close', 'update:mode']);
 
-const DOCK_TITLE = 'Panels';
 const RECTS_KEY = 'bs_panel_rects';
 const DOCK_W_KEY = 'bs_dock_width';
 
@@ -126,7 +126,7 @@ function syncDock() {
   const present = next ? panelIds(next) : [];
   const missing = ids.filter(id => !present.includes(id));
   if (!missing.length) { dockLayout.value = next; return; }
-  next = next ?? column([panelNode(missing.shift())], undefined, DOCK_TITLE);
+  next = next ?? headless(column([panelNode(missing.shift())]));
   for (const id of missing) next = insertPanel(next, id, panelIds(next).at(-1), 'bottom');
   // A column of single panels shares its height by what each asked for, so a small
   // panel (the minimap) is not handed as much of it as a long one (the orders).
@@ -139,16 +139,15 @@ function syncDock() {
 watch(() => floating.value.map(p => p.id).join('|'), syncFloat, { immediate: true });
 watch(() => docked.value.map(p => p.id).join('|'), syncDock, { immediate: true });
 
-// While everything else floats, the column holds only pinned panels, and its menu
-// offers no way to float it — they are pinned. Docked, it is everyone's column, and
-// "Desktop" from its menu floats the rest (onDockLayout).
+// While everything else floats, the column holds only pinned panels, and nothing
+// offers to float it — they are pinned. Docked, it is everyone's column.
 const dockShown = computed(() => dockLayout.value
   && { ...dockLayout.value, fixedView: props.mode !== 'dock' });
 
 function onFloatLayout(next) { floatLayout.value = next; }
 
-// "Desktop" chosen from the column's own menu floats the panels: the desk follows,
-// and the desktop loses the bar it would otherwise draw across the top of the board.
+// A column turned into a desktop floats the panels: the desk
+// follows, and the desktop loses the bar it would otherwise draw across the board.
 // The pinned panels leave it again for a column of their own once the mode has
 // flipped (syncFloat / syncDock).
 function onDockLayout(next) {
@@ -257,4 +256,6 @@ const tokens = {
 .pd--float :deep(.dc-window > .dc-space) { border: none; background: transparent; }
 .pd--float :deep(.dc-float) { pointer-events: auto; }
 .pd--dock :deep(.dc-window) { padding: 6px; }
+/* Docked, the column is no box of its own: the panels sit straight on it. */
+.pd--dock :deep(.dc-window > .dc-space) { border: none; background: transparent; }
 </style>
