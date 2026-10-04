@@ -1005,18 +1005,12 @@ const CLEARS_TO = { forest: 'plains', jungle: 'grassland', swamp: 'grassland' };
 function getResult(state) {
   const playerIds = state.players.map(p => p.id);
 
-  // A fixed battle's own objective (fixedMaps.js). Capturing the city also destroys
-  // the defender (it is their only one), which the conquest check below would call
-  // anyway — this names it for what it was. Holding out past the last round wins
-  // the defence; an attacking army wiped out first falls to the conquest check.
+  // A fixed battle's own objective (fixedMaps.js), named for what decided it. The
+  // attacker has `turns` rounds to do it; once they are over, a defender still
+  // standing has won. An army wiped out before then falls to the conquest check below.
   const obj = state.gameSpecific?.objective;
-  if (obj?.type === 'take-city') {
-    const city = state.cities.find(c => c.id === obj.cityId);
-    if (city && city.ownerId === obj.attackerId) return { outcome: 'win', winnerId: obj.attackerId, reason: 'city-taken' };
-    if (state.turnNumber > obj.turns && isCivAlive(state, obj.defenderId)) {
-      return { outcome: 'win', winnerId: obj.defenderId, reason: 'city-held' };
-    }
-  }
+  const fixed = obj && objectiveResult(state, obj);
+  if (fixed) return fixed;
 
   // Space race: a launched spaceship that has reached Alpha Centauri wins — provided
   // its owner still holds a capital (losing the capital destroys the ship).
@@ -1040,17 +1034,65 @@ function getResult(state) {
   return null;
 }
 
-// The header's date line during a fixed battle: the clock that matters is the
-// rounds left to take the city, not the calendar. Null when there is no objective.
+// What decides a fixed battle (fixedMaps.js objective), or null while it is open.
+function objectiveResult(state, obj) {
+  const att = obj.attackerId, def = obj.defenderId;
+  const win = (winnerId, reason) => ({ outcome: 'win', winnerId, reason });
+  const on = (u, at) => u.alive && u.position.x === at.x && u.position.y === at.y;
+  switch (obj.type) {
+    case 'take-city': {
+      // All of the defender's cities: each one the attacker's, or razed.
+      const ids = obj.cityIds ?? [obj.cityId];
+      const standing = ids.map(id => state.cities.find(c => c.id === id)).filter(Boolean);
+      if (standing.length && standing.every(c => c.ownerId === att)) return win(att, 'city-taken');
+      break;
+    }
+    case 'seize':
+      if (state.units.some(u => u.ownerId === att && on(u, obj.at))) return win(att, 'position-taken');
+      break;
+    case 'escort': {
+      const escort = state.units.find(u => u.id === obj.escortId);
+      // (Missing altogether is a fogged view of it, not a death: the dead stay listed.)
+      if (escort && on(escort, obj.at)) return win(att, 'escort-arrived');
+      if (escort && !escort.alive) return win(def, 'escort-lost');
+      break;
+    }
+    case 'rout':
+      if (!state.units.some(u => u.alive && u.ownerId === def) && !state.cities.some(c => c.ownerId === def)) {
+        return win(att, 'army-routed');
+      }
+      break;
+  }
+  if (state.turnNumber > obj.turns && isCivAlive(state, def)) {
+    return win(def, { 'take-city': 'city-held', seize: 'position-held', escort: 'escort-stopped', rout: 'army-escaped' }[obj.type]);
+  }
+  return null;
+}
+
+// The header's date line during a fixed battle: the clock that matters is the rounds
+// left to do what the battle is about, not the calendar. Null when there is no objective.
 function objectiveLabel(state) {
   const obj = state.gameSpecific?.objective;
-  if (obj?.type !== 'take-city') return null;
-  // Out of the attacker's sight at the start, but its name is no secret: the opening
-  // roster is common knowledge.
-  const city = state.cities.find(c => c.id === obj.cityId)
-    ?? state.gameSpecific.startRoster?.cities?.find(c => c.id === obj.cityId);
+  if (!obj) return null;
   const left = Math.max(0, obj.turns - state.turnNumber + 1);
-  return `${city?.name ?? 'The city'}: ${left === 1 ? 'last turn' : `${left} turns left`}`;
+  const clock = left === 1 ? 'last turn' : `${left} turns left`;
+  if (obj.type === 'take-city') {
+    // Out of the attacker's sight at the start, but their names are no secret: the
+    // opening roster is common knowledge.
+    const name = id => (state.cities.find(c => c.id === id)
+      ?? state.gameSpecific.startRoster?.cities?.find(c => c.id === id))?.name;
+    const names = (obj.cityIds ?? [obj.cityId]).map(name).filter(Boolean);
+    return `${names.length ? names.join(' & ') : 'The city'}: ${clock}`;
+  }
+  return `${obj.name ?? { seize: 'The position', escort: 'The escort', rout: 'The rout' }[obj.type]}: ${clock}`;
+}
+
+// The square a seize or an escort is about, drawn on the board for everyone: where to
+// march (or what to hold) is no secret. Empty for a battle about cities or armies.
+function objectiveZones(state) {
+  const obj = state.gameSpecific?.objective;
+  if (!obj?.at) return [];
+  return [{ x: obj.at.x, y: obj.at.y, w: 1, h: 1, kind: 'objective', label: obj.type === 'escort' ? 'Goal' : 'Hold' }];
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -1091,6 +1133,37 @@ function renderState(state) {
 // ── Fixed scenarios ──────────────────────────────────────────────────────────
 //
 // Hand-built boards (ASCII art + unit placements) authored in fixedMaps.js.
+
+// A fixed map's entry in the scenario menu.
+const fixedScenario = m => ({
+  id: m.id, name: m.name, description: m.description, config: m.config ?? {},
+  ...(m.next ? { next: m.next } : {}),
+});
+
+const OBJECTIVE_TYPES = new Set(['take-city', 'seize', 'escort', 'rout']);
+
+// A fixed map's `objective` (fixedMaps.js) as the state keeps it: seat ids for its
+// sides, the defender's cities by id, the square to seize or reach as {x,y}, the
+// escorted unit by id. Null for a map without one.
+function resolveObjective(map, sides, cities, units) {
+  const o = map.objective;
+  if (!OBJECTIVE_TYPES.has(o?.type)) return null;
+  const attackerId = sides[o.attacker - 1].id;
+  const defenderId = sides[o.defender - 1].id;
+  const base = { type: o.type, attackerId, defenderId, turns: o.turns, ...(o.name ? { name: o.name } : {}) };
+  if (o.type === 'take-city') {
+    // Every city the defender opens with: taking them all is the win.
+    const cityIds = cities.filter(c => c.ownerId === defenderId).map(c => c.id);
+    return { ...base, cityId: cityIds[0] ?? null, cityIds };
+  }
+  if (o.type === 'seize') return { ...base, at: { x: o.at[0], y: o.at[1] } };
+  if (o.type === 'escort') {
+    const i = map.units.findIndex(u => u.escort);
+    return { ...base, at: { x: o.at[0], y: o.at[1] }, escortId: units[i]?.id ?? null };
+  }
+  return base;   // rout
+}
+
 // Build a full initial state from one of those map definitions.
 function createFixedMapState(map, players, config) {
   const board = parseFixedMap(map);
@@ -1128,15 +1201,9 @@ function createFixedMapState(map, players, config) {
   const civ = Object.fromEntries(players.map(p => [p.id, newCivState()]));
   for (const c of cities) civ[c.ownerId] = { ...civ[c.ownerId], hadCity: true };
 
-  // The objective, with its sides resolved to seat ids so getResult never has to
-  // look the map up again.
-  const objective = map.objective?.type === 'take-city' ? {
-    type: 'take-city',
-    attackerId: sides[map.objective.attacker - 1].id,
-    defenderId: sides[map.objective.defender - 1].id,
-    cityId: cities.find(c => c.ownerId === sides[map.objective.defender - 1].id)?.id ?? null,
-    turns: map.objective.turns,
-  } : null;
+  // The objective, with its sides resolved to seat ids (and its city, square or escort
+  // to ids and positions) so getResult never has to look the map up again.
+  const objective = resolveObjective(map, sides, cities, units);
 
   return {
     gameName: 'Civ1',
@@ -1925,6 +1992,9 @@ export const Civ1Game = {
     },
   },
   scenarios: [
+    // The fixed battles first, in the order they are meant to be played (fixedMaps.js:
+    // easiest first, ending with the Siege) — the console lists scenarios in this order.
+    ...FIXED_MAPS.filter(m => m.objective).map(fixedScenario),
     // A full table rather than a duel: the original was a six-civ world, and one rival
     // on a 50x30 map leaves both of you to develop alone for most of the game. The five
     // are split between the two AIs so the world plays more than one way — the greedy
@@ -1945,11 +2015,8 @@ export const Civ1Game = {
         ],
       },
     },
-    // Hand-built fixed maps (see fixedMaps.js).
-    ...FIXED_MAPS.map(m => ({
-      id: m.id, name: m.name, description: m.description, config: m.config ?? {},
-      ...(m.next ? { next: m.next } : {}),
-    })),
+    // The other hand-built maps (see fixedMaps.js): worlds, and boards for testing.
+    ...FIXED_MAPS.filter(m => !m.objective).map(fixedScenario),
     // An exhibition rather than a game: both seats are AI and none is yours, which
     // is exactly the condition the server puts on observer lock-step (api-server.js
     // Session.observerPaced) — it computes one step, waits for the watching client
@@ -2647,6 +2714,7 @@ export const Civ1Game = {
     return {
       width, height, cells, wrap: boardWraps(board), civ, cities: citiesOut, military, statusChips, extraTeams, battles,
       turnLabel: objectiveLabel(state) ?? yearLabel(state.turnNumber),
+      zones: objectiveZones(state),
       // Per-session view settings, layered over the static `ui` above (see App.vue's
       // buildField): whether a played turn ends itself, as the setup form asked.
       // On a revealed battlefield (fixedMaps.js) every square is known ground from

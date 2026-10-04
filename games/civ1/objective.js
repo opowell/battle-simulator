@@ -13,22 +13,56 @@ import { UNITS } from './units.js';
 import { inFortress, attackThirds } from './combat.js';
 
 /**
- * @returns {null | { role: 'attacker'|'defender', cityId, cityPos, turnsLeft }}
+ * @returns {null | { role: 'attacker'|'defender', kind, cityId, cityIds, cityPos, targets,
+ *   escortId, turnsLeft }}
+ *   kind is the objective's type (fixedMaps.js). cityPos is the square the attacker is
+ *   making for — the objective city still to take nearest its army, the square to
+ *   seize, or the escort's destination — and targets every square that counts (all the
+ *   cities still to take). cityId is the city at cityPos, or null when it is a square.
  *   turnsLeft counts this turn: 1 means this is the attacker's last chance.
+ *   Null outside a fixed battle, and in a rout — a battle in the open is the open
+ *   game's own fight, with nothing to march on but the enemy.
  */
 export function siegeRole(state, playerId) {
   const obj = state.gameSpecific?.objective;
-  if (obj?.type !== 'take-city') return null;
+  if (!obj || obj.type === 'rout') return null;
   const role = obj.attackerId === playerId ? 'attacker' : obj.defenderId === playerId ? 'defender' : null;
   if (!role) return null;
-  const city = state.cities.find(c => c.id === obj.cityId)
-    ?? state.gameSpecific.startRoster?.cities?.find(c => c.id === obj.cityId);
-  if (!city) return null;
+  const turnsLeft = Math.max(0, obj.turns - state.turnNumber + 1);
+
+  if (obj.type === 'seize' || obj.type === 'escort') {
+    const pos = { x: obj.at.x, y: obj.at.y };
+    return { role, kind: obj.type, cityId: null, cityIds: [], cityPos: pos, targets: [pos],
+      escortId: obj.escortId ?? null, turnsLeft };
+  }
+  if (obj.type !== 'take-city') return null;
+
+  // Still to take: an objective city standing and not the attacker's. A revealed
+  // battlefield's cities are on everyone's map (getVisibleState), seen or not; one
+  // razed is gone, and off the list.
+  const ids = obj.cityIds ?? [obj.cityId];
+  const cities = ids.map(id => state.cities.find(c => c.id === id))
+    .filter(c => c && c.ownerId !== obj.attackerId);
+  if (!cities.length) return null;
+  // The attacker's next city: the one nearest its army, by the army's centre.
+  let city = cities[0];
+  if (role === 'attacker' && cities.length > 1) {
+    const mine = state.units.filter(u => u.alive && u.ownerId === playerId);
+    if (mine.length) {
+      const cx = mine.reduce((s, u) => s + u.position.x, 0) / mine.length;
+      const cy = mine.reduce((s, u) => s + u.position.y, 0) / mine.length;
+      const d = c => Math.max(Math.abs(c.position.x - cx), Math.abs(c.position.y - cy));
+      city = cities.reduce((b, c) => d(c) < d(b) ? c : b);
+    }
+  }
   return {
-    role,
-    cityId: obj.cityId,
+    role, kind: 'take-city',
+    cityId: city.id,
+    cityIds: cities.map(c => c.id),
     cityPos: city.position,
-    turnsLeft: Math.max(0, obj.turns - state.turnNumber + 1),
+    targets: cities.map(c => c.position),
+    escortId: null,
+    turnsLeft,
   };
 }
 
@@ -59,8 +93,9 @@ export function siegeAttackWant(want, P) {
 
 export const isMounted = type => (UNITS[type]?.special ?? []).includes('mounted');
 
+// Whether `pos` is one of the squares the battle is about (siegeRole's targets).
 export const atSiegeCity = (siege, pos) =>
-  siege != null && pos.x === siege.cityPos.x && pos.y === siege.cityPos.y;
+  siege != null && siege.targets.some(t => pos.x === t.x && pos.y === t.y);
 
 /**
  * Whether `unit` is one of a fort's holders: a foot soldier standing in a fortress

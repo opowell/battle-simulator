@@ -20,16 +20,24 @@
 //
 // Starting units are `{ side: 1|2, type, x, y }`; side 1 → players[0],
 // side 2 → players[1]. Coordinates are 0-indexed from the top-left. A unit may
-// also start `veteran` and/or `fortified` (dug in, with the bonus already earned).
+// also start `veteran` and/or `fortified` (dug in, with the bonus already earned), or
+// be the one an `escort` objective is about (`escort: true`).
 //
 // A battle rather than a world needs a few more pieces, all optional:
 //   cities     `{ side, x, y, name?, size?, buildings? }` standing from turn 1
 //   fortresses `[x, y]` squares with a fortress already built on them (see combat.js:
 //              land defenders x2 instead of fortifying, and no stack death)
-//   objective  `{ type: 'take-city', attacker: 1|2, defender: 1|2, turns }` — the
-//              attacker wins by capturing the defender's city (and so destroying
-//              them); the defender wins by still holding it once `turns` rounds
-//              are over, or by wiping out the attacking army first
+//   objective  `{ type, attacker: 1|2, defender: 1|2, turns, name? }` — what the
+//              attacker has `turns` rounds to do; the defender wins by stopping it
+//              until they are over, or by wiping out the attacking army first. Either
+//              seat can be the attacker. `type` is one of:
+//                take-city  capture (or raze) every city the defender opens with
+//                seize      stand a unit on the square `at: [x, y]`
+//                escort     bring the unit marked `escort: true` to `at: [x, y]`
+//                           alive — it dying loses the battle
+//                rout       destroy every unit the defender has
+//              `name` is what the header's countdown calls it (a take-city names
+//              its cities); a seize's or an escort's square is marked on the board
 //   revealed   true: both sides know the whole battlefield's terrain, and where
 //              its cities stand, from the start (units are still fogged)
 //   openingSpan  how many tiles across the board opens on, at least (the client's
@@ -239,115 +247,141 @@ export const FIXED_MAPS = [
     ],
   },
   // ── Five battles before the Siege, easiest first ───────────────────────────────
-  // Each is smaller than the one after it, and each brings in one thing more: walking
-  // up and striking (Outpost), a garrison dug in (Border Town), a fort and the catapults
-  // to crack it (River Fort), riders sallying from the walls (Twin Forts), and all of it
-  // on a field the size of a real campaign (Highland Pass). Rates are the heuristic
-  // attacker's against the heuristic defender (demo/civ1-siege-bench.mjs --map ID), the
-  // same measure as the Siege's ~22%; a human general should do better.
+  // Each one a different kind of fight on different ground, with the same ancient
+  // armies: hunt a war band down in the open desert (Desert Raiders), hold a stockade
+  // in the frozen north (Outpost), force a mountain pass (Mountain Pass), see a caravan
+  // through the jungle (Caravan), take two towns in a river delta (Two Rivers) — and
+  // then the Siege. Rates are the heuristic AI's against itself
+  // (demo/civ1-siege-bench.mjs --map ID; table in AI-DESIGN.md); a human general
+  // should do better.
+  {
+    id: 'desert-raiders',
+    name: 'Desert Raiders',
+    next: 'outpost',
+    description: 'Very easy: a war band is loose in the river valley. Seven units have 12 turns to hunt down and destroy all six of theirs in the open desert — no walls, no forts',
+    // A battle with no city in it: the raiders win by still having anyone left when the
+    // clock runs out. Open desert, where nobody gets a defence bonus, split by a river
+    // and its green banks, with an oasis either side and hills under the cliffs.
+    rows: [
+      'MMHDDDDGGDDDDHMM',
+      'MHDDDDDGGGDDDDHM',
+      'HDDDDHDGGDDDDDDH',
+      'DDDGDDDPGDDGGDDD',
+      'DDGGDDDGGGDDGDDD',
+      'DDDDDHDGPDDDDDDD',
+      'HDDDDDDGGDDHDDDH',
+      'MHDDDDGGGDDDDDHM',
+      'MMHDDDDGGDDDDHMM',
+    ],
+    rivers: [
+      '        ~       ',
+      '        ~       ',
+      '        ~       ',
+      '        ~       ',
+      '        ~       ',
+      '        ~       ',
+      '        ~       ',
+      '        ~       ',
+      '        ~       ',
+    ],
+    revealed: true,
+    wrap: false,
+    openingSpan: 16,
+    objective: { type: 'rout', attacker: 1, defender: 2, turns: 12, name: 'The raiders' },
+    units: [
+      { side: 1, type: 'legion',  x: 2, y: 3 },
+      { side: 1, type: 'legion',  x: 2, y: 4 },
+      { side: 1, type: 'legion',  x: 2, y: 5 },
+      { side: 1, type: 'phalanx', x: 1, y: 4 },
+      { side: 1, type: 'cavalry', x: 3, y: 2 },
+      { side: 1, type: 'cavalry', x: 3, y: 6 },
+      { side: 1, type: 'chariot', x: 1, y: 3 },
+      { side: 2, type: 'legion',  x: 13, y: 3 },
+      { side: 2, type: 'legion',  x: 13, y: 5 },
+      { side: 2, type: 'phalanx', x: 14, y: 4 },
+      { side: 2, type: 'cavalry', x: 12, y: 2 },
+      { side: 2, type: 'cavalry', x: 12, y: 6 },
+      { side: 2, type: 'chariot', x: 14, y: 5 },
+    ],
+    config: {
+      players: [{ name: 'You' }, { name: 'Raiders', agent: 'civ1-heuristic' }],
+      fogOfWar: true,
+    },
+  },
   {
     id: 'outpost',
     name: 'Outpost',
-    next: 'border-town',
-    description: 'Very easy: three legions have 10 turns to take a frontier village held by one militia',
+    next: 'mountain-pass',
+    description: 'Easy: raiders are coming out of the northern forest. Hold your frontier stockade for 10 turns with two phalanxes and a horseman',
+    // You are the defender here: the raiders (seat 2) have to take the stockade, and
+    // you have only to still hold it when the tenth round is over. Tundra and forest,
+    // a frozen river past the walls to the sea, two hills over the approaches.
     rows: [
-      '..........',
-      '..GGPGGG..',
-      '.PGGGGGGG.',
-      '.PPGGGGGG.',
-      '..PGGPGG..',
-      '..........',
-    ],
-    revealed: true,
-    wrap: false,
-    cities: [
-      { side: 2, x: 7, y: 3, size: 2, buildings: ['palace'] },
-    ],
-    objective: { type: 'take-city', attacker: 1, defender: 2, turns: 10 },
-    units: [
-      { side: 1, type: 'legion',  x: 2, y: 2 },
-      { side: 1, type: 'legion',  x: 2, y: 3 },
-      { side: 1, type: 'legion',  x: 3, y: 3 },
-      { side: 2, type: 'militia', x: 7, y: 3 },
-    ],
-    config: {
-      players: [{ name: 'You' }, { name: 'Defender', agent: 'civ1-heuristic' }],
-      fogOfWar: true,
-    },
-  },
-  {
-    id: 'border-town',
-    name: 'Border Town',
-    next: 'river-fort',
-    description: 'Easy: four legions and two horsemen have 12 turns to take a town held by a phalanx and a militia, dug in',
-    rows: [
-      '.............',
-      '..GGPGGFFGG..',
-      '.PPGGGGGFGGG.',
-      '.PPPGGGGGGGG.',
-      '.PPGGGGGGFGG.',
-      '.PPGGGPGGGGG.',
-      '..PGGPGGGGG..',
-      '.............',
-    ],
-    revealed: true,
-    wrap: false,
-    cities: [
-      { side: 2, x: 10, y: 4, size: 2, buildings: ['palace', 'granary'] },
-    ],
-    objective: { type: 'take-city', attacker: 1, defender: 2, turns: 12 },
-    units: [
-      { side: 1, type: 'legion',   x: 3, y: 2 },
-      { side: 1, type: 'legion',   x: 3, y: 3 },
-      { side: 1, type: 'legion',   x: 3, y: 4 },
-      { side: 1, type: 'legion',   x: 3, y: 5 },
-      { side: 1, type: 'cavalry',  x: 2, y: 3 },
-      { side: 1, type: 'cavalry',  x: 2, y: 4 },
-      { side: 2, type: 'phalanx',  x: 10, y: 4, fortified: true },
-      { side: 2, type: 'militia',  x: 10, y: 4, fortified: true },
-    ],
-    config: {
-      players: [{ name: 'You' }, { name: 'Defender', agent: 'civ1-heuristic' }],
-      fogOfWar: true,
-    },
-  },
-  {
-    id: 'river-fort',
-    name: 'River Fort',
-    next: 'twin-forts',
-    description: 'Moderate: eleven units with two catapults have 12 turns to take a river town, past a fort on the hill that guards the crossing',
-    // The fort's hill sits on the straight road to the town: go through it (x2 for the
-    // fort, x2 for the hill) or round it under its zone of control.
-    rows: [
-      '...............',
-      '..GGPGGGFFGGG..',
-      '.PPGGGGGFFGGGG.',
-      '.PPPGGGHGGGGGG.',
-      '.PPGGGGGGGGGGG.',
-      '.PPPGGGGGGGGGG.',
-      '.PPGGGGPGFGGGG.',
-      '..PGGGGGGGGGG..',
-      '...............',
+      'AAAATTAAATTA.',
+      'TFFTTTFTTTTT.',
+      'FFTTTFFTTHTT.',
+      'FFTTTTTTTTHT.',
+      'TFTTTTTPTTTT.',
+      'FFTTFTTTTHT..',
+      'TFFTTTTFTTT..',
+      'AATTAAATTAA..',
     ],
     rivers: [
-      '               ',
-      '               ',
-      '               ',
-      '               ',
-      '    ~~~~~~~~   ',
-      '               ',
-      '               ',
-      '               ',
-      '               ',
+      '             ',
+      '             ',
+      '             ',
+      '             ',
+      '   ~~~~~~~~~ ',
+      '             ',
+      '             ',
+      '             ',
     ],
     revealed: true,
     wrap: false,
-    openingSpan: 14,
-    fortresses: [[7, 3]],
     cities: [
-      { side: 2, x: 12, y: 4, size: 3, buildings: ['palace', 'granary', 'temple'] },
+      { side: 1, x: 10, y: 3, size: 3, buildings: ['palace'] },
     ],
-    objective: { type: 'take-city', attacker: 1, defender: 2, turns: 12 },
+    objective: { type: 'take-city', attacker: 2, defender: 1, turns: 10 },
+    units: [
+      { side: 1, type: 'phalanx', x: 10, y: 3, fortified: true },
+      { side: 1, type: 'phalanx', x: 10, y: 3, fortified: true },
+      { side: 1, type: 'cavalry', x: 10, y: 3 },
+      { side: 2, type: 'legion',  x: 3, y: 2 },
+      { side: 2, type: 'legion',  x: 3, y: 3 },
+      { side: 2, type: 'legion',  x: 3, y: 4 },
+      { side: 2, type: 'cavalry', x: 2, y: 3 },
+      { side: 2, type: 'cavalry', x: 2, y: 4 },
+    ],
+    config: {
+      players: [{ name: 'You' }, { name: 'Raiders', agent: 'civ1-heuristic' }],
+      fogOfWar: true,
+    },
+  },
+  {
+    id: 'mountain-pass',
+    name: 'Mountain Pass',
+    next: 'caravan',
+    description: 'Moderate: ten units with two catapults have 12 turns to seize the fort in the one gap through the mountains — stand a unit on it to win',
+    // Two valleys and a wall of mountains between them, with one gap — and a fortress
+    // in it. No city: the fort itself is the prize, and its holders do not die together
+    // (combat.js). The hills either side of the gap are the high ground to strike from;
+    // the mountains can be climbed, a square a turn and in full view.
+    rows: [
+      'MMMMMMMMMMMMMMMM',
+      'MHFFGGHMMMMHGGFM',
+      'MFGGPGGHMMMHGPGM',
+      'MGGPGGGGHMHGGPGM',
+      'MGPGGPGPPPPPGGGM',
+      'MGGPGGGGHMHGPGGM',
+      'MFGGPGGHMMMHGGGM',
+      'MHFFGGHMMMMHGPFM',
+      'MMMMMMMMMMMMMMMM',
+    ],
+    revealed: true,
+    wrap: false,
+    openingSpan: 16,
+    fortresses: [[9, 4]],
+    objective: { type: 'seize', attacker: 1, defender: 2, turns: 12, at: [9, 4], name: 'The pass fort' },
     units: [
       { side: 1, type: 'catapult', x: 3, y: 3 },
       { side: 1, type: 'catapult', x: 3, y: 5 },
@@ -356,14 +390,14 @@ export const FIXED_MAPS = [
       { side: 1, type: 'legion',   x: 4, y: 4 },
       { side: 1, type: 'legion',   x: 4, y: 5 },
       { side: 1, type: 'legion',   x: 4, y: 6 },
-      { side: 1, type: 'legion',   x: 5, y: 4 },
       { side: 1, type: 'phalanx',  x: 3, y: 4 },
       { side: 1, type: 'cavalry',  x: 5, y: 2 },
       { side: 1, type: 'cavalry',  x: 5, y: 6 },
-      { side: 2, type: 'phalanx',  x: 12, y: 4, fortified: true },
-      { side: 2, type: 'phalanx',  x: 12, y: 4, fortified: true },
-      { side: 2, type: 'legion',   x: 12, y: 4, fortified: true },
-      { side: 2, type: 'phalanx',  x: 7, y: 3, fortified: true },
+      // The fort's holders, and riders behind the gap to strike at whatever climbs.
+      { side: 2, type: 'phalanx',  x: 9, y: 4, fortified: true },
+      { side: 2, type: 'legion',   x: 9, y: 4, fortified: true },
+      { side: 2, type: 'cavalry',  x: 12, y: 3 },
+      { side: 2, type: 'cavalry',  x: 12, y: 5 },
     ],
     config: {
       players: [{ name: 'You' }, { name: 'Defender', agent: 'civ1-heuristic' }],
@@ -371,144 +405,139 @@ export const FIXED_MAPS = [
     },
   },
   {
-    id: 'twin-forts',
-    name: 'Twin Forts',
-    next: 'highland-pass',
-    description: 'Hard: fourteen units have 15 turns to take a harbour town behind two hill forts, whose chariot rides out at anything left in the open',
-    // Two hill forts either side of the one way in, two squares apart: the road between
-    // them is under both their zones of control. Behind the walls, a chariot waits for
-    // a catapult caught without its guard.
+    id: 'caravan',
+    name: 'Caravan',
+    next: 'two-rivers',
+    description: 'Hard: get a caravan through the jungle to the trading post at the end of the coast road in 14 turns. Lose it and the battle is lost — and a stack beaten in the open dies together',
+    // A jungle coast with one road along it, from your camp in the west to the trading
+    // post (the marked square) in the east. A hill fort beside the road halfway, and
+    // riders in the jungle to hunt the caravan down. The caravan slips through zones of
+    // control (units.js ignore-zoc) and moves three squares a turn on the road; the
+    // escort is slower off it. Stack it under a phalanx and one lost fight kills both.
     rows: [
-      '.................',
-      '...GGPGG....HMM..',
-      '..GGGGPGGFFPHGG..',
-      '.PPGGGGGFFGGGGGG.',
-      '.PPPPGGGGGHGGGGG.',
-      '.PPPPPGGGGGGGGG..',
-      '.PPPPGGGGGHGGGGG.',
-      '.PPGGGGGFFGGGGGG.',
-      '..GGGGPGGFFPHGG..',
-      '...GGPGG....HMM..',
-      '.................',
+      '..................',
+      '..JJFFJJ..JJHJJ...',
+      '.GJJJFJJJHJHHJJJG.',
+      '.GGJJSSJJJJJJSJGG.',
+      '.PGGJJJJJJJJJJJGP.',
+      '.GGJJSJJHJJSSJJGG.',
+      '..GJJJJJJJJJFFJG..',
+      '...JJSS...JJJJ....',
+      '..................',
     ],
-    revealed: true,
-    wrap: false,
-    openingSpan: 16,
-    fortresses: [[10, 4], [10, 6]],
-    cities: [
-      { side: 2, x: 14, y: 5, size: 3, buildings: ['palace', 'granary', 'temple'] },
-    ],
-    objective: { type: 'take-city', attacker: 1, defender: 2, turns: 15 },
-    units: [
-      { side: 1, type: 'catapult', x: 5, y: 4, veteran: true },
-      { side: 1, type: 'catapult', x: 5, y: 5 },
-      { side: 1, type: 'catapult', x: 5, y: 6 },
-      { side: 1, type: 'legion',   x: 6, y: 3 },
-      { side: 1, type: 'legion',   x: 6, y: 4 },
-      { side: 1, type: 'legion',   x: 6, y: 5 },
-      { side: 1, type: 'legion',   x: 6, y: 6 },
-      { side: 1, type: 'legion',   x: 6, y: 7 },
-      { side: 1, type: 'legion',   x: 7, y: 5 },
-      { side: 1, type: 'phalanx',  x: 4, y: 4 },
-      { side: 1, type: 'phalanx',  x: 4, y: 6 },
-      { side: 1, type: 'chariot',  x: 7, y: 3 },
-      { side: 1, type: 'chariot',  x: 7, y: 7 },
-      { side: 1, type: 'knights',  x: 4, y: 5 },
-      // The garrison: phalanxes dug in and a legion to strike from the walls.
-      { side: 2, type: 'phalanx',  x: 14, y: 5, fortified: true, veteran: true },
-      { side: 2, type: 'phalanx',  x: 14, y: 5, fortified: true },
-      { side: 2, type: 'phalanx',  x: 14, y: 5, fortified: true },
-      { side: 2, type: 'legion',   x: 14, y: 5, fortified: true },
-      { side: 2, type: 'militia',  x: 14, y: 5, fortified: true },
-      { side: 2, type: 'phalanx',  x: 10, y: 4, fortified: true },
-      { side: 2, type: 'phalanx',  x: 10, y: 6, fortified: true },
-      { side: 2, type: 'chariot',  x: 15, y: 4 },
-    ],
-    config: {
-      players: [{ name: 'You' }, { name: 'Defender', agent: 'civ1-heuristic' }],
-      fogOfWar: true,
-    },
-  },
-  {
-    id: 'highland-pass',
-    name: 'Highland Pass',
-    next: 'siege',
-    description: 'Very hard: twenty units have 16 turns to take a city at the head of a pass, held by three forts and eleven defenders with knights to sally',
-    // The Siege in small: a fort on the river crossing, a hill outwork either side of the
-    // approach, a garrison dug in, and riders behind the walls.
-    rows: [
-      '....................',
-      '....GGPG.....HMM....',
-      '..GGGGGPGFF.PHGGG...',
-      '.GPGGGGPFFFGGGGPGG..',
-      '.PPPGGGGGFGGGHGGGGG.',
-      '.PPPPPGGGGGGPGGGGG..',
-      '.PPPPPPGGGHGGGGGGGG.',
-      '.PPPPPGGGGGGPGGGGG..',
-      '.PPPGGGGGFGGGHGGGGG.',
-      '.GPGGGGPFFFGGGGPGG..',
-      '..GGGGGPGFF.PHGGG...',
-      '....GGPG.....HMM....',
-      '....................',
-    ],
-    rivers: [
-      '                    ',
-      '                    ',
-      '                    ',
-      '                    ',
-      '                    ',
-      '                    ',
-      '   ~~~~~~~~         ',
-      '                    ',
-      '                    ',
-      '                    ',
-      '                    ',
-      '                    ',
-      '                    ',
+    tileImprovements: [
+      '                  ',
+      '                  ',
+      '                  ',
+      '                  ',
+      ' ================ ',
+      '                  ',
+      '                  ',
+      '                  ',
+      '                  ',
     ],
     revealed: true,
     wrap: false,
     openingSpan: 18,
-    fortresses: [[10, 6], [13, 4], [13, 8]],
+    fortresses: [[9, 2]],
+    objective: { type: 'escort', attacker: 1, defender: 2, turns: 14, at: [16, 4], name: 'The caravan' },
+    units: [
+      { side: 1, type: 'caravan',  x: 1, y: 4, escort: true },
+      { side: 1, type: 'phalanx',  x: 2, y: 4 },
+      { side: 1, type: 'phalanx',  x: 1, y: 3 },
+      { side: 1, type: 'legion',   x: 2, y: 3 },
+      { side: 1, type: 'legion',   x: 2, y: 5 },
+      { side: 1, type: 'legion',   x: 3, y: 4 },
+      { side: 1, type: 'cavalry',  x: 2, y: 2 },
+      { side: 1, type: 'cavalry',  x: 2, y: 6 },
+      // The hill fort over the road, and the hunters.
+      { side: 2, type: 'phalanx',  x: 9, y: 2, fortified: true },
+      { side: 2, type: 'legion',   x: 9, y: 2, fortified: true },
+      { side: 2, type: 'chariot',  x: 13, y: 4 },
+      { side: 2, type: 'chariot',  x: 14, y: 5 },
+      { side: 2, type: 'cavalry',  x: 12, y: 2 },
+      { side: 2, type: 'cavalry',  x: 12, y: 6 },
+      { side: 2, type: 'phalanx',  x: 16, y: 4, fortified: true },
+    ],
+    config: {
+      players: [{ name: 'You' }, { name: 'Defender', agent: 'civ1-heuristic' }],
+      fogOfWar: true,
+    },
+  },
+  {
+    id: 'two-rivers',
+    name: 'Two Rivers',
+    next: 'siege',
+    description: 'Very hard: eighteen units have 16 turns to take both towns of a river delta, either side of a bay, with a knight and a chariot riding between them',
+    // A delta: two rivers run down to the swamps at their mouths, and a bay splits the
+    // eastern shore in two, a town on each side of it. Take one and the other is still
+    // standing, raising militia; the riders on the far shore go to whichever is under
+    // attack. No forts and no hills worth the name — just walls, swamps and open bank.
+    rows: [
+      '...............',
+      '..GGSG...GGHG..',
+      '.GSGGSS.GGGGGG.',
+      '.SGGGSSGGGGGGG.',
+      '.GSGGGGSGGG.GG.',
+      '.GGGSGGGSG...G.',
+      '.GSGGGGSGGG.GG.',
+      '.SGGGSSGGGGGGG.',
+      '.GSGGSS.GGGGGG.',
+      '..GGSG...GGHG..',
+      '...............',
+    ],
+    rivers: [
+      '               ',
+      '               ',
+      '               ',
+      '  ~~~          ',
+      '               ',
+      '               ',
+      '               ',
+      '  ~~~          ',
+      '               ',
+      '               ',
+      '               ',
+    ],
+    revealed: true,
+    wrap: false,
+    openingSpan: 16,
     cities: [
-      { side: 2, x: 17, y: 6, size: 3, buildings: ['palace', 'granary', 'temple', 'marketplace'] },
+      { side: 2, x: 11, y: 3, size: 2, buildings: ['palace', 'granary', 'temple'] },
+      { side: 2, x: 11, y: 7, size: 2, buildings: ['granary', 'temple'] },
     ],
     objective: { type: 'take-city', attacker: 1, defender: 2, turns: 16 },
     units: [
-      { side: 1, type: 'catapult', x: 6, y: 5, veteran: true },
-      { side: 1, type: 'catapult', x: 6, y: 7, veteran: true },
-      { side: 1, type: 'catapult', x: 5, y: 5 },
-      { side: 1, type: 'catapult', x: 5, y: 7 },
-      { side: 1, type: 'legion',   x: 7, y: 3 },
-      { side: 1, type: 'legion',   x: 7, y: 4 },
-      { side: 1, type: 'legion',   x: 7, y: 5 },
-      { side: 1, type: 'legion',   x: 7, y: 6 },
-      { side: 1, type: 'legion',   x: 7, y: 7 },
-      { side: 1, type: 'legion',   x: 7, y: 8 },
-      { side: 1, type: 'legion',   x: 7, y: 9 },
-      { side: 1, type: 'legion',   x: 6, y: 4 },
-      { side: 1, type: 'legion',   x: 6, y: 8 },
-      { side: 1, type: 'phalanx',  x: 5, y: 6 },
-      { side: 1, type: 'phalanx',  x: 4, y: 6 },
-      { side: 1, type: 'knights',  x: 8, y: 4 },
-      { side: 1, type: 'knights',  x: 8, y: 6 },
-      { side: 1, type: 'knights',  x: 8, y: 8 },
-      { side: 1, type: 'chariot',  x: 6, y: 3 },
-      { side: 1, type: 'chariot',  x: 6, y: 9 },
-      // The garrison.
-      { side: 2, type: 'phalanx',  x: 17, y: 6, fortified: true, veteran: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 6, fortified: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 6, fortified: true },
-      { side: 2, type: 'phalanx',  x: 17, y: 6, fortified: true },
-      { side: 2, type: 'legion',   x: 17, y: 6, fortified: true },
-      // The crossing fort, and the two outworks.
-      { side: 2, type: 'phalanx',  x: 10, y: 6, fortified: true },
-      { side: 2, type: 'legion',   x: 10, y: 6, fortified: true },
-      { side: 2, type: 'phalanx',  x: 13, y: 4, fortified: true },
-      { side: 2, type: 'phalanx',  x: 13, y: 8, fortified: true },
-      // Riders behind the walls.
-      { side: 2, type: 'knights',  x: 18, y: 6 },
-      { side: 2, type: 'chariot',  x: 18, y: 4 },
+      { side: 1, type: 'catapult', x: 3, y: 4, veteran: true },
+      { side: 1, type: 'catapult', x: 3, y: 6 },
+      { side: 1, type: 'catapult', x: 2, y: 5 },
+      { side: 1, type: 'legion',   x: 4, y: 2 },
+      { side: 1, type: 'legion',   x: 4, y: 3 },
+      { side: 1, type: 'legion',   x: 4, y: 4 },
+      { side: 1, type: 'legion',   x: 4, y: 5 },
+      { side: 1, type: 'legion',   x: 4, y: 6 },
+      { side: 1, type: 'legion',   x: 4, y: 7 },
+      { side: 1, type: 'legion',   x: 4, y: 8 },
+      { side: 1, type: 'legion',   x: 3, y: 5 },
+      { side: 1, type: 'phalanx',  x: 2, y: 4 },
+      { side: 1, type: 'phalanx',  x: 2, y: 6 },
+      { side: 1, type: 'knights',  x: 5, y: 3 },
+      { side: 1, type: 'knights',  x: 5, y: 5 },
+      { side: 1, type: 'knights',  x: 5, y: 7 },
+      { side: 1, type: 'chariot',  x: 3, y: 2 },
+      { side: 1, type: 'chariot',  x: 3, y: 8 },
+      // The northern town, the capital.
+      { side: 2, type: 'phalanx',  x: 11, y: 3, fortified: true, veteran: true },
+      { side: 2, type: 'phalanx',  x: 11, y: 3, fortified: true },
+      { side: 2, type: 'phalanx',  x: 11, y: 3, fortified: true },
+      { side: 2, type: 'legion',   x: 11, y: 3, fortified: true },
+      // The southern town.
+      { side: 2, type: 'phalanx',  x: 11, y: 7, fortified: true, veteran: true },
+      { side: 2, type: 'phalanx',  x: 11, y: 7, fortified: true },
+      { side: 2, type: 'legion',   x: 11, y: 7, fortified: true },
+      // Riders on the far shore, between the two.
+      { side: 2, type: 'knights',  x: 13, y: 5 },
+      { side: 2, type: 'chariot',  x: 12, y: 4 },
     ],
     config: {
       players: [{ name: 'You' }, { name: 'Defender', agent: 'civ1-heuristic' }],

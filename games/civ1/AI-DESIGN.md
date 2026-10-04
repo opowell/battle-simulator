@@ -525,27 +525,43 @@ citizens and treble its defence against land units.
 
 ## Five battles before the Siege (2026-10-04)
 
-A ladder up to the Siege, every one smaller and easier than it, each bringing in one
-thing more. Measured with `node demo/civ1-siege-bench.mjs N --map ID` (heuristic both
-sides, fog on):
+A ladder up to the Siege, easiest first. The first version was five smaller Sieges (take
+a city, forts on the hills, a bigger army each rung); it was rebuilt the same day so that
+each rung is a different kind of fight on different ground, with the same ancient armies
+(fixedMaps.js `objective.type`, decided in Civ1Game `objectiveResult`, played by the
+agents through objective.js `siegeRole`). Measured with
+`node demo/civ1-siege-bench.mjs N --map ID` (heuristic both sides, fog on); the rate is
+the side YOU play:
 
-| battle | map | army | turns | adds | attacker wins |
+| battle | ground | goal | army | turns | you win |
 | --- | --- | --- | --- | --- | --- |
-| `outpost` | 10x6 | 3 v 1 | 10 | walk up and strike | 100% (100/100) |
-| `border-town` | 13x8 | 6 v 2 | 12 | a garrison dug in | 89% (177/200) |
-| `river-fort` | 15x9 | 11 v 4 | 12 | a hill fort, catapults | 75% (150/200) |
-| `twin-forts` | 17x11 | 14 v 8 | 15 | two forts, a sortie rider | 49% (246/500) |
-| `highland-pass` | 20x13 | 20 v 11 | 16 | three forts, knights, the Siege in small | 39% (77/200) |
-| `siege` | 26x17 | 28 v 20 | 20 | | 22% |
+| `desert-raiders` | 16x9 desert, river | rout: destroy every raider | 7 v 6 | 12 | 99% (99/100) |
+| `outpost` | 13x8 tundra, forest | hold your hill stockade (you DEFEND; seat 2 attacks) | 3 v 5 | 10 | 87% (87/100) |
+| `mountain-pass` | 16x9 mountains | seize: stand a unit on the fort in the gap | 10 v 4 | 12 | ~78% (157/200) |
+| `caravan` | 18x9 jungle coast, road | escort: the caravan reaches the post alive | 8 v 7 | 14 | ~49% (98/200) |
+| `two-rivers` | 15x11 swampy delta | take BOTH towns | 18 v 9 | 16 | ~26% (53/200) |
+| `siege` | 26x17 island | take the city past six forts | 28 v 20 | 20 | 22% |
 
-Tuning on the way, 100 games each: two fortified phalanxes in the Border Town made it 68%
-(a militia for one of them: 89%); River Fort with ten attackers 57%; Twin Forts with a
-horseman beside the chariot 35% (the attacker's whole army died in 65 of the 100 games
-— sorties at whatever is left in the open), the chariot alone 64%, alone plus a
-fifth phalanx in the city 43%, plus a militia instead (as built) 49%; Highland Pass with five phalanxes in the
-city 26%, too close to the Siege. Most "wins" on the small maps are a razed city
-(`civilization-destroyed`), not a capture: a size-2 or size-3 city loses a citizen to
-every garrison unit beaten.
+What the AI needed for the new goals (ai.js):
+- **Escort, attacker:** the escort never steps level with the leading unit until the step
+  that brings it in, and pays no stacking penalty (it belongs among its escort). Without
+  the first it ran ahead and died (0%); without the second it parked one square short of
+  a post its own phalanx stood on, every game, until the clock ran out.
+- **Escort, defender:** foot soldiers hold the destination, horsemen hunt, and a blow at
+  the escort's stack is worth it at siege odds. With everyone hunting, the post stood
+  empty and the caravan walked in (97%).
+- **Seize, defender:** the square is held like a besieged city (everyone to it, horsemen
+  sortie from it). A fortress there keeps the stack from dying together.
+- **Two cities, defender:** each unit garrisons the nearer one; the attacker makes for
+  the city still to take nearest its army's centre.
+- **Rout:** no role at all, so both sides play the open game's fight.
+
+Tuning on the way: the caravan's hill fort first sat beside the road, and its legion
+struck everything walking past (15%); one square back, 100%, then hunters and a guard
+on the post brought it to ~49%. Two Rivers on its first, wider map was 0%: the army spent
+ten turns walking and both towns raised militia the whole time. Outpost on open tundra
+with a size-2 stockade: the raiders razed it 70% of the time; on a hill at size 3, 13%.
+Desert Raiders measured easier than Outpost, so it went first.
 
 ## Revised order
 

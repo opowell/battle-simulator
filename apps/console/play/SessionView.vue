@@ -1072,7 +1072,9 @@ function buildField(g, s) {
     timeType,
     teams,
     walls: [],
-    zones: [],
+    // Marked areas a game's toGrid may draw on the board ({x, y, w, h, kind, label} in
+    // world units) — civ1's fixed battles mark the square they are about.
+    zones: g.zones ?? [],
     tiles,
     // Whether this game's cells carry per-square terrain data — gates click-to-select
     // on empty squares and the terrain-info panel (see Battlefield.vue). Games with

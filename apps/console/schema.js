@@ -133,8 +133,10 @@ export function buildSchema(catalog, { Art }) {
       key: 'scenarios',
       label: 'Scenarios',
       count: count(catalog.scenarios.length),
-      columns: [ordinal, art, identity('Scenario'), reference('Description'), gameColumn, metric('players', 'Players')],
-      sorts: [{ key: 'game', label: 'game' }, { key: 'name', label: 'name' }, { key: 'players', label: 'players' }],
+      // The ordinal column carries the `order` sort (it still shows the row number):
+      // the order the games list their own scenarios in, a campaign's in sequence.
+      columns: [{ ...ordinal, sort: 'order', field: 'order' }, art, identity('Scenario'), reference('Description'), gameColumn, metric('players', 'Players')],
+      sorts: [{ key: 'order', label: 'order' }, { key: 'game', label: 'game' }, { key: 'name', label: 'name' }, { key: 'players', label: 'players' }],
       facets: [byGame, toggle('fog', 'Fog of war', 'Only fog-of-war scenarios')],
     },
     {

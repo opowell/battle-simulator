@@ -286,6 +286,12 @@ function sortie(unit, legalActions, state, myId) {
   return best;
 }
 
+// Whether `defender` (a unit of the escorting side) stands in the escort's stack.
+function huntsEscort(state, defender, siege) {
+  const escort = state.units.find(u => u.id === siege.escortId && u.alive);
+  return !!escort && escort.position.x === defender.position.x && escort.position.y === defender.position.y;
+}
+
 export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cityTarget = CITY_TARGET,
                                 stackPenalty = STACK_PENALTY } = {}) {
   return {
@@ -346,7 +352,7 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         for (const [cityId, acts] of byCity) {
           const city = state.cities.find(c => c.id === cityId);
           if (!city) continue;
-          const choice = siege?.role === 'defender' && city.id === siege.cityId
+          const choice = siege?.role === 'defender' && siege.cityIds.includes(city.id)
             ? chooseSiegeProduction(city, acts)
             : chooseProduction(state, myId, city, acts, cityTarget);
           if (choice) return choice;
@@ -368,6 +374,10 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         // lands is a defender the assault no longer has to get through (objective.js).
         if (siege?.role === 'attacker' && inSiegeCity(defender.position)) {
           if (P < siegeAttackFloor(siege) || waitsForFullStrength(siege, attacker)) continue;
+          want = siegeAttackWant(want, P);
+        } else if (siege?.kind === 'escort' && siege.role === 'defender' && huntsEscort(state, defender, siege)) {
+          // Stopping a convoy: the escort's stack is the whole battle, at any decent odds.
+          if (P < siegeAttackFloor(siege)) continue;
           want = siegeAttackWant(want, P);
         } else if (P < minWinProb) continue;
         if (want > bestWant) { bestWant = want; bestAttack = a; }
@@ -420,12 +430,28 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
           claimed.add(u.id);
         }
       }
+      // A square to hold (a seize) is held like a besieged city: everyone else goes to
+      // it and stays, the horsemen riding out from it. Against an escort the foot hold
+      // its destination, and the horsemen are left free to hunt it down.
+      if (siege?.role === 'defender' && (siege.kind === 'seize' || siege.kind === 'escort')) {
+        for (const u of myUnits) {
+          if (claimed.has(u.id) || defenceStrength(u.type) <= 0) continue;
+          if (siege.kind === 'escort' && isMounted(u.type)) continue;
+          garrison.set(u.id, siege.cityPos);
+          claimed.add(u.id);
+        }
+      }
       for (const city of myCities) {
-        // The besieged city keeps everyone else it can call in, from anywhere — the
-        // horsemen too, which ride out from it (sortie, below) and come back to it.
-        if (siege?.role === 'defender' && city.id === siege.cityId) {
+        // A besieged city keeps everyone else it can call in, from anywhere — the
+        // horsemen too, which ride out from it (sortie, below) and come back to it. With
+        // more than one to hold, each unit goes to the nearest.
+        if (siege?.role === 'defender' && siege.cityIds.includes(city.id)) {
+          const homes = myCities.filter(c => siege.cityIds.includes(c.id));
           for (const u of myUnits) {
             if (claimed.has(u.id) || defenceStrength(u.type) <= 0) continue;
+            const near = homes.reduce((b, c) => chebyshevWrapped(u.position, c.position, W)
+              < chebyshevWrapped(u.position, b.position, W) ? c : b);
+            if (near.id !== city.id) continue;
             garrison.set(u.id, city.position);
             claimed.add(u.id);
           }
@@ -520,6 +546,8 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
         const mine = state.units.filter(u => u.alive && u.ownerId === myId);
         const staged = mine.filter(u => (field(u).get(`${u.position.x},${u.position.y}`) ?? Infinity) <= STAGE_DIST + STAGE_DEPTH).length;
         const assault = staged >= ASSAULT_SHARE * mine.length || siege.turnsLeft <= ASSAULT_TURNS;
+        const front = Math.min(Infinity, ...mine.filter(u => u.id !== siege.escortId)
+          .map(u => field(u).get(`${u.position.x},${u.position.y}`) ?? Infinity));
         let bestMove = null, bestGain = 0;
         for (const m of moves) {
           const unit = unitById.get(m.unitId);
@@ -527,7 +555,11 @@ export function makeCiv1Agent({ id = 'heuristic', minWinProb = MIN_WIN_PROB, cit
           const here = f.get(`${m.from.x},${m.from.y}`) ?? Infinity;
           const there = f.get(`${m.to.x},${m.to.y}`) ?? Infinity;
           if (there === Infinity || (!assault && there < STAGE_DIST)) continue;
-          const gain = (here === Infinity ? 0 : here - there) - stackCost(m.to);
+          // The escort keeps behind its escort: never level with the leading unit, until
+          // the step that brings it in.
+          if (unit.id === siege.escortId && there > 0 && there <= front) continue;
+          // (The escort walks in among its escort: that is where it is safest.)
+          const gain = (here === Infinity ? 0 : here - there) - (unit.id === siege.escortId ? 0 : stackCost(m.to));
           if (gain > bestGain) { bestGain = gain; bestMove = m; }
         }
         return bestMove ?? { type: 'end-turn', unitId: '__player__' };

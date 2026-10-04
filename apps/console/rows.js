@@ -81,7 +81,10 @@ export function buildRows(catalog, values) {
       outcome: outcome(r.result, r.players),
     })),
 
-    scenarios: catalog.scenarios.map((s) => row('scenarios', 'Scenario', s, {
+    // `order` is the catalog's: game by game, each game's scenarios as it lists them
+    // (civ1's battles first, easiest to hardest). Padded, as it sorts as text.
+    scenarios: catalog.scenarios.map((s, i) => row('scenarios', 'Scenario', s, {
+      order: String(i).padStart(5, '0'),
       name: s.name,
       ref: s.description,
       art: gameArt(s.game),
