@@ -172,6 +172,10 @@ watch(selectedId, (id) => {
 // square. Declared up here with selectedId because selectUnit, below, clears it; see
 // selectedCity for why the two need telling apart at all.
 const garrisonPick = ref(null);
+// A city the unit in hand has just taken, followed from the walk in to its screen
+// closing — see the watchers beside selectedCity. Declared up here because the
+// result dialog (doneShown) waits for it too.
+const cityTaken = ref(null);   // { unitId, phase: 'walking'|'open', advance }
 
 // Empty-square selection (terrain info), only meaningful for games whose cells carry
 // `terrain` data (see field.hasTerrain, computed in App.vue's buildField). Selecting a
@@ -1234,13 +1238,15 @@ watch([chimeArmed, () => props.animating], ([pending, busy]) => {
 // city that wins the battle, the fight that takes the last piece), and announcing the
 // result over the top of that hides the very move that won. So the result dialog and
 // its cheer wait for the board to finish, and then a moment longer, for the last thing
-// it showed (a city in its new colours) to be seen before the dialog dims it.
+// it showed (a city in its new colours) to be seen before the dialog dims it. A city
+// taken by the winning move has its screen shown first (cityTaken), and the result
+// follows once the player closes it.
 // `immediate` so a game opened already over is over from the start — before the
 // cheer's watcher below exists to hear it as news.
 const RESULT_PAUSE_MS = 800;
 const doneShown = ref(false);
 let doneTimer = null;
-watch([isDone, () => props.animating], ([done, busy], prev) => {
+watch([isDone, () => props.animating || !!cityTaken.value], ([done, busy], prev) => {
   clearTimeout(doneTimer);
   if (!done) { doneShown.value = false; return; }
   if (busy || doneShown.value) return;
@@ -2077,6 +2083,12 @@ watch([advanceOff, () => props.battleFx, () => props.animating], ([id, fighting,
   if (selectedId.value === id && isPending.value) advanceFrom(id);
 });
 function advanceFrom(id) {
+  // A unit that has just taken a city hands over once its city screen has been seen
+  // (see cityTaken), not while it is still to open.
+  if (cityTaken.value?.unitId === id && !cityTaken.value.advance) {
+    cityTaken.value = { ...cityTaken.value, advance: true };
+    return;
+  }
   const next = unitWantingOrders(id);
   if (next) handOverUnit(next);
   else selectedId.value = null;
@@ -2180,6 +2192,56 @@ watch(() => {
 }, (now, before) => {
   if (!now || !before || now[0] !== before[0]) return;
   if (now[1] !== before[1] || now[2] !== before[2]) garrisonPick.value = now[0];
+});
+
+// …except a city it has just TAKEN, whose screen the original does show — once the
+// board has shown the unit walking in and the city turning its new owner's colours,
+// not over the top of that. `cityTaken` follows one capture through:
+//   'walking' — the update that took it has arrived and the board is still playing it;
+//   'open'    — the board is done, and the city's screen is up (garrisonPick let go of
+//               the unit, so the square selects as the city again — see selectedCity).
+// The unit's own turn waits for the screen too: one that spent its last move taking the
+// city would otherwise hand over to the next unit the moment the walk lands (see
+// advanceFrom), and the screen with it. `advance` remembers that it owes that hand-over,
+// paid when the player closes the screen.
+// A city changing hands to the side of the unit in hand, with that unit standing in it
+// on the board as the server has it (the board on screen may still be walking it there).
+watch(() => props.field.cities, (now, before) => {
+  const u = selectedUnit.value;
+  if (!u || !now || !before) return;
+  const was = new Map(before.map(c => [c.id, c.owner]));
+  const cells = props.liveState?.grid?.cells ?? [];
+  const standsIn = c => cells.some(cell => cell.x === c.x && cell.y === c.y
+    && (cell.unitId === u.id || (cell.stack ?? []).some(s => s.unitId === u.id)));
+  const taken = now.find(c => was.has(c.id) && was.get(c.id) !== c.owner && c.owner === u.team && standsIn(c));
+  if (taken) cityTaken.value = { unitId: u.id, phase: 'walking', advance: false };
+});
+// A moment after the board settles, so the unit standing in its new city is seen before
+// the screen goes up over it.
+const CITY_SCREEN_PAUSE_MS = 600;
+let cityScreenTimer = null;
+watch([cityTaken, () => props.animating, () => props.battleFx], ([taken, busy, fx]) => {
+  clearTimeout(cityScreenTimer);
+  if (taken?.phase !== 'walking' || busy || fx) return;
+  cityScreenTimer = setTimeout(() => {
+    if (cityTaken.value !== taken) return;
+    // The player picked something else while it played: that is what they want to see.
+    if (selectedId.value !== taken.unitId) { cityTaken.value = null; return; }
+    garrisonPick.value = null;
+    cityTaken.value = { ...taken, phase: 'open' };
+  }, CITY_SCREEN_PAUSE_MS);
+});
+onUnmounted(() => clearTimeout(cityScreenTimer));
+// The screen closed (or the player picked something else from it): the unit's turn
+// carries on from where the capture left it — on to the next unit if it owed that hand-
+// over, else the unit back in hand as itself (a horseman with a move left to make).
+watch(selectedCity, (city) => {
+  const taken = cityTaken.value;
+  if (city || taken?.phase !== 'open') return;
+  cityTaken.value = null;
+  if (selectedId.value != null && selectedId.value !== taken.unitId) return;
+  if (taken.advance) advanceFrom(taken.unitId);
+  else if (displayUnits.value.some(u => u.id === taken.unitId && u.needsOrders)) selectGarrisonUnit(taken.unitId);
 });
 // The city screen paints the city and its units in their owner's colour, the same way
 // the board does (see teamSprite.js) — team ids are player ids (App.vue's buildField).
