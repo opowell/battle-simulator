@@ -611,7 +611,12 @@ const BARBARIAN_DEPS = { makeUnit, applyMove, resolveAttack };
 // here rather than in each of the two dozen returns below — founding a city, building a
 // unit and walking a settler all change what its owner can see.
 function applyActions(state, playerActions, rng = Math.random) {
-  const next = markExplored(applyOneAction(state, playerActions, rng), playerActions[0].playerId);
+  // …and what changed where others could not see it is remembered by them as it was
+  // (rememberUnseenChanges). Only the mover's sight can grow during their own action,
+  // so only the mover can have a remembered square come back into view.
+  const mover = playerActions[0].playerId;
+  const acted = rememberUnseenChanges(state, applyOneAction(state, playerActions, rng));
+  const next = forgetSeen(markExplored(acted, mover), mover);
   // One choke point for the two bookkeeping steps behind "a civ with no cities is
   // destroyed": record who holds a city, then finish off whoever no longer does.
   // Cities change hands in half a dozen places (founding, a captured square, a
@@ -1369,33 +1374,107 @@ function markExplored(state, playerId) {
   return { ...state, gameSpecific: { ...state.gameSpecific, explored: { ...explored, [playerId]: out.join('') } } };
 }
 
-// The board as `playerId` knows it: real terrain where they have been, the `unknown`
-// stand-in (terrain.js) everywhere else.
+// ── Remembered ground ─────────────────────────────────────────────────────────
 //
-// Memoized on (board, bits) because this sits on the search's hot path — obscuro keys
-// every node it builds off getVisibleState, and rebuilding 1500 tiles per node would
-// cost more than the rest of the search put together. Both halves of the key are
-// stable: the board object only changes identity when a settler improves a square, the
-// bits only when something new comes into view.
+// A square out of sight shows what it held when its viewer last saw it. The original's
+// map is a picture of what you have seen, not a live feed: a road a rival lays in the
+// dark is not on yours until a unit of yours goes and looks, and a mine pillaged out of
+// sight is still drawn until you see it gone. Until now the observation handed every
+// explored square over live — so improvements appeared and vanished across the whole
+// map as they happened, wherever your units were.
+//
+// Kept per seat in `gameSpecific.remembered` as `{ "x,y": tile }`, copy-on-write: only a
+// square that changed while the seat had it explored but out of sight gets an entry
+// (the tile as it was), and the entry goes the moment the seat sees the square again.
+// Every other explored square is remembered exactly as it is, so nothing is stored for
+// it — which is also why a revealed battlefield (fixedMaps.js) opens with every
+// improvement on it known to both sides.
+function sameTile(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  return ka.length === kb.length && ka.every(k => a[k] === b[k]);
+}
+
+// After an action: whoever had a changed square explored but could not see it keeps
+// the square as it was. Only the board's tiles are compared, and only when the action
+// replaced them at all (a settler's work does; nearly nothing else touches the land).
+function rememberUnseenChanges(before, after) {
+  if (after.board.tiles === before.board.tiles) return after;
+  const gs = after.gameSpecific;
+  if (!gs?.explored || gs.observed || gs.fogOfWar === false) return after;
+  const changed = Object.keys(after.board.tiles)
+    .filter(k => !sameTile(after.board.tiles[k], before.board.tiles[k]));
+  if (!changed.length) return after;
+
+  const W = after.board.width;
+  const was = gs.remembered ?? {};
+  let remembered = was;
+  for (const p of after.players) {
+    const bits = gs.explored[p.id] ?? '';
+    const seen = sightedTiles(after, p.id);
+    const had = remembered[p.id] ?? {};
+    let mine = had;
+    for (const k of changed) {
+      if (seen.has(k) || k in mine) continue;     // saw it happen, or remembers it from before
+      const [x, y] = k.split(',').map(Number);
+      if (bits[exploredIndex(x, y, W)] !== EXPLORED) continue;   // never seen: nothing to remember
+      mine = { ...mine, [k]: before.board.tiles[k] };
+    }
+    if (mine !== had) remembered = { ...remembered, [p.id]: mine };
+  }
+  if (remembered === was) return after;
+  return { ...after, gameSpecific: { ...gs, remembered } };
+}
+
+// What `playerId` sees right now replaces what they remember of it.
+function forgetSeen(state, playerId) {
+  const mine = state.gameSpecific?.remembered?.[playerId];
+  if (!mine) return state;
+  const keys = Object.keys(mine);
+  if (!keys.length) return state;
+  const seen = sightedTiles(state, playerId);
+  const kept = keys.filter(k => !seen.has(k));
+  if (kept.length === keys.length) return state;
+  const left = Object.fromEntries(kept.map(k => [k, mine[k]]));
+  return { ...state, gameSpecific: { ...state.gameSpecific,
+    remembered: { ...state.gameSpecific.remembered, [playerId]: left } } };
+}
+
+// The board as `playerId` knows it: real terrain where they have been — as they last
+// saw it (`memory`, above) — and the `unknown` stand-in (terrain.js) everywhere else.
+//
+// Memoized on (board, bits, memory) because this sits on the search's hot path —
+// obscuro keys every node it builds off getVisibleState, and rebuilding 1500 tiles per
+// node would cost more than the rest of the search put together. All three parts of
+// the key are stable: the board object only changes identity when a settler improves a
+// square, the bits only when something new comes into view, and the memory only when
+// a square changes out of sight or comes back into it.
 const UNKNOWN_TILE = Object.freeze({ terrain: 'unknown', hasRoad: false, hasRiver: false, fortress: false });
 const knownBoards = new WeakMap();
+const memoryIds = new WeakMap();
+let nextMemoryId = 1;
 
-function knownBoard(board, bits, playerId) {
+function knownBoard(board, bits, playerId, memory) {
   const { width: W, height: H } = board;
   if (bits == null) return board;                                 // no record: nothing hidden
   if (board.fogFor === playerId) return board;                    // already this player's view
-  if (bits.length === W * H && !bits.includes('0')) return board;  // the whole map walked
+  const remembers = !!memory && Object.keys(memory).length > 0;
+  if (!remembers && bits.length === W * H && !bits.includes('0')) return board;  // the whole map walked
 
   let byBits = knownBoards.get(board);
   if (!byBits) knownBoards.set(board, byBits = new Map());
-  const hit = byBits.get(bits);
+  if (remembers && !memoryIds.has(memory)) memoryIds.set(memory, nextMemoryId++);
+  const key = remembers ? `${bits}#${memoryIds.get(memory)}` : bits;
+  const hit = byBits.get(key);
   if (hit) return hit;
 
   const tiles = {};
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      const key = `${x},${y}`;
-      tiles[key] = bits[exploredIndex(x, y, W)] === EXPLORED ? board.tiles[key] : UNKNOWN_TILE;
+      const k = `${x},${y}`;
+      tiles[k] = bits[exploredIndex(x, y, W)] !== EXPLORED ? UNKNOWN_TILE
+        : (remembers && memory[k]) || board.tiles[k];
     }
   }
   const fogged = { ...board, tiles, fogFor: playerId };
@@ -1403,7 +1482,7 @@ function knownBoard(board, bits, playerId) {
   // each opened a different square), while old ones die with the turn that made them.
   // Clearing the whole table instead made it rebuild boards it had just built.
   if (byBits.size >= 64) byBits.delete(byBits.keys().next().value);
-  byBits.set(bits, fogged);
+  byBits.set(key, fogged);
   return fogged;
 }
 
@@ -1458,6 +1537,10 @@ function getVisibleState(state, playerId) {
       // map traces every march they have made since turn one. Only the viewer's own
       // record survives into their observation.
       explored: state.gameSpecific.explored ? { [playerId]: state.gameSpecific.explored[playerId] } : undefined,
+      // Likewise what they remember of ground out of sight (rememberUnseenChanges): a
+      // rival's memory of a square says when they last stood near it.
+      remembered: state.gameSpecific.remembered?.[playerId]
+        ? { [playerId]: state.gameSpecific.remembered[playerId] } : undefined,
       // This state is somebody's view, not the world. Applying actions to it (which is
       // what an agent does all through its search) must not pretend to explore: the
       // record would grow inside the simulation, and every node that opened a square
@@ -1485,7 +1568,8 @@ function getVisibleState(state, playerId) {
     // own observation and pick the good ground out of country it has never walked.
     // The Apollo path above skips this deliberately — revealing the map is the wonder's
     // entire effect.
-    board:  knownBoard(state.board, state.gameSpecific.explored?.[playerId], playerId),
+    board:  knownBoard(state.board, state.gameSpecific.explored?.[playerId], playerId,
+                       state.gameSpecific.remembered?.[playerId]),
     units:  state.units.filter(u  => u.ownerId  === playerId || canSee(u.position)),
     cities: state.cities.filter(c => c.ownerId  === playerId || embassy || canSee(c.position)),
   });
@@ -2002,7 +2086,7 @@ export const Civ1Game = {
   // An opening is explored from scratch; units added to a game in progress only
   // add what they can see to what each side has explored already.
   applyStartingUnits(state, _config, { midGame = false } = {}) {
-    return midGame ? state.players.reduce((acc, p) => markExplored(acc, p.id), state) : seedExploration(state);
+    return midGame ? state.players.reduce((acc, p) => forgetSeen(markExplored(acc, p.id), p.id), state) : seedExploration(state);
   },
 
   getLegalActions,
