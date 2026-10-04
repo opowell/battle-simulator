@@ -984,6 +984,9 @@ function buildField(g, s) {
       // nothing to badge.
       badge:         c.badge,
       badgeLabel:    c.badgeLabel,
+      // The badged thing has pieces inside it (a garrisoned civ1 city): the plaque is
+      // framed in black, the original's mark for an occupied settlement.
+      badgeOccupied: c.badgeOccupied,
       // The token is the square's own art standing in for the piece whose id it
       // carries (civ1's city over its garrison — see boardMoves.js): animations that
       // move a piece by id leave it where it is.

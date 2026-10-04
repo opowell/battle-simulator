@@ -2205,6 +2205,8 @@ export const Civ1Game = {
       imagePath: `${BASE}/map/city`,
       owner: pidIdx[c.ownerId] ?? 0,
       badge: c.size, badgeLabel: c.name,
+      // Only ever drawn under a garrison standing on top of it, so always occupied.
+      badgeOccupied: true,
       fixture: true,
     });
 
@@ -2314,6 +2316,10 @@ export const Civ1Game = {
           portraitPath: (drawsCity && u) ? `${BASE}/units/${u.type}` : undefined,
           badge: drawsCity ? city.size : null,
           badgeLabel: drawsCity ? city.name : undefined,
+          // A city with units in it is framed in black (CIV.EXE's city square, as
+          // CivOne's Icons.City draws it). `u` is the garrison this viewer can see, so
+          // a rival's city is framed only while its garrison is in sight.
+          badgeOccupied: (drawsCity && u) ? true : undefined,
           // …and because the square's art is the CITY's while `unitId` above is the
           // garrison's, the client must not treat this token as the piece that carries
           // that id: a unit stepping into the city would otherwise animate the city

@@ -328,28 +328,31 @@ export function findAdjacentFree(pos, board, units) {
 
 // ── Zones of control ─────────────────────────────────────────────────────────
 //
-// Civ1's blockade rule. Every unit projects a zone over the eight squares around
-// it, and a land unit may not step straight from one square an enemy covers to
-// another square *that same enemy* covers. Two enemies standing side by side
-// therefore seal the lane between them: to get past you attack through, walk
-// around, or duck into a city.
+// Civ1's blockade rule. A land unit standing next to an enemy unit may not step
+// straight onto another square that is next to an enemy unit — *any* enemy unit,
+// not necessarily the same one. Two enemies standing side by side therefore seal
+// the lane between them, and so do a fort and a garrisoned city two squares apart:
+// to get past you attack through, walk around, or duck into a city.
 //
-// The exact shape of the rule — including the quirks — follows the original, as
-// reproduced by CivOne (CC0) in BaseUnit.MoveTo:
-//   https://github.com/SWY1985/CivOne/blob/master/src/Units/BaseUnit.cs
+// The exact shape of the rule follows CIV.EXE itself, as decompiled by OpenCiv1 —
+// the human move handler at 1403:1d96 and its "is an enemy beside this square?"
+// test at 1866:1725 / 1866:1750 (Segments/Segment_1403.cs and Segment_1866.cs in
+//   https://github.com/hartmark/OpenCiv1 ).
+// CivOne's BaseUnit.MoveTo asks whether the SAME enemy covers both squares; the
+// original asks the question once per square and ANDs the answers.
 //
 //   * Only land units are bound by it. Ships and aircraft move as they please.
 //   * Diplomats and Caravans slip through — the 'ignore-zoc' tag in units.js,
-//     which is how any future unit joins them.
-//   * A city square at *either* end of the step lifts the rule, whoever owns it,
-//     and so does an ocean square — an amphibious landing is never blockaded.
-//   * It takes ONE enemy covering both squares. Stepping out of unit A's zone
-//     and into unit B's is legal, which is why a blockade needs a real line and
-//     not just scattered pickets.
+//     which is how any future unit joins them (CIV.EXE: unit type < 26).
+//   * A square holding one of the mover's own units lifts it: you can always fall
+//     in beside a friend. (An enemy there makes the step an attack, not a move.)
+//   * A city square is never in a zone, whoever owns it, so a city at either end
+//     of the step lifts it. So does an ocean square — a landing is never
+//     blockaded, and boarding is falling in beside a friendly ship.
+//   * Only neighbours of the same kind as the square count (land beside land, sea
+//     beside sea), so a ship lying offshore does not blockade the coast.
 //   * Attacking is never blocked, because attacking is not a move — Civ1Game
 //     enumerates 'attack' separately and never consults this.
-//   * The projecting unit's own domain doesn't matter: a trireme lying offshore
-//     covers the coastal squares beside it, as in the original.
 //
 // Note this is about *enemies*: `playerId` is the mover's side, and everyone
 // else — rival civs and barbarians alike — projects against them.
@@ -365,27 +368,36 @@ const ZOC_DIRS = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
  *   true if the rule forbids `unit` stepping `from` → `to`.
  */
 export function makeZoneOfControl(board, allUnits, cities, playerId) {
-  // tile key -> the enemy tile keys whose zone reaches it. Built by stamping each
-  // enemy's eight neighbours rather than by scanning tiles, so the cost is in the
-  // number of enemies on the board, not the size of the map.
-  const coverage = new Map();
+  const W = wrapWidth(board);
+  const wet = (k) => board.tiles[k]?.terrain === 'ocean';
+  // The squares some enemy stands beside. Built by stamping each enemy's eight
+  // neighbours rather than by scanning tiles, so the cost is in the number of
+  // enemies on the board, not the size of the map.
+  const covered = new Set();
+  // tile key -> ids of the mover's side standing there (the friendly-square exemption)
+  const friends = new Map();
   for (const u of allUnits) {
-    if (!u.alive || u.ownerId === playerId) continue;
+    if (!u.alive) continue;
     const src = `${u.position.x},${u.position.y}`;
+    if (u.ownerId === playerId) {
+      let at = friends.get(src);
+      if (!at) friends.set(src, at = []);
+      at.push(u.id);
+      continue;
+    }
     for (const [dx, dy] of ZOC_DIRS) {
       const ny = u.position.y + dy;
       if (ny < 0 || ny >= board.height) continue;
-      const k = `${wrapX(u.position.x + dx, wrapWidth(board))},${ny}`;
-      let at = coverage.get(k);
-      if (!at) coverage.set(k, at = new Set());
-      at.add(src);
+      const k = `${wrapX(u.position.x + dx, W)},${ny}`;
+      if (wet(k) === wet(src)) covered.add(k);
     }
   }
-  if (coverage.size === 0) return () => false;   // nobody about: nothing to check
+  if (covered.size === 0) return () => false;   // nobody about: nothing to check
 
   const cityPos = new Set((cities ?? []).map(c => `${c.position.x},${c.position.y}`));
-  // A square that lifts the rule for any step touching it.
-  const exempt = (k) => cityPos.has(k) || board.tiles[k]?.terrain === 'ocean';
+  // In an enemy's zone, as 1866:1725 has it: beside one, and not a city — and, for
+  // a land unit's step, not the open sea.
+  const inZone = (k) => covered.has(k) && !cityPos.has(k) && !wet(k);
 
   return (unit, from, to) => {
     const stats = UNITS[unit.type];
@@ -393,17 +405,14 @@ export function makeZoneOfControl(board, allUnits, cities, playerId) {
     if (stats.special?.includes('ignore-zoc')) return false;
 
     const toK = `${to.x},${to.y}`;
-    const covering = coverage.get(toK);
-    if (!covering) return false;                 // walking into open ground
+    if (!inZone(toK)) return false;              // walking into open ground
 
     const fromK = `${from.x},${from.y}`;
-    if (exempt(fromK) || exempt(toK)) return false;
+    if (!inZone(fromK)) return false;            // stepping *into* a zone is fine
 
-    const leaving = coverage.get(fromK);
-    if (!leaving) return false;                  // stepping *into* a zone is fine
-
-    for (const enemy of leaving) if (covering.has(enemy)) return true;
-    return false;
+    // Falling in beside a friend — anyone of ours there but the mover itself, which
+    // the flood fill and the march planner still see standing where it started.
+    return !friends.get(toK)?.some(id => id !== unit.id);
   };
 }
 

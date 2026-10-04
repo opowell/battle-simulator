@@ -31,6 +31,28 @@ function ink(hex) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 0.55 ? '#000' : '#fff';
 }
 
+// The owner colour's dark shade, for the shaded edges of the bevel (the original pairs
+// every player colour with a darker one for exactly this).
+function shade(hex) {
+  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex || '');
+  if (!m) return '#000';
+  return '#' + [1, 2, 3].map(i => Math.round(parseInt(m[i], 16) * 0.6).toString(16).padStart(2, '0')).join('');
+}
+
+// Frame and bevel, one original pixel each: the art is drawn on a 16px square, so a
+// plaque `size` across is size/16 to the pixel. White down the left and along the
+// bottom, the dark shade along the top and down the right (white listed first, so it
+// wins the two corners they share), and — only round a settlement with pieces inside
+// (`badgeOccupied`) — a black frame outside both.
+function edges(unit, size) {
+  const w = Math.max(1, Math.round(size / 16));
+  return {
+    borderWidth: w + 'px',
+    borderColor: unit.badgeOccupied ? '#000' : 'transparent',
+    boxShadow: `inset ${w}px ${-w}px 0 #fff, inset ${-w}px ${w}px 0 ${shade(unit.teamObj.raw)}`,
+  };
+}
+
 // A ring of the plaque's own colour around the digits, so they stay readable where the
 // sprite's line art runs behind them without punching a hole in it.
 function haloRing(hex, w) {
@@ -41,7 +63,7 @@ function haloRing(hex, w) {
 
 <template>
   <div class="bt-plaque" :class="state && 'bt-plaque--' + state"
-       :style="{ width: size + 'px', height: size + 'px', background: unit.teamObj.raw }">
+       :style="{ width: size + 'px', height: size + 'px', backgroundColor: unit.teamObj.raw, ...edges(unit, size) }">
     <img v-if="unit.imagePath" class="bt-sprite" :src="unit.imagePath" draggable="false"/>
     <span class="bt-count"
           :style="{ color: ink(unit.teamObj.raw), fontFamily: rdr.font,
@@ -61,14 +83,13 @@ function haloRing(hex, w) {
 </template>
 
 <style scoped>
-/* Bevelled block: light on the top/left edges, dark on the bottom/right ones, over a
-   hard black outline — the 3D box the era's own map art drew settlements as. */
+/* Bevelled block, as the era's own map art drew a settlement — edges() above sets the
+   frame and bevel, which scale with the plaque. The background stops inside the border,
+   so an unoccupied plaque's empty frame shows the ground through it. */
 .bt-plaque {
   position: relative; flex: none; box-sizing: border-box;
   display: flex; align-items: center; justify-content: center;
-  border: 1px solid rgba(0,0,0,.85);
-  box-shadow: inset 1px 1px 0 rgba(255,255,255,.5), inset -1px -1px 0 rgba(0,0,0,.45),
-              1px 1px 0 rgba(0,0,0,.45);
+  border-style: solid; background-clip: padding-box;
 }
 /* Selection states, in the plaque's own terms — the outline hugs the block rather than
    ringing it at a distance the way a small marker's does. */
