@@ -6,7 +6,7 @@
 // every time the console's own tab is looked at. So the frames live here, over
 // the window, each laid over the box its tab shows (SessionPlay) and hidden,
 // still running, while that tab is behind another.
-import { onBeforeUnmount, reactive, ref, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch, watchEffect } from 'vue'
 import { playUrl } from '../api.js'
 
 const props = defineProps({
@@ -42,11 +42,41 @@ watchEffect(() => {
 })
 onBeforeUnmount(() => cancelAnimationFrame(raf))
 
+const isShown = (id) => props.slots.has(id) && !!places[id]
+
+// A game is played from the keyboard (civ1's arrows move the unit in hand), and
+// its keys listen inside its own frame — which the console's page keeps hold of
+// unless told otherwise, so a session just opened, or a tab just brought to the
+// front, would answer its first keys with nothing. A frame coming into view takes
+// the keyboard; the latest to arrive wins when several do at once.
+const frames = {}
+const shownIds = computed(() => props.sessionIds.filter(isShown))
+watch(shownIds, (now, was = []) => {
+  const arrived = now.filter((id) => !was.includes(id)).at(-1)
+  if (arrived) focusFrame(arrived)
+}, { flush: 'post' })
+
+function focusFrame(id) {
+  const frame = frames[id]
+  if (!frame) return
+  frame.focus()
+  frame.contentWindow?.focus()
+}
+
+// A frame focused before its page has loaded can lose the keyboard again when the
+// page arrives, so it is handed over once more then — unless the keyboard has
+// meanwhile gone somewhere else in the console, which is the user's to decide.
+function onLoad(id) {
+  const frame = frames[id]
+  const active = document.activeElement
+  if (isShown(id) && (active === frame || active === document.body)) focusFrame(id)
+}
+
 function styleOf(id) {
   const place = places[id]
   // Hidden rather than taken away: it keeps its size, so the game inside does
   // not lay itself out for nothing while it waits.
-  const shown = props.slots.has(id) && place
+  const shown = isShown(id)
   return {
     ...(place ? { left: `${place.left}px`, top: `${place.top}px`, width: `${place.width}px`, height: `${place.height}px` } : {}),
     visibility: shown ? 'visible' : 'hidden',
@@ -59,11 +89,13 @@ function styleOf(id) {
     <iframe
       v-for="id in sessionIds"
       :key="id"
+      :ref="(el) => { if (el) frames[id] = el; else delete frames[id] }"
       class="sf__frame"
       :style="styleOf(id)"
       :src="playUrl.session(id)"
       title="Session"
       allow="autoplay; fullscreen"
+      @load="onLoad(id)"
     />
   </div>
 </template>
