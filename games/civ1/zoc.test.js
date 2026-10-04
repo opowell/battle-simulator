@@ -1,9 +1,10 @@
 // Zones of control — civ1's blockade rule (see makeZoneOfControl in map.js).
 //
 // The rule is small but every clause of it is a real Civ1 quirk, so each gets a
-// test: only land units are bound, some units are exempt, cities and ocean lift it,
-// and it takes ONE enemy covering both ends of the step rather than two different
-// ones. The worlds here are hand-built and empty apart from the pieces under test.
+// test: only land units are bound, some units are exempt, cities, ocean and our own
+// units lift it, and ANY enemy beside each end of the step blocks it — not only one
+// enemy beside both. The worlds here are hand-built and empty apart from the pieces
+// under test.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Civ1Game, BARBARIAN_ID } from './index.js';
@@ -61,17 +62,47 @@ test('civ1 zoc: stepping *into* a zone from clear ground is always allowed', () 
   assert.equal(canReach(state, mover, { x: 9, y: 10 }), true);
 });
 
-test('civ1 zoc: it takes one enemy covering both squares, not two different ones', () => {
-  // Two enemies far apart. (9,2) is covered only by the northern one, (9,8) only by
-  // the southern one — no single enemy covers both, so this quirk of the original
-  // lets a unit walk from one zone straight into the other.
-  const north = unit('e1', 'p2', 'phalanx', 10, 1);
-  const south = unit('e2', 'p2', 'phalanx', 10, 9);
-  const zoc = makeZoneOfControl(world().board, [north, south], [], 'p1');
-  const mover = unit('m', 'p1', 'militia', 9, 2);
+test('civ1 zoc: any enemy beside each end blocks the step, not only the same one', () => {
+  // The case that found the bug: a knight beside an enemy fort steps diagonally to a
+  // square beside the enemy's garrisoned city. No single enemy is beside both ends —
+  // CivOne would allow it — but CIV.EXE asks "is an enemy beside this square?" of
+  // each end separately, and the answer is yes twice.
+  const fort = unit('e1', 'p2', 'phalanx', 10, 8);
+  const garrison = unit('e2', 'p2', 'phalanx', 12, 11);
+  const knight = unit('m', 'p1', 'knights', 10, 9, { movesLeft: 1 });   // no time to go round
+  const zoc = makeZoneOfControl(world().board, [fort, garrison, knight], [], 'p1');
 
-  assert.equal(zoc(mover, { x: 9, y: 2 }, { x: 9, y: 8 }), false, 'different zones: legal');
-  assert.equal(zoc(mover, { x: 9, y: 2 }, { x: 9, y: 0 }), true, 'the north enemy covers both: blocked');
+  assert.equal(zoc(knight, { x: 10, y: 9 }, { x: 11, y: 10 }), true, 'fort to city: blocked');
+  assert.equal(zoc(knight, { x: 10, y: 9 }, { x: 9, y: 10 }), false, 'out of every zone: fine');
+  const state = world({ units: [fort, garrison, knight] });
+  assert.equal(canReach(state, knight, { x: 11, y: 10 }), false, 'and the flood fill agrees');
+});
+
+test("civ1 zoc: a square holding one of our own units lifts it", () => {
+  // The same blocked slide, (9,10) -> (9,9), but a friendly unit already stands on
+  // (9,9): falling in beside it is always allowed (1403:1e2f — the destination's
+  // owner is checked before either zone).
+  const enemy = unit('e', 'p2', 'phalanx', 10, 10);
+  const mover = unit('m', 'p1', 'militia', 9, 10);
+  const blocked = (others) =>
+    makeZoneOfControl(world().board, [enemy, mover, ...others], [], 'p1')(mover, { x: 9, y: 10 }, { x: 9, y: 9 });
+
+  assert.equal(blocked([]), true, 'empty square: blocked');
+  assert.equal(blocked([unit('f', 'p1', 'phalanx', 9, 9)]), false, 'a friend there: allowed');
+  assert.equal(blocked([unit('f', 'p1', 'phalanx', 9, 10)]), true,
+    'a friend left behind on the start square does not help');
+});
+
+test('civ1 zoc: a ship lying offshore does not blockade the coast', () => {
+  // Only neighbours of the same kind as the square count (1866:1750 compares each
+  // neighbour's ocean-ness with the centre's): an enemy trireme at sea is beside
+  // both coastal squares, but they are land and it is not.
+  const board = world({ terrainAt: (k) => (k.startsWith('10,') ? 'ocean' : 'grassland') }).board;
+  const mover = unit('m', 'p1', 'militia', 9, 10);
+  const step = (enemy) => makeZoneOfControl(board, [enemy], [], 'p1')(mover, { x: 9, y: 10 }, { x: 9, y: 9 });
+
+  assert.equal(step(unit('e', 'p2', 'trireme', 10, 10)), false, 'the trireme does not');
+  assert.equal(step(unit('e', 'p2', 'phalanx', 8, 10)), true, 'a phalanx ashore does');
 });
 
 test('civ1 zoc: two enemies side by side seal the lane between them', () => {

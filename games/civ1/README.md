@@ -203,12 +203,14 @@ Roads halve movement cost on the tile.
 
 ### Zones of control
 
-Every unit projects a zone over the eight squares around it. A land unit may not step
-straight from one square an enemy covers to another square **that same enemy** covers,
-so two enemies standing side by side seal the lane between them — you attack through
-the line, walk around it, or duck into a city. Following the original: only land units
-are bound by it, Diplomats and Caravans ignore it, a city or ocean square at either end
-of the step lifts it, and attacking is never blocked (attacking is not a move). See
+A land unit standing next to an enemy unit may not step straight onto another square
+next to an enemy unit — **any** enemy, not only the same one — so two enemies standing
+side by side seal the lane between them, and so do a fort and a garrisoned city two
+squares apart: you attack through the line, walk around it, or duck into a city.
+Following CIV.EXE (as decompiled by OpenCiv1): only land units are bound by it,
+Diplomats and Caravans ignore it, a city or ocean square at either end of the step lifts
+it, so does a square holding one of your own units, ships at sea do not blockade the
+coast, and attacking is never blocked (attacking is not a move). See
 `makeZoneOfControl` in [map.js](map.js).
 
 Roads add trade on desert/plains/grassland; irrigation adds +1 food; mines add shields on hills/mountains.
