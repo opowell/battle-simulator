@@ -12,7 +12,7 @@ const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 function unit(id, ownerId, type, x, y, over = {}) {
   return {
     id, ownerId, type, position: { x, y }, alive: true,
-    hp: 10, maxHp: 10, movesLeft: 1, attrs: {}, queue: [], ...over,
+    hp: 10, maxHp: 10, moveThirds: 3, attrs: {}, queue: [], ...over,
   };
 }
 

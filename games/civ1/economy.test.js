@@ -167,7 +167,7 @@ test('economy: change-government enters anarchy then adopts the new government',
 test('economy: legal actions expose research, tax, government and terraform choices', () => {
   const s = miniState({ techs: ['bronze-working'] });
   // put a settler on the map
-  s.units.push({ id: 'u0', ownerId: 'p1', type: 'settlers', position: { x: 4, y: 4 }, alive: true, hp: 20, maxHp: 20, movesLeft: 1, queue: [], special: [] });
+  s.units.push({ id: 'u0', ownerId: 'p1', type: 'settlers', position: { x: 4, y: 4 }, alive: true, hp: 20, maxHp: 20, moveThirds: 3, queue: [], special: [] });
   const acts = Civ1Game.getLegalActions(s, 'p1');
   assert.ok(acts.some(a => a.type === 'set-research'));
   assert.ok(acts.some(a => a.type === 'set-tax'));

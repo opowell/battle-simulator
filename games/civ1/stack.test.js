@@ -14,7 +14,7 @@ const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 function unit(id, ownerId, type, x, y, over = {}) {
   return {
     id, ownerId, type, position: { x, y }, alive: true,
-    hp: 10, maxHp: 10, movesLeft: 1, attrs: {}, queue: [], ...over,
+    hp: 10, maxHp: 10, moveThirds: 3, attrs: {}, queue: [], ...over,
   };
 }
 
@@ -88,7 +88,7 @@ test('civ1 stacking: a piled-up square is still walkable ground for the rest of 
     unit('a', 'p1', 'militia', 10, 10),
     unit('b', 'p1', 'militia', 10, 10),
     unit('c', 'p1', 'settlers', 10, 10),
-    unit('m', 'p1', 'cavalry', 9, 10, { movesLeft: 2 }),
+    unit('m', 'p1', 'cavalry', 9, 10, { moveThirds: 6 }),
   ] });
   const mover = state.units.find(u => u.id === 'm');
   assert.equal(canReach(state, mover, { x: 11, y: 10 }), true, 'straight through the pile');
@@ -212,8 +212,8 @@ test('civ1 stacking: the last defender\'s death empties the city, which falls to
 
 test('civ1 stacking: the square hands over the unit that still wants orders', () => {
   const state = world({ units: [
-    unit('done', 'p1', 'phalanx', 10, 10, { movesLeft: 0 }),
-    unit('waiting', 'p1', 'settlers', 10, 10, { movesLeft: 1 }),
+    unit('done', 'p1', 'phalanx', 10, 10, { moveThirds: 0 }),
+    unit('waiting', 'p1', 'settlers', 10, 10, { moveThirds: 3 }),
   ] });
 
   const cell = Civ1Game.toGrid(state).cells.find(c => c.x === 10 && c.y === 10);
@@ -256,8 +256,8 @@ test('civ1 stacking: a garrison standing on its city says how many are inside', 
 
 test('civ1 stacking: once everyone is done the square shows its defender', () => {
   const state = world({ units: [
-    unit('soft', 'p1', 'settlers', 10, 10, { movesLeft: 0 }),
-    unit('hard', 'p1', 'phalanx', 10, 10, { movesLeft: 0 }),
+    unit('soft', 'p1', 'settlers', 10, 10, { moveThirds: 0 }),
+    unit('hard', 'p1', 'phalanx', 10, 10, { moveThirds: 0 }),
   ] });
   const cell = Civ1Game.toGrid(state).cells.find(c => c.x === 10 && c.y === 10);
   assert.equal(cell.unitId, 'hard');
@@ -309,7 +309,7 @@ test('civ1 stacking: the garrison the turn is waiting on stands ON its city', ()
 });
 
 test('civ1 stacking: a garrison that has had its orders goes back under the city', () => {
-  for (const done of [{ movesLeft: 0 }, { attrs: { fortified: true } }, { attrs: { sentry: true } }]) {
+  for (const done of [{ moveThirds: 0 }, { attrs: { fortified: true } }, { attrs: { sentry: true } }]) {
     const state = world({
       units: [unit('g', 'p1', 'militia', 10, 10, done)],
       cities: [city('c1', 'p1', 10, 10)],

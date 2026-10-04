@@ -6,14 +6,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Civ1Game, getCombatStrengths } from './index.js';
-import { attackThirds } from './combat.js';
 
 const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 
 function unit(id, ownerId, type, x, y, over = {}) {
   return {
     id, ownerId, type, position: { x, y }, alive: true,
-    hp: 10, maxHp: 10, movesLeft: 1, attrs: {}, queue: [], ...over,
+    hp: 10, maxHp: 10, moveThirds: 3, attrs: {}, queue: [], ...over,
   };
 }
 
@@ -53,19 +52,19 @@ const byId = (state, id) => state.units.find(u => u.id === id);
 
 test('civ1 attack: winning costs one move, and a unit with moves to spare fights on', () => {
   let state = world({ units: [
-    unit('kn', 'p1', 'knights', 5, 5, { movesLeft: 2 }),
+    unit('kn', 'p1', 'knights', 5, 5, { moveThirds: 6 }),
     unit('a', 'p2', 'militia', 6, 5),
     unit('b', 'p2', 'militia', 4, 5),
   ] });
   state = attack(state, 'kn', 'a');
   assert.equal(byId(state, 'a').alive, false);
-  assert.equal(byId(state, 'kn').movesLeft, 1, 'two moves, one spent');
+  assert.equal(byId(state, 'kn').moveThirds, 3, 'two moves, one spent');
 
   const again = Civ1Game.getLegalActions(state, 'p1').find(a => a.type === 'attack' && a.unitId === 'kn');
   assert.ok(again, 'it may attack again this turn');
   state = Civ1Game.applyActions(state, [{ playerId: 'p1', action: again }], attackerWins);
   assert.equal(byId(state, 'b').alive, false);
-  assert.equal(byId(state, 'kn').movesLeft, 0);
+  assert.equal(byId(state, 'kn').moveThirds, 0);
   assert.equal(Civ1Game.getLegalActions(state, 'p1').some(a => a.unitId === 'kn' && a.type === 'attack'), false);
 });
 
@@ -74,30 +73,30 @@ test('civ1 attack: a one-move unit is spent by its attack', () => {
     unit('leg', 'p1', 'legion', 5, 5),
     unit('a', 'p2', 'militia', 6, 5),
   ] }), 'leg', 'a');
-  assert.equal(byId(state, 'leg').movesLeft, 0);
+  assert.equal(byId(state, 'leg').moveThirds, 0);
 });
 
 test('civ1 attack: what a road left over is kept in whole thirds, and never goes negative', () => {
   const four = attack(world({ units: [
-    unit('kn', 'p1', 'knights', 5, 5, { movesLeft: 2 - 1 / 3 - 1 / 3 }),
+    unit('kn', 'p1', 'knights', 5, 5, { moveThirds: 4 }),
     unit('a', 'p2', 'militia', 6, 5),
   ] }), 'kn', 'a');
-  assert.equal(byId(four, 'kn').movesLeft, 1 / 3, 'four thirds less three is exactly one third');
+  assert.equal(byId(four, 'kn').moveThirds, 1, 'four thirds less three is exactly one third');
 
   const two = attack(world({ units: [
-    unit('kn', 'p1', 'knights', 5, 5, { movesLeft: 2 / 3 }),
+    unit('kn', 'p1', 'knights', 5, 5, { moveThirds: 2 }),
     unit('a', 'p2', 'militia', 6, 5),
   ] }), 'kn', 'a');
-  assert.equal(byId(two, 'kn').movesLeft, 0);
+  assert.equal(byId(two, 'kn').moveThirds, 0);
 });
 
 test('civ1 attack: a lost attack is still the end of the attacker', () => {
   const state = attack(world({ units: [
-    unit('kn', 'p1', 'knights', 5, 5, { movesLeft: 2 }),
+    unit('kn', 'p1', 'knights', 5, 5, { moveThirds: 6 }),
     unit('ph', 'p2', 'phalanx', 6, 5),
   ] }), 'kn', 'ph', attackerLoses);
   assert.equal(byId(state, 'kn').alive, false);
-  assert.equal(byId(state, 'kn').movesLeft, 0);
+  assert.equal(byId(state, 'kn').moveThirds, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -109,30 +108,30 @@ test('civ1 attack: a lost attack is still the end of the attacker', () => {
 
 test('civ1 attack: on a third or two thirds of a move the blow lands at that strength', () => {
   const state = world({ units: [unit('a', 'p2', 'militia', 6, 5)] });
-  const strength = movesLeft =>
-    getCombatStrengths(unit('cat', 'p1', 'catapult', 5, 5, { movesLeft }), byId(state, 'a'), state).att;
-  assert.equal(strength(1), 6, "a catapult's full attack");
-  assert.equal(strength(2 / 3), 4);
-  assert.equal(strength(1 / 3), 2);
-  assert.equal(strength(1 - 1 / 3 - 1 / 3), 2, 'a road-worn 1/3 counts as exactly a third');
-  assert.equal(strength(2), 6, 'more than a move is no stronger than one');
+  const strength = moveThirds =>
+    getCombatStrengths(unit('cat', 'p1', 'catapult', 5, 5, { moveThirds }), byId(state, 'a'), state).att;
+  assert.equal(strength(3), 6, "a catapult's full attack");
+  assert.equal(strength(2), 4);
+  assert.equal(strength(1), 2);
+  assert.equal(strength(6), 6, 'more than a move is no stronger than one');
   assert.equal(strength(0), 6, 'a unit with no moves left is weighed at what it hits with next turn');
 });
 
 test('civ1 attack: a weakened attack says so on the button, and a full one does not', () => {
-  const at = movesLeft => Civ1Game.getLegalActions(world({ units: [
-    unit('leg', 'p1', 'legion', 5, 5, { movesLeft }),
+  const at = moveThirds => Civ1Game.getLegalActions(world({ units: [
+    unit('leg', 'p1', 'legion', 5, 5, { moveThirds }),
     unit('a', 'p2', 'militia', 6, 5),
   ] }), 'p1').find(a => a.type === 'attack');
-  assert.equal(at(1 / 3).label, 'Attack a at 1/3 strength');
-  assert.equal(at(2 / 3).label, 'Attack a at 2/3 strength');
-  assert.equal(at(1).label, undefined);
-  assert.equal(at(2).label, undefined);
+  assert.equal(at(1).label, 'Attack a at 1/3 strength');
+  assert.equal(at(2).label, 'Attack a at 2/3 strength');
+  assert.equal(at(3).label, undefined);
+  assert.equal(at(6).label, undefined);
 });
 
 test('civ1 attack: three road steps leave no move to attack with', () => {
-  // Three thirds off one move leave 1.1e-16 in floating point. That sliver is no move:
-  // the original counts in whole thirds, so there is nothing left to swing with.
+  // Three thirds off one move left 1.1e-16 when moves were floats, and that sliver
+  // looked like a move left. Counted in whole thirds, as the original counts them,
+  // three off three is nothing at all.
   let state = world({ units: [
     unit('leg', 'p1', 'legion', 5, 5),
     unit('a', 'p2', 'militia', 9, 5),
@@ -144,9 +143,8 @@ test('civ1 attack: three road steps leave no move to attack with', () => {
       action: { type: 'move', unitId: 'leg', from: byId(state, 'leg').position, to: { x, y: 5 } } }]);
   }
   assert.deepEqual(byId(state, 'leg').position, { x: 8, y: 5 });
-  assert.ok(byId(state, 'leg').movesLeft < 1e-9);
+  assert.equal(byId(state, 'leg').moveThirds, 0);
   assert.equal(Civ1Game.getLegalActions(state, 'p1').some(a => a.type === 'attack'), false);
-  assert.equal(attackThirds(byId(state, 'leg')), 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -192,7 +190,7 @@ test('civ1 attack: a blow from a ship at sea costs the city nothing', () => {
   const state = attack(world({
     ocean: [[9, 10]],
     units: [
-      unit('iron', 'p1', 'ironclad', 9, 10, { movesLeft: 4 }),
+      unit('iron', 'p1', 'ironclad', 9, 10, { moveThirds: 12 }),
       unit('g1', 'p2', 'militia', 10, 10),
       unit('g2', 'p2', 'militia', 10, 10),
     ],

@@ -48,7 +48,7 @@ const imgSrc = window.api.imgSrc;
         <div class="sud-barlabel">
           <span class="sud-barlabel-k">HP</span>
           <span class="mono sud-barlabel-v">
-            {{Math.round(unit.currentHp ?? unit.hpNow)}} / {{unit.hpMax}}
+            {{unit.currentHp != null ? EXACT.fmt(unit.currentHp) : Math.round(unit.hpNow)}} / {{EXACT.fmt(unit.hpMax)}}
           </span>
         </div>
         <div class="sud-hp-track" :style="{background: rdr.hpTrack}">
@@ -63,7 +63,7 @@ const imgSrc = window.api.imgSrc;
       <template v-if="unit.maxMp != null">
         <div class="sud-barlabel">
           <span class="sud-barlabel-k">MP</span>
-          <span class="mono sud-barlabel-v">{{unit.mp ?? 0}} / {{unit.maxMp}}</span>
+          <span class="mono sud-barlabel-v">{{EXACT.fmt(unit.mp ?? 0)}} / {{EXACT.fmt(unit.maxMp)}}</span>
         </div>
         <div class="sud-mp-track">
           <div class="sud-mp-fill" :style="{width: ((unit.mp ?? 0)/unit.maxMp*100)+'%'}"/>

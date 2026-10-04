@@ -9,7 +9,7 @@ const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 function unit(id, ownerId, type, x, y, over = {}) {
   return {
     id, ownerId, type, position: { x, y }, alive: true,
-    hp: 10, maxHp: 10, movesLeft: 1, attrs: {}, queue: [], ...over,
+    hp: 10, maxHp: 10, moveThirds: 3, attrs: {}, queue: [], ...over,
   };
 }
 
@@ -61,7 +61,7 @@ test('remembered ground: a road laid in plain sight shows at once', () => {
 test('remembered ground: it is the LAST sight that is kept, not the latest change', () => {
   let state = world([unit('s', 'p1', 'settlers', 5, 5), unit('w', 'p2', 'militia', 15, 15)]);
   state = act(state, 'p1', { type: 'build-road', unitId: 's' });
-  state = { ...state, units: state.units.map(u => u.id === 's' ? { ...u, movesLeft: 1 } : u) };
+  state = { ...state, units: state.units.map(u => u.id === 's' ? { ...u, moveThirds: 3 } : u) };
   state = act(state, 'p1', { type: 'irrigate', unitId: 's' });
   const p2 = seenBy(state, 'p2', 5, 5);
   assert.equal(p2.hasRoad, false);

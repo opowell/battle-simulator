@@ -26,7 +26,7 @@ const markName = m => String(m.title).split(' — ')[0];
       <BsDot v-else :color="u.teamObj?.raw" :size="9"/>
       <span class="squ-name">{{ u.name }}</span>
       <span v-if="u.statusMark?.title" class="mono squ-mark" :title="u.statusMark.title">{{ markName(u.statusMark) }}</span>
-      <span v-if="u.maxMp != null" class="mono squ-mp">{{ u.mp ?? 0 }}/{{ u.maxMp }}</span>
+      <span v-if="u.maxMp != null" class="mono squ-mp">{{ EXACT.fmt(u.mp ?? 0) }} / {{ EXACT.fmt(u.maxMp) }}</span>
     </button>
   </div>
 </template>

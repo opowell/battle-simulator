@@ -14,7 +14,7 @@ const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 function unit(id, ownerId, type, x, y, over = {}) {
   return {
     id, ownerId, type, position: { x, y }, alive: true,
-    hp: 10, maxHp: 10, movesLeft: 1, attrs: {}, queue: [], ...over,
+    hp: 10, maxHp: 10, moveThirds: 3, attrs: {}, queue: [], ...over,
   };
 }
 
@@ -78,7 +78,7 @@ test('civ1 zoc: two enemies side by side seal the lane between them', () => {
   // Enemies at (10,9) and (10,11). Every north-south step through the x=9 column
   // beside them stays inside one of the two zones, so a unit coming up the column
   // is turned back at the line instead of walking through it.
-  const mover = unit('m', 'p1', 'militia', 9, 8, { movesLeft: 3, type: 'armor' });
+  const mover = unit('m', 'p1', 'militia', 9, 8, { moveThirds: 9, type: 'armor' });
   const state = world({
     units: [mover, unit('e1', 'p2', 'phalanx', 10, 9), unit('e2', 'p2', 'phalanx', 10, 11)],
   });
@@ -95,7 +95,7 @@ test('civ1 zoc: the gap between two enemies is sealed, not a door', () => {
   //
   // Armor has three moves, so the flood is checked at every step and not merely at
   // the destination: the same march with nobody about walks straight through.
-  const mover = unit('m', 'p1', 'armor', 9, 10, { movesLeft: 3 });
+  const mover = unit('m', 'p1', 'armor', 9, 10, { moveThirds: 9 });
   const line = [unit('e1', 'p2', 'phalanx', 10, 9), unit('e2', 'p2', 'phalanx', 10, 11)];
   const has = (units, x, y) => {
     const state = world({ units });
@@ -229,7 +229,7 @@ test('civ1 zoc: a queued waypoint is dropped if a blockade closes across it', ()
   // The unit has a waypoint one square north and no moves left. Come its next turn
   // an enemy is standing beside it, covering both ends of that step — the waypoint
   // waits rather than running through the line.
-  const mover = unit('m', 'p1', 'militia', 9, 10, { movesLeft: 0, queue: [{ x: 9, y: 9 }] });
+  const mover = unit('m', 'p1', 'militia', 9, 10, { moveThirds: 0, queue: [{ x: 9, y: 9 }] });
   const state = world({ units: [mover, unit('e', 'p2', 'phalanx', 10, 10)] });
 
   const after = Civ1Game.applyActions(

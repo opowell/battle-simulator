@@ -86,7 +86,7 @@ test('civ1: skip-unit drains all moves for that unit', () => {
   if (!skip) return;
   const next = Civ1Game.applyActions(state, [{ playerId: 'p1', action: skip }]);
   const unit = next.units.find(u => u.id === skip.unitId);
-  assert.equal(unit.movesLeft, 0);
+  assert.equal(unit.moveThirds, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ test('civ1: getResult win when p2 has no cities or units', () => {
 // stack.test.js; the garrison here has already moved, so the city keeps its square.)
 test('civ1: a garrisoned city square is drawn as the city, not as its garrison', () => {
   const state = Civ1Game.createInitialState(players());
-  const unit = { ...state.units.find(u => u.ownerId === 'p1'), movesLeft: 0 };
+  const unit = { ...state.units.find(u => u.ownerId === 'p1'), moveThirds: 0 };
   const withCity = {
     ...state,
     units: state.units.map(u => (u.id === unit.id ? unit : u)),

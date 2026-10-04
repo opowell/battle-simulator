@@ -1,5 +1,6 @@
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
+import { stepThirds, THIRDS } from './moves.js';
 
 export function mulberry32(seed) {
   let s = seed >>> 0;
@@ -423,8 +424,9 @@ export function getReachableTiles(unit, board, allUnits, playerId, cities = []) 
   const enemyPos = new Set(allUnits.filter(u => u.alive && u.ownerId !== playerId).map(u => key(u.position)));
   const zocBlocks = makeZoneOfControl(board, allUnits, cities, playerId);
 
-  const best = new Map([[key(unit.position), unit.movesLeft]]);
-  const queue = [{ pos: unit.position, ml: unit.movesLeft }];
+  // Moves left at each square, in whole thirds (moves.js).
+  const best = new Map([[key(unit.position), unit.moveThirds]]);
+  const queue = [{ pos: unit.position, ml: unit.moveThirds }];
   const reachable = [];
 
   while (queue.length) {
@@ -465,19 +467,10 @@ export function getReachableTiles(unit, board, allUnits, playerId, cities = []) 
       // merely refuse its final destination.
       if (zocBlocks(unit, pos, next)) continue;
 
-      // Civ1 movement costs: railroad is free, road is 1/3, otherwise the terrain's
-      // own cost. Must stay in step with moveCost in Civ1Game.js — this enumerates
-      // where a unit may go, that one charges for the step actually taken.
-      let cost;
-      if (domain === 'air') {
-        cost = 1;
-      } else if (tile.hasRail) {
-        cost = 0;
-      } else if (tile.hasRoad) {
-        cost = 1 / 3;
-      } else {
-        cost = td.moveCost;
-      }
+      // Civ1 movement costs: railroad is free, road is a third, otherwise the
+      // terrain's own cost — the same table moveCost in Civ1Game.js charges the step
+      // actually taken from (stepThirds).
+      const cost = stepThirds(tile, domain);
 
       if (ml <= 0) continue;
       const remaining = Math.max(0, ml - cost);
@@ -513,10 +506,8 @@ export function marchDistances(goal, unit, board, allUnits, playerId, cities = [
     const td = TERRAIN[board.tiles[k]?.terrain];
     return !!td && td.passable.land && (k === goalK || !enemyPos.has(k));
   };
-  const stepCost = (k) => {
-    const t = board.tiles[k];
-    return t.hasRail ? 0 : t.hasRoad ? 1 / 3 : TERRAIN[t.terrain].moveCost;
-  };
+  // Counted in whole thirds so the sums are exact, and handed back in moves.
+  const stepCost = (k) => stepThirds(board.tiles[k], 'land');
 
   const dist = new Map([[goalK, 0]]);
   const queue = [{ pos: goal, d: 0 }];
@@ -539,6 +530,7 @@ export function marchDistances(goal, unit, board, allUnits, playerId, cities = [
       }
     }
   }
+  for (const [k, d] of dist) dist.set(k, d / THIRDS);
   return dist;
 }
 

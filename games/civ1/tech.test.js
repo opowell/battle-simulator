@@ -42,7 +42,7 @@ function miniState({ techs = [], techs2 = [], government = 'despotism', producti
 
 const unit = (id, type, x, y, ownerId = 'p1') => ({
   id, ownerId, type, position: { x, y }, alive: true,
-  hp: UNITS[type].hp, maxHp: UNITS[type].hp, movesLeft: UNITS[type].moves, attrs: {}, queue: [],
+  hp: UNITS[type].hp, maxHp: UNITS[type].hp, moveThirds: UNITS[type].moves * 3, attrs: {}, queue: [],
 });
 
 // ── Every advance reaches something ─────────────────────────────────────────────
@@ -176,7 +176,7 @@ test('railroad: a unit crosses a whole rail line in one turn', () => {
   const after = Civ1Game.applyActions(state, [{ playerId: 'p1', action: far }]);
   const moved = after.units.find(u => u.id === 'u1');
   assert.deepEqual(moved.position, { x: 8, y: 5 });
-  assert.equal(moved.movesLeft, UNITS.militia.moves, 'travelling by rail costs nothing');
+  assert.equal(moved.moveThirds, UNITS.militia.moves * 3, 'travelling by rail costs nothing');
 });
 
 test('railroad: without track the same mountains stop the unit dead', () => {

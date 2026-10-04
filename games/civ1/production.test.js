@@ -30,7 +30,7 @@ function fixture({
     board: { width, height, tiles },
     units: units.map((u, i) => ({
       id: u.id ?? `u${i}`, ownerId: u.ownerId ?? 'p1', type: u.type, alive: true,
-      position: { x: u.x, y: u.y }, hp: UNITS[u.type].hp, movesLeft: UNITS[u.type].moves,
+      position: { x: u.x, y: u.y }, hp: UNITS[u.type].hp, moveThirds: UNITS[u.type].moves * 3,
       attrs: u.attrs ?? {},
     })),
     cities: [{

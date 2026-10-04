@@ -182,7 +182,7 @@ Maps are procedural: multi-scale value noise produces elevation and moisture gri
 - **Firepower** — damage per hit varies by unit type: land=1, sea=1–2, air=2, missiles=3; a fight ends when HP reaches 0
 - **Combat** — round-by-round: `P(attacker wins round) = ATK / (ATK + DEF × terrainBonus)`; loser takes `firepower` HP damage per round
 - **Movement** — 8-directional (Chebyshev); road = ⅓ cost, railroad = 0 cost, air units = always 1 per tile
-- **Guaranteed entry** — a unit with movesLeft > 0 can always enter a passable tile even if the terrain cost exceeds remaining moves (remaining clamps to 0)
+- **Guaranteed entry** — a unit with moveThirds > 0 can always enter a passable tile even if the terrain cost exceeds remaining moves (remaining clamps to 0)
 - **Domain passability** — land units cannot enter ocean; sea units can only traverse ocean; air units ignore terrain passability
 - **Unit stacking** — only one unit may occupy a tile (friendly blocking enforced)
 - **Fog of war** — Chebyshev vision radius 2 from each unit AND each city; enemy units/cities outside this radius are hidden

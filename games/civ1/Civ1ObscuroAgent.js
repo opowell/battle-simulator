@@ -206,7 +206,7 @@ export class Civ1ObscuroAgent extends ObscuroAgent {
   // per unit still holding moves, one per city yet to choose production, one for
   // each empire setting still open, plus the end-turn itself.
   _decisionsLeft(observation, me) {
-    const units = (observation.units ?? []).filter(u => u.alive && u.ownerId === me && u.movesLeft > 0).length;
+    const units = (observation.units ?? []).filter(u => u.alive && u.ownerId === me && u.moveThirds > 0).length;
     const cities = (observation.cities ?? []).filter(c =>
       c.ownerId === me && c.productionSetTurn !== observation.turnNumber).length;
     const civ = observation.gameSpecific?.civ?.[me];

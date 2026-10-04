@@ -26,18 +26,20 @@
  * queue currently ends (so repeated calls chain a route further into the future).
  * Returns [] while the unit still has moves — queuing only kicks in once it's out.
  *
- * @param {object} unit - must have .position, .movesLeft, .queue
+ * @param {object} unit - must have .position, .queue and its moves left (see movesKey)
  * @param {string} playerId - the unit's controller
  * @param {number} movesPerTurn - this unit's full per-turn move budget (its `moves` stat)
  * @param {(virtualUnit: object, playerId: string) => {x:number,y:number}[]} reachableTiles
  *   the game's own movement-range flood fill, called with a *hypothetical* unit (real
  *   id, moves reset to `movesPerTurn`, position at the queue's tail) standing in for
  *   "this unit, next turn"
+ * @param {string} [movesKey='movesLeft'] - the unit field holding its moves left, in
+ *   whatever unit the game counts them (civ1: `moveThirds`, whole thirds of a move)
  */
-export function queueMoveActions(unit, playerId, movesPerTurn, reachableTiles) {
-  if (unit.movesLeft > 0) return [];
+export function queueMoveActions(unit, playerId, movesPerTurn, reachableTiles, movesKey = 'movesLeft') {
+  if (unit[movesKey] > 0) return [];
   const tail = unit.queue.length ? unit.queue[unit.queue.length - 1] : unit.position;
-  const virtualUnit = { ...unit, position: tail, movesLeft: movesPerTurn };
+  const virtualUnit = { ...unit, position: tail, [movesKey]: movesPerTurn };
   return reachableTiles(virtualUnit, playerId).map(to => ({ type: 'queue-move', unitId: unit.id, to }));
 }
 
@@ -72,15 +74,16 @@ export function dequeueLastWaypoint(units, unitId) {
  *   perform one step of real movement (deduct cost, move the unit) and return the
  *   updated units array; may close over and update other state the caller owns
  *   (e.g. a city captured by walking onto it)
+ * @param {string} [movesKey='movesLeft'] - the unit field holding its moves left
  * @returns {object[]} the updated units array
  */
-export function runQueuedMoves(units, playerId, isTargetLegal, applyMove) {
+export function runQueuedMoves(units, playerId, isTargetLegal, applyMove, movesKey = 'movesLeft') {
   const queuedIds = units
     .filter(u => u.alive !== false && u.ownerId === playerId && u.queue?.length)
     .map(u => u.id);
   for (const id of queuedIds) {
     let unit = units.find(u => u.id === id);
-    while (unit && unit.movesLeft > 0 && unit.queue.length > 0) {
+    while (unit && unit[movesKey] > 0 && unit.queue.length > 0) {
       const to = unit.queue[0];
       if (!isTargetLegal(to, unit, playerId, units)) break;
       units = applyMove(units, playerId, unit, to);

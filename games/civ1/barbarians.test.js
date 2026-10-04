@@ -46,7 +46,7 @@ function city(over = {}) {
 function unit(id, ownerId, type, x, y, over = {}) {
   return {
     id, ownerId, type, position: { x, y }, alive: true,
-    hp: 10, maxHp: 10, movesLeft: 1, attrs: {}, queue: [], ...over,
+    hp: 10, maxHp: 10, moveThirds: 3, attrs: {}, queue: [], ...over,
   };
 }
 
@@ -316,7 +316,7 @@ test('civ1 barbarians: a march onto a square hiding a raider is legal, and bumps
   const after = Civ1Game.applyActions(state, [{ playerId: 'p1', action: march }]);
   const mover = after.units.find(u => u.id === 'm1');
   assert.deepEqual(mover.position, { x: 5, y: 5 }, 'the march ran into the raider and stopped');
-  assert.equal(mover.movesLeft, 0, 'and the turn was spent');
+  assert.equal(mover.moveThirds, 0, 'and the turn was spent');
   assert.equal(after.units.find(u => u.id === 'b1').position.x, 6, 'the raider is untouched');
 });
 
@@ -329,7 +329,7 @@ test('civ1 barbarians: a march whose route a hidden raider blocks bumps too', ()
   const state = world('roving-bands', {
     turnNumber: QUIET_TURN, terrainAt: lane,
     units: [
-      unit('m1', 'p1', 'armor', 5, 5, { movesLeft: 3 }),
+      unit('m1', 'p1', 'armor', 5, 5, { moveThirds: 9 }),
       unit('b1', BARBARIAN_ID, 'legion', 6, 5),
     ],
   });

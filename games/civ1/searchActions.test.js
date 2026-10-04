@@ -74,7 +74,7 @@ test('end-turn is offered only when nothing else is left to decide', () => {
     if (end) {
       assert.equal(acts.length, 1, 'end-turn was offered alongside real orders');
       // Nothing that can still act is being left behind.
-      const idle = state.units.filter(u => u.alive && u.ownerId === 'p1' && u.movesLeft > 0);
+      const idle = state.units.filter(u => u.alive && u.ownerId === 'p1' && u.moveThirds > 0);
       assert.equal(idle.length, 0, `end-turn offered with ${idle.length} unit(s) still able to move`);
       return;
     }
@@ -132,7 +132,7 @@ test('units the empire cannot support are not offered as production', () => {
   // turn out of a gross yield of about five, so none should be on offer.
   const stack = Array.from({ length: 6 }, (_, i) => ({
     id: `x${i}`, ownerId: 'p1', type: 'militia', alive: true, hp: 10, maxHp: 10,
-    movesLeft: 0, position: { ...city.position }, attrs: {}, queue: [],
+    moveThirds: 0, position: { ...city.position }, attrs: {}, queue: [],
   }));
   const loaded = {
     ...state,

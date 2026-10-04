@@ -23,7 +23,7 @@ function baseState({ p1Buildings = ['palace'], p1Techs = [], p1Spaceship, units 
 }
 
 const unit = (id, ownerId, type, x, y, extra = {}) =>
-  ({ id, ownerId, type, position: { x, y }, alive: true, hp: 10, maxHp: 10, movesLeft: 1, attrs: {}, queue: [], ...extra });
+  ({ id, ownerId, type, position: { x, y }, alive: true, hp: 10, maxHp: 10, moveThirds: 3, attrs: {}, queue: [], ...extra });
 
 const apply = (s, pid, action) => Civ1Game.applyActions(s, [{ playerId: pid, action }]);
 

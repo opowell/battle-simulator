@@ -2,6 +2,7 @@ import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat, pickDefender, attackThirds } from './combat.js';
+import { THIRDS, fullThirds, stepThirds } from './moves.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, makeZoneOfControl, renderMap, wrapX, wrapWidth, boardWraps } from './map.js';
 import { getCiv1Belief } from './belief.js';
 import { pickCoastTile } from './coastSprites.js';
@@ -176,7 +177,7 @@ function getNextCityName(state, cities, playerId) {
 
 // ── Unit factory ──────────────────────────────────────────────────────────────
 
-function makeUnit(id, ownerId, type, x, y, movesLeft) {
+function makeUnit(id, ownerId, type, x, y, moveThirds) {
   const stats = UNITS[type];
   return {
     id,
@@ -186,7 +187,9 @@ function makeUnit(id, ownerId, type, x, y, movesLeft) {
     alive: true,
     hp: stats.hp,
     maxHp: stats.hp,
-    movesLeft: movesLeft ?? stats.moves,
+    // Moves left this turn, in whole thirds of a move (moves.js) — a full turn's worth
+    // unless the caller says otherwise.
+    moveThirds: moveThirds ?? fullThirds(type),
     attrs: {},
     // Waypoints ({x,y}) queued while the unit has no moves left this turn — consumed
     // automatically, oldest first, as the unit's moves refresh on each of its future
@@ -217,7 +220,7 @@ function getLegalActions(state, playerId) {
   for (const unit of myUnits) {
     const stats = UNITS[unit.type];
 
-    if (unit.movesLeft > 0) {
+    if (unit.moveThirds > 0) {
       // Movement
       const reachable = getReachableTiles(unit, board, units, playerId, cities);
       for (const to of reachable) {
@@ -233,8 +236,7 @@ function getLegalActions(state, playerId) {
       // against a stale stack still hits whoever is actually holding the square.
       // On part of a move the blow lands at that part of its strength (combat.js), which
       // the original asks about before it lets you swing: "Attack at 1/3 strength?".
-      // Said on the action instead, so the button reads it. A floating-point sliver of a
-      // move (attackThirds rounds it to 0) is no move to attack with.
+      // Said on the action instead, so the button reads it.
       const thirds = attackThirds(unit);
       if (stats.attack > 0 && thirds > 0) {
         const squares = new Map();   // "x,y" -> the enemies standing there
@@ -324,8 +326,8 @@ function getLegalActions(state, playerId) {
       // No moves left this turn: further clicks plan a route instead of acting right
       // away (see games/moveQueue.js) — one queued waypoint per future turn, consumed
       // by runQueuedMoves in the 'end-turn' handling below.
-      actions.push(...queueMoveActions(unit, playerId, stats.moves,
-        (virtualUnit, pid) => getReachableTiles(virtualUnit, board, units, pid, cities)));
+      actions.push(...queueMoveActions(unit, playerId, fullThirds(unit.type),
+        (virtualUnit, pid) => getReachableTiles(virtualUnit, board, units, pid, cities), 'moveThirds'));
     }
 
     const popAction = queuePopAction(unit);
@@ -403,15 +405,13 @@ function spaceshipTravelTime(ship) {
 
 // ── Movement (shared by the 'move' action and queued-waypoint execution) ──────
 
-// Single-tile step cost: air is flat, roads are cheap, otherwise the destination
-// tile's terrain cost. Matches the original: a jump onto a far reachable tile
-// (getReachableTiles floods multiple tiles per turn) is still only charged for
-// the tile actually landed on, not the accumulated path.
+// Single-tile step cost, in thirds (stepThirds in moves.js): air is flat, railroads
+// free, roads a third, otherwise the destination tile's terrain cost. Matches the
+// original: a jump onto a far reachable tile (getReachableTiles floods multiple tiles
+// per turn) is still only charged for the tile actually landed on, not the
+// accumulated path.
 function moveCost(unit, tile) {
-  if (UNITS[unit.type].domain === 'air') return 1;
-  if (tile?.hasRail) return 0;          // railroads are free to travel, as in the original
-  if (tile?.hasRoad) return 1 / 3;
-  return (tile ? TERRAIN[tile.terrain]?.moveCost : null) ?? 1;
+  return stepThirds(tile, UNITS[unit.type].domain);
 }
 
 // Moves `unit` onto `to`, deducting its cost and handling the "walking into an
@@ -420,11 +420,11 @@ function moveCost(unit, tile) {
 // reaching an enemy city tile at all means nothing was left standing on it.
 function applyMove(units, cities, board, playerId, unit, to) {
   const tile = board.tiles[`${to.x},${to.y}`];
-  const newMovesLeft = Math.max(0, unit.movesLeft - moveCost(unit, tile));
+  const moveThirds = Math.max(0, unit.moveThirds - moveCost(unit, tile));
   // Moving is a fresh order: drop any standing fortify/sentry (matches queued
   // waypoints too — this runs for those the same way it does for a direct 'move').
   const newUnits = units.map(u =>
-    u.id === unit.id ? { ...u, position: to, movesLeft: newMovesLeft, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } } : u);
+    u.id === unit.id ? { ...u, position: to, moveThirds, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } } : u);
 
   const enemyCity = cities.find(c => c.ownerId !== playerId && c.position.x === to.x && c.position.y === to.y);
   const newCities = enemyCity
@@ -495,13 +495,12 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
     if (u.id === attackerId) {
       // An attack costs one move, not the turn — the original's caller takes three of
       // the unit's thirds and no more — so a unit with moves to spare (knights, a
-      // chariot, anything that came by road) may attack again or move on. Snapped to a
-      // third, since roads leave fractions and float dust would read as moves left.
+      // chariot, anything that came by road) may attack again or move on.
       if (result.attackerSurvived) {
-        const movesLeft = Math.max(0, Math.round((u.movesLeft - 1) * 3) / 3);
-        return { ...u, hp: result.attackerHpLeft, movesLeft, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } };
+        const moveThirds = Math.max(0, u.moveThirds - THIRDS);
+        return { ...u, hp: result.attackerHpLeft, moveThirds, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } };
       }
-      return { ...u, alive: false, hp: 0, movesLeft: 0 };
+      return { ...u, alive: false, hp: 0, moveThirds: 0 };
     }
     if (u.id === targetId) {
       if (!result.attackerSurvived) return { ...u, hp: result.defenderHpLeft };
@@ -594,7 +593,7 @@ const reaches = (unit, board, units, cities, playerId, to) =>
 function isActionLegal(state, playerId, action) {
   if (action?.type !== 'move' || !action.to) return false;
   const unit = state.units.find(u => u.id === action.unitId);
-  if (!unit || !unit.alive || unit.ownerId !== playerId || unit.movesLeft <= 0) return false;
+  if (!unit || !unit.alive || unit.ownerId !== playerId || unit.moveThirds <= 0) return false;
   const own = state.units.filter(u => u.ownerId === playerId);
   return reaches(unit, state.board, own, state.cities, playerId, action.to);
 }
@@ -657,7 +656,7 @@ function killOffLostCivs(state) {
   return {
     ...state,
     units: state.units.map(u =>
-      u.alive && doomed.has(u.ownerId) ? { ...u, alive: false, hp: 0, movesLeft: 0 } : u),
+      u.alive && doomed.has(u.ownerId) ? { ...u, alive: false, hp: 0, moveThirds: 0 } : u),
   };
 }
 
@@ -743,15 +742,15 @@ function applyOneAction(state, playerActions, rng = Math.random) {
         // Discrete-time per-turn budget = the spec's speed (spacetime.moveBudget),
         // plus Magellan's naval bonus. Same number as before — now sourced from
         // the one spec so discrete-time budget and continuous-time cooldown agree.
-        const base = ST.moveBudget(kinematics, u, state)
-          + (UNITS[u.type].domain === 'sea' ? navalBonus : 0);
+        const base = (ST.moveBudget(kinematics, u, state)
+          + (UNITS[u.type].domain === 'sea' ? navalBonus : 0)) * THIRDS;
         // A unit that spent last turn fortifying is dug in by the time the turn comes
         // back round — and only now does it earn the +50% (see the 'fortify' action in
         // applyActions). Digging in through an enemy turn is the price of the bonus.
         const attrs = u.attrs?.fortifying
           ? { ...u.attrs, fortifying: false, fortified: true }
           : u.attrs;
-        return { ...u, movesLeft: base, attrs };
+        return { ...u, moveThirds: base, attrs };
       }
       return u;
     });
@@ -762,7 +761,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
         const applied = applyMove(curUnits, cities, board, pid, unit, to);
         cities = applied.cities;
         return applied.units;
-      });
+      }, 'moveThirds');
 
     return {
       ...state,
@@ -787,7 +786,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
     // never fires on the ordinary path.
     if (!reaches(unit, board, units, cities, playerId, action.to)) {
       units = units.map(u => u.id === action.unitId
-        ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } }
+        ? { ...u, moveThirds: 0, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } }
         : u);
       return { ...state, units, lastActions: playerActions };
     }
@@ -827,12 +826,12 @@ function applyOneAction(state, playerActions, rng = Math.random) {
 
     const intercepted = cities.some(c => inBlast(c.position) && (c.buildings ?? []).includes('sdi-defense'));
     if (intercepted) {
-      units = units.map(u => u.id === attacker.id ? { ...u, alive: false, hp: 0, movesLeft: 0 } : u);
+      units = units.map(u => u.id === attacker.id ? { ...u, alive: false, hp: 0, moveThirds: 0 } : u);
       return { ...state, units, lastActions: playerActions };
     }
 
     units = units.map(u => {
-      if (u.id === attacker.id) return { ...u, alive: false, hp: 0, movesLeft: 0 };
+      if (u.id === attacker.id) return { ...u, alive: false, hp: 0, moveThirds: 0 };
       if (u.alive && inBlast(u.position)) return { ...u, alive: false, hp: 0 };
       return u;
     });
@@ -924,7 +923,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
     // survive the terraforming, and neither does the road it sat on.
     else patch = { terrain: CLEARS_TO[tile.terrain] ?? 'plains', irrigated: false, mined: false, hasRail: false };
     const newTiles = { ...board.tiles, [k]: { ...tile, ...patch } };
-    units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } } : u);
+    units = units.map(u => u.id === action.unitId ? { ...u, moveThirds: 0, attrs: { ...u.attrs, fortified: false, fortifying: false, sentry: false } } : u);
     return { ...state, units, board: { ...board, tiles: newTiles }, lastActions: playerActions };
   }
 
@@ -974,7 +973,7 @@ function applyOneAction(state, playerActions, rng = Math.random) {
   // already fortifying/fortified/sentried isn't a new order, same as the original (so
   // a unit part-way through digging in keeps digging).
   if (action.type === 'skip-unit') {
-    units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0 } : u);
+    units = units.map(u => u.id === action.unitId ? { ...u, moveThirds: 0 } : u);
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -989,13 +988,13 @@ function applyOneAction(state, playerActions, rng = Math.random) {
   // (see statusMarkFor).
   if (action.type === 'fortify') {
     units = units.map(u => u.id === action.unitId
-      ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, fortifying: true, sentry: false } }
+      ? { ...u, moveThirds: 0, attrs: { ...u.attrs, fortified: false, fortifying: true, sentry: false } }
       : u);
     return { ...state, units, lastActions: playerActions };
   }
   if (action.type === 'sentry') {
     units = units.map(u => u.id === action.unitId
-      ? { ...u, movesLeft: 0, attrs: { ...u.attrs, fortified: false, sentry: true } }
+      ? { ...u, moveThirds: 0, attrs: { ...u.attrs, fortified: false, sentry: true } }
       : u);
     return { ...state, units, lastActions: playerActions };
   }
@@ -1104,7 +1103,7 @@ function createFixedMapState(map, players, config) {
 
   let idCtr = 0;
   const units = map.units.map(u => {
-    const unit = makeUnit(`u${idCtr++}`, sides[u.side - 1].id, u.type, u.x, u.y, UNITS[u.type].moves);
+    const unit = makeUnit(`u${idCtr++}`, sides[u.side - 1].id, u.type, u.x, u.y);
     if (u.veteran) unit.attrs.veteran = true;
     if (u.fortified) unit.attrs.fortified = true;
     return unit;
@@ -1234,10 +1233,10 @@ function buildInitialState(players, config = {}) {
 
   let idCtr = 0;
   const units = players.map((p, i) =>
-    makeUnit(`u${idCtr++}`, p.id, 'settlers', positions[i].x, positions[i].y, UNITS.settlers.moves));
+    makeUnit(`u${idCtr++}`, p.id, 'settlers', positions[i].x, positions[i].y));
   players.forEach((p, i) => {
     const militiaPos = findAdjacentFree(positions[i], board, units) ?? positions[i];
-    units.push(makeUnit(`u${idCtr++}`, p.id, 'militia', militiaPos.x, militiaPos.y, UNITS.militia.moves));
+    units.push(makeUnit(`u${idCtr++}`, p.id, 'militia', militiaPos.x, militiaPos.y));
   });
 
   return {
@@ -1669,7 +1668,7 @@ function identityOf(state, playerId) {
   for (const u of state.units) {
     if (!u.alive) continue;
     const orders = u.ownerId === playerId
-      ? `:${u.movesLeft}:${u.attrs?.fortified ? 'F' : ''}${u.attrs?.fortifying ? 'f' : ''}${u.attrs?.sentry ? 'S' : ''}:${u.queue?.length ?? 0}`
+      ? `:${u.moveThirds}:${u.attrs?.fortified ? 'F' : ''}${u.attrs?.fortifying ? 'f' : ''}${u.attrs?.sentry ? 'S' : ''}:${u.queue?.length ?? 0}`
       : '';
     (stacks[`u:${u.position.x},${u.position.y}`] ??= []).push(`${u.ownerId}:${u.type}:${u.hp}${orders}`);
   }
@@ -2075,7 +2074,7 @@ export const Civ1Game = {
   // sandbox with a legion or a trireme is exactly the point of the feature.
   setupUnitTypes() { return Object.keys(UNITS); },
   createSetupUnit(state, { id, ownerId, type, position }) {
-    return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0, UNITS[type]?.moves);
+    return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0);
   },
   // Units from other games (engine/foreignUnits.js). The conversion factor is an
   // ancient line unit — 10 hp, attack and defence 2, one move. Every attack is made
@@ -2142,7 +2141,7 @@ export const Civ1Game = {
     // pickDefender; terrain and city bonuses are common to everyone standing here, so
     // ranking on the unit's own modifiers puts them in the same order), then by id so
     // the pick never wobbles between two identical units.
-    const wantsOrders = u => u.movesLeft > 0
+    const wantsOrders = u => u.moveThirds > 0
       && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry;
     // (In a fortress digging in earns nothing — the fort's own bonus replaces it, see
     // combat.js — so there it does not rank anyone above anyone.)
@@ -2178,7 +2177,7 @@ export const Civ1Game = {
       unitId: u.id, glyph: u.type[0].toUpperCase(), unitName: u.type,
       imagePath: `${BASE}/units/${u.type}`,
       owner: pidIdx[u.ownerId] ?? 0,
-      hp: u.hp, maxHp: u.maxHp, mp: u.movesLeft, maxMp: UNITS[u.type].moves,
+      hp: u.hp, maxHp: u.maxHp, mp: u.moveThirds / THIRDS, maxMp: UNITS[u.type].moves,
       queue: u.queue?.length ? u.queue : null,
       statusEffects: statusTags(u, stackSize),
       statusMark: statusMarkFor(u),
@@ -2359,7 +2358,7 @@ export const Civ1Game = {
           hp: u?.hp, maxHp: u?.maxHp,
           // Moves left this turn (drives the MP bar) and any queued future waypoints
           // (drives the goto-path overlay drawn for every unit — see App.vue/HtmlLayer).
-          mp: u?.movesLeft, maxMp: u ? UNITS[u.type].moves : undefined,
+          mp: u ? u.moveThirds / THIRDS : undefined, maxMp: u ? UNITS[u.type].moves : undefined,
           queue: u?.queue?.length ? u.queue : null,
           // Standing-order tags shown in the side panel (generic apps/design display
           // channel — see SelectedUnitDetail.vue's statusEffects tags).
@@ -2390,7 +2389,7 @@ export const Civ1Game = {
           // parked on a standing order. Drives the generic auto-advance-to-next-unit
           // UI feature (ui.autoAdvanceUnit below, see Battlefield.vue) — most games
           // don't have a persistent per-unit order state, so this is undefined for them.
-          needsOrders: u ? (u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry) : undefined,
+          needsOrders: u ? (u.moveThirds > 0 && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry) : undefined,
         });
       }
     }
@@ -2542,7 +2541,7 @@ export const Civ1Game = {
         garrison: c.unseen ? null : units.filter(u => u.alive && u.position.x === c.position.x && u.position.y === c.position.y)
           .map(u => ({
             id: u.id, type: u.type, image: `${BASE}/units/${u.type}`, hp: u.hp, maxHp: u.maxHp,
-            needsOrders: u.movesLeft > 0 && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry,
+            needsOrders: u.moveThirds > 0 && !u.attrs?.fortified && !u.attrs?.fortifying && !u.attrs?.sentry,
             // …and what standing order it is on. The map can't say it for a garrison —
             // the city wins the square — so this box is where a defender's F/S/frame
             // has to be readable (see CityInspectorOverlay.vue).
@@ -2575,7 +2574,7 @@ export const Civ1Game = {
       const here = stackAt[`${u.position.x},${u.position.y}`] ?? [];
       m.units.push({
         id: u.id, type: u.type, x: u.position.x, y: u.position.y,
-        hp: u.hp, maxHp: u.maxHp, mp: u.movesLeft, maxMp: stats.moves,
+        hp: u.hp, maxHp: u.maxHp, mp: u.moveThirds / THIRDS, maxMp: stats.moves,
         attack: stats.attack, defense: stats.defense,
         needsOrders: wantsOrders(u),
         // Where it is, in the words the player thinks in: the city it garrisons, else

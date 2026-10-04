@@ -20,7 +20,7 @@ import { UNITS } from './units.js';
 import { mintId, takenIds } from './ids.js';
 import { TERRAIN } from './terrain.js';
 import { wrapX, wrapWidth, makeZoneOfControl } from './map.js';
-import { attackThirds } from './combat.js';
+import { fullThirds } from './moves.js';
 
 // The owner id barbarian pieces carry. Never a member of state.players — every
 // `ownerId !== playerId` test in the game already treats them as hostile to everyone,
@@ -114,7 +114,7 @@ function isLandTile(tile) {
  * `state` whose units/cities/turnNumber are already the new turn's.
  *
  * `deps` carries the three things that live in Civ1Game.js and would otherwise make
- * this an import cycle: makeUnit(id, ownerId, type, x, y, movesLeft),
+ * this an import cycle: makeUnit(id, ownerId, type, x, y, moveThirds),
  * applyMove(units, cities, board, playerId, unit, to) and
  * resolveAttack(state, units, cities, attackerId, targetId, rng).
  *
@@ -172,7 +172,7 @@ function uprising(state, spec, rng, makeUnit, nextId) {
     const spot = spots.splice(Math.floor(rng() * spots.length), 1)[0];
     const minted = mintId('u', nextId, taken);
     nextId = minted.next; taken.add(minted.id);
-    units = [...units, makeUnit(minted.id, BARBARIAN_ID, type, spot.x, spot.y, UNITS[type].moves)];
+    units = [...units, makeUnit(minted.id, BARBARIAN_ID, type, spot.x, spot.y, fullThirds(type))];
   }
   return { units, nextId };
 }
@@ -241,16 +241,14 @@ function raid(state, rng, deps) {
   for (const id of ids) {
     // Fresh moves for the barbarian turn — the equivalent of the per-player refresh
     // the 'end-turn' handler does for the seat about to play.
-    units = units.map(u => u.id === id ? { ...u, movesLeft: UNITS[u.type].moves } : u);
+    units = units.map(u => u.id === id ? { ...u, moveThirds: fullThirds(u.type) } : u);
 
     // One action per iteration; bounded because every branch either spends movement
     // or breaks out. The cap is above any unit's move allowance (armor's 3, and a
     // road can stretch that to 9 third-of-a-point steps).
     for (let guard = 0; guard < 12; guard++) {
       const unit = units.find(u => u.id === id);
-      // attackThirds, not movesLeft > 0: road steps leave floating-point slivers of a
-      // move, and a sliver would swing at no strength at all (combat.js).
-      if (!unit || !unit.alive || unit.movesLeft <= 0 || attackThirds(unit) === 0) break;
+      if (!unit || !unit.alive || unit.moveThirds <= 0) break;
 
       const victim = adjacentVictim(unit, units, cities, wrapWidth(board));
       if (victim) {

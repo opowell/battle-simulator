@@ -202,7 +202,7 @@ function productionActions(legal, obs, playerId) {
 // act. Queued-move-only units (no moves left) are not offered anything.
 function focusUnit(obs, playerId) {
   return obs.units
-    .filter(u => u.alive && u.ownerId === playerId && u.movesLeft > 0)
+    .filter(u => u.alive && u.ownerId === playerId && u.moveThirds > 0)
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0] ?? null;
 }
 

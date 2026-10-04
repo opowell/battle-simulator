@@ -75,7 +75,7 @@ function pick(u) {
             <span class="mo-u-name">{{cap(u.type)}}</span>
             <span class="mo-u-where">{{place(u)}}</span>
             <span class="mono mo-u-stats" title="Attack / defense">{{u.attack}}/{{u.defense}}</span>
-            <span class="mono mo-u-mp" title="Moves left this turn">{{u.mp}}/{{u.maxMp}} mp</span>
+            <span class="mono mo-u-mp" title="Moves left this turn">{{EXACT.fmt(u.mp)}} / {{EXACT.fmt(u.maxMp)}} mp</span>
             <span class="mo-u-tags">{{[`${u.x},${u.y}`, ...u.status].join(' · ')}}</span>
           </button>
         </div>

@@ -161,7 +161,7 @@ test('civ1: a roster may ask for a unit type the civ does not open with', () => 
   const state = applyRoster(Civ1Game, base, [...roster, extra], config);
   const legion = state.units.find(u => u.type === 'legion');
   assert.equal(legion.ownerId, 'p1');
-  assert.ok(legion.hp > 0 && legion.movesLeft > 0);   // built by the game's own factory
+  assert.ok(legion.hp > 0 && legion.moveThirds > 0);   // built by the game's own factory
 });
 
 test('civ1: a blank map seed is pinned before a roster is laid out on the world', () => {

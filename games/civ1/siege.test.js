@@ -117,7 +117,7 @@ test('siege: the battlefield does not wrap — its east and west edges are edges
   assert.equal(wrapWidth(s.board), Infinity);
   // A unit on the west shore cannot step "west" onto the far east column.
   const { getReachableTiles } = await import('./map.js');
-  const scout = { ...s.units.find(u => u.ownerId === 'p1' && u.type === 'knights'), position: { x: 1, y: 7 }, movesLeft: 2 };
+  const scout = { ...s.units.find(u => u.ownerId === 'p1' && u.type === 'knights'), position: { x: 1, y: 7 }, moveThirds: 6 };
   const reach = getReachableTiles(scout, s.board, [scout], 'p1', s.cities);
   assert.ok(reach.every(t => t.x >= 0 && t.x < s.board.width), JSON.stringify(reach));
   // Sight stops at the edge too: nothing off the map is ever marked explored.
@@ -256,7 +256,7 @@ test('siege: a horseman in the city rides out at a siege train caught in the ope
   s = {
     ...s,
     units: [
-      ...s.units.map(u => u.id === knight.id ? { ...u, position: { x: 18, y: 8 }, movesLeft: 2 } : u),
+      ...s.units.map(u => u.id === knight.id ? { ...u, position: { x: 18, y: 8 }, moveThirds: 6 } : u),
       // Two squares out on open ground: a catapult with a phalanx to guard it — a stack
       // that dies together if its guard loses.
       { ...catapult, id: 'cat', position: { x: 16, y: 8 }, attrs: {} },

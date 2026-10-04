@@ -26,7 +26,7 @@ function world({ p1Buildings = ['palace'], p1Techs = [], units = [], cities = []
 }
 
 function unit(id, ownerId, type, x, y, extra = {}) {
-  return { id, ownerId, type, position: { x, y }, alive: true, hp: 10, maxHp: 10, movesLeft: 1, attrs: {}, queue: [], ...extra };
+  return { id, ownerId, type, position: { x, y }, alive: true, hp: 10, maxHp: 10, moveThirds: 3, attrs: {}, queue: [], ...extra };
 }
 
 function endTurn(state, pid) {
@@ -68,11 +68,11 @@ test('a city with Barracks builds veteran units', () => {
 // ── Magellan's Expedition ────────────────────────────────────────────────────
 
 test("Magellan's Expedition gives ships +2 movement", () => {
-  const ship = unit('s', 'p1', 'trireme', 3, 6, { movesLeft: 0 });
+  const ship = unit('s', 'p1', 'trireme', 3, 6, { moveThirds: 0 });
   let s = world({ p1Buildings: ['palace', 'magellan'], units: [ship] });
   s = endTurn(s, 'p2'); // ends p2 -> refreshes p1's units next
   const refreshed = s.units.find(u => u.id === 's');
-  assert.equal(refreshed.movesLeft, 3 + 2);
+  assert.equal(refreshed.moveThirds, (3 + 2) * 3);
 });
 
 // ── Marco Polo / Apollo fog ──────────────────────────────────────────────────

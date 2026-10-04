@@ -12,6 +12,7 @@
 
 import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
+import { THIRDS } from './moves.js';
 import { getCombatStrengths, pickDefender } from './combat.js';
 import { chebyshevWrapped, BUILDABLE } from './Civ1Game.js';
 import {
@@ -254,7 +255,7 @@ const SORTIE_MIN_WIN_PROB = 0.65;
 const SORTIE_EXPOSURE = 0.5;
 
 function sortie(unit, legalActions, state, myId) {
-  if (unit.movesLeft < 2) return null;   // a step out and a blow
+  if (unit.moveThirds < 2 * THIRDS) return null;   // a step out and a blow
   const enemiesAt = new Map();
   for (const u of state.units) {
     if (!u.alive || u.ownerId === myId) continue;
@@ -269,9 +270,9 @@ function sortie(unit, legalActions, state, myId) {
     // several squares, and a rider that spends its turn getting somewhere strikes
     // nothing until the attackers have had their turn at it.
     if (Math.max(Math.abs(m.to.x - unit.position.x), Math.abs(m.to.y - unit.position.y)) !== 1) continue;
-    const cost = TERRAIN[state.board.tiles[`${m.to.x},${m.to.y}`]?.terrain]?.moveCost ?? Infinity;
-    if (cost >= unit.movesLeft) continue;
-    const rider = { ...unit, position: m.to, movesLeft: unit.movesLeft - cost };
+    const cost = (TERRAIN[state.board.tiles[`${m.to.x},${m.to.y}`]?.terrain]?.moveCost ?? Infinity) * THIRDS;
+    if (cost >= unit.moveThirds) continue;
+    const rider = { ...unit, position: m.to, moveThirds: unit.moveThirds - cost };
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
       const stack = enemiesAt.get(`${m.to.x + dx},${m.to.y + dy}`);
       if (!stack || (dx === 0 && dy === 0)) continue;

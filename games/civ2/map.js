@@ -275,8 +275,21 @@ export function findAdjacentFree(pos, board, units) {
   return null;
 }
 
+// Movement is counted in whole thirds of a move — `unit.moveThirds` — so a road step
+// (one third) stays exact; in floating point three of them off one move left 1.1e-16
+// behind, a sliver that read as a move left. Only the UI divides by THIRDS.
+export const THIRDS = 3;
+
+/** What one step onto `tile` costs, in thirds: road a third, railroad nothing, air a flat move. */
+export function stepThirds(tile, domain) {
+  if (domain === 'air') return THIRDS;
+  if (tile?.hasRailroad) return 0;
+  if (tile?.hasRoad) return 1;
+  return ((tile ? TERRAIN[tile.terrain]?.moveCost : null) ?? 1) * THIRDS;
+}
+
 /**
- * Compute all tiles reachable by a unit given its remaining movesLeft.
+ * Compute all tiles reachable by a unit given its remaining moveThirds.
  * Uses Dijkstra (max-remaining-moves priority).
  * Air units ignore terrain cost; sea units require ocean tiles; land units require non-ocean.
  */
@@ -289,8 +302,8 @@ export function getReachableTiles(unit, board, allUnits, playerId) {
   const enemyPos = new Set(allUnits.filter(u => u.alive && u.ownerId !== playerId).map(u => key(u.position)));
   const friendlyPos = new Set(allUnits.filter(u => u.alive && u.ownerId === playerId && u.id !== unit.id).map(u => key(u.position)));
 
-  const best = new Map([[key(unit.position), unit.movesLeft]]);
-  const queue = [{ pos: unit.position, ml: unit.movesLeft }];
+  const best = new Map([[key(unit.position), unit.moveThirds]]);
+  const queue = [{ pos: unit.position, ml: unit.moveThirds }];
   const reachable = [];
 
   while (queue.length) {
@@ -320,17 +333,8 @@ export function getReachableTiles(unit, board, allUnits, playerId) {
       // Can't stack with own units
       if (friendlyPos.has(k)) continue;
 
-      // Movement cost: road = 1/3, railroad = 0, air = always 1
-      let cost;
-      if (domain === 'air') {
-        cost = 1;
-      } else if (tile.hasRailroad) {
-        cost = 0;
-      } else if (tile.hasRoad) {
-        cost = 1 / 3;
-      } else {
-        cost = td.moveCost;
-      }
+      // Movement cost in thirds: road = 1, railroad = 0, air = always a whole move
+      const cost = stepThirds(tile, domain);
 
       // Civ2 rule: can always enter if ml > 0 (even if cost > ml), just set remaining to 0
       if (ml <= 0) continue;

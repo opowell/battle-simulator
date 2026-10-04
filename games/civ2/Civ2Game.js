@@ -2,7 +2,7 @@ import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
-import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
+import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, renderMap, THIRDS, stepThirds } from './map.js';
 import { assets, cityImg } from './assets/index.js';
 import { getCiv2Belief } from './belief.js';
 import { tableUnits, whole } from '../../engine/foreignUnits.js';
@@ -38,7 +38,7 @@ function getNextCityName(cities, playerId) {
 
 // ── Unit factory ──────────────────────────────────────────────────────────────
 
-function makeUnit(id, ownerId, type, x, y, movesLeft) {
+function makeUnit(id, ownerId, type, x, y, moveThirds) {
   const stats = UNITS[type];
   return {
     id,
@@ -48,7 +48,7 @@ function makeUnit(id, ownerId, type, x, y, movesLeft) {
     alive: true,
     hp: stats.hp,
     maxHp: stats.hp,
-    movesLeft: movesLeft ?? stats.moves,
+    moveThirds: moveThirds ?? stats.moves * THIRDS,   // whole thirds of a move (map.js)
     attrs: {},
   };
 }
@@ -87,7 +87,7 @@ function processCityProduction(state, playerId, nextId) {
 
 function getLegalActions(state, playerId) {
   const { units, cities, board } = state;
-  const myUnits = units.filter(u => u.alive && u.ownerId === playerId && u.movesLeft > 0);
+  const myUnits = units.filter(u => u.alive && u.ownerId === playerId && u.moveThirds > 0);
   const actions = [];
 
   // toGrid() flips y for display (row 0 at the south); mirror that here so the
@@ -167,7 +167,7 @@ function applyActions(state, playerActions, rng = Math.random) {
     // Restore moves for the player whose turn is starting
     units = units.map(u => {
       if (u.ownerId === nextPlayerId) {
-        return { ...u, movesLeft: UNITS[u.type].moves };
+        return { ...u, moveThirds: UNITS[u.type].moves * THIRDS };
       }
       return u;
     });
@@ -187,22 +187,9 @@ function applyActions(state, playerActions, rng = Math.random) {
   if (action.type === 'move') {
     const unit = units.find(u => u.id === action.unitId);
     const tile = board.tiles[`${action.to.x},${action.to.y}`];
-    const td = tile ? TERRAIN[tile.terrain] : null;
-
-    let cost;
-    if (UNITS[unit.type].domain === 'air') {
-      cost = 1;
-    } else if (tile?.hasRailroad) {
-      cost = 0;
-    } else if (tile?.hasRoad) {
-      cost = 1 / 3;
-    } else {
-      cost = td?.moveCost ?? 1;
-    }
-
-    const newMovesLeft = Math.max(0, unit.movesLeft - cost);
+    const moveThirds = Math.max(0, unit.moveThirds - stepThirds(tile, UNITS[unit.type].domain));
     units = units.map(u =>
-      u.id === action.unitId ? { ...u, position: action.to, movesLeft: newMovesLeft } : u
+      u.id === action.unitId ? { ...u, position: action.to, moveThirds } : u
     );
     return { ...state, units, lastActions: playerActions };
   }
@@ -217,8 +204,8 @@ function applyActions(state, playerActions, rng = Math.random) {
 
     units = units.map(u => {
       if (u.id === action.unitId) {
-        if (result.attackerSurvived) return { ...u, hp: result.attackerHpLeft, movesLeft: 0 };
-        return { ...u, alive: false, hp: 0, movesLeft: 0 };
+        if (result.attackerSurvived) return { ...u, hp: result.attackerHpLeft, moveThirds: 0 };
+        return { ...u, alive: false, hp: 0, moveThirds: 0 };
       }
       if (u.id === action.targetId) {
         if (!result.attackerSurvived) return { ...u, hp: result.defenderHpLeft };
@@ -237,7 +224,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       // Move attacker into defender's tile (if no friendly unit there after combat)
       const occupiedAfter = new Set(units.filter(u => u.alive && u.id !== action.unitId).map(u => `${u.position.x},${u.position.y}`));
       if (!occupiedAfter.has(`${defPos.x},${defPos.y}`)) {
-        units = units.map(u => u.id === action.unitId ? { ...u, position: defPos, movesLeft: 0 } : u);
+        units = units.map(u => u.id === action.unitId ? { ...u, position: defPos, moveThirds: 0 } : u);
       }
     }
 
@@ -271,13 +258,13 @@ function applyActions(state, playerActions, rng = Math.random) {
     const unit = units.find(u => u.id === action.unitId);
     const k = `${unit.position.x},${unit.position.y}`;
     const newTiles = { ...board.tiles, [k]: { ...board.tiles[k], hasRoad: true } };
-    units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0 } : u);
+    units = units.map(u => u.id === action.unitId ? { ...u, moveThirds: 0 } : u);
     return { ...state, units, board: { ...board, tiles: newTiles }, lastActions: playerActions };
   }
 
   // ── skip-unit ─────────────────────────────────────────────────────────────
   if (action.type === 'skip-unit') {
-    units = units.map(u => u.id === action.unitId ? { ...u, movesLeft: 0 } : u);
+    units = units.map(u => u.id === action.unitId ? { ...u, moveThirds: 0 } : u);
     return { ...state, units, lastActions: playerActions };
   }
 
@@ -346,12 +333,12 @@ function createInitialState(players, config = {}) {
 
   let idCtr = 0;
   const units = [
-    makeUnit(`u${idCtr++}`, p1.id, 'settlers',  pos1.x,     pos1.y,     UNITS.settlers.moves),
-    makeUnit(`u${idCtr++}`, p1.id, 'warriors',  pos1.x + 1, pos1.y,     UNITS.warriors.moves),
-    makeUnit(`u${idCtr++}`, p1.id, 'warriors',  pos1.x,     pos1.y + 1, UNITS.warriors.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'settlers',  pos2.x,     pos2.y,     UNITS.settlers.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'warriors',  pos2.x - 1, pos2.y,     UNITS.warriors.moves),
-    makeUnit(`u${idCtr++}`, p2.id, 'warriors',  pos2.x,     pos2.y - 1, UNITS.warriors.moves),
+    makeUnit(`u${idCtr++}`, p1.id, 'settlers',  pos1.x,     pos1.y),
+    makeUnit(`u${idCtr++}`, p1.id, 'warriors',  pos1.x + 1, pos1.y),
+    makeUnit(`u${idCtr++}`, p1.id, 'warriors',  pos1.x,     pos1.y + 1),
+    makeUnit(`u${idCtr++}`, p2.id, 'settlers',  pos2.x,     pos2.y),
+    makeUnit(`u${idCtr++}`, p2.id, 'warriors',  pos2.x - 1, pos2.y),
+    makeUnit(`u${idCtr++}`, p2.id, 'warriors',  pos2.x,     pos2.y - 1),
   ].filter(u => {
     // Discard any unit placed on invalid tiles
     const k = `${u.position.x},${u.position.y}`;
@@ -480,7 +467,7 @@ export const Civ2Game = {
   },
   setupUnitTypes() { return Object.keys(UNITS); },
   createSetupUnit(state, { id, ownerId, type, position }) {
-    return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0, UNITS[type]?.moves);
+    return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0);
   },
   // Units from other games (engine/foreignUnits.js) — read as civ1's are: an ancient
   // line unit is one point of each stat, every attack is melee, and a foreign unit plays
