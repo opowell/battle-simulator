@@ -392,6 +392,23 @@ const cells = computed(() => {
       list.sort((a, b) => (a.id === props.selectedId ? 1 : 0) - (b.id === props.selectedId ? 1 : 0));
     }
   }
+  // `ui.unitStacks: 'top'` (civ1): a square draws only the piece on top of its stack, as
+  // the 1991 game does, so the pieces under it are dropped here rather than painted
+  // beneath it. Drawing them all looked the same until the top one blinked — its off
+  // frame then showed the piece underneath, which for two of a kind is no blink at all.
+  // The square's own art (a fixture: civ1's city under its garrison) still draws, and so
+  // does a piece mid-slide, which is leaving the square and has to be seen going.
+  // The piece left on top wears the stack's mark (HtmlUnit's `stacked`) — and so does a
+  // lone piece the game says is standing on others the board isn't sent (`stackSize`:
+  // civ1's garrison, drawn over its city while the rest of it waits inside).
+  const stackTopAt = new Map();
+  if (props.field.ui?.unitStacks === 'top') for (const [k, list] of unitsAt) {
+    const pieces = list.filter(u => !u.fixture);
+    const sliding = u => !!(u.tweenDx || u.tweenDy);
+    const top = pieces.filter(u => !sliding(u)).at(-1);
+    if (top && (pieces.length > 1 || top.stackSize > 1)) stackTopAt.set(k, top.id);
+    if (pieces.length > 1) unitsAt.set(k, list.filter(u => u.fixture || u === top || sliding(u)));
+  }
 
   const markers = new Map();
   for (const m of displayMarkers.value) markers.set(`${m.col},${m.row}`, m);
@@ -432,6 +449,7 @@ const cells = computed(() => {
         anno:    circleMarks.value.has(k),
         belief:  beliefs.get(k) ?? null,
         units:   unitsAt.get(k) ?? [],
+        stackTop: stackTopAt.get(k) ?? null,
         checker: checkerOn.value && (rx + y) % 2 === 1,
         legal:   showLegal && legal.has(k),
         dragHover: !!dragSq && dragSq[0] === x && dragSq[1] === y,
@@ -775,6 +793,7 @@ function handleUnitClick(e, u) {
           :selected="u.id === selectedId && !field.ui?.highlightSelectedSquare"
           :hovered="u.id === hoveredId"
           :blink="u.id === blinkTargetId && !!field.ui?.blinkActiveUnit"
+          :stacked="u.id === c.stackTop"
           :grab="dragToMove && !u.dead"
           :dim="dragUnit?.id === u.id"
           @click="handleUnitClick($event, u)"

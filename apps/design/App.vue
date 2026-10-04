@@ -965,6 +965,11 @@ function buildField(g, s) {
       // row of dots under the token (see HtmlHexLayer), so a big stack is recognisable
       // without reading the number off it.
       pips:          c.pips,
+      // How many pieces stand on this token's square, counting itself — set by a game
+      // whose board doesn't list them all (civ1 sends a city's garrison in the city
+      // screen, not the cell). With ui.unitStacks 'top', more than one marks the token
+      // as the top of a stack (see HtmlLayer).
+      stackSize:     c.stackSize,
       // Widens the clickable hit area past the body radius for sprites that draw
       // outside it (see CsGame.js's armor ring and SchematicLayer's u.hitRFrac).
       hitRFrac:      c.hitRFrac,

@@ -24,6 +24,11 @@ const props = defineProps({
   selected:   Boolean,
   hovered:    Boolean,
   blink:      Boolean,
+  // The top of a stack of pieces (HtmlLayer's `ui.unitStacks: 'top'`): drawn the way the
+  // 1991 Civilization draws one — the same picture painted once more underneath, a
+  // sixteenth of the square down and to the right, so a stack reads as a stack without
+  // showing what is in it. Part of the token, so a blink takes it away too.
+  stacked:    Boolean,
   // Drag-to-move (see HtmlLayer): `grab` offers the affordance, `dim` fades the token
   // in place while its ghost follows the cursor.
   grab:       Boolean,
@@ -75,6 +80,9 @@ const ringState = computed(() =>
     : (props.selected && !props.blink) ? 'selected'
       : props.hovered ? 'hover' : '');
 const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value : '');
+
+// The stack's under-copy sits one sprite pixel (a sixteenth of the token) out.
+const stackOffset = computed(() => Math.max(1, Math.round(props.r * 2 / 16)) + 'px');
 </script>
 
 <template>
@@ -112,6 +120,11 @@ const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value 
              color: active ? 'white' : unit.teamObj.raw,
            }),
          }">
+      <img v-if="unit.imagePath && stacked" class="hl-sprite hl-stackcopy" draggable="false"
+           :style="{ left: stackOffset, top: stackOffset }"
+           :src="teamSpriteHref(unit.imagePath, unit.teamObj?.raw, recolor)"/>
+      <div v-else-if="stacked" class="hl-stackcopy hl-stackcopy--marker"
+           :style="{ left: stackOffset, top: stackOffset }"/>
       <img v-if="unit.imagePath" class="hl-sprite" draggable="false"
            :src="teamSpriteHref(unit.imagePath, unit.teamObj?.raw, recolor)"/>
       <span v-else-if="showLetter" class="hl-letter"
@@ -147,6 +160,12 @@ const ringClass = computed(() => ringState.value ? 'hl-ring-' + ringState.value 
 .hl-body { position: relative; display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex: none; }
 .hl-dead { font-weight: 700; opacity: 0.4; }
 .hl-sprite { width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; }
+/* The stack's under-copy: out of the flow (so the body keeps its size) and painted
+   beneath the body's own picture. */
+.hl-stackcopy { position: absolute; z-index: -1; pointer-events: none; }
+img.hl-stackcopy { width: 100%; height: 100%; }
+.hl-stackcopy--marker { width: 100%; height: 100%; box-sizing: border-box;
+  border: inherit; border-radius: inherit; background: inherit; }
 .hl-body--plate {
   border: 2px solid var(--plate); border-radius: 22%;
   background: color-mix(in srgb, var(--plate) 28%, transparent);

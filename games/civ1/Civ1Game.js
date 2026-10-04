@@ -1693,6 +1693,13 @@ export const Civ1Game = {
     hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
     blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
     mapZoom: true, defaultTileSize: 50, moveQueue: true,
+    // A square draws only the unit on top of its stack, over a copy of itself one pixel
+    // down and to the right — what CIV.EXE's draw-unit routine does whenever the unit
+    // has another in its stack (OpenCivOne MapManagement F0_2aea_0e29). The units under
+    // it are not drawn at all, so the blink of the unit in hand uncovers the bare
+    // square, as the original's does (its off frame redraws the cell without units),
+    // rather than the next unit down — two of a kind blinked invisibly before this.
+    unitStacks: 'top',
     // Units glide from square to square instead of blinking between centres (see
     // App.vue's startSlide). A civ1 move is one tile, so the default hop is a unit
     // sitting still and then simply being somewhere else — with a whole empire
@@ -2066,6 +2073,7 @@ export const Civ1Game = {
       statusEffects: statusTags(u, stackSize),
       statusMark: statusMarkFor(u),
       needsOrders: wantsOrders(u),
+      stackSize,
     });
     for (const c of cities) cmap[`${c.position.x},${c.position.y}`] = c;
     // A city square draws the CITY, not what is standing in it (see the cells below) —
@@ -2240,6 +2248,12 @@ export const Civ1Game = {
           // square without selecting the unit (generic display channel — see App.vue's
           // statusMark and battlefield/HtmlUnit.vue).
           statusMark: u ? statusMarkFor(u) : undefined,
+          // How many units stand here. The board draws only the top of a stack, over a
+          // copy of itself offset by a pixel — the original's mark for "there are more
+          // under this one" (ui.unitStacks below). Sent rather than left to the client
+          // to count because a garrison standing on top of its city is the square's only
+          // unit token: the rest of the garrison is in the city screen, not in `stack`.
+          stackSize: u && here.length > 1 ? here.length : undefined,
           // The rest of the stack (civ1 puts no limit on units per square). The square's
           // token is the top of it — the unit still owed orders, else the best defender
           // (see the sort above) — and these ride along as tokens of their own drawn in

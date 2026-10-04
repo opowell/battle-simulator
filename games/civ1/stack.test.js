@@ -223,6 +223,37 @@ test('civ1 stacking: the square hands over the unit that still wants orders', ()
   assert.ok(cell.statusEffects.includes('stack of 2'), 'and the square says how many are on it');
 });
 
+test('civ1 stacking: the board draws only the top of a stack, marked as a stack', () => {
+  // As the original draws one: the unit on top, over a copy of itself a pixel out —
+  // never the units under it, whose own art would show through the top one's blink
+  // (two of a kind then blinked invisibly). The client is told to draw it that way and
+  // how many stand there.
+  const state = world({ units: [
+    unit('a', 'p1', 'catapult', 10, 10),
+    unit('b', 'p1', 'catapult', 10, 10),
+    unit('alone', 'p1', 'legion', 12, 10),
+  ] });
+  const grid = Civ1Game.toGrid(state);
+  assert.equal(Civ1Game.ui.unitStacks, 'top');
+  const cell = grid.cells.find(c => c.x === 10 && c.y === 10);
+  assert.equal(cell.stackSize, 2);
+  assert.deepEqual(cell.stack.map(s => s.stackSize), [2], 'every unit in it carries the count');
+  assert.equal(grid.cells.find(c => c.x === 12 && c.y === 10).stackSize, undefined, 'a lone unit is no stack');
+});
+
+test('civ1 stacking: a garrison standing on its city says how many are inside', () => {
+  // The rest of a garrison is picked out of the city screen, not sent in the cell — so
+  // the count is the only way the board knows the unit on top is not alone.
+  const state = world({
+    units: [unit('new', 'p1', 'militia', 10, 10), unit('old', 'p1', 'phalanx', 10, 10, { attrs: { fortified: true } })],
+    cities: [city('c1', 'p1', 10, 10)],
+  });
+  const cell = Civ1Game.toGrid(state).cells.find(c => c.x === 10 && c.y === 10);
+  assert.equal(cell.unitId, 'new');
+  assert.equal(cell.stackSize, 2);
+  assert.deepEqual(cell.stack.map(s => s.fixture), [true], 'only the city rides underneath');
+});
+
 test('civ1 stacking: once everyone is done the square shows its defender', () => {
   const state = world({ units: [
     unit('soft', 'p1', 'settlers', 10, 10, { movesLeft: 0 }),
