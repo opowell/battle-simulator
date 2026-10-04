@@ -15,6 +15,7 @@ import { ref, computed, watch, onUnmounted } from 'vue';
 const props = defineProps({
   liveState: { type: Object, default: null },
   teams:     { type: Array, default: () => [] },   // field.teams — names and colours
+  recolor:   Boolean,                               // field.ui.recolorTeamSprites
 });
 const emit = defineEmits(['arm']);
 
@@ -56,6 +57,10 @@ const sides = computed(() => {
   });
 });
 const side = computed(() => sides.value.find(s => s.id === owner.value) ?? null);
+// What a unit of each type looks like for the chosen side (setup's `unitArt`):
+// the picker shows the unit itself, its name only on hover.
+const artOf = (t) => preview.value?.unitArt?.[owner.value]?.[t]
+  ?? { imagePath: null, glyph: String(t)[0]?.toUpperCase() ?? '?', name: t };
 const countOf = (id) => (preview.value?.roster ?? []).filter(u => u.ownerId === id).length;
 
 const supported = computed(() => !!preview.value && preview.value.unitTypes.length > 0);
@@ -119,10 +124,12 @@ onUnmounted(() => { if (armed.value) emit('arm', null); });
         </button>
       </div>
 
-      <label class="au-label">Unit</label>
+      <label class="au-label">Unit<span v-if="type" class="au-picked"> · {{ artOf(type).name }}</span></label>
       <div class="au-types">
-        <button v-for="t in preview.unitTypes" :key="t" class="au-type" :class="{ on: t === type }" @click="type = t">
-          {{ t }}
+        <button v-for="t in preview.unitTypes" :key="t" class="au-type" :class="{ on: t === type }"
+                :title="artOf(t).name" :aria-label="artOf(t).name" @click="type = t">
+          <img v-if="artOf(t).imagePath" :src="teamSpriteHref(artOf(t).imagePath, side?.color, recolor)" alt=""/>
+          <span v-else class="au-glyph" :style="{ color: side?.color }">{{ artOf(t).glyph }}</span>
         </button>
       </div>
 
@@ -159,8 +166,12 @@ onUnmounted(() => { if (armed.value) emit('arm', null); });
 .au-side.on, .au-type.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .au-side-name { flex: 1; font-weight: 600; }
 .au-count { font-size: 11px; color: var(--faint); }
-.au-types { display: flex; flex-wrap: wrap; gap: 4px; }
-.au-type { padding: 4px 9px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg2); font-size: 12px; }
+.au-picked { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--txt); }
+.au-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; }
+.au-type { aspect-ratio: 1; padding: 3px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg2); cursor: pointer; }
+.au-type:hover { border-color: var(--line2); background: var(--bg3); }
+.au-type img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block; }
+.au-glyph { font-size: 15px; font-weight: 700; }
 .au-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 6px; }
 .au-note { font-size: 11px; color: var(--dim); }
 .au-err { color: var(--danger); }

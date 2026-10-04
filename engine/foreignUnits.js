@@ -222,7 +222,7 @@ export function foreignEntryError(host, base, entry) {
 }
 
 /** The seat number of `ownerId` in `base` — which of a source's sides its art is drawn as. */
-function seatOf(base, ownerId) {
+export function seatOf(base, ownerId) {
   const seats = (base?.players ?? []).map(p => p.id);
   const i = seats.indexOf(ownerId);
   if (i >= 0) return i;

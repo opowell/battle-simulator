@@ -40,7 +40,7 @@
  * factor (engine/foreignUnits.js). On the board it reads back the same way.
  */
 
-import { foreignEntryError, foreignKey, mintForeign, nameOfGame, originOf, dressGrid, foreignCatalog } from './foreignUnits.js';
+import { foreignEntryError, foreignKey, mintForeign, nameOfGame, originOf, dressGrid, foreignCatalog, seatOf } from './foreignUnits.js';
 
 /** Config key carrying the custom roster. */
 export const SETUP_KEY = 'startingUnits';
@@ -371,10 +371,35 @@ export function describeSetup(game, base, { config = {}, extraTypes = [] } = {})
     };
   });
 
+  const unitTypes = [...new Set([...setupUnitTypes(game, base), ...extraTypes])];
+
+  // What a unit of each type looks like for each side, so a picker can show the
+  // unit rather than its name — including a type nobody fields yet. The game's
+  // own art hook (foreignUnits.art) knows every type; failing that, a unit of the
+  // type already on the board, that side's first.
+  const sides = [...new Set([...(base?.players ?? []).map(p => p.id), ...roster.map(u => u.ownerId)])]
+    .filter(id => id != null);
+  const unitArt = {};
+  for (const ownerId of sides) {
+    unitArt[ownerId] = {};
+    for (const type of unitTypes) {
+      let art = null;
+      try { art = game?.foreignUnits?.art?.(type, seatOf(base, ownerId)) ?? null; } catch { art = null; }
+      const seen = roster.find(u => u.type === type && !u.game && u.ownerId === ownerId && u.imagePath)
+        ?? roster.find(u => u.type === type && !u.game && u.imagePath);
+      unitArt[ownerId][type] = {
+        imagePath: art?.imagePath ?? seen?.imagePath ?? null,
+        glyph: art?.glyph ?? seen?.glyph ?? String(type)[0]?.toUpperCase() ?? '?',
+        name: art?.name ?? seen?.label ?? type,
+      };
+    }
+  }
+
   return {
     config: resolved,
     placeable: map.placeable,
-    unitTypes: [...new Set([...setupUnitTypes(game, base), ...extraTypes])],
+    unitTypes,
+    unitArt,
     // Units of the other games this one can take in, grouped by game, each with
     // the chassis it would play as here and its stats converted to this game's
     // numbers (engine/foreignUnits.js). Empty for a game that takes none.

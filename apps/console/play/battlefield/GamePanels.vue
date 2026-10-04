@@ -91,7 +91,7 @@ defineExpose({
       <HelpPanel :ui="ui"/>
     </template>
     <template #add-units>
-      <AddUnitsPanel ref="addUnits" :live-state="liveState" :teams="teams" @arm="emit('arm', $event)"/>
+      <AddUnitsPanel ref="addUnits" :live-state="liveState" :teams="teams" :recolor="!!ui?.recolorTeamSprites" @arm="emit('arm', $event)"/>
     </template>
     <template #orders><slot name="orders"/></template>
     <template #minimap><slot name="minimap"/></template>
