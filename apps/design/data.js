@@ -179,7 +179,10 @@ function computeUnits(field, t, viewerTeamId) {
     if (dead) hpNow = 0;
     else if (u.deathTurn != null && t > u.deathTurn - 2)
       hpNow = Math.max(4, u.hp * (1 - (t - (u.deathTurn-2)) / 2));
-    const team = field.teams.find(tm => tm.id === u.team);
+    // `paintTeam`: whose colours the token wears, where that is not whose it is — a
+    // city just taken, still in its old owner's colours while its taker walks in (see
+    // App.vue's activeField). Only the paint: sight and friendliness stay the owner's.
+    const team = field.teams.find(tm => tm.id === (u.paintTeam ?? u.team));
     const ang = u.path.length === 1 && u.facing != null ? u.facing : here.ang;
     return { ...u, x: here.x, y: here.y, ang, next, dead, hpNow, hpMax: u.hp, teamObj: team, friendly: u.team === friendly };
   });

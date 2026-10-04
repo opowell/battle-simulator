@@ -40,7 +40,8 @@ const props = defineProps({
   unitFx:        { type: Object, default: () => ({}) },
   territoryFx:   { type: Object, default: () => ({}) },
   // The fights being played out on the board (App.vue's battleFx): fighters it no longer
-  // draws itself, and the explosion frame showing. Null when nothing is being fought.
+  // draws itself, and the explosion frame showing — and a piece walking into a city,
+  // drawn by a stand-in until it arrives. Null when none of that is on the board.
   battleFx:      { type: Object, default: null },
   historyFields: { type: Array, default: () => [] },
   revealFields:  { type: Array, default: () => [] },
@@ -1228,14 +1229,34 @@ watch([chimeArmed, () => props.animating], ([pending, busy]) => {
   window.playTurnSound?.();
 });
 
-// Cheer + confetti (or a losing stinger) on a decisive win — keyed on isDone's
+// The game is over AS FAR AS THE BOARD HAS SHOWN: the move that ends it arrives with
+// the result, but is still being played out on the board (the unit walking into the
+// city that wins the battle, the fight that takes the last piece), and announcing the
+// result over the top of that hides the very move that won. So the result dialog and
+// its cheer wait for the board to finish, and then a moment longer, for the last thing
+// it showed (a city in its new colours) to be seen before the dialog dims it.
+// `immediate` so a game opened already over is over from the start — before the
+// cheer's watcher below exists to hear it as news.
+const RESULT_PAUSE_MS = 800;
+const doneShown = ref(false);
+let doneTimer = null;
+watch([isDone, () => props.animating], ([done, busy], prev) => {
+  clearTimeout(doneTimer);
+  if (!done) { doneShown.value = false; return; }
+  if (busy || doneShown.value) return;
+  if (!prev) doneShown.value = true;
+  else doneTimer = setTimeout(() => { doneShown.value = true; }, RESULT_PAUSE_MS);
+}, { immediate: true });
+onUnmounted(() => clearTimeout(doneTimer));
+
+// Cheer + confetti (or a losing stinger) on a decisive win — keyed on doneShown's
 // false→true edge (not `immediate`) so opening/resuming an already-finished game
 // never replays it. With no human seated (pure spectating) there's no "you" to win
 // or lose, so it defaults to the celebration.
 // "Somebody won" is a result that names a winner, whatever word the game's getResult
 // chose for its outcome — a game that says 'victory' rather than 'win' still ends in a
 // cheer (kdice and risk both did, and both went out in silence for it).
-watch(() => isDone.value, (done, prev) => {
+watch(() => doneShown.value, (done, prev) => {
   if (!done || prev || props.liveState?.result?.winnerId == null) return;
   const humanPlayers = props.liveState?.humanPlayers ?? [];
   if (humanPlayers.length && !humanPlayers.includes(props.liveState.result.winnerId)) {
@@ -2038,8 +2059,10 @@ const unitsHere = computed(() => {
 // map on the next unit would pan away from it. The hand-over waits for the fight, and
 // for whatever the board plays after it (a winner advancing, in a game where winners
 // do), and is dropped if the player picks something meanwhile.
-// Only a fight holds it: an ordinary move's slide is short, and holding the hand-over
-// for every one would swallow the next keypress of anyone moving units quickly.
+// Only a fight holds it — and a walk into a city, which battleFx also carries: the
+// city it took changes colours as the walk lands, and the map should still be on it
+// then. An ordinary move's slide is short, and holding the hand-over for every one
+// would swallow the next keypress of anyone moving units quickly.
 const advanceOff = ref(null);
 watch(() => [selectedId.value, selectedUnit.value?.needsOrders],
       ([id, needsOrders], [prevId, prev] = []) => {
@@ -2144,6 +2167,19 @@ const selectedCity = computed(() => {
   const u = selectedUnit.value;
   if (!u || garrisonPick.value === selectedId.value) return null;
   return cityAt(Math.floor(u.x), Math.floor(u.y));
+});
+// …and a unit in hand that walks INTO a city — its own, or one it is taking — is still
+// the unit in hand once it gets there: the square changed under the same selection, so
+// it was the unit that moved, not the player picking the city. Without this the move
+// that takes a city answers with that city's screen the instant it lands, over the top
+// of the unit walking in and the city changing colours; the original only ever shows a
+// city screen to a player who asked for one.
+watch(() => {
+  const u = selectedUnit.value;
+  return u && !u.dead && u.x != null ? [u.id, Math.floor(u.x), Math.floor(u.y)] : null;
+}, (now, before) => {
+  if (!now || !before || now[0] !== before[0]) return;
+  if (now[1] !== before[1] || now[2] !== before[2]) garrisonPick.value = now[0];
 });
 // The city screen paints the city and its units in their owner's colour, the same way
 // the board does (see teamSprite.js) — team ids are player ids (App.vue's buildField).
@@ -2760,7 +2796,7 @@ onUnmounted(() => {
     @close="selectedId = null" @submit="submitAction" @select-unit="selectGarrisonUnit"/>
 
   <GameOverOverlay
-    :isDone="isDone" :dismissed="dismissedResult" :liveState="liveState"
+    :isDone="doneShown" :dismissed="dismissedResult" :liveState="liveState"
     :winnerTeam="winnerTeam" :reasonLabel="reasonLabel" :field="field"
     @dismiss="dismissedResult = true"
     @exit="$emit('exit')"

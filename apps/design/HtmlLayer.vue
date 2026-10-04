@@ -316,7 +316,8 @@ function unitZ(c, u, i) {
 
 // The fights (props.battleFx), placed: each ghost and explosion frame on its square's
 // top-left corner, sized to the square. Ghosts sit just under the moving pieces, so a
-// live attacker lunges over the defender it is killing; a ghost attacker over its ghost
+// live attacker lunges over the defender it is killing; a piece walking into a city
+// (`moving`) over the city it is entering; a ghost attacker over its ghost
 // defender (it is listed after it); and the explosion over everything. On a wrapping
 // map the duplicated fringe columns show the same squares twice, so an item near the
 // seam is drawn in both copies, as the cells' own units are.
@@ -333,7 +334,7 @@ const battleItems = computed(() => {
       out.push({ ...extra, key: `${item.key}@${cx}`, left: px(cx), top: py(y), size });
     }
   };
-  for (const g of fx.ghosts ?? []) place(g, g.x, g.y, { unit: g.unit, r: unitR(g.unit), z: g.lunging ? Z_MOVING + 1 : Z_MOVING - 1 });
+  for (const g of fx.ghosts ?? []) place(g, g.x, g.y, { unit: g.unit, r: unitR(g.unit), z: g.lunging || g.moving ? Z_MOVING + 1 : Z_MOVING - 1 });
   for (const b of fx.blasts ?? []) place(b, b.x, b.y, { src: b.src, r: sprite, z: Z_MOVING + 2 });
   return out;
 });

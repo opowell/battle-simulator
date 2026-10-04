@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 // boardMoves.js is a classic browser global (no ESM export, so vue3-sfc-loader can
 // load it); importing it for its side effect publishes the API on globalThis.MOVES.
 await import('./boardMoves.js');
-const { movedTokens, newBattles } = globalThis.MOVES;
+const { movedTokens, enteredFixtures, fixtureAt, newBattles } = globalThis.MOVES;
 
 // A square-grid board: cells laid out row by row, each `{ x, y, unitId?, fixture? }`.
 const grid = (cells, extra = {}) => ({ cells, ...extra });
@@ -43,6 +43,45 @@ test('a unit stepping OUT of a fixture square still hops — the fixture stays b
   const after  = grid([cell(1, 1, null, true), cell(2, 1, 'u1')]);
   assert.deepEqual(movedTokens(before, after).get('u1'),
     { from: { x: 1, y: 1 }, to: { x: 2, y: 1 } });
+});
+
+// ── enteredFixtures / fixtureAt ────────────────────────────────────────────────
+// The walk movedTokens leaves out: a unit stepping into a city (taking it, say) is
+// still played, by a stand-in drawn as the old board drew the unit.
+test('a unit stepping into a fixture square is an entry, carrying how it was drawn', () => {
+  const legion = { ...cell(1, 1, 'u1'), imagePath: 'units/legion', owner: 1 };
+  const before = grid([legion,     { ...cell(2, 1, null, true), owner: 2 }]);
+  const after  = grid([cell(1, 1), { ...cell(2, 1, 'u1', true), owner: 1 }]);
+  const e = enteredFixtures(before, after).get('u1');
+  assert.deepEqual([e.from, e.to], [{ x: 1, y: 1 }, { x: 2, y: 1 }]);
+  assert.equal(e.token, legion);
+});
+
+test('a garrison moving from one fixture into another has no stand-in to walk', () => {
+  const before = grid([cell(1, 1, 'u1', true), cell(2, 1, null, true)]);
+  const after  = grid([cell(1, 1, null, true), cell(2, 1, 'u1', true)]);
+  assert.equal(enteredFixtures(before, after).size, 0);
+});
+
+test('an ordinary move and a piece staying in its fixture are not entries', () => {
+  const before = grid([cell(1, 1, 'u1'), cell(2, 1), cell(3, 1, 'u2', true)]);
+  const after  = grid([cell(1, 1), cell(2, 1, 'u1'), cell(3, 1, 'u2', true)]);
+  assert.equal(enteredFixtures(before, after).size, 0);
+});
+
+test('a piece entering a fixture from under a stack is found through the stack', () => {
+  const before = grid([{ ...cell(1, 1, 'u2'), stack: [{ unitId: 'u1', imagePath: 'units/settlers' }] }, cell(2, 1, null, true)]);
+  const after  = grid([cell(1, 1, 'u2'), cell(2, 1, 'u1', true)]);
+  assert.equal(enteredFixtures(before, after).get('u1')?.token.imagePath, 'units/settlers');
+});
+
+test('fixtureAt finds the square\'s fixture, on the cell or riding in its stack', () => {
+  const city = { unitId: 'u_2_1', fixture: true, owner: 2 };
+  const board = grid([cell(1, 1, 'u1'), { ...cell(2, 1, 'u3'), stack: [city] }, { ...cell(3, 1, 'u4', true), owner: 1 }]);
+  assert.equal(fixtureAt(board, 1, 1), null);
+  assert.equal(fixtureAt(board, 2, 1), city);
+  assert.equal(fixtureAt(board, 3, 1).owner, 1);
+  assert.equal(fixtureAt(board, 9, 9), null);
 });
 
 // Continuous-location games (cs/doom/combatmission) carry positions in a parallel

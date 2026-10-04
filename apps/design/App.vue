@@ -521,6 +521,9 @@ watch(liveState, (newState, oldState) => {
   // the beat it belongs to. A token that is drawn as a board fixture — civ1's city
   // sprite, which carries its garrison's id — is not in here: see boardMoves.js.
   const moved = MOVES.movedTokens(oldState.grid, newState.grid);
+  // …and the pieces that walked into one of those fixtures (a unit into a city — its
+  // own, or one it is taking), whose walk is played by a stand-in. See boardMoves.js.
+  const entered = MOVES.enteredFixtures(oldState.grid, newState.grid);
 
   // The route a unit actually travelled to get here, when the game recorded one
   // (grid.motion: `[[x, y, when], …]` per unit, `when` being how far through the
@@ -652,8 +655,11 @@ watch(liveState, (newState, oldState) => {
   // On one clock every mover shares a single beat, which leads the queue: the pieces
   // travel, and whatever the travelling cost them flashes after (see `together`).
   const groupBeat = together ? { kind: 'hop', hops: [], slide: smooth, durationMs: spanMs } : null;
-  const pushHop = (unitId) => {
-    const { from, to } = moved.get(unitId);
+  // `start` overrides where the hop sets off from: a piece that fought on its way is
+  // standing on the square it struck from by the time it moves on (see pushBattle).
+  const pushHop = (unitId, start = null) => {
+    const { from: setOff, to, token } = moved.get(unitId) ?? entered.get(unitId);
+    const from = start ?? setOff;
     claimed.add(unitId);
     // Seam crossing: nothing to animate, the unit is simply already there.
     if (Math.abs(to.x - from.x) > halfW) return;
@@ -661,6 +667,15 @@ watch(liveState, (newState, oldState) => {
     const steps = route ? route.map(([x, y]) => ({ x, y }))
       : straightPath ? [from, to] : buildHopPath(from, to, diagonal);
     const hop = { unitId, steps, times: route?.map(p => p[2]) };
+    // A piece walking into a fixture (see `entered`) is walked by a stand-in drawn as
+    // the old board drew it (see battleFx), since its own id now belongs to the city.
+    if (token) hop.ghost = token;
+    // Whatever stands as a fixture on the square it is heading for keeps its old look
+    // until it gets there (see activeField): a city it is taking would otherwise show
+    // its new owner's colours before the unit taking it has even set off.
+    const held = !continuous && MOVES.fixtureAt(newState.grid, to.x, to.y)
+      ? MOVES.fixtureAt(oldState.grid, to.x, to.y) : null;
+    if (held) hop.hold = { x: to.x, y: to.y, token: held };
     if (groupBeat) {
       if (!groupBeat.hops.length) beats.push(groupBeat);
       groupBeat.hops.push(hop);
@@ -701,6 +716,9 @@ watch(liveState, (newState, oldState) => {
     if (fights.some(f => f.attacker.unitId === id)) return; // it fights again later on
     const end = ownSquare(newState.grid, id);
     if (end) walk(id, { x: end.x, y: end.y });
+    // A winner that went on into the square it emptied — a city with no one left to
+    // hold it — walks in by stand-in, from where it struck.
+    else if (hopsOn && entered.has(id)) pushHop(id, battle.from);
   };
 
   // A clock advance is not attributed to the piece that moved — the action that ran
@@ -715,7 +733,8 @@ watch(liveState, (newState, oldState) => {
       // it only take it as far as the square it attacks from.
       if (FX_ACTION_TYPES.has(action.type)) pushBattle(fights.splice(fight, 1)[0]);
       else walk(action.unitId, fights[fight].from);
-    } else if (hopsOn && action?.unitId && moved.has(action.unitId) && !claimed.has(action.unitId)) pushHop(action.unitId);
+    } else if (hopsOn && action?.unitId && (moved.has(action.unitId) || entered.has(action.unitId))
+               && !claimed.has(action.unitId)) pushHop(action.unitId);
 
     if (fxOn) {
       const flashes = [];
@@ -777,7 +796,7 @@ watch(liveState, (newState, oldState) => {
   // The fights no log entry accounted for, oldest first (see `fights` above).
   while (fights.length) pushBattle(fights.shift());
   // Any remaining moved units (e.g. fx off, or moves the log didn't attribute) hop last.
-  if (hopsOn) for (const unitId of moved.keys()) if (!claimed.has(unitId)) pushHop(unitId);
+  if (hopsOn) for (const unitId of [...moved.keys(), ...entered.keys()]) if (!claimed.has(unitId)) pushHop(unitId);
 
   for (const tid of new Set(tapFlashes)) triggerTerritoryFx(tid, 1, null);
 
@@ -1122,10 +1141,26 @@ const activeField = computed(() => {
   // exact board points (see the move watcher above), so no offset.
   const off = field.locationType === 'continuous' ? 0 : 0.5;
   const fighting = battleAnim.value;
+  // Fixtures held at their old look by a walk still to land on them (see pushHop's
+  // `hold`), by square — the walk on screen and every one queued behind it.
+  const holds = new Map();
+  for (const beat of [hopAnim.value, ...animQueue.value]) {
+    for (const h of beat?.hops ?? []) if (h.hold) holds.set(`${h.hold.x},${h.hold.y}`, h.hold.token);
+  }
   field.units = field.units.map(u => {
     // A fixture is drawn as the square's own art (a civ1 city carrying its garrison's
-    // id): it never travels with the piece whose id it carries.
-    if (u.fixture) return u;
+    // id): it never travels with the piece whose id it carries. It may be wearing the
+    // look it had before a piece walked into it, until that piece is seen to arrive —
+    // a taken city in its old owner's colours, an emptied one still unframed.
+    if (u.fixture) {
+      const was = holds.get(`${Math.floor(u.path[0][0])},${Math.floor(u.path[0][1])}`);
+      return was ? {
+        ...u,
+        // Only its colours: whose it is (sight, friendliness) is already the new owner's.
+        paintTeam: field.teams[(was.owner ?? 1) - 1]?.id ?? u.team,
+        badge: was.badge, badgeLabel: was.badgeLabel, badgeOccupied: was.badgeOccupied,
+      } : u;
+    }
     // The attacker of the fight on screen: on the square it struck from, pushed along
     // its lunge while that lasts (see lungeShift) — in the same two forms as a slide.
     if (fighting?.beat.battle.attacker.unitId === u.id) {
@@ -1182,12 +1217,22 @@ const activeField = computed(() => {
 //     view before it struck, or has since gone into a city. Each holds its square
 //     (the attacker's lunging with it) until its own fight is over, so a loser is still
 //     standing there when its explosion plays, and is gone after it — not before.
+//     And a piece walking into a fixture (a unit into a city — see pushHop's `ghost`):
+//     its stand-in stands on its old square while queued, walks in, and is gone once
+//     it arrives, which is the moment the city it walked into shows what it did.
 //   • blasts — the explosion frame now showing, over the loser's square.
 // Positions are board squares; the renderer places them (see HtmlLayer's battleFx).
 const battleFx = computed(() => {
   const beats = battleBeats();
+  // The walks into a fixture (see pushHop's `ghost`): the one on screen, where it has
+  // got to, and the ones still queued, standing where they will set off from.
+  const walks = [
+    ...(hopAnim.value?.hops ?? []).filter(h => h.ghost).map(h => ({ hop: h, now: hopAnim.value })),
+    ...animQueue.value.filter(q => q.kind === 'hop')
+      .flatMap(q => q.hops.filter(h => h.ghost).map(h => ({ hop: h, now: null }))),
+  ];
   const field = activeField.value;
-  if (!beats.length || !field) return null;
+  if ((!beats.length && !walks.length) || !field) return null;
   const drawn = new Set(field.units.filter(u => !u.fixture).map(u => u.id));
   const ghostOf = (token, key) => {
     const team = field.teams[(token.owner ?? 1) - 1] ?? field.teams[0];
@@ -1217,6 +1262,15 @@ const battleFx = computed(() => {
                     x: b.from.x + shift.dx, y: b.from.y + shift.dy, lunging: !!(shift.dx || shift.dy) });
     }
     if (now?.phase === 'blast') blasts.push({ key: `${b.id}x${now.frame}`, x: lostAt.x, y: lostAt.y, src: beat.spec.frames[now.frame] });
+  }
+  // A piece walking into a fixture is drawn by its stand-in, over the fixture it is
+  // walking into — unless a fight of its own still to finish is drawing it already.
+  for (const { hop, now } of walks) {
+    if (ghosted.has(hop.unitId)) continue;
+    ghosted.add(hop.unitId);
+    const { a, b, frac } = now ? hopPose(hop, now) : { a: hop.steps[0], b: hop.steps[0], frac: 0 };
+    ghosts.push({ key: `walk:${hop.unitId}`, unit: ghostOf(hop.ghost, `ghost:walk:${hop.unitId}`),
+                  x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac, moving: true });
   }
   return { ghosts, blasts };
 });
