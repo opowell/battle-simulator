@@ -2502,12 +2502,15 @@ function keyMove(dx, dy) {
     selectedSquare.value = null; selectedShape.value = null;
     return true;
   }
-  // `badge` marks a city token rather than a real unit (see selectedCity) — attack
-  // actions only ever target units, so a city sharing the square is skipped here.
-  const enemy = displayUnits.value.find(un => !un.dead && un.badge == null
-    && un.team !== u.team && Math.floor(un.x) === col && Math.floor(un.y) === row);
-  const attack = enemy && legalActions.value.find(a =>
-    a.type === 'attack' && a.unitId === u.id && a.targetId === enemy.id);
+  // Any attack on a piece standing on that square. Matched by every token there rather
+  // than one picked out, because the attack's target need not be the piece the board
+  // draws: a garrisoned enemy city is drawn as the CITY (a `badge` token that carries
+  // the garrison's id), and the game picks a stack's defender itself. A square's own
+  // synthetic id never names an attack target, so including it is harmless.
+  const here = new Set(displayUnits.value.filter(un => !un.dead
+    && Math.floor(un.x) === col && Math.floor(un.y) === row).map(un => un.id));
+  const attack = legalActions.value.find(a =>
+    a.type === 'attack' && a.unitId === u.id && here.has(a.targetId));
   if (attack) { submitAction(attack); return true; }
   return false;
 }
