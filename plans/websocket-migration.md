@@ -2,11 +2,11 @@
 
 ## Problem
 
-The frontend (`apps/design`, the only UI now — `apps/classic`/`modern`/`minimal`/`voice2` were removed) polls `GET /sessions/:id` on a timer to detect game state changes:
+The frontend (`apps/console/play`, the only UI now — `apps/classic`/`modern`/`minimal`/`voice2` were removed) polls `GET /sessions/:id` on a timer to detect game state changes:
 
-- `apps/design/App.vue:247` — `maybeStartPoll()`, sets up a 2000ms `setInterval` (line 253) that calls `api.session(s.id, humanId)`
+- `apps/console/play/App.vue:247` — `maybeStartPoll()`, sets up a 2000ms `setInterval` (line 253) that calls `api.session(s.id, humanId)`
 
-`api.session()` (`apps/design/api.js:17`) hits `GET /sessions/:id?player=<id>`, served by `api-server.js:466` (`handleGetSession`). This adds latency (up to one poll interval per move) and wasted requests when nothing has changed.
+`api.session()` (`apps/console/play/api.js:17`) hits `GET /sessions/:id?player=<id>`, served by `api-server.js:466` (`handleGetSession`). This adds latency (up to one poll interval per move) and wasted requests when nothing has changed.
 
 ## Current server shape (relevant facts)
 
@@ -18,7 +18,7 @@ The frontend (`apps/design`, the only UI now — `apps/classic`/`modern`/`minima
   - `DELETE /sessions/:id` (handler `handleDeleteSession`, 528-534) — `session.close()` then `sessions.delete(id)`
   - The `Session` class (208-...) drives itself via `_run()` (240), started in its constructor (221) — this is where state changes asynchronously between client requests (AI turns resolving) and is the key place a broadcast hook needs to live.
 - `package.json` has zero runtime dependencies today (`"dependencies": {}`), node engine `>=18`. Node has no built-in WebSocket *server*. This migration will add `ws` as the repo's first backend dependency — worth flagging to the user before starting, since it breaks the "zero deps" streak (frontend "no build step" rule is unaffected — `ws` is server-only).
-- There is no shared API-client package anymore (`packages/api-client` was deleted as dead code when the other three apps were removed). `apps/design/api.js` is a small standalone `fetch` wrapper local to that app — any WS helper added for the client lives there too, not in a shared package.
+- There is no shared API-client package anymore (`packages/api-client` was deleted as dead code when the other three apps were removed). `apps/console/play/api.js` is a small standalone `fetch` wrapper local to that app — any WS helper added for the client lives there too, not in a shared package.
 
 ## Design
 
@@ -38,7 +38,7 @@ Push instead of poll: when a session mutates (new state after an action, or sess
 - Call `_broadcast()` from the same places that currently change engine state asynchronously — the `Session`'s internal `_run()` loop (240) after each engine step, and from `handleSubmitAction` / `handleDeleteSession` if state changes aren't already covered by `_run()`.
 - Reuse existing serialization logic rather than duplicating it — extract whatever `handleGetSession` builds into a shared method on `Session` if it's currently inline in the HTTP handler.
 
-### 3. Client: WS helper in `apps/design/api.js`
+### 3. Client: WS helper in `apps/console/play/api.js`
 
 Add a function alongside the existing `window.api` object that returns a small subscription object instead of a raw `WebSocket`:
 
@@ -54,7 +54,7 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate) 
 - Derive `ws://`/`wss://` from `_BASE` (swap `http`→`ws`, `https`→`wss`) so both dev (`http://localhost:3333`) and any future TLS deployment work without a second config value.
 - Keep `api.session()` unchanged — still needed for first paint before the socket opens, and as the fallback path.
 
-### 4. Client: swap polling for subscription in `apps/design/App.vue`
+### 4. Client: swap polling for subscription in `apps/console/play/App.vue`
 
 - Replace the `setInterval(...)` block in `maybeStartPoll()` (238-261) with a call to `api.subscribeSession(s.id, humanId, (fresh) => { /* existing body of the interval callback, lines 256-258 */ })`.
 - Keep the existing update-handling logic (lines 256-258: update `liveState.value`, stop on non-active status or human turn) unchanged — only the trigger mechanism changes.
@@ -74,7 +74,7 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate) 
 
 - Manual: open two browser tabs against the same session (two different players), confirm moves in one tab appear in the other within the WS round-trip time instead of up to 2000ms later.
 - Manual: kill the WS mid-game (e.g. via devtools network throttling/offline toggle) and confirm the UI falls back to polling and recovers when connectivity returns.
-- Confirm `apps/design` still functions end-to-end via `/verify` or manual click-through, since this touches `api-server.js`'s session handling.
+- Confirm `apps/console/play` still functions end-to-end via `/verify` or manual click-through, since this touches `api-server.js`'s session handling.
 
 ## Open questions for the user
 

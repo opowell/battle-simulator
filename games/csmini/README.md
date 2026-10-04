@@ -89,7 +89,7 @@ node demo/csmini-demo.js                    # you (CT) vs greedy AI (T)
 # Tests
 node --test games/csmini/index.test.js
 
-# Web UI: start the server, open /ui/design, pick "csmini",
+# Web UI: start the server, open /ui/console, pick "csmini",
 # set both seats to "AI (greedy heuristic)", leave Fog of War on,
 # and allow observers.
 node api-server.js

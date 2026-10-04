@@ -77,7 +77,7 @@ const playersLabel = computed(() => {
 </template>
 
 <style scoped>
-/* Like the lobby: the page fills the window and each column scrolls inside its
+/* The page fills its tab and each column scrolls inside its
    own panel, so Start never ends up below the fold on a game with a long
    options list. */
 .gp{height:100%;padding:20px 24px 24px;display:flex;flex-direction:column;overflow:hidden}

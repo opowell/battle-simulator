@@ -1,13 +1,13 @@
 <script setup>
-// The play UI of every session open inside the console, one iframe each, kept
-// alive for as long as its tab is open. The window renders a tab's content only
-// while it is in front, and an iframe that leaves the page — or is merely moved
-// to another place in it — loads its page again: a game booted from nothing
-// every time the console's own tab is looked at. So the frames live here, over
-// the window, each laid over the box its tab shows (SessionPlay) and hidden,
-// still running, while that tab is behind another.
+// Every session open inside the console, one SessionView each, kept alive for as
+// long as its tab is open. The window renders a tab's content only while it is in
+// front, and a board unmounted with it would be a game loaded again from nothing
+// (history, subscription, animation queue) every time the console's own tab is
+// looked at. So the boards live here, over the window, each laid over the box its
+// tab shows (SessionPlay) and hidden, still running, while that tab is behind
+// another.
 import { computed, onBeforeUnmount, reactive, ref, watch, watchEffect } from 'vue'
-import { playUrl } from '../api.js'
+import SessionView from '../play/SessionView.vue'
 
 const props = defineProps({
   /** The ids of the sessions open in the console. */
@@ -15,9 +15,11 @@ const props = defineProps({
   /** SESSION_SLOTS: the box each session is showing in, while it is. */
   slots: Map,
 })
+// Passed on from a SessionView: open-session (id, { replace }), close.
+const emit = defineEmits(['open-session', 'close'])
 
 const layer = ref(null)
-/** Where each frame sits in the layer, as last measured. */
+/** Where each board sits in the layer, as last measured. */
 const places = reactive({})
 
 function measure() {
@@ -32,7 +34,7 @@ function measure() {
 }
 
 // A box moves without being told to — a splitter dragged, a tab carried, the
-// browser resized — so while a frame is showing it follows its box each frame.
+// browser resized — so while a board is showing it follows its box each frame.
 let raf = 0
 const follow = () => { measure(); raf = requestAnimationFrame(follow) }
 watchEffect(() => {
@@ -44,64 +46,66 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 
 const isShown = (id) => props.slots.has(id) && !!places[id]
 
-// A game is played from the keyboard (civ1's arrows move the unit in hand), and
-// its keys listen inside its own frame — which the console's page keeps hold of
-// unless told otherwise, so a session just opened, or a tab just brought to the
-// front, would answer its first keys with nothing. A frame coming into view takes
-// the keyboard; the latest to arrive wins when several do at once.
-const frames = {}
+// A game is played from the keyboard (civ1's arrows move the unit in hand), so a
+// board coming into view takes the keyboard — a session just opened, or a tab just
+// brought to the front, answers its first key without a click on it first. Of the
+// boards on screen (two sessions split side by side), the one that has the keyboard
+// is the one last arrived or last pressed on, and it alone answers keys.
+const hosts = {}
+const keyed = ref(null)
 const shownIds = computed(() => props.sessionIds.filter(isShown))
 watch(shownIds, (now, was = []) => {
   const arrived = now.filter((id) => !was.includes(id)).at(-1)
-  if (arrived) focusFrame(arrived)
+  if (arrived) {
+    keyed.value = arrived
+    // SessionView's root is focusable (tabindex -1), and there from the start —
+    // while the board is still loading too. Not now but once this task is over,
+    // for two reasons: a tab brought back to the front lands here mid-flush, before
+    // this layer has drawn the board visible again (a hidden element refuses the
+    // focus); and the window switches tabs on pointerdown, after which the browser's
+    // own mousedown still focuses the tab that was pressed.
+    setTimeout(() => hosts[arrived]?.querySelector('[tabindex]')?.focus({ preventScroll: true }))
+  } else if (!now.includes(keyed.value)) {
+    keyed.value = now.at(-1) ?? null
+  }
 }, { flush: 'post' })
-
-function focusFrame(id) {
-  const frame = frames[id]
-  if (!frame) return
-  frame.focus()
-  frame.contentWindow?.focus()
-}
-
-// A frame focused before its page has loaded can lose the keyboard again when the
-// page arrives, so it is handed over once more then — unless the keyboard has
-// meanwhile gone somewhere else in the console, which is the user's to decide.
-function onLoad(id) {
-  const frame = frames[id]
-  const active = document.activeElement
-  if (isShown(id) && (active === frame || active === document.body)) focusFrame(id)
-}
 
 function styleOf(id) {
   const place = places[id]
   // Hidden rather than taken away: it keeps its size, so the game inside does
   // not lay itself out for nothing while it waits.
-  const shown = isShown(id)
   return {
     ...(place ? { left: `${place.left}px`, top: `${place.top}px`, width: `${place.width}px`, height: `${place.height}px` } : {}),
-    visibility: shown ? 'visible' : 'hidden',
+    visibility: isShown(id) ? 'visible' : 'hidden',
   }
 }
 </script>
 
 <template>
   <div ref="layer" class="sf">
-    <iframe
+    <div
       v-for="id in sessionIds"
       :key="id"
-      :ref="(el) => { if (el) frames[id] = el; else delete frames[id] }"
+      :ref="(el) => { if (el) hosts[id] = el; else delete hosts[id] }"
       class="sf__frame"
       :style="styleOf(id)"
-      :src="playUrl.session(id)"
-      title="Session"
-      allow="autoplay; fullscreen"
-      @load="onLoad(id)"
-    />
+      @pointerdown.capture="keyed = id"
+    >
+      <SessionView
+        :session-id="id"
+        :active="isShown(id) && keyed === id"
+        @open-session="(next, options) => emit('open-session', next, { ...options, from: id })"
+        @close="emit('close', id)"
+      />
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* The layer covers the window and lets every press through but a frame's. */
+/* The layer covers the window and lets every press through but a board's. */
 .sf { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
-.sf__frame { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; pointer-events: auto; }
+/* Each board's box is what a page of its own would have been to it: its
+   full-screen scrims (position: fixed; inset: 0) cover the board, not the
+   console — layout containment makes the box their containing block. */
+.sf__frame { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: auto; contain: layout paint; }
 </style>

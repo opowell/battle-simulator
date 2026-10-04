@@ -133,7 +133,7 @@ async function serveApp(appName, req, res) {
 }
 
 // Serve repo ES modules (games/*, agents/*, …) to the browser analysis Web
-// Worker (apps/design/analysis-worker.js), which imports the real chess + CFR
+// Worker (apps/console/play/analysis-worker.js), which imports the real chess + CFR
 // code directly instead of a bundle. Restricted to JS/WASM so it can't read
 // arbitrary source, with path-escape protection. The worker imports absolute
 // URLs like /lib/games/chess/ChessGame.js; those modules' own relative imports
@@ -600,7 +600,7 @@ class Session {
    * re-sent whole on every update even though a turn moves a handful of cells and
    * only ever APPENDS log entries. So: send changed cells as `gridPatch` ([index,
    * cell] pairs against the previous `grid.cells`) and new entries as `logTail`, and
-   * let the client rebuild the snapshot (see apps/design/api.js subscribeSession).
+   * let the client rebuild the snapshot (see apps/console/play/api.js subscribeSession).
    *
    * Only for full-information observers — the exact case a watched AI game is, and
    * the only one where both halves are safely incremental. A fog seat's `log` is a
@@ -1615,7 +1615,7 @@ async function handleGames(res) {
     // server-only and never serialized. `clientAnalyze` (when present) lets the
     // browser's analysis Web Worker run that same analysis locally instead: it's
     // a { module, export } pointer the worker dynamically imports from /lib/ and
-    // resolves a dot-path into (see apps/design/analysis-worker.js). `clientGame`
+    // resolves a dot-path into (see apps/console/play/analysis-worker.js). `clientGame`
     // is the matching pointer for deriving legal actions client-side.
     agents: dedupeAgents([...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n, analyze, clientAnalyze }) => ({ id, name: n, analyzable: !!analyze, clientAnalyze: clientAnalyze ?? null }))]),
     clientGame: game.clientGame ?? null,
@@ -2504,7 +2504,7 @@ async function handleGetLog(res, id) {
 // One page of the scrub-bar timeline: ?from=<frame>&limit=<n>. Paged because the
 // whole thing used to go out in a single response — hundreds of megabytes on a long
 // civ1 game, which is a cliff for both ends. Frames come back diff-encoded (see
-// Session.readGridHistory); apps/design/api.js pages through and rebuilds them.
+// Session.readGridHistory); apps/console/play/api.js pages through and rebuilds them.
 async function handleGetHistory(res, id, url) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
@@ -2563,9 +2563,12 @@ async function handleRequest(req, res) {
   try {
     const { parts, method, url } = route(req);
 
-    // Default — redirect to design UI
-    if (method === 'GET' && parts[0] === '') {
-      res.writeHead(302, { Location: `${base}/ui/design` });
+    // Default — the console, which is the UI. The old play UI's addresses
+    // (/ui/design, /design) land there too: a redirect keeps the URL's fragment,
+    // and the console opens the `#/session/<id>` or `#/game/<name>` it names.
+    if (method === 'GET' && (parts[0] === '' || parts[0] === 'design'
+        || (parts[0] === 'ui' && parts[1] === 'design'))) {
+      res.writeHead(302, { Location: `${base}/ui/console/` });
       return res.end();
     }
 
@@ -2573,8 +2576,8 @@ async function handleRequest(req, res) {
     if (method === 'GET' && parts[0] === 'lib')
       return await serveLibModule(res, parts.slice(1).join('/'));
 
-    // Static UI apps — GET /ui/<name>/* or GET /design/* (legacy)
-    const UI_APPS = ['design', 'game-editor', 'console'];
+    // Static UI apps — GET /ui/<name>/*
+    const UI_APPS = ['game-editor', 'console'];
     if (method === 'GET' && parts[0] === 'ui' && UI_APPS.includes(parts[1])) {
       // Redirect /ui/<name> (no trailing slash) so relative asset paths resolve correctly
       if (parts.length === 2 && !url.pathname.endsWith('/')) {
@@ -2583,8 +2586,6 @@ async function handleRequest(req, res) {
       }
       return await serveApp(parts[1], req, res);
     }
-    if (method === 'GET' && parts[0] === 'design')
-      return await serveApp('design', req, res);
 
     // Standalone browser games — GET /play/<name>/* → games/<name>/
     if (method === 'GET' && parts[0] === 'play' && parts[1]) {
@@ -2809,7 +2810,7 @@ function handleUpgrade(req, socket, head, prefix = '') {
     session._sendTo(client);
     const drop = () => session.wsClients.delete(client);
     // The only thing a client may say on this socket: "I can't apply your deltas,
-    // start me over" (see _deltaFor / apps/design/api.js rehydrate). Dropping the
+    // start me over" (see _deltaFor / apps/console/play/api.js rehydrate). Dropping the
     // base makes the next send a whole snapshot, which re-aligns both ends.
     ws.on('message', (raw) => {
       let msg; try { msg = JSON.parse(raw); } catch { return; }

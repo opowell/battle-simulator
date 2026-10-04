@@ -89,18 +89,18 @@ function deadline(ms, what) {
   return { promise: p, clear: () => clearTimeout(id) };
 }
 
-// THE REAL CLIENT. apps/design/api.js is a plain browser script that hangs its API off
+// THE REAL CLIENT. apps/console/play/api.js is a plain browser script that hangs its API off
 // `window`, so give it a window pointed at the test server and run it — the delta
 // rebuilding under test is the code the UI actually ships, not a restatement of it
 // that could quietly drift out of step with the server it has to agree with.
 let browserApi = null;
 async function loadBrowserApi() {
   if (browserApi) return browserApi;
-  const src = await readFile(resolve(ROOT, 'apps/design/api.js'), 'utf8');
+  const src = await readFile(resolve(ROOT, 'apps/console/play/api.js'), 'utf8');
   // Left in place for the run, not restored around the call: the module's own
   // fallback paths reach back through `window.api` long after it has loaded.
-  globalThis.window = { location: { pathname: '/ui/design/', origin: BASE } };
-  runInThisContext(src, { filename: 'apps/design/api.js' });
+  globalThis.window = { location: { pathname: '/ui/console/', origin: BASE } };
+  runInThisContext(src, { filename: 'apps/console/play/api.js' });
   browserApi = globalThis.window.api;
   return browserApi;
 }

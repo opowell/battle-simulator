@@ -1,30 +1,40 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
-import Lobby       from './Lobby.vue';
-import GamePage    from './GamePage.vue';
+// One session being played, inside the console: the board (Battlefield) and
+// everything that keeps it in step with the server — the subscription, the turn
+// animations, history, forks. The console opens one per session tab and keeps it
+// alive while the tab is behind another (see SessionFrames), so `active` says
+// whether this one is the one on screen, and only that one answers the keyboard.
+import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue';
 import Battlefield from './Battlefield.vue';
+import { nextScenarioRequest } from '../sessions.js';
+import { KEYS_LIVE, OVERLAY_TARGET } from './sessionScope.js';
 
-const router = useRouter();
-const route  = useRoute();
+const props = defineProps({
+  sessionId: { type: String, required: true },
+  /** On screen, in front: the one session that takes the keyboard. */
+  active:    { type: Boolean, default: false },
+});
+// open-session: (id, { replace }) — a session started from this one (a rematch, the
+// next scenario), which `replace` puts in this one's place. close: leave the game.
+const emit = defineEmits(['open-session', 'close']);
 
-const view        = ref('lobby');
+// A key is this session's to answer only while it is on screen, and only when the
+// keyboard is with the game: on something inside it, or nowhere in particular
+// (body). A key pressed with the console's tab strip focused belongs to the strip.
+const rootEl = ref(null);
+provide(KEYS_LIVE, (e) => props.active
+  && (!e || e.target === document.body || !!rootEl.value?.contains(e.target)));
+// Overlays (the city screen, advisors, game over) open inside this session's own
+// root rather than on the page's body — see sessionScope.js.
+provide(OVERLAY_TARGET, rootEl);
+
 const liveState   = ref(null);   // raw API session JSON
 // Observer perspective: null = full-information ("everyone"), else a playerId to
 // watch through that player's own fog-limited view. Only meaningful for observer
 // sessions (see isObserverSession / setObserverView).
 const observerView = ref(null);
-const sessions    = ref([]);     // lobby list from GET /sessions
 const apiGames    = ref([]);     // from GET /games
-// The game whose page is open (/game/:name). Resolved out of apiGames, so a page
-// opened by URL before the list has loaded fills itself in once it arrives.
-const gameName    = ref('');
-const pageGame    = computed(() => apiGames.value.find(g => g.name === gameName.value) ?? null);
 const serverErr   = ref('');
-const apiLabel    = 'api · ' + window.location.host + window.api.basePath;
-
-// Cached player info for sessions we've created (id → [{id, name, agent}])
-const sessionMeta = ref({});
 
 // ── turn animation queue ──────────────────────────────────────
 // A single server update can bundle several turns (e.g. a human move plus the
@@ -837,16 +847,12 @@ function buildField(g, s) {
   // screen) would otherwise leave its last seats out of `teams` entirely, and the
   // board would paint them with SchematicLayer's no-team grey.
   const defs    = s.params?.players ?? apiGame?.defaultPlayers ?? [];
-  const cached  = sessionMeta.value[s.id] ?? [];
 
-  const teams = defs.map((d, i) => {
-    const c = cached.find(p => p.id === d.id);
-    return {
-      id:    d.id,
-      name:  c?.name ?? d.name,
-      ...teamPalette.seatColorFor(apiGame, i),
-    };
-  });
+  const teams = defs.map((d, i) => ({
+    id:    d.id,
+    name:  d.name,
+    ...teamPalette.seatColorFor(apiGame, i),
+  }));
 
   // Fallback: if defs is empty, infer teams from cells
   if (!teams.length) {
@@ -931,7 +937,7 @@ function buildField(g, s) {
       path:      [[x, y]],
       facing:    c.facing,
       deathTurn: null,
-      // Per-unit field-of-vision overrides (see apps/design/vision.js) — a game's toGrid
+      // Per-unit field-of-vision overrides (see apps/console/play/vision.js) — a game's toGrid
       // may set these; absent, the unit falls back to the game/default FoV cone + range.
       fov:           c.fov,
       visionRange:   c.visionRange,
@@ -973,7 +979,7 @@ function buildField(g, s) {
       // the renderer stands it on a plate of its team's colour (battlefield/HtmlUnit.vue).
       origin:        c.origin,
       // Layered composite sprite (body/hands/held weapon/team ring/equipment badges,
-      // each independently offset+rotated) — see apps/design/SchematicLayer.vue's
+      // each independently offset+rotated) — see apps/console/play/SchematicLayer.vue's
       // generic renderer and e.g. games/surviv/SurvivGame.js's spriteLayers().
       spriteLayers:  c.spriteLayers,
       // Token size multiplier (default 1 = the standard piece size both renderers pick
@@ -1078,7 +1084,7 @@ function buildField(g, s) {
     shapes: g.shapes ?? [],
     // Line-of-sight occluders (opaque tile keys) for the fog renderer — the same wall
     // grid the engine's LOS blocks on, so the drawn vision veil stops at walls instead
-    // of bleeding through them (see apps/design/vision.js). Absent ⇒ no occlusion.
+    // of bleeding through them (see apps/console/play/vision.js). Absent ⇒ no occlusion.
     los: g.los ?? null,
     units,
     // A game's toGrid may return a per-state `ui` override (e.g. hideGridLines for shape
@@ -1383,30 +1389,16 @@ function setObserverView(playerId) {
 // ── data loading ─────────────────────────────────────────────
 async function refresh() {
   try {
-    const [s, g] = await Promise.all([api.sessions(), api.games()]);
-    sessions.value  = s;
-    apiGames.value  = g;
+    apiGames.value  = await api.games();
     serverErr.value = '';
   } catch (e) {
     serverErr.value = e.message;
   }
 }
 
-// Sync view when navigating via browser back/forward
-watch(() => [route.params.id, route.params.name], async ([id, name], [prevId] = []) => {
-  if (id) {
-    if (liveState.value?.id !== id) await enterSession(id, { push: false });
-    return;
-  }
-  if (prevId) { stopPoll(); liveState.value = null; }
-  gameName.value = name ?? '';
-  view.value = name ? 'game' : 'lobby';
-});
-
 onMounted(async () => {
   await refresh();
-  if (route.params.id) await enterSession(route.params.id, { push: false });
-  else if (route.params.name) { gameName.value = route.params.name; view.value = 'game'; }
+  await enterSession(props.sessionId);
 });
 
 onUnmounted(() => { stopPoll(); stopReplay(); });
@@ -1455,7 +1447,7 @@ watch(() => {
   loadReveal(liveState.value.id, liveState.value);
 });
 
-async function enterSession(id, { push = true } = {}) {
+async function enterSession(id) {
   historyFields.value = [];
   observerView.value = null; // start every session in the full-information view
   try {
@@ -1467,79 +1459,21 @@ async function enterSession(id, { push = true } = {}) {
     // before the observer socket has even connected.
     else if (isObserverSession(state)) state = await api.sessionObserver(id, observerView.value);
     liveState.value = state;
-    view.value = 'battle';
-    if (push) router.push('/session/' + id);
     maybeStartPoll(state);
     if (!state.fog) loadHistory(id, state); // skip history in fog mode (would reveal all pieces)
   } catch (e) {
-    if (/session not found/i.test(e.message)) {
-      router.replace('/');
-    } else {
-      serverErr.value = e.message;
-    }
+    serverErr.value = e.message;
   }
 }
 
-async function openSession(s) {
-  await enterSession(s.id);
-}
-
-async function createSession(cfg) {
-  const apiGame = apiGames.value.find(g => g.name === cfg.game);
-  const defs    = apiGame?.defaultPlayers ?? [];
-  const ids     = gameDefaults.seatIds(apiGame, cfg.players);
-  const players = cfg.players.map((p, i) => ({
-    id:    ids[i],
-    name:  p.name || defs[i]?.name || ('Player ' + (i + 1)),
-    agent: p.agent === 'human' ? 'human' : (p.agent ?? 'random'),
-  }));
+// A session started from this one, opened in this one's place: the console swaps
+// the tab, and this view (stopped first, so nothing more arrives for it) goes with it.
+async function startInstead(body) {
   try {
-    const opts    = cfg.gameOpts ?? {};
-    // maxTurns is optional: the form leaves it null when the turn limit is off.
-    const created = await api.create({ game: cfg.game, players, config: { ...(cfg.maxTurns ? { maxTurns: cfg.maxTurns } : {}), fog: opts.fogOfWar ?? false, ...opts, scenario: cfg.scenario } });
-    sessionMeta.value = { ...sessionMeta.value, [created.id]: players };
-    await enterSession(created.id);
-    refresh();
+    const created = await api.create(body);
+    stopPoll();
+    emit('open-session', created.id, { replace: true });
   } catch (e) { serverErr.value = e.message; }
-}
-
-// ── game page ────────────────────────────────────────────────
-function openGame(g) {
-  gameName.value = g.name;
-  view.value = 'game';
-  router.push('/game/' + encodeURIComponent(g.name));
-}
-
-function leaveGamePage() {
-  view.value = 'lobby';
-  gameName.value = '';
-  router.push('/');
-}
-
-// A /game/:name URL for a game the server doesn't serve (renamed, removed, or a
-// typo) has no page to show — send it back to the lobby once the list is in.
-watch([apiGames, gameName], () => {
-  if (view.value === 'game' && gameName.value && apiGames.value.length && !pageGame.value) leaveGamePage();
-});
-
-// An ANALYSIS BOARD: a study session with no opponent. Every seat is human (the
-// one person at the keyboard moves both sides), which is the condition the
-// server puts on the flag, and which is what lets the whole board be revealed
-// and the game database stay open while the session is still being played.
-//
-// Fog goes ON for a game that has one to offer: an analysis board with the fog
-// lifted is just a board, and the database's whole question — what did players
-// who could see what you can see go on to play — needs the fog to mean anything.
-// Everything else — scenario, options, turn limit — is taken from the page's form.
-function createAnalysisBoard(cfg) {
-  const g = pageGame.value;
-  if (!cfg || !g) return;
-  const fogged = (g.gameOptions ?? []).some(o => o.id === 'fogOfWar');
-  createSession({
-    ...cfg,
-    gameOpts: { ...cfg.gameOpts, analysisBoard: true, ...(fogged ? { fogOfWar: true } : {}) },
-    players:  cfg.players.map(p => ({ ...p, agent: 'human' })),
-  });
 }
 
 async function submitAction({ playerId, action }) {
@@ -1649,7 +1583,7 @@ async function setPlan({ playerId, moves }) {
 // black-to-move ply and find no black piece to pick up.
 //
 // Built here rather than there because turning a raw grid into a display field
-// needs App-scoped context (apiGames/sessionMeta), same as activeField.
+// needs SessionView-scoped context (apiGames), same as activeField.
 const plyView = ref(null);
 let plyViewSeq = 0;
 
@@ -1726,89 +1660,33 @@ async function doForkMove({ ply, cursor = null, playerId, action }) {
 watch(() => liveState.value?.id, () => { forkState.value = null; forkError.value = ''; });
 watch(() => liveState.value?.log?.length ?? 0, () => { forkState.value = null; forkError.value = ''; });
 
-async function deleteSession(id) {
-  try { await api.del(id); await refresh(); } catch {}
-}
-
 function exitBattle() {
   stopPoll();
-  liveState.value = null;
-  view.value = 'lobby';
-  router.push('/');
-  refresh();
+  emit('close');
 }
 
 // Start a fresh game reusing the finished session's exact creation parameters
 // (game, players, config), which the server echoes back on liveState.params.
-async function restartGame() {
+function restartGame() {
   const params = liveState.value?.params;
-  if (!params) return;
-  try {
-    stopPoll();
-    const created = await api.create(params);
-    sessionMeta.value = { ...sessionMeta.value, [created.id]: params.players };
-    await enterSession(created.id);
-    refresh();
-  } catch (e) { serverErr.value = e.message; }
+  if (params) startInstead(params);
 }
 
-// Another scenario of the same game — the one a finished game suggests next — set
-// up as the lobby would set it up: its own config and seats laid over the settings
-// this game was played with. Starting units belong to the map they were picked for,
-// so they stay behind, as does the old scenario's turn limit.
-async function playScenario(scenarioId) {
+// The scenario a finished game suggests next (see sessions.js nextScenarioRequest).
+function playScenario(scenarioId) {
   const params = liveState.value?.params;
   const apiGame = apiGames.value.find(g => g.name === params?.game);
-  const sc = apiGame?.scenarios?.find(s => s.id === scenarioId);
-  if (!sc) return;
-  const ov = gameDefaults.scenarioOverrides(sc);
-  // `fog` is createSession's copy of `fogOfWar`, made again from the merged options —
-  // a stale one carried over would outvote the new scenario's own fog setting.
-  const { startingUnits, scenario, maxTurns, fog, ...kept } = params.config ?? {};
-  stopPoll();
-  await createSession({
-    game: params.game,
-    gameOpts: { ...(fog != null ? { fogOfWar: fog } : {}), ...kept, ...ov.config },
-    maxTurns: ov.maxTurns,
-    scenario: sc.id,
-    players: ov.players ? gameDefaults.makeSlots(apiGame, null, ov.players) : params.players,
-  });
+  const body = apiGame && nextScenarioRequest(apiGame, params, scenarioId);
+  if (body) startInstead(body);
 }
 </script>
 
 <template>
-  <div class="app-root">
-    <div class="topbar" v-if="view !== 'battle'">
-      <div class="brand">
-        <span class="mark"><BsIcon name="crosshair" :size="15"/></span>
-        BATTLE&nbsp;SIMULATOR
-      </div>
-      <div class="statuschip" :class="{ 'app-chip--err': serverErr }">
-        <span class="pulse" :class="{ 'app-pulse--err': serverErr }"/>
-        {{ serverErr ? 'offline' : apiLabel }}
-      </div>
-      <div class="app-spacer"/>
-      <span class="mono app-games">
-        {{apiGames.length}} games
-      </span>
-    </div>
-
+  <!-- Focusable (but not in the tab order) so the console can hand it the keyboard,
+       and so a click anywhere on the board keeps the keyboard here. -->
+  <div ref="rootEl" class="play app-root" tabindex="-1">
     <div class="app-body">
-      <Lobby v-if="view === 'lobby'"
-             :sessions="sessions"
-             :api-games="apiGames"
-             :server-err="serverErr"
-             @open-session="openSession"
-             @open-game="openGame"
-             @delete-session="deleteSession"
-             @refresh="refresh"/>
-      <GamePage v-else-if="view === 'game'"
-                :game="pageGame"
-                :disabled="!!serverErr"
-                @back="leaveGamePage"
-                @create="createSession"
-                @analysis-board="createAnalysisBoard"/>
-      <Battlefield v-else-if="activeField"
+      <Battlefield v-if="activeField"
                    :live-state="liveState"
                    :resolved-field="resolvedField"
                    :observer-view="observerView"
@@ -1849,19 +1727,16 @@ async function playScenario(scenarioId) {
                    @view-ply="loadPlyView"
                    @undo="undoMoves"
                    @set-playback-speed="setPlaybackSpeed"/>
-      <div v-else class="app-loading">
-        Loading…
+      <div v-else class="app-loading" :class="{ 'app-loading--err': serverErr }">
+        {{ serverErr || 'Loading…' }}
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.app-root { height: 100vh; display: flex; flex-direction: column; }
-.app-chip--err { border-color: var(--danger); color: var(--danger); }
-.app-pulse--err { background: var(--danger); animation-play-state: paused; }
-.app-spacer { flex: 1; }
-.app-games { font-size: 11px; color: var(--faint); }
+.app-root { height: 100%; display: flex; flex-direction: column; outline: none; }
 .app-body { flex: 1; min-height: 0; }
+.app-loading--err { color: var(--danger); }
 .app-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--dim); }
 </style>

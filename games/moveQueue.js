@@ -14,7 +14,7 @@
 // legality, and side effects (e.g. capturing a city) stay entirely in its adapter
 // callbacks; this module only tracks the queue itself and when to advance it.
 //
-// The client side (apps/design) renders any unit.queue it finds and gates its own
+// The client side (apps/console/play) renders any unit.queue it finds and gates its own
 // affordances (the goto-path overlay, the side-panel list, Backspace/"undo last
 // queued move") behind `field.ui?.moveQueue !== false` — on by default, so a game
 // that adopts this module gets the UI for free; set `ui: { moveQueue: false }` to

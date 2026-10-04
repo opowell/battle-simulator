@@ -29,7 +29,7 @@ async function remove() {
 <template>
   <div class="cx-stack">
     <div class="cx-row">
-      <a class="cx-btn cx-btn--primary" :href="playUrl.session(record.id)" target="_blank" rel="noopener" @click="opener.follow($event, record.id)">{{ opener.inNewTab() ? 'Open in the play UI ↗' : 'Open session' }}</a>
+      <a class="cx-btn cx-btn--primary" :href="playUrl.session(record.id)" target="_blank" rel="noopener" @click="opener.follow($event, record.id)">{{ opener.inNewTab() ? 'Open session ↗' : 'Open session' }}</a>
       <button v-if="recording" type="button" class="cx-btn" @click="emit('open', recording)">Recording</button>
     </div>
 

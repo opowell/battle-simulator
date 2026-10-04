@@ -112,7 +112,7 @@ export function pointInShape(s, px, py) {
 // ── exact continuous line-of-sight against shape geometry ────────────────────────
 // The engine's LOS/reveal used to snap to a rasterized tile grid (see each game's old
 // Bresenham hasLOS); these test a straight segment against the TRUE authored shapes, so
-// server-side visibility matches the design UI's exact veil (apps/design/vision.js) and a
+// server-side visibility matches the design UI's exact veil (apps/console/play/vision.js) and a
 // room whose real entrance is a narrow cusp stays hidden. Ray param t is world distance.
 function rayRectIv(ox, oy, dx, dy, s) {
   let tmin = -Infinity, tmax = Infinity;

@@ -1,6 +1,6 @@
 // api.js — HTTP client for the Battle Simulator API. Talks to whatever
 // origin/path prefix loaded this page, so it works standalone (served at the
-// root) or embedded under a launcher (e.g. served at /battle-simulator/ui/design/).
+// root) or embedded under a launcher (e.g. served at /battle-simulator/ui/console/).
 const _BASE_PATH = window.location.pathname.replace(/\/ui\/.*$/, '');
 const _BASE = window.location.origin + _BASE_PATH;
 

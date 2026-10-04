@@ -439,13 +439,13 @@ export const Civ2Game = {
   colors: { ocean: '#1a5a8a', plains: '#c8b87a', grassland: '#3a7830', forest: '#2a6020', hills: '#a08040', mountains: '#7a6a50', desert: '#d4b84a', tundra: '#b0bab0', arctic: '#dce8ec', jungle: '#1a5020', swamp: '#4a603a' },
   // The terrain art is pre-drawn 64×32 isometric diamond tiles, so render the board
   // isometrically: blit each tile centred on its diamond ('sprite' mode, no skew/cliffs),
-  // units/cities as owner-tinted tokens. See apps/design/IsoLayer.vue.
+  // units/cities as owner-tinted tokens. See apps/console/play/IsoLayer.vue.
   ui: {
     isometric: true, isoTileMode: 'sprite', isoUnitStyle: 'token', freeSelection: true,
     allowDiagonalHopsWhileMoving: true,
     // Player colours, as in civ1 (games/civ1/Civ1Game.js): RED IS THE BARBARIANS' and
     // never a civ's, so it's absent here — a red token means barbarians, whoever else is
-    // playing. Without this the generic engine palette (apps/design/gameDefaults.js)
+    // playing. Without this the generic engine palette (apps/console/play/gameDefaults.js)
     // would hand seat 2 red.
     teamColors: ['#4058c8', '#d8c038', '#38a038', '#9058b8', '#48b8b8', '#d87830', '#e8e8e8'],
   },

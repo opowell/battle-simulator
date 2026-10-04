@@ -72,17 +72,13 @@ Set `PORT` to use a different port.
 
 ## Web UI
 
-One browser UI ships in `apps/design`. It's a Vue 3 app with no build step — it loads Vue from a CDN and uses `vue3-sfc-loader` to compile `.vue` Single File Components directly in the browser at runtime.
-
-Start the API server, then serve `apps/design` with any static file server:
+The UI is the console, at `/ui/console` on the API server (`http://localhost:3000/` redirects there). It's Vue 3 with no build step: `vue3-sfc-loader` compiles the `.vue` files in the browser, so an edit to one shows on the next page load.
 
 ```sh
-node api-server.js             # API on localhost:3000
-npx serve apps/design          # or:
-python3 -m http.server -d apps/design 5176
+node api-server.js             # then open http://localhost:3000/
 ```
 
-Or hit it directly from the API server at `/ui/design` (`http://localhost:3000/ui/design`).
+A session is played in a tab of the console's window. The game screen — board, panels, history, analysis — lives in `apps/console/play` and is game-agnostic: everything a game wants drawn comes from its `toGrid` and `ui`. A session can also be opened in a browser tab of its own (the ↗ on its tab, or the *Open sessions in new tab* setting), which is the console opened on that session.
 
 ### How it works
 
@@ -118,7 +114,7 @@ Any seat may change any setting, and every change is announced to everyone in th
 
 ## Console
 
-`/ui/console` (`apps/console`) is a second UI, for everything *around* playing:
+`/ui/console` (`apps/console`) is where games are played, and everything *around* playing:
 one searchable place for every object the server knows about. It is built on
 [appfr](https://github.com/opowell/appfr), vendored as a submodule at
 `vendor/appfr` and served from its prebuilt `dist/` at `/appfr/`.
@@ -127,7 +123,7 @@ one searchable place for every object the server knows about. It is built on
 |---|---|---|
 | **Games** | the registry in `api-server.js` | edit player counts and sides, create, delete |
 | **Files** | each game's source under `games/<name>/` | edit and save (⌘S) |
-| **Sessions** | games being played right now | start one, open it in the play UI, delete it |
+| **Sessions** | games being played right now | start one, play it in a tab, delete it |
 | **Recordings** | finished and interrupted games under `sessions/` | inspect seats, result and moves |
 | **Scenarios** | each game's `scenarios` | start a session from one |
 | **Units** | each game's unit types, read from its opening position | browse, with the game's own art |

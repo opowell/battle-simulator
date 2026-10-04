@@ -389,7 +389,7 @@ export const ChessGame = {
   ],
   agents: [
     { id: 'chess-ai', name: 'Chess AI', agent: ChessAgent, analyze: standardOnly(ChessAgent.analyze),
-      // Lets the browser's analysis Web Worker (apps/design/analysis-worker.js —
+      // Lets the browser's analysis Web Worker (apps/console/play/analysis-worker.js —
       // generic, no game-specific code) run this same `analyze` function locally
       // instead of over SSE: it dynamically imports `module` from /lib/ and reads
       // `export` off the result (dot-path into the namespace). See `clientGame`

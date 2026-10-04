@@ -690,7 +690,7 @@ function getLegalActions(state, playerId) {
   // already moved this turn — can have a future move planned now instead of
   // waiting idle. It fires automatically the moment that unit's own CT turn
   // starts (see advanceTurn). Appended last so the active unit's own actions
-  // always come first in the array — apps/design/Battlefield.vue's activeUnitId
+  // always come first in the array — apps/console/play/Battlefield.vue's activeUnitId
   // (strictActiveUnit mode) reads the *first* legal action's unitId as "the" active
   // unit, and the active unit's end-turn actions above guarantee that stays true.
   for (const other of state.units) {
@@ -983,7 +983,7 @@ export const FFTAGame = {
   ],
   colors: { floor: '#8a9c70', elevated: '#a07858', 'elevated-high': '#b89060', wall: '#2a2018' },
   // combatFx: flash the acting unit white, blink struck units red with a floating
-  // "-N", glow healed units green with "+N" — see apps/design UnitFx / App.vue.
+  // "-N", glow healed units green with "+N" — see apps/console/play UnitFx / App.vue.
   // strictActiveUnit: selecting a different unit does not make it "active" — the
   // player must click the game-designated active unit to see its actions.
   // showFacing: false — the isometric renderer's facing arrow is redundant now that

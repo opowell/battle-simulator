@@ -18,6 +18,9 @@
 -->
 
 <link rel="stylesheet" href="../../appfr/style.css"/>
+<!-- The game screen (play/): its fonts and its look, all of it under .play. -->
+<link rel="stylesheet" href="./play/vendor/fonts/fonts.css"/>
+<link rel="stylesheet" href="./play/play.css"/>
 
 <script type="importmap">
 {
@@ -36,10 +39,24 @@ body { background: #0f1216; color-scheme: dark; }
 #boot.err { color: #ff8a80; white-space: pre-wrap; padding: 24px; }
 </style>
 
-<!-- The play UI's own seating and scenario rules, so a session started here is
-     configured exactly as one started there (window.gameDefaults). -->
-<script src="../design/teamPalette.js"></script>
-<script src="../design/gameDefaults.js"></script>
+<!-- The game screen's plain scripts, which hang what they offer off window: the
+     board's drawing and geometry (data.js, vision.js, …), the API client the session
+     view talks through (api.js — window.api), the seating and scenario rules every
+     form here starts a session by (gameDefaults.js), and the sounds. -->
+<script src="./play/data.js"></script>
+<script src="./play/vision.js"></script>
+<script src="./play/keyBindings.js"></script>
+<script src="./play/boardMoves.js"></script>
+<script src="./play/groupOrders.js"></script>
+<script src="./play/exactNumber.js"></script>
+<script src="./play/api.js"></script>
+<script src="./play/teamPalette.js"></script>
+<script src="./play/gameDefaults.js"></script>
+<script src="./play/teamSprite.js"></script>
+<script src="./play/sound.js"></script>
+<script src="./play/cs-sound.js"></script>
+<script src="./play/confetti.js"></script>
+<script src="./play/chess-sound.js"></script>
 </head>
 <body>
 <div id="app"><p id="boot">Loading…</p></div>
@@ -48,6 +65,7 @@ body { background: #0f1216; color-scheme: dark; }
 import * as Vue from 'vue'
 import * as appfr from 'header-content-layout'
 import { loadModule } from './vendor/vue3-sfc-loader.esm.js'
+import { installPlay } from './play/install.js'
 
 const options = {
   // The shell must run on this very Vue, not a second copy fetched by the loader.
@@ -75,7 +93,9 @@ const options = {
 try {
   const App = await loadModule(new URL('./App.vue', document.baseURI).href, options)
   document.getElementById('app').replaceChildren()
-  Vue.createApp(App).mount('#app')
+  const app = Vue.createApp(App)
+  installPlay(app)
+  app.mount('#app')
 } catch (error) {
   const boot = document.getElementById('boot')
   boot.className = 'err'

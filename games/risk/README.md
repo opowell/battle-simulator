@@ -168,7 +168,7 @@ Playing it is all clicks: tap one of your territories to place a reinforcement â
 one army per tap, and the territory blinks once so a tap that only moves a number
 by one still visibly lands â€” or select it and click a neighbour to attack (fortify
 works the same way in the fortify phase). Every hex is an HTML element that fields
-its own clicks (apps/design/HtmlHexLayer.vue draws the whole board in divs, no SVG),
+its own clicks (apps/console/play/HtmlHexLayer.vue draws the whole board in divs, no SVG),
 so a click acts on the hex it actually landed on and the open sea between two blobs
 is a miss that clears the selection rather than a tap on the nearest territory.
 Only what a click can't say stays in the action panel: card sets, ending a phase, the

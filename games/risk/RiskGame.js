@@ -743,7 +743,7 @@ function toGrid(state) {
 
   // What a player needs to know that isn't drawn on the map: the armies still waiting
   // to be placed, and the hand they're holding. The header's status strip renders these
-  // (apps/design/battlefield/StatusChips.vue is domain-agnostic — it shows what it's
+  // (apps/console/play/battlefield/StatusChips.vue is domain-agnostic — it shows what it's
   // given), which is why a card is spelled out as its type and territory rather than
   // left as an index into a hand nobody can see.
   const { reinforcementsLeft, cards } = state.gameSpecific;

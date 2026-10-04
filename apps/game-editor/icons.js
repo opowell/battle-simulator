@@ -1,5 +1,5 @@
 // icons.js — SVG path set for the game-editor's generic UI icons (mirrors
-// apps/design/data.js, the other consumer). No longer used for per-game icons.
+// apps/console/play/data.js, the other consumer). No longer used for per-game icons.
 const ICON_PATHS = {
   crosshair:'M12 2v4M12 18v4M2 12h4M18 12h4 M12 8a4 4 0 100 8 4 4 0 000-8z',
   zap:'M13 2L4 14h6l-1 8 9-12h-6z',

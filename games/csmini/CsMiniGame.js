@@ -570,7 +570,7 @@ export function toGrid(state) {
 
   return {
     width: WIDTH, height: HEIGHT,
-    // Two independent axes (see apps/design App.vue buildField):
+    // Two independent axes (see apps/console/play App.vue buildField):
     //   • boardType 'grid'  — the terrain IS a grid of square cells (like chess/civ1),
     //     so it's a grid board (minimap, grid concept), NOT a shape/continuous board.
     //   • spaceType         — how units move: 'discrete' (snapped to cells) or
@@ -644,7 +644,7 @@ export const CsMiniGame = {
     // still reads `config.play`/`simultaneousTurns` either way (used by the demo flag).
   ],
   // Preferred defaults for the web UI's Quick play + Configure screens (see
-  // apps/design/gameDefaults.js). csmini is a demo of continuous space/time played
+  // apps/console/play/gameDefaults.js). csmini is a demo of continuous space/time played
   // out by two AIs and watched — so it defaults to a we-go observer match rather
   // than the generic "you (human) vs one CPU". Overridable on the Configure screen.
   uiDefaults: {

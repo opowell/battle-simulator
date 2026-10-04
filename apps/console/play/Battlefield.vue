@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { useKeysLive } from './sessionScope.js';
 import SchematicLayer    from './SchematicLayer.vue';
 import HtmlLayer         from './HtmlLayer.vue';
 import IsoLayer          from './IsoLayer.vue';
@@ -2568,7 +2569,12 @@ function keyCommand(command) {
   return false;
 }
 
+// Every open session's board hears every key; this says whether it is ours (see
+// sessionScope.js) — only the board on screen, with the keyboard, answers.
+const keysLive = useKeysLive();
+
 function onKeyDown(e) {
+  if (!keysLive(e)) return;
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Escape') {
     if (placingUnit.value)       gamePanels.value?.disarm();

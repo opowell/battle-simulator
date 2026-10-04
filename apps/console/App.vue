@@ -5,18 +5,19 @@
 // What is open, and where, is held in the URL with the query.
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch } from 'vue'
 import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, panelIds, panelNode, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'header-content-layout'
-import { api, basePath, playUrl } from './api.js'
+import { api, playUrl } from './api.js'
 import { buildSchema } from './schema.js'
 import { buildRows } from './rows.js'
 import { createCatalogSource } from './source.js'
 import { settings } from './settings.js'
-import { OPEN_SESSION, SESSION_SLOTS } from './opener.js'
+import { OPEN_SESSION, OPEN_SETUP, SESSION_SLOTS } from './opener.js'
 import Art from './components/Art.vue'
 import RecordPanel from './components/RecordPanel.vue'
 import CreatePanel from './components/CreatePanel.vue'
 import GameSummaryCards from './components/GameSummaryCards.vue'
 import SessionPlay from './components/SessionPlay.vue'
 import SessionFrames from './components/SessionFrames.vue'
+import SetupPanel from './components/SetupPanel.vue'
 
 const THEME = 'dark'
 
@@ -76,12 +77,14 @@ useLayoutRoute(layout, { adapter: route, home })
 /**
  * What is open beside the browser, read off the layout's panel ids: a record
  * (`rec:<row id>`), a form making a new one of something (`new:<entity key>`),
- * or a session being played (`play:<session id>`). The id is all there is, so a
- * URL naming the panels — a reload, Back, a link — is enough to open them again.
+ * a game's setup page (`setup:<game name>`), or a session being played
+ * (`play:<session id>`). The id is all there is, so a URL naming the panels — a
+ * reload, Back, a link — is enough to open them again.
  */
 function itemOf(id) {
   if (id.startsWith('rec:')) return { id, kind: 'record', rowId: id.slice(4) }
   if (id.startsWith('new:')) return { id, kind: 'create', entityKey: id.slice(4) }
+  if (id.startsWith('setup:')) return { id, kind: 'setup', game: id.slice(6) }
   if (id.startsWith('play:')) return { id, kind: 'session', sessionId: id.slice(5) }
   return null
 }
@@ -92,6 +95,7 @@ function titleOf(item) {
     // Named after the session once the catalog has it.
     return { title: rowsById.value.get(`sessions:${item.sessionId}`)?.fields.name ?? 'Session' }
   }
+  if (item.kind === 'setup') return { title: `New ${item.game} session`, subtitle: 'Setup' }
   if (item.kind === 'create') {
     const entity = schema.value?.entities.find((e) => e.key === item.entityKey)
     return { title: entity?.create?.replace('…', '') ?? 'New', subtitle: entity?.label }
@@ -110,7 +114,7 @@ function open(id, { focus = true } = {}) {
   if (!hasPanel(layout.value, id)) {
     // Records share one strip of tabs beside the browser rather than each
     // taking a new column of the window.
-    const peer = opened.value.find((o) => o.kind !== 'session')
+    const peer = opened.value.find((o) => !topLevel(o))
     if (peer) {
       layout.value = insertPanel(layout.value, id, peer.id, 'center')
     } else {
@@ -124,25 +128,58 @@ function open(id, { focus = true } = {}) {
 }
 
 /**
- * A session opened inside the console. Sessions are tabs of the window's top
- * level, beside the browser and its records as a whole: a game wants the full
- * width, and switching back to the console finds it as it was left.
+ * A tab of the window's top level, beside the browser and its records as a
+ * whole: what a session is, and a game's setup page on the way to one — a game
+ * wants the full width, and switching back to the console finds it as it was
+ * left. The first one turns the window into tabs: the console (everything there
+ * was, named so its tab says so) and this.
  */
-function openSession(sessionId) {
-  const id = `play:${sessionId}`
+const topLevel = (o) => o.kind === 'session' || o.kind === 'setup'
+function openTopLevel(id) {
   if (!hasPanel(layout.value, id)) {
-    const peer = opened.value.find((o) => o.kind === 'session')
-    // The first one turns the window into tabs: the console (everything there
-    // was, named so its tab says so) and the session.
+    const peer = opened.value.find(topLevel)
     layout.value = peer
       ? insertPanel(layout.value, id, peer.id, 'center')
       : group([{ ...layout.value, title: 'Console' }, id], id)
   }
   layout.value = setActivePanel(layout.value, id)
 }
+
+/** A session opened inside the console. */
+function openSession(sessionId, { replace } = {}) {
+  const id = `play:${sessionId}`
+  // A session started from another (a rematch, the next scenario) takes that
+  // one's tab: put beside it, and the old one closed.
+  const old = replace ? `play:${replace}` : null
+  if (old && !hasPanel(layout.value, id) && hasPanel(layout.value, old)) {
+    layout.value = setActivePanel(insertPanel(layout.value, id, old, 'center'), id)
+    close(old)
+    return
+  }
+  openTopLevel(id)
+}
 provide(OPEN_SESSION, openSession)
 
-// The boxes the open sessions show in; SessionFrames lays the play UI over them.
+/** A game's setup page — every seat and option. */
+const openSetup = (gameName) => openTopLevel(`setup:${gameName}`)
+provide(OPEN_SETUP, openSetup)
+
+// A link from before the console was the only UI — the old play UI's
+// `#/session/<id>` and `#/game/<name>` — still lands where it pointed (the server
+// sends /ui/design here, and a redirect keeps the fragment); so does a session
+// opened in a browser tab of its own (playUrl.session).
+function openFromHash() {
+  const [, kind, name] = window.location.hash.match(/^#\/(session|game)\/([^/?]+)/) ?? []
+  if (!kind) return
+  history.replaceState(history.state, '', window.location.pathname + window.location.search)
+  if (kind === 'session') openSession(decodeURIComponent(name))
+  else openSetup(decodeURIComponent(name))
+}
+onMounted(openFromHash)
+window.addEventListener('hashchange', openFromHash)
+onBeforeUnmount(() => window.removeEventListener('hashchange', openFromHash))
+
+// The boxes the open sessions show in; SessionFrames lays each one's board over them.
 const sessionSlots = reactive(new Map())
 provide(SESSION_SLOTS, sessionSlots)
 const sessionIds = computed(() => opened.value.filter((o) => o.kind === 'session').map((o) => o.sessionId))
@@ -255,7 +292,6 @@ const gameRows = computed(() => rows.value?.games ?? [])
             <button type="button" class="cx-btn cx-btn--quiet" :disabled="loading" title="Reload everything from the server" @click="refresh">
               {{ loading ? 'Loading…' : 'Refresh' }}
             </button>
-            <a class="cx-btn cx-btn--quiet" :href="`${basePath}/ui/design/`" target="_blank" rel="noopener">Play UI ↗</a>
           </template>
         </DataShell>
         <RecordPanel
@@ -273,7 +309,16 @@ const gameRows = computed(() => rows.value?.games ?? [])
           :rows="rows"
           @created="(rowId) => openCreated(rowId, panel.id)"
         />
-        <SessionPlay v-else-if="itemFor(panel.id)?.kind === 'session'" :session-id="itemFor(panel.id).sessionId" />
+        <SetupPanel
+          v-else-if="itemFor(panel.id)?.kind === 'setup'"
+          :game-name="itemFor(panel.id).game"
+          @close="close(panel.id)"
+          @created="(rowId, { replace }) => openCreated(rowId, replace ? panel.id : undefined)"
+        />
+        <!-- Keyed: one session replacing another in the same tab (a rematch) must
+             register its own box, not inherit the old one's (SessionPlay registers
+             on mount). -->
+        <SessionPlay v-else-if="itemFor(panel.id)?.kind === 'session'" :key="panel.id" :session-id="itemFor(panel.id).sessionId" />
       </template>
       <template #actions="{ panel }">
         <a
@@ -286,7 +331,12 @@ const gameRows = computed(() => rows.value?.games ?? [])
         >↗</a>
       </template>
     </WindowFrame>
-    <SessionFrames :session-ids="sessionIds" :slots="sessionSlots" />
+    <SessionFrames
+      :session-ids="sessionIds"
+      :slots="sessionSlots"
+      @open-session="(id, { replace, from }) => { openSession(id, { replace: replace ? from : null }); refresh() }"
+      @close="(id) => close(`play:${id}`)"
+    />
   </div>
 </template>
 

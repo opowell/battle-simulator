@@ -12,6 +12,7 @@
 // the buildings and the production box down the right. The pieces are their own small
 // components (see ./city/) — this file is only the arrangement.
 import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { useKeysLive } from '../sessionScope.js';
 import CityRadiusMap from './city/CityRadiusMap.vue';
 import CityProductionBox from './city/CityProductionBox.vue';
 import CityIconStrip from './city/CityIconStrip.vue';
@@ -41,8 +42,10 @@ function pick(action) {
 // capture-phase listener plus stopPropagation, the same trick image-slot.js uses for
 // its modal. Escape is only taken while the picker is open — closing the screen itself
 // stays Battlefield's Escape, so one press always steps out of exactly one thing.
+const keysLive = useKeysLive();   // only the session on screen answers (sessionScope.js)
+
 function onKeyDown(e) {
-  if (!props.show || e.ctrlKey || e.altKey || e.metaKey) return;
+  if (!props.show || e.ctrlKey || e.altKey || e.metaKey || !keysLive(e)) return;
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   const consume = () => { e.preventDefault(); e.stopPropagation(); };
   if (e.key === 'Escape' && showProdPicker.value) { showProdPicker.value = false; consume(); return; }
@@ -69,7 +72,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
 </script>
 
 <template>
-  <teleport to="body">
+  <PlayOverlay>
     <div v-if="show && city" class="ci-scrim" @click.self="$emit('close')">
       <div class="ci-panel">
         <div class="ci-head">
@@ -190,7 +193,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown, true));
         </div>
       </div>
     </div>
-  </teleport>
+  </PlayOverlay>
 </template>
 
 <style scoped>

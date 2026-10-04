@@ -624,7 +624,7 @@ function renderState(state) {
 
 // ── toGrid (design UI) ──────────────────────────────────────────────────────────
 
-// Sprite-layer geometry for the held weapon + hands (see apps/design/SchematicLayer.vue's
+// Sprite-layer geometry for the held weapon + hands (see apps/console/play/SchematicLayer.vue's
 // generic `unit.spriteLayers` renderer). All offsets are LOCAL (unrotated, facing = +x)
 // fractions of unitR(u); the game precomputes the facing-rotated world offset so the
 // renderer stays a dumb "draw each layer at (dx,dy), rotated `rot` degrees" loop.

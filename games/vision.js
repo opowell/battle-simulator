@@ -5,7 +5,7 @@
 // (see project-fog-obscuro's "known crash class"). Previously each game hand-duplicated a
 // `VISION` constant + Chebyshev test in both files with a "// matches getVisibleState" hope.
 //
-// Same FoV semantics as the design UI's apps/design/vision.js, but server-side: it plugs in
+// Same FoV semantics as the design UI's apps/console/play/vision.js, but server-side: it plugs in
 // each game's own distance metric, line-of-sight test, and facing model.
 //
 //   • Facing off (viewer.facing == null, or fov ≥ 360) ⇒ a full disc — identical to the old

@@ -28,11 +28,11 @@ import { fullThirds } from './moves.js';
 export const BARBARIAN_ID = 'barbarian';
 
 // How the client draws them (Civ1Game's toGrid hands this over as `extraTeams`, and
-// apps/design/App.vue appends it after the seat teams).
+// apps/console/play/App.vue appends it after the seat teams).
 //
 // Violet, and the choice is constrained rather than decorative. civ1 sets
 // ui.recolorTeamSprites, so a unit's team colour reaches the screen through
-// apps/design/teamSprite.js, which repaints the sprite's green-ramp flag with the
+// apps/console/play/teamSprite.js, which repaints the sprite's green-ramp flag with the
 // team colour's HUE and SATURATION only — and clamps saturation up to at least 0.75
 // to keep teams vivid. Two consequences bite anyone picking a fifth colour here:
 //   • A near-grey is impossible. Charcoal #43434c is hue 240° at saturation 0.06;

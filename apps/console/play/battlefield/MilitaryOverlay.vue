@@ -36,7 +36,7 @@ function pick(u) {
 </script>
 
 <template>
-  <teleport to="body">
+  <PlayOverlay>
     <div v-if="show" class="mo-scrim" @click.self="$emit('close')">
       <div class="mo-panel">
         <div class="mo-head">
@@ -81,7 +81,7 @@ function pick(u) {
         </div>
       </div>
     </div>
-  </teleport>
+  </PlayOverlay>
 </template>
 
 <style scoped>

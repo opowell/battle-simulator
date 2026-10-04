@@ -412,7 +412,7 @@ function fmtAction(action) {
     <!-- The advisors are full-screen. Sent to <body> because this panel sits in an
          appfr pane, and a pane (container-type) is the box a position:fixed scrim
          inside it would fill. -->
-    <Teleport to="body">
+    <PlayOverlay>
       <RatesOverlay :show="panel === 'rates'" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
                     @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
       <ScienceOverlay :show="panel === 'science'" :civ="myCiv" :researchActions="researchActions"
@@ -421,7 +421,7 @@ function fmtAction(action) {
                     @close="$emit('update:panel', null)" @goto="g => $emit('goto', g)"/>
       <MilitaryOverlay :show="panel === 'military'" :military="military" :playerId="overviewId"
                     @close="$emit('update:panel', null)" @select-unit="id => $emit('goto-unit', id)"/>
-    </Teleport>
+    </PlayOverlay>
   </div>
 </template>
 

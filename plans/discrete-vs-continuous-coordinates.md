@@ -27,8 +27,8 @@ session to implement that cleanly, informed by what the retrofit attempt surface
 
 ### What already changed this session (uncommitted, `git status`/`git diff` in the repo)
 
-`git diff --stat` at hand-off touches: `apps/design/Battlefield.vue`,
-`apps/design/SchematicLayer.vue`, `engine/ActionValidator.js`, `engine/GameEngine.js`,
+`git diff --stat` at hand-off touches: `apps/console/play/Battlefield.vue`,
+`apps/console/play/SchematicLayer.vue`, `engine/ActionValidator.js`, `engine/GameEngine.js`,
 `games/combatmission/{CombatMissionGame,grid,los,map}.js`, `games/cs/{CsGame,map}.js`,
 `games/doom/{DoomGame,map}.js`, and a new `games/continuousMove.js`. Decide per-item
 below whether to keep, adapt, or discard once the discrete/continuous split lands —
@@ -57,7 +57,7 @@ BigNumber — a continuous coordinate of any representation hits the same issues
   keep the proximity-based check.
 
 **Superseded by this plan (built on the wrong signal, replace rather than extend):**
-- The `field.shapes?.length` checks in `apps/design/{App,Battlefield,SchematicLayer}.vue`
+- The `field.shapes?.length` checks in `apps/console/play/{App,Battlefield,SchematicLayer}.vue`
   (gates the straight-line slide animation, the moveRange circle, and the
   exact-click-point move-submission path) — this conflates "renders via SVG shapes"
   with "has continuous positions." Replace with an explicit type (see Design §3).
@@ -90,7 +90,7 @@ const posMap = {};
 for (const u of units) if (u.alive) posMap[`${u.position.x},${u.position.y}`] = u;
 // ...then for each integer (x, y) in the loop: const u = posMap[`${x},${y}`];
 ```
-`apps/design/App.vue`'s `buildField()` then derives the client's entire `units` list
+`apps/console/play/App.vue`'s `buildField()` then derives the client's entire `units` list
 from that same array (`g.cells.filter(c => c.glyph).map(c => ({ ..., path: [[c.x +
 0.5, c.y + 0.5]] }))` — line ~208). There is currently **no path** for a unit's true
 position to reach the client if it isn't sitting exactly on an integer cell — it
@@ -106,11 +106,11 @@ channel should be added properly rather than worked around by snapping.
 
 Replace every `field.shapes?.length` / `field.grid === 'square'` check used as a
 proxy for "is this a shape/organic map" with an explicit field, e.g.
-`field.locationType: 'discrete' | 'continuous'`, set once in `apps/design/App.vue`'s
+`field.locationType: 'discrete' | 'continuous'`, set once in `apps/console/play/App.vue`'s
 `buildField()` from a new field each game's `toGrid()` returns (e.g. `locationType`
 on the object `toGrid()` already returns alongside `width`/`height`/`cells`/`shapes`).
 `field.grid === 'square'` is currently hardcoded unconditionally in `buildField`
-(`apps/design/App.vue:244`) — it needs to become conditional, or `locationType`
+(`apps/console/play/App.vue:244`) — it needs to become conditional, or `locationType`
 needs to be a genuinely new/separate field so existing `field.grid === 'square'`
 checks elsewhere (chess, xcom, etc. rendering logic) don't need to change at all.
 Prefer adding a new field over overloading `grid`, to keep this change additive.
@@ -147,7 +147,7 @@ up front (don't improvise mid-implementation):
   straight to `Number` for rendering/hit-testing, and send a click's `Number`
   coordinate back as a JSON number (or `.toString()`'d, doesn't matter) for the
   server to parse into a `BigNumber`. This keeps the "no build steps" constraint for
-  `apps/design` (see `feedback_no_build_steps` in this user's saved preferences — no
+  `apps/console/play` (see `feedback_no_build_steps` in this user's saved preferences — no
   new client dependency needed) and keeps `bignumber.js` a server-only dependency.
 - **Precision policy.** Pick a fixed `BigNumber.set({ DECIMAL_PLACES: N, ... })`
   (e.g. `N = 20`) once, globally, in `games/coord.js` — "arbitrary precision" in
@@ -203,7 +203,7 @@ stay grid-snapped since a thrown grenade's landing tile is a coarser-grained con
 than a walked-to position; this is a product decision, not just an engineering one —
 ask the user rather than assuming).
 
-### 5. Client changes (`apps/design/`)
+### 5. Client changes (`apps/console/play/`)
 
 - `toGrid()` for the three continuous games: stop relying on `cells[]` to carry
   per-unit info at all (drop the `posMap`-by-exact-match pattern — see §3's note
@@ -214,13 +214,13 @@ ask the user rather than assuming).
   client. `cells[]` keeps only terrain fields for these games (color/terrain/bgImage)
   — drop glyph/unitId/hp/etc from it since nothing reads unit data from cells once
   `units` exists.
-- `apps/design/App.vue`'s `buildField()`: branch on `g.locationType`. `'discrete'`
+- `apps/console/play/App.vue`'s `buildField()`: branch on `g.locationType`. `'discrete'`
   keeps today's `g.cells.filter(c => c.glyph).map(...)` path completely unchanged.
   `'continuous'` builds the `units` array directly from `g.units` (parse decimal
   strings to `Number`, set `path: [[x, y]]` directly instead of `[[c.x+0.5,
   c.y+0.5]]` — no cell-center offset, since a continuous position already is the
   exact point, not a cell index needing a +0.5 nudge to its center).
-- The move/hop animation watcher (`apps/design/App.vue`, `watch(liveState, ...)`,
+- The move/hop animation watcher (`apps/console/play/App.vue`, `watch(liveState, ...)`,
   ~line 107-170) and its `fxSquare` combat-flash-position helper: currently diff
   `newState.grid.cells` by `unitId` to build the animation's `from`/`to`. Needs a
   `locationType === 'continuous'` branch that diffs `newState.grid.units` instead
@@ -228,7 +228,7 @@ ask the user rather than assuming).
   straight-line-slide change (`steps: slide ? [from, to] : buildHopPath(...)`) stays,
   just re-gate `slide`/`fxSquare`'s source on `locationType` instead of
   `field.shapes?.length`.
-- `apps/design/SchematicLayer.vue` / `apps/design/Battlefield.vue`: this session's
+- `apps/console/play/SchematicLayer.vue` / `apps/console/play/Battlefield.vue`: this session's
   click handling changes are close to correct and should mostly carry forward,
   re-gated on `locationType` instead of `field.shapes?.length`:
   - `SchematicLayer.vue`'s `handleBoardClick`/`_onDragEnd` already emit the exact

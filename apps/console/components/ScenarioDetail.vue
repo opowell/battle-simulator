@@ -1,11 +1,11 @@
 <script setup>
 // A scenario: what it sets up, and a session started from it in one click —
-// with the seats the play UI's form would open with, straight into play. Anyone
-// wanting other seats or options goes through the play UI's setup page.
+// with the seats the setup page's form would open with, straight into play.
+// Anyone wanting other seats or options goes through the game's setup page.
 import { onMounted, ref } from 'vue'
-import { api, playUrl } from '../api.js'
+import { api } from '../api.js'
 import { defaultSeats, sessionRequest } from '../sessions.js'
-import { useSessionOpener } from '../opener.js'
+import { useSessionOpener, useSetupOpener } from '../opener.js'
 
 const props = defineProps({ record: Object })
 const emit = defineEmits(['created'])
@@ -18,6 +18,7 @@ onMounted(async () => {
 })
 
 const opener = useSessionOpener()
+const openSetup = useSetupOpener()
 const busy = ref(false)
 
 async function start() {
@@ -45,7 +46,7 @@ async function start() {
       <button type="button" class="cx-btn cx-btn--primary" :disabled="busy || !game" @click="start">
         {{ busy ? 'Starting…' : 'Start session' }}{{ opener.inNewTab() ? ' ↗' : '' }}
       </button>
-      <a v-if="game" class="cx-btn" :href="playUrl.game(game.name)" target="_blank" rel="noopener">Other seats or options, in the play UI ↗</a>
+      <button v-if="game" type="button" class="cx-btn" @click="openSetup(game.name)">Other seats or options</button>
     </div>
     <p v-if="error" class="cx-error">{{ error }}</p>
     <h3>What it configures</h3>

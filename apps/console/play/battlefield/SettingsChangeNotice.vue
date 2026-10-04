@@ -64,14 +64,14 @@ const dismiss = (key) => { shown.value = shown.value.filter(n => n.key !== key);
 </script>
 
 <template>
-  <teleport to="body">
+  <PlayOverlay>
     <div v-if="shown.length" class="scn" aria-live="polite">
       <div v-for="n in shown" :key="n.key" class="scn-item" @click="dismiss(n.key)">
         <div class="scn-title"><BsIcon name="sliders" :size="13" color="var(--accent)"/> {{ n.title }}</div>
         <div v-for="(line, i) in n.lines" :key="i" class="scn-line">{{ line }}</div>
       </div>
     </div>
-  </teleport>
+  </PlayOverlay>
 </template>
 
 <style scoped>

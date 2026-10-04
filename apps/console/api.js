@@ -35,10 +35,13 @@ export const api = {
   deleteSession: (id) => request(`/sessions/${id}`, { method: 'DELETE' }),
 }
 
-/** Where the play UI shows a session, and where it sets one up for a game. */
+/**
+ * A link to the console opening a session, or a game's setup page, in a tab —
+ * for a session in a browser tab of its own (see App.vue openFromHash).
+ */
 export const playUrl = {
-  session: (id) => `${basePath}/ui/design/#/session/${encodeURIComponent(id)}`,
-  game: (name) => `${basePath}/ui/design/#/game/${encodeURIComponent(name)}`,
+  session: (id) => `${basePath}/ui/console/#/session/${encodeURIComponent(id)}`,
+  game: (name) => `${basePath}/ui/console/#/game/${encodeURIComponent(name)}`,
 }
 
 /** A path the server hands out (`/images/…`), under this page's mount prefix. */

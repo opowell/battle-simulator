@@ -4,12 +4,14 @@
 // admin endpoints /ui/game-editor uses, which rewrite api-server.js — so they
 // take effect when the server next starts.
 import { computed, ref } from 'vue'
-import { api, playUrl } from '../api.js'
+import { api } from '../api.js'
+import { useSetupOpener } from '../opener.js'
 import PlayersEditor from './PlayersEditor.vue'
 import ConfirmButton from './ConfirmButton.vue'
 
 const props = defineProps({ record: Object, fields: Object, rows: Object })
 const emit = defineEmits(['changed', 'close', 'open'])
+const openSetup = useSetupOpener()
 
 const snapshot = () => ({
   minPlayers: props.record.minPlayers,
@@ -56,7 +58,7 @@ async function remove() {
     <p v-if="record.unitsError" class="cx-error">Its opening position could not be built: {{ record.unitsError }}</p>
 
     <div class="cx-row">
-      <a v-if="record.live" class="cx-btn cx-btn--primary" :href="playUrl.game(record.name)" target="_blank" rel="noopener">Set up a session ↗</a>
+      <button v-if="record.live" type="button" class="cx-btn cx-btn--primary" @click="openSetup(record.name)">Set up a session</button>
     </div>
 
     <h3>Definition</h3>

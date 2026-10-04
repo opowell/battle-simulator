@@ -8,9 +8,9 @@
 // shell rather than being handed it.
 import { computed, ref } from 'vue'
 import { ShellCard, parseExpression, useShellContext } from 'header-content-layout'
-import { api, playUrl } from '../api.js'
+import { api } from '../api.js'
 import { defaultSeats, sessionRequest } from '../sessions.js'
-import { useSessionOpener } from '../opener.js'
+import { useSessionOpener, useSetupOpener } from '../opener.js'
 import Art from './Art.vue'
 
 // The game rows (rows.js), one per game.
@@ -19,6 +19,7 @@ const emit = defineEmits(['open', 'changed'])
 
 const shell = useShellContext()
 const opener = useSessionOpener()
+const openSetup = useSetupOpener()
 
 /** The games the query narrows to: `game:x` terms, in any alternative, not left out. */
 const named = computed(() => {
@@ -84,7 +85,7 @@ async function start(game) {
         <button type="button" class="cx-btn cx-btn--primary" :disabled="busy === game.id" @click="start(game)">
           {{ busy === game.id ? 'Starting…' : 'Start a new session' }}{{ opener.inNewTab() ? ' ↗' : '' }}
         </button>
-        <a class="cx-btn" :href="playUrl.game(game.record.name)" target="_blank" rel="noopener">Choose seats and options, in the play UI ↗</a>
+        <button type="button" class="cx-btn" @click="openSetup(game.record.name)">Choose seats and options</button>
       </template>
       <p v-else class="cx-note">Registered but not loaded: restart the server to play it.</p>
     </div>

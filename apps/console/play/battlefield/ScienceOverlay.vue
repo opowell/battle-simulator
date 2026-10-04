@@ -28,7 +28,7 @@ function pick(tech) {
 </script>
 
 <template>
-  <teleport to="body">
+  <PlayOverlay>
     <div v-if="show" class="sc-scrim" @click.self="$emit('close')">
       <div class="sc-panel">
         <div class="sc-head">
@@ -65,7 +65,7 @@ function pick(tech) {
         </div>
       </div>
     </div>
-  </teleport>
+  </PlayOverlay>
 </template>
 
 <style scoped>

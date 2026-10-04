@@ -6,7 +6,7 @@
 //
 // The pictures and names come from the game, not from here: `city.buildOptions` is a
 // map item -> { name, image, cost, turns, stats, kind } built server-side in
-// Civ1Game.js, because apps/design has no access to civ1's UNITS/IMPROVEMENTS tables.
+// Civ1Game.js, because apps/console/play has no access to civ1's UNITS/IMPROVEMENTS tables.
 import { computed } from 'vue';
 import CityIconStrip from './CityIconStrip.vue';
 
@@ -21,7 +21,7 @@ const emit = defineEmits(['pick', 'update:open']);
 
 const imgSrc = window.api.imgSrc;
 // Unit art is repainted in the owner's colour, the way it is everywhere else on screen
-// (apps/design/teamSprite.js). Improvements fall back to the shield icon, which is a
+// (apps/console/play/teamSprite.js). Improvements fall back to the shield icon, which is a
 // resource icon and must stay its own colour.
 function art(info) {
   return info.kind === 'unit'

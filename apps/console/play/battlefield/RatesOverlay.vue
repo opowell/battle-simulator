@@ -35,7 +35,7 @@ function setLux(rate) {
 </script>
 
 <template>
-  <teleport to="body">
+  <PlayOverlay>
     <div v-if="show" class="rt-scrim" @click.self="$emit('close')">
       <div class="rt-panel">
         <div class="rt-head">
@@ -69,7 +69,7 @@ function setLux(rate) {
         <button class="btn btn-ghost rt-done" @click="$emit('close')">Done</button>
       </div>
     </div>
-  </teleport>
+  </PlayOverlay>
 </template>
 
 <style scoped>

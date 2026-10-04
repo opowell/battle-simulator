@@ -22,7 +22,7 @@ function goto(c) {
 </script>
 
 <template>
-  <teleport to="body">
+  <PlayOverlay>
     <div v-if="show" class="co-scrim" @click.self="$emit('close')">
       <div class="co-panel">
         <div class="co-head">
@@ -47,7 +47,7 @@ function goto(c) {
         </div>
       </div>
     </div>
-  </teleport>
+  </PlayOverlay>
 </template>
 
 <style scoped>

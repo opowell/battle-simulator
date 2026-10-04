@@ -1,19 +1,24 @@
 // opener.js — where a session opens: a browser tab of its own, or a tab of the
 // console's window beside the browser, as the `sessionsInNewTab` setting says.
 //
-// The console provides OPEN_SESSION (App.vue); anything that opens a session
-// goes through useSessionOpener() rather than linking to the play UI itself.
+// The console provides OPEN_SESSION and OPEN_SETUP (App.vue); anything that
+// opens a session, or a game's setup page, goes through here rather than
+// building a link itself.
 
 import { inject } from 'vue'
 import { playUrl } from './api.js'
 import { settings } from './settings.js'
 
 export const OPEN_SESSION = Symbol('open-session')
+export const OPEN_SETUP = Symbol('open-setup')
+
+/** Opens a game's setup page (every seat and option) as a tab of the console. */
+export const useSetupOpener = () => inject(OPEN_SETUP)
 
 /**
  * The boxes the sessions open in the console are showing in, by session id —
  * a reactive Map SessionPlay fills while its tab is in front, and SessionFrames
- * lays each session's iframe over.
+ * lays each session's board over.
  */
 export const SESSION_SLOTS = Symbol('session-slots')
 

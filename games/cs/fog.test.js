@@ -123,14 +123,14 @@ test('cs fog: exposes a fogOfWar game option', () => {
 });
 
 // ── veil/engine equivalence ────────────────────────────────────────────────────
-// The drawn fog veil (apps/design/vision.js) must hide EXACTLY what the engine hides.
+// The drawn fog veil (apps/console/play/vision.js) must hide EXACTLY what the engine hides.
 // They are two separate implementations reading the same `los.layerShapes` stack, so this
 // sweeps random sightlines across every map and asserts they never disagree. It is the
 // regression guard for two real desyncs: poly occluders (columns/angled walls/windows) that
 // the veil silently ignored because its ray test had no poly branch, and `floor`-carved
 // terrain (cs_siege's courtyard) that a flat blocker union wrongly reported as opaque.
 test('cs fog: drawn veil and engine LOS agree exactly on every map', async () => {
-  await import('../../apps/design/vision.js');
+  await import('../../apps/console/play/vision.js');
   const { shapeExit } = globalThis.VISION._internal;
   const { MAPS } = await import('./map.js');
   const { csLosLayers } = await import('./belief.js');

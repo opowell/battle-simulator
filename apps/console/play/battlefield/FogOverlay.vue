@@ -5,7 +5,7 @@
 // an SVG mask. Overlapping regions union correctly under a mask (white = fog, black =
 // seen) — a single even/odd path would XOR overlaps back to solid, hence the mask.
 // Rendered inside SchematicLayer's <svg>, so all coordinates are user-space pixels.
-// Vision helpers come from the classic global VISION (apps/design/vision.js in index.html).
+// Vision helpers come from the classic global VISION (apps/console/play/vision.js in index.html).
 import { computed } from 'vue';
 
 const props = defineProps({

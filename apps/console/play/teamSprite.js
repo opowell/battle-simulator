@@ -80,7 +80,11 @@
   // Reactive template helper used by SchematicLayer / RosterPanel / SelectedUnitDetail.
   // Returns the tinted object-URL once ready, else the raw sprite; the shared reactive
   // cache means the first component to request a (sprite, team) pair recolors it for all.
-  const tinted = (window.Vue ? Vue.reactive({}) : {});
+  // This script runs before Vue has loaded (Vue is an ES module, this is a plain
+  // script), so the cache starts plain and is made reactive by install.js through
+  // teamSpriteReactive — before any component has asked for a sprite.
+  let tinted = {};
+  window.teamSpriteReactive = function (reactive) { tinted = reactive(tinted); };
   const inflight = new Set();
   window.teamSpriteHref = function (src, hex, enabled) {
     src = window.api.imgSrc(src);

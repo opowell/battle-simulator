@@ -18,7 +18,7 @@
 // halves of a pair, which is the rule pickCivs keeps below. Red belongs to nobody: it
 // is the barbarians' colour (see barbarians.js, and ui.teamColors in Civ1Game.js).
 // Note that seat colour in THIS engine comes from the seat, not from the civ — the
-// palette is a static list indexed by seat (apps/design/teamPalette.js) — so `color`
+// palette is a static list indexed by seat (apps/console/play/teamPalette.js) — so `color`
 // here is the original's assignment, recorded to keep the pairing rule meaningful.
 
 export const CIVS = [

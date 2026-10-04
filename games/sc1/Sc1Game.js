@@ -20,7 +20,7 @@ const PASSIVE_TAG = /^(light|armored|bio|massive|splash|bounce|bonus-.+)$/;
 
 // Unit types with a sprite in images/units/. Each PNG stores its player-color
 // region as a magenta ramp; the design app tints it to the owner's team color at
-// render time (ui.recolorTeamSprites → apps/design/teamSprite.js).
+// render time (ui.recolorTeamSprites → apps/console/play/teamSprite.js).
 const UNIT_SPRITES = new Set([
   'archon', 'battlecruiser', 'carrier', 'corsair', 'dark-templar', 'dragoon',
   'drone', 'ghost', 'guardian', 'high-templar', 'hydralisk', 'lurker', 'marine',

@@ -2,7 +2,7 @@
 import { computed, ref, watch, onUnmounted } from 'vue';
 import UnitFx from './battlefield/UnitFx.vue';
 import FogOverlay from './battlefield/FogOverlay.vue';
-// Vision/fog helpers come from the classic global VISION (apps/design/vision.js, loaded as
+// Vision/fog helpers come from the classic global VISION (apps/console/play/vision.js, loaded as
 // a <script> in index.html) — vue3-sfc-loader can't parse an ESM `import` of a plain .js.
 
 const props = defineProps({
@@ -579,7 +579,7 @@ function tileOverlayImages(tile) {
 // games get a circle, matching there being no cell for a square to align to.
 // A spriteLayers() layer's fill/stroke is normally a literal CSS color, but games
 // with dynamic (owner-index-based) team palettes can't know that color server-side
-// (see apps/design/App.vue's TEAM_RAWS) — passing the sentinel 'team' instead defers
+// (see apps/console/play/App.vue's TEAM_RAWS) — passing the sentinel 'team' instead defers
 // to the same u.teamObj.raw the plain-shape body already uses.
 function layerColor(u, val) {
   return val === 'team' ? (u.id === highlightUnitId.value ? 'white' : u.teamObj.raw) : val;

@@ -144,12 +144,12 @@ test('civ1: a garrisoned city square is drawn as the city, not as its garrison',
   assert.match(cell.portraitPath, /units\//, 'the roster/side panel keep the unit sprite');
   // The square carries the garrison's id while drawing the city, so it has to say so:
   // without this the move animation walks the city over to whichever unit just stepped
-  // into it (see apps/design/boardMoves.js).
+  // into it (see apps/console/play/boardMoves.js).
   assert.equal(cell.fixture, true, 'the square is a fixture — the art is the city\'s, not the unit\'s');
 });
 
-// The city screen (apps/design/battlefield/CityInspectorOverlay.vue) draws pictures —
-// of the garrison, and of every item the city could build — but apps/design has no
+// The city screen (apps/console/play/battlefield/CityInspectorOverlay.vue) draws pictures —
+// of the garrison, and of every item the city could build — but apps/console/play has no
 // access to UNITS/IMPROVEMENTS/WONDERS, so all of that has to ride the grid payload.
 test('civ1: a city carries what its city screen draws — population, garrison, build options', () => {
   const state = Civ1Game.createInitialState(players());
@@ -184,7 +184,7 @@ test('civ1: a city carries what its city screen draws — population, garrison, 
   assert.equal(onWatch.garrison[0].statusMark?.glyph, 'S');
   assert.equal(onWatch.garrison[0].needsOrders, false);
 
-  // apps/design is game-agnostic by rule, so every picture the screen draws has to be
+  // apps/console/play is game-agnostic by rule, so every picture the screen draws has to be
   // named in the payload — icons included, not built from paths on the client.
   assert.match(city.icons.food, /city\/food$/);
   assert.match(city.icons.shields, /city\/production$/);
@@ -208,7 +208,7 @@ test('civ1: a city carries what its city screen draws — population, garrison, 
 
 // A square of the fat cross that yields this city nothing has exactly two excuses, and
 // the screen has to give the right one: a neighbour of your own is already working it,
-// or nobody has ever been near it. Both ride the radius payload — apps/design is
+// or nobody has ever been near it. Both ride the radius payload — apps/console/play is
 // game-agnostic and cannot work either one out for itself.
 test('civ1: the radius map says which squares are taken, and by which city', () => {
   const state = Civ1Game.createInitialState(players());
@@ -274,7 +274,7 @@ test('civ1: the radius map marks squares this player has never seen', () => {
 // a stacked or garrisoned one especially, since the board only ever draws the top of a
 // stack. That means the per-owner roster has to carry the units one by one, with the id
 // a click sends back (MilitaryOverlay.vue) and enough about each to tell them apart;
-// apps/design has no access to UNITS, so every stat rides the payload.
+// apps/console/play has no access to UNITS, so every stat rides the payload.
 test('civ1: the military roster lists each unit, with the id, place and stats a row needs', () => {
   const state = Civ1Game.createInitialState(players());
   const unit = state.units.find(u => u.ownerId === 'p1');

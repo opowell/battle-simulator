@@ -42,7 +42,7 @@ function abilityTypeMeta(type) {
 </script>
 
 <template>
-  <teleport to="body">
+  <PlayOverlay>
     <div v-if="unit" class="uio-scrim" @click.self="$emit('close')">
       <div class="uio-panel">
         <div v-if="unit.mainImagePath" class="uio-hero">
@@ -125,7 +125,7 @@ function abilityTypeMeta(type) {
         </div>
       </div>
     </div>
-  </teleport>
+  </PlayOverlay>
 </template>
 
 <style scoped>

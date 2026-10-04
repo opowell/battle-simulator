@@ -8,7 +8,7 @@ import BeliefWorldStepper from './BeliefWorldStepper.vue';
 // (Obscuro "Depth 12/30 · 480 / 1,200 worlds", Stockfish "Depth N/14" — mirrors
 // lichess's ticking depth indicator). For the live position, when the game/agent opt in (see
 // `useWorker` below), this runs entirely client-side via a Web Worker
-// (apps/design/analysis-worker.js); otherwise it streams over SSE from GET
+// (apps/console/play/analysis-worker.js); otherwise it streams over SSE from GET
 // /sessions/:id/analyze-stream (see api-server.js's handleAnalyzeStream /
 // api.js's analyzeStream). Gated by the game's `showAnalysisPanel` option
 // (default true for chess) — `enabled=false` renders nothing.
@@ -119,7 +119,7 @@ function scheduleAnalysis() {
 // never keeps ticking progress for a position we've already left.
 let activeStream = null;
 
-// Client-side analysis Web Worker (see apps/design/analysis-worker.js, which is
+// Client-side analysis Web Worker (see apps/console/play/analysis-worker.js, which is
 // fully generic — it just dynamically imports whatever `clientGame`/
 // `clientAnalyze` module pointers the selected agent declares): runs the whole
 // analysis entirely off the server/main thread. Used whenever both the game
@@ -143,7 +143,7 @@ const useWorker = computed(() =>
 function ensureWorker() {
   if (!analysisWorker) {
     const bp = window.api?.basePath || '';
-    analysisWorker = new Worker(`${bp}/ui/design/analysis-worker.js`, { type: 'module' });
+    analysisWorker = new Worker(`${bp}/ui/console/play/analysis-worker.js`, { type: 'module' });
     analysisWorker.onmessage = (e) => {
       const d = e.data || {};
       if (d.type === 'error') {

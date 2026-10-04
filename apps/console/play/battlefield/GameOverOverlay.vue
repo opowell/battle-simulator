@@ -13,7 +13,7 @@ defineEmits(['dismiss', 'exit', 'new-game', 'play-next']);
 </script>
 
 <template>
-  <teleport to="body">
+  <PlayOverlay>
     <div v-if="isDone && !dismissed" class="go-scrim" @click.self="$emit('dismiss')">
       <div class="go-panel">
         <div class="go-head">
@@ -71,7 +71,7 @@ defineEmits(['dismiss', 'exit', 'new-game', 'play-next']);
         </div>
         <div class="go-actions">
           <button class="btn btn-ghost btn-sm" @click="$emit('dismiss')">Dismiss</button>
-          <button class="btn btn-ghost btn-sm" @click="$emit('exit')">Back to Lobby</button>
+          <button class="btn btn-ghost btn-sm" @click="$emit('exit')">Close game</button>
           <button class="btn btn-sm" :class="{ 'btn-ghost': nextScenario }" @click="$emit('new-game')">Start new game</button>
           <button v-if="nextScenario" class="btn btn-sm" @click="$emit('play-next', nextScenario.id)">
             Next: {{ nextScenario.name }}
@@ -79,7 +79,7 @@ defineEmits(['dismiss', 'exit', 'new-game', 'play-next']);
         </div>
       </div>
     </div>
-  </teleport>
+  </PlayOverlay>
 </template>
 
 <style scoped>

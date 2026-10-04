@@ -15,7 +15,7 @@
  * stamp anything it likes onto its grid.
  *
  * No game knowledge and no engine dependency: a grid here is just an object that may
- * have a `cells` array. api-server.js stores frames with this; apps/design/api.js
+ * have a `cells` array. api-server.js stores frames with this; apps/console/play/api.js
  * mirrors applyGridFrame to rebuild them in the browser.
  */
 

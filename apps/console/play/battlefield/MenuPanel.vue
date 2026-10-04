@@ -47,7 +47,7 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
       @change="$emit('set-observer-view', $event)"/>
     <div class="mp-actions">
       <button class="btn btn-ghost mp-btn" @click="$emit('exit')">
-        <BsIcon name="back" :size="14" color="var(--dim)"/> Back to Lobby
+        <BsIcon name="back" :size="14" color="var(--dim)"/> Close game
       </button>
       <button class="btn btn-ghost mp-btn" @click="$emit('toggle-ruler')">
         <BsIcon name="move" :size="14" :color="showRuler ? 'var(--accent)' : 'var(--dim)'"/>

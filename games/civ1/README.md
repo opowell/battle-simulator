@@ -280,7 +280,7 @@ game within two turns.)
 
 Raiders and the cities they hold are drawn in the faction's own violet. Picking that
 colour is constrained, not decorative: civ1 sets `ui.recolorTeamSprites`, so a team
-colour reaches a unit sprite through `apps/design/teamSprite.js`, which repaints the
+colour reaches a unit sprite through `apps/console/play/teamSprite.js`, which repaints the
 sprite's green-ramp flag with the colour's **hue and saturation only** and clamps
 saturation up to 0.75. A near-grey therefore can't be used (it comes out as a vivid
 version of whatever hue its tiny channel imbalance happens to have), and factions are

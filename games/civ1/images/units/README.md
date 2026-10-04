@@ -20,7 +20,7 @@ an icon. Three frames are in use:
 | air  | `fighter` | green ellipse, unit seen from above |
 | sea  | `ironclad` | green band over a cyan/blue waterline, transparent above and below |
 
-**The green is not decoration.** `apps/design/teamSprite.js` re-hues every
+**The green is not decoration.** `apps/console/play/teamSprite.js` re-hues every
 strongly-green pixel to the owning player's colour at render time (civ1 sets
 `ui.recolorTeamSprites`), so the green field *is* the team flag. A sprite drawn
 without one renders identically for both players.

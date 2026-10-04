@@ -31,7 +31,7 @@ const CIVILIAN_SPECIALS = new Set(['found-city', 'diplomacy', 'help-build-wonder
 
 const BASE = '/images/civ1';
 
-// Every picture the city screen is made of. The client (apps/design) is game-agnostic
+// Every picture the city screen is made of. The client (apps/console/play) is game-agnostic
 // by rule — it knows nothing of civ1's art or its tables — so the screen's icons ride
 // the grid payload the same way unit sprites and terrain tiles already do.
 const CITY_ICONS = {
@@ -126,7 +126,7 @@ function wakeSentryUnits(units, playerId, boardWidth) {
 }
 
 // How a unit's standing order is drawn ON the map (toGrid hands this to the generic
-// renderer as `statusMark`, see apps/design/battlefield/HtmlUnit.vue). The original
+// renderer as `statusMark`, see apps/console/play/battlefield/HtmlUnit.vue). The original
 // game's own three answers: a unit still digging in wears an "F", a sentried one an
 // "S", and one that is dug in has the original's fortification painted over it instead
 // of a letter — the grey crenellated wall of map/fortify.png, the same 15×15 grid as
@@ -1813,7 +1813,7 @@ export const Civ1Game = {
     // no slide back; then the 8-frame explosion (combat_1…8, the original SP257 art)
     // plays over whoever lost, 4 ticks a frame, with the loser still drawn underneath,
     // and only then is it gone. A tick is taken as ~18ms, which keeps the original's
-    // 2:4 pacing and reads at a browser's frame rate. See apps/design/App.vue.
+    // 2:4 pacing and reads at a browser's frame rate. See apps/console/play/App.vue.
     battleAnimation: {
       lunge: 10 / 16,
       lungeMs: 400,
@@ -1823,7 +1823,7 @@ export const Civ1Game = {
     // Player colors, taken from the original game's civ palette. RED IS RESERVED FOR
     // THE BARBARIANS in Civ1 and never belongs to a civ, so it's absent here — a red
     // unit or city on this map means barbarians, whoever else is playing. The generic
-    // engine palette (apps/design/gameDefaults.js) hands seat 2 red, hence this override.
+    // engine palette (apps/console/play/gameDefaults.js) hands seat 2 red, hence this override.
     teamColors: ['#4058c8', '#d8c038', '#38a038', '#9058b8', '#48b8b8', '#d87830', '#e8e8e8'],
     // Selection follows the units that still want orders, at both ends of a unit's
     // turn: a new turn opens with the player's first such unit already picked and
@@ -1870,7 +1870,7 @@ export const Civ1Game = {
     // (civilization.fandom.com/wiki/Control_bindings_(Civ1)). The UI executes these
     // generically — a key is a legal action's type, a named UI command, or an overview
     // overlay to open, and getLegalActions still decides whether anything happens (see
-    // apps/design/keyBindings.js for the format, Battlefield.vue for the handlers).
+    // apps/console/play/keyBindings.js for the format, Battlefield.vue for the handlers).
     // Only bindings this engine has something to do are listed: the original's H (home
     // city), U (unload), P/Shift+P (pollution, pillage), Shift+D (disband) and G (goto,
     // which here is the click-driven move queue) have no action to fire, so they are
@@ -2322,7 +2322,7 @@ export const Civ1Game = {
           // garrison's, the client must not treat this token as the piece that carries
           // that id: a unit stepping into the city would otherwise animate the city
           // walking to meet it. `fixture` says the art belongs to the square (see
-          // apps/design/boardMoves.js).
+          // apps/console/play/boardMoves.js).
           // (…and when the garrison IS the art — the unit on the clock, standing on top —
           // the square is a real piece again: it may move, and the city token underneath
           // carries the fixture flag instead.)
@@ -2364,7 +2364,7 @@ export const Civ1Game = {
           // (drives the goto-path overlay drawn for every unit — see App.vue/HtmlLayer).
           mp: u ? u.moveThirds / THIRDS : undefined, maxMp: u ? UNITS[u.type].moves : undefined,
           queue: u?.queue?.length ? u.queue : null,
-          // Standing-order tags shown in the side panel (generic apps/design display
+          // Standing-order tags shown in the side panel (generic apps/console/play display
           // channel — see SelectedUnitDetail.vue's statusEffects tags).
           statusEffects: u ? statusTags(u, here.length) : undefined,
           // The same standing order said on the map itself, so it can be read off a
@@ -2380,7 +2380,7 @@ export const Civ1Game = {
           // The rest of the stack (civ1 puts no limit on units per square). The square's
           // token is the top of it — the unit still owed orders, else the best defender
           // (see the sort above) — and these ride along as tokens of their own drawn in
-          // the same cell under it (apps/design/App.vue's buildField), so a settler under
+          // the same cell under it (apps/console/play/App.vue's buildField), so a settler under
           // its escort is still selectable, still in the roster, and still gets handed
           // the turn. A city square is the exception: the city wins its square, so the
           // rest of the garrison is picked out of the city screen's own box (`garrison`
@@ -2404,7 +2404,7 @@ export const Civ1Game = {
     const civ = Object.fromEntries(
       Object.entries(state.gameSpecific.civ ?? {}).map(([pid, c]) => [pid, {
         government: c.government, gold: c.gold, techCount: c.techs.length, research: c.research,
-        // Tech names, not ids — the client (apps/design) has no access to tech.js, so
+        // Tech names, not ids — the client (apps/console/play) has no access to tech.js, so
         // the Science overlay needs these pre-resolved rather than looking them up itself.
         researchName: c.research ? (TECHS[c.research]?.name ?? c.research) : null,
         researchedNames: c.techs.map(id => TECHS[id]?.name ?? id),
@@ -2491,7 +2491,7 @@ export const Civ1Game = {
         });
 
         // What this city may build right now, resolved to display form (name, cost,
-        // art, one-line stats) here rather than in the client: apps/design has no
+        // art, one-line stats) here rather than in the client: apps/console/play has no
         // access to UNITS/IMPROVEMENTS/WONDERS, and the city screen has to draw the
         // *picture* of every option — as the original's Change-production menu does.
         const buildOptions = {};
@@ -2599,7 +2599,7 @@ export const Civ1Game = {
     }
 
     // Generic {icon,value,title,warn} chips for the header's optional per-player status
-    // strip (apps/design/battlefield/StatusChips.vue is a domain-agnostic renderer —
+    // strip (apps/console/play/battlefield/StatusChips.vue is a domain-agnostic renderer —
     // it has no idea what "gold" or "government" mean, only this game does).
     const statusChips = Object.fromEntries(
       Object.entries(civ).map(([pid, c]) => {
@@ -2617,7 +2617,7 @@ export const Civ1Game = {
       }));
 
     // Factions that own pieces without occupying a seat. The client appends these
-    // after the seat teams (apps/design/App.vue's buildField), which is what gives the
+    // after the seat teams (apps/console/play/App.vue's buildField), which is what gives the
     // barbarians' owner index above a name and a colour of their own. Advertised
     // whenever the option is on, so the index never shifts mid-game as raiders come
     // and go.
