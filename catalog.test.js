@@ -38,9 +38,23 @@ test('a unit type is named and pictured by its first roster entry with art, and 
     id: 'duel/knight', game: 'duel', type: 'knight', label: 'Knight',
     imagePath: '/images/duel/knight', glyph: 'K', starting: 2, owners: ['a', 'b'],
   });
-  // Offered but nobody starts with one: no art to borrow, so none is invented.
+  // Offered but nobody starts with one, and no art hook knows it: none is invented.
   assert.equal(units.find((u) => u.type === 'squire').starting, 0);
   assert.equal(units.find((u) => u.type === 'squire').imagePath, null);
+});
+
+test('a type nobody starts with is pictured by the game\'s art hook (unitArt)', () => {
+  const units = unitRecords('duel', {
+    ...preview(),
+    unitArt: {
+      a: { squire: { imagePath: null, glyph: 'S', name: 'squire' } },
+      b: { squire: { imagePath: '/images/duel/squire', glyph: 'S', name: 'Squire' } },
+    },
+  });
+  const squire = units.find((u) => u.type === 'squire');
+  assert.equal(squire.imagePath, '/images/duel/squire');
+  assert.equal(squire.label, 'Squire');
+  assert.equal(squire.starting, 0);
 });
 
 test('a game carries the counts its records drill into', () => {

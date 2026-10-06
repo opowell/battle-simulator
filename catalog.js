@@ -26,7 +26,9 @@ import { resolve } from 'node:path';
  * The unit types `game` defines, one record each: what the setup screen would
  * call and draw it, and how many of it each side starts with. A type the game
  * offers but nobody starts with has no roster entry to name or picture it, so
- * it keeps its bare type name and no art.
+ * it is pictured by the preview's unitArt — the game's own art hook, the same
+ * one the setup screen's unit picker draws — and keeps no art only when that
+ * has none either.
  */
 export function unitRecords(gameName, preview) {
   const byType = new Map();
@@ -50,6 +52,16 @@ export function unitRecords(gameName, preview) {
     }
     unit.starting += 1;
     if (entry.ownerId != null) unit.owners.add(String(entry.ownerId));
+  }
+  // The unit's own side first, then any side: a type's art can differ by side.
+  for (const unit of byType.values()) {
+    if (unit.imagePath) continue;
+    const sides = [...unit.owners, ...Object.keys(preview.unitArt ?? {})];
+    const art = sides.map((side) => preview.unitArt?.[side]?.[unit.type]).find((a) => a?.imagePath);
+    if (!art) continue;
+    unit.imagePath = art.imagePath;
+    unit.glyph ??= art.glyph ?? null;
+    if (unit.starting === 0 && art.name) unit.label = art.name;
   }
   return [...byType.values()].map((unit) => ({
     id: `${gameName}/${unit.type}`,
