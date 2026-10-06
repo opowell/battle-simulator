@@ -4,7 +4,7 @@
 // and each session opened inside the console as a tab beside the whole of that.
 // What is open, and where, is held in the URL with the query.
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch } from 'vue'
-import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, panelIds, panelNode, parseQuery, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'header-content-layout'
+import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, panelIds, panelNode, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'header-content-layout'
 import { api, playUrl } from './api.js'
 import { buildSchema } from './schema.js'
 import { buildRows } from './rows.js'
@@ -74,16 +74,6 @@ const route = createHistoryAdapter()
 provide(ROUTE_ADAPTER_KEY, route)
 onBeforeUnmount(() => route.dispose?.())
 useLayoutRoute(layout, { adapter: route, home })
-
-// The shell's own query, read off the same route, for what the shell has no
-// say over: which type's cards are showing, so this file's styles can draw one
-// type's cards differently (a game's is its picture and its name).
-const BROWSE_DEFAULTS = { sort: 'age', dir: 'asc' }
-const cardsOf = computed(() => {
-  if (!schema.value) return null
-  const q = parseQuery(route.search.value, schema.value, BROWSE_DEFAULTS)
-  return q.view === 'cards' ? q.entity : null
-})
 
 /**
  * What is open beside the browser, read off the layout's panel ids: a record
@@ -308,8 +298,7 @@ const fileRows = computed(() => rows.value?.files ?? [])
           :schema="schema"
           :source="source"
           :theme="THEME"
-          :defaults="BROWSE_DEFAULTS"
-          :data-cx-cards="cardsOf"
+          :defaults="{ sort: 'age', dir: 'asc' }"
           @activate="openRow"
           @create="openCreate"
         >
@@ -438,15 +427,10 @@ const fileRows = computed(() => rows.value?.files ?? [])
 .cx-code { margin: 0; padding: 10px 12px; overflow: auto; max-height: 320px; font: 12px/1.5 var(--dc-mono); background: var(--dc-bg-1); border: 1px solid var(--dc-line); border-radius: var(--dc-radius-sm, 4px); white-space: pre; }
 
 /* A record's picture on its card: small, beside the name rather than over it,
-   and pixel art kept crisp. */
-.cx-window .dc-card .dc-card__image { width: 40px; height: 40px; image-rendering: pixelated; }
-
-/* A game's card is its picture and its name: no row number, no state (every
-   game listed is loaded), no key, no counts — the table has all of those. */
-[data-cx-cards='games'] .dc-card :is(.dc-card__top, .dc-card__secondary, .dc-card__metrics) { display: none; }
-[data-cx-cards='games'] .dc-card { justify-content: center; }
-[data-cx-cards='games'] .dc-card .dc-card__open { align-items: center; }
-.cx-window [data-cx-cards='games'] .dc-card .dc-card__image { width: 96px; height: 96px; }
+   and pixel art kept crisp. A game's card is its picture (schema.js), drawn at
+   appfr's own size for one. */
+.cx-window .dc-shell { --dc-card-image: 40px; }
+.cx-window .dc-card__image { image-rendering: pixelated; }
 
 /* Status words appfr's pill does not colour itself: the domain's own, mapped
    onto the same four tokens its ok / running / review / failed use. */

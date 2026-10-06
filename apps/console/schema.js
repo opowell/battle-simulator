@@ -47,6 +47,9 @@ export function buildSchema(catalog, { Art }) {
       count: count(catalog.games.length),
       scope: 'game',
       create: 'New game…',
+      // A game's card is its picture and its name; the key, the counts and the
+      // state are the table's.
+      card: 'picture',
       columns: [
         ordinal,
         art,
