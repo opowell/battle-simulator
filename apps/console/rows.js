@@ -25,11 +25,28 @@ export function buildRows(catalog, values) {
   const gameArt = (game) => ({ src: asset(`/images/${game}/preview_asset`), glyph: gameTitle(game)?.[0] ?? '?' })
   const live = new Map(catalog.sessions.map((s) => [s.id, s]))
 
+  // A session or recording names its scenario by the scenario's own id; the
+  // `scenario` field carries it as the scenario's row id, which is what a
+  // narrowed query's term holds. A game carries every one of its own, so a game
+  // stays the game of a scenario narrowed to (and drops out of the cards, as
+  // the record the query names).
+  const scenarioOf = (r) => (r.scenario ? `${r.game}/${r.scenario}` : undefined)
+  const scenariosOf = new Map()
+  for (const s of catalog.scenarios) scenariosOf.set(s.game, [...(scenariosOf.get(s.game) ?? []), s.id])
+  const sessionsOf = new Map()
+  for (const s of catalog.sessions) {
+    const key = scenarioOf(s)
+    if (key) sessionsOf.set(key, (sessionsOf.get(key) ?? 0) + 1)
+  }
+
   // A game row's id IS its key: appfr narrows to a record by putting its id in
   // the scope term (`game:"chess"`), which every other row matches on `game`.
-  // Every other kind is prefixed, so ids stay distinct across the whole corpus.
+  // A scenario's is too (`scenario:"civ1/siege"`, matched on `scenario`), and
+  // has a slash no game key has. Every other kind is prefixed, so ids stay
+  // distinct across the whole corpus.
+  const bare = new Set(['games', 'scenarios'])
   const row = (entityKey, entityLabel, record, fields) => ({
-    id: entityKey === 'games' ? record.id : `${entityKey}:${record.id}`,
+    id: bare.has(entityKey) ? record.id : `${entityKey}:${record.id}`,
     entityKey,
     entityLabel,
     record,
@@ -51,6 +68,7 @@ export function buildRows(catalog, values) {
       playing: g.sessions > 0,
       fog: g.fog,
       status: g.live ? 'loaded' : 'restart',
+      scenario: scenariosOf.get(g.name) ?? [],
     })),
 
     sessions: catalog.sessions.map((s) => {
@@ -66,6 +84,7 @@ export function buildRows(catalog, values) {
         waiting: !!waiting && s.status === 'active',
         fog: s.fog,
         outcome: outcome(s.result, s.players),
+        scenario: scenarioOf(s),
       })
     }),
 
@@ -79,6 +98,7 @@ export function buildRows(catalog, values) {
       status: r.status,
       live: r.live && live.has(r.id),
       outcome: outcome(r.result, r.players),
+      scenario: scenarioOf(r),
     })),
 
     // `order` is the catalog's: game by game, each game's scenarios as it lists them
@@ -90,6 +110,8 @@ export function buildRows(catalog, values) {
       art: gameArt(s.game),
       players: s.players,
       fog: s.fog,
+      sessions: sessionsOf.get(s.id) ?? 0,
+      scenario: s.id,
     })),
 
     units: catalog.units.map((u) => row('units', 'Unit', u, {

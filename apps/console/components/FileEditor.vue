@@ -3,10 +3,12 @@
 // The server has already imported the game's modules, so an edit to its rules
 // is what the next server start runs — the editor says so rather than implying
 // the running games have changed.
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { api } from '../api.js'
 
-const props = defineProps({ record: Object })
+// line: { line, at } — the line to show, selected (a scenario's Edit opens its
+// definition); `at` makes the same line asked for again a change.
+const props = defineProps({ record: Object, line: { type: Object, default: null } })
 const emit = defineEmits(['changed'])
 
 const text = ref('')
@@ -15,14 +17,30 @@ const busy = ref(false)
 const error = ref('')
 const saved = ref('')
 const dirty = computed(() => original.value !== null && text.value !== original.value)
+const area = ref(null)
 
 onMounted(async () => {
   try {
     const { content } = await api.readFile(props.record.game, props.record.path)
     text.value = content
     original.value = content
+    showLine()
   } catch (e) { error.value = e.message }
 })
+
+/** Selects the asked-for line and scrolls it a few lines below the top. */
+async function showLine() {
+  const wanted = props.line?.line
+  await nextTick()
+  const el = area.value
+  if (!wanted || !el) return
+  const lines = text.value.split('\n')
+  const start = lines.slice(0, wanted - 1).reduce((n, l) => n + l.length + 1, 0)
+  el.focus({ preventScroll: true })
+  el.setSelectionRange(start, start + (lines[wanted - 1]?.length ?? 0))
+  el.scrollTop = Math.max(0, (wanted - 4) * parseFloat(getComputedStyle(el).lineHeight))
+}
+watch(() => props.line, showLine)
 
 async function save() {
   if (!dirty.value || busy.value) return
@@ -55,6 +73,7 @@ function onKey(event) {
     <p v-if="original === null && !error" class="cx-muted">Loading…</p>
     <textarea
       v-else-if="original !== null"
+      ref="area"
       v-model="text"
       class="fe__text"
       spellcheck="false"

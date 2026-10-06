@@ -7,8 +7,9 @@
 // Rendered in DataShell's #cards-before slot, so it reads the query off the
 // shell rather than being handed it.
 import { computed, ref } from 'vue'
-import { ShellCard, parseExpression, useShellContext } from 'header-content-layout'
+import { ShellCard, useShellContext } from 'header-content-layout'
 import { api } from '../api.js'
+import { namedIn } from '../source.js'
 import { defaultSeats, sessionRequest } from '../sessions.js'
 import { useSessionOpener, useSetupOpener } from '../opener.js'
 import Art from './Art.vue'
@@ -21,16 +22,16 @@ const shell = useShellContext()
 const opener = useSessionOpener()
 const openSetup = useSetupOpener()
 
-/** The games the query narrows to: `game:x` terms, in any alternative, not left out. */
+/**
+ * The games the query narrows to: `game:x` terms, in any alternative, not left
+ * out. A game one of whose scenarios the query names gives way to that
+ * scenario's card (ScenarioSummaryCards), which starts it the same ways.
+ */
 const named = computed(() => {
-  const wanted = new Set()
-  for (const group of parseExpression(shell.query.value.expr ?? '')) {
-    for (const term of group) {
-      if (term.kind !== 'field' || term.negated || term.field.toLowerCase() !== 'game') continue
-      if (term.comparator === ':' || term.comparator === '=') wanted.add(String(term.value).toLowerCase())
-    }
-  }
-  return props.games.filter((g) => wanted.has(g.record.name.toLowerCase()))
+  const expr = shell.query.value.expr
+  const wanted = namedIn(expr, 'game')
+  const scenarios = namedIn(expr, 'scenario')
+  return props.games.filter((g) => wanted.has(g.record.name.toLowerCase()) && !g.fields.scenario.some((id) => scenarios.has(id.toLowerCase())))
 })
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`

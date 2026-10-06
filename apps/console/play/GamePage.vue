@@ -8,6 +8,7 @@ import GameThumb from './GameThumb.vue';
 const props = defineProps({
   game:     { type: Object,  default: null }, // null while the game list loads
   disabled: { type: Boolean, default: false },
+  scenario: { type: String,  default: '' },   // the one to open on, if the game has it; else its first
 });
 defineEmits(['back', 'create', 'analysis-board']);
 
@@ -17,7 +18,10 @@ defineEmits(['back', 'create', 'analysis-board']);
 const cfg     = ref(null);
 const scenKey = ref('');
 
-watch(() => props.game, (g) => { scenKey.value = g?.scenarios?.[0]?.id ?? ''; }, { immediate: true });
+watch(() => props.game, (g) => {
+  const scenarios = g?.scenarios ?? [];
+  scenKey.value = (scenarios.find((s) => s.id === props.scenario) ?? scenarios[0])?.id ?? '';
+}, { immediate: true });
 
 const playersLabel = computed(() => {
   const g = props.game;

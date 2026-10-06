@@ -12,8 +12,9 @@ import ScenarioDetail from './ScenarioDetail.vue'
 import SettingDetail from './SettingDetail.vue'
 import FieldList from './FieldList.vue'
 
-// `rows` is every row by entity, for a detail that lists related records.
-defineProps({ row: Object, rows: Object })
+// `rows` is every row by entity, for a detail that lists related records;
+// `line`, for a file, is the line to show it at ({ line, at }).
+defineProps({ row: Object, rows: Object, line: { type: Object, default: null } })
 const emit = defineEmits(['changed', 'created', 'open', 'close'])
 
 const detailFor = {
@@ -44,6 +45,7 @@ const detailFor = {
         :record="row.record"
         :fields="row.fields"
         :rows="rows"
+        v-bind="row.entityKey === 'files' ? { line } : {}"
         @open="(r) => emit('open', r)"
         @changed="emit('changed')"
         @created="(id) => emit('created', id)"

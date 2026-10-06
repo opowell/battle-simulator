@@ -2,9 +2,10 @@
 //
 // Every entity's rows carry a `game` field (the game's key; a list for agents and
 // engine options, which several games offer), and `games` declares it as its
-// scope. So pressing a game narrows the whole corpus to that game (every other
-// kind of row opens instead), and its numbers (Sessions 3, Units 6, …) drill
-// into exactly those rows.
+// scope. So pressing a game narrows the whole corpus to that game, and its
+// numbers (Sessions 3, Units 6, …) drill into exactly those rows. Scenarios do
+// the same on `scenario` (rows.js says which rows carry one); every other kind
+// of row opens instead.
 //
 // Sorting: each entity lists its own sorts, the first being its default, and
 // every sort reads in the order its name says when ascending (the console's
@@ -133,10 +134,21 @@ export function buildSchema(catalog, { Art }) {
       key: 'scenarios',
       label: 'Scenarios',
       count: count(catalog.scenarios.length),
+      // Pressing a scenario narrows to it, as pressing a game does: its sessions
+      // and recordings, under a card of its own (ScenarioSummaryCards).
+      scope: 'scenario',
       // The ordinal column carries the `order` sort (it still shows the row number):
       // the order the games list their own scenarios in, a campaign's in sequence.
-      columns: [{ ...ordinal, sort: 'order', field: 'order' }, art, identity('Scenario'), reference('Description'), gameColumn, metric('players', 'Players')],
-      sorts: [{ key: 'order', label: 'order' }, { key: 'game', label: 'game' }, { key: 'name', label: 'name' }, { key: 'players', label: 'players' }],
+      columns: [
+        { ...ordinal, sort: 'order', field: 'order' },
+        art,
+        identity('Scenario', { scope: true }),
+        reference('Description'),
+        gameColumn,
+        metric('players', 'Players'),
+        metric('sessions', 'Sessions', { drill: 'sessions', hideBelow: 760 }),
+      ],
+      sorts: [{ key: 'order', label: 'order' }, { key: 'game', label: 'game' }, { key: 'name', label: 'name' }, { key: 'players', label: 'players' }, { key: 'sessions', label: 'sessions' }],
       facets: [byGame, toggle('fog', 'Fog of war', 'Only fog-of-war scenarios')],
     },
     {

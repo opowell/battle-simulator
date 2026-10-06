@@ -11,7 +11,8 @@ import { analysisBoardRequest, formRequest } from '../sessions.js'
 import { useSessionOpener } from '../opener.js'
 import GamePage from '../play/GamePage.vue'
 
-const props = defineProps({ gameName: String })
+// scenario: the one the page opens on ('' for the game's first).
+const props = defineProps({ gameName: String, scenario: { type: String, default: '' } })
 // created: (row id, { replace }) — the new session's catalog row, as the other forms here report it.
 const emit = defineEmits(['close', 'created'])
 
@@ -49,6 +50,7 @@ async function start(body) {
   <div class="play sp-setup">
     <GamePage
       :game="game"
+      :scenario="scenario"
       :disabled="busy || !game"
       @back="emit('close')"
       @create="(form) => start(formRequest(game, form))"

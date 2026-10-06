@@ -2,21 +2,27 @@
 //
 // The catalog is small (a few hundred records), so the console fetches it whole
 // and filters, sorts and pages here, with appfr's own expression language and
-// facet matching. One departure: the scope term appfr writes when narrowing to
-// a game is `game:"cs"`, and `:` is containment, which would also take in
-// csmini. The `game` join key is matched EXACTLY here — it names one game, never
-// a family of them — under appfr's other rules for a field: `-game:x` (a ⌘-press)
-// leaves x out, and several positive `game` terms in one group are any-of.
+// facet matching. One departure: the scope terms appfr writes when narrowing to
+// a game or a scenario are `game:"cs"` and `scenario:"cs/dust2"`, and `:` is
+// containment, which would also take in csmini. A join key is matched EXACTLY
+// here — it names one record, never a family of them — under appfr's other
+// rules for a field: `-game:x` (a ⌘-press) leaves x out, and several positive
+// terms on one key in a group are any-of. A row without the key never matches a
+// term on it (appfr counts an unknown field as a match), so a scenario narrowed
+// to keeps its sessions and recordings, not every unit there is.
 
 import { columnsFor, cellValue, findSort, matchesExpression, matchesFacets, parseExpression } from 'header-content-layout'
 
-const SCOPE_FIELD = 'game'
+const SCOPE_FIELDS = ['game', 'scenario']
 
-function isScopeTerm(term) {
-  return term.kind === 'field' && term.field.toLowerCase() === SCOPE_FIELD && (term.comparator === ':' || term.comparator === '=')
+/** The join key a term narrows on, or null for any other term. */
+function scopeFieldOf(term) {
+  if (term.kind !== 'field' || (term.comparator !== ':' && term.comparator !== '=')) return null
+  const field = term.field.toLowerCase()
+  return SCOPE_FIELDS.includes(field) ? field : null
 }
 
-function matchesGame(term, row) {
+function matchesKey(term, row) {
   const wanted = term.value.toLowerCase()
   const exact = (name) => {
     const value = String(name).toLowerCase()
@@ -24,19 +30,36 @@ function matchesGame(term, row) {
     const pattern = wanted.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
     return new RegExp(`^${pattern}$`).test(value)
   }
-  const game = row.fields[SCOPE_FIELD]
-  return Array.isArray(game) ? game.some(exact) : game != null && exact(game)
+  const key = row.fields[scopeFieldOf(term)]
+  return Array.isArray(key) ? key.some(exact) : key != null && exact(key)
 }
 
 function matchesGroup(group, row, entity) {
-  const games = group.filter(isScopeTerm)
-  const rest = group.filter((term) => !isScopeTerm(term))
-  const wanted = games.filter((term) => !term.negated)
-  if (wanted.length && !wanted.some((term) => matchesGame(term, row))) return false
-  if (games.some((term) => term.negated && matchesGame(term, row))) return false
+  for (const field of SCOPE_FIELDS) {
+    const terms = group.filter((term) => scopeFieldOf(term) === field)
+    const wanted = terms.filter((term) => !term.negated)
+    if (wanted.length && !wanted.some((term) => matchesKey(term, row))) return false
+    if (terms.some((term) => term.negated && matchesKey(term, row))) return false
+  }
+  const rest = group.filter((term) => !scopeFieldOf(term))
   // The rest of the group goes to appfr whole, so its own rules across terms
   // (any-of on a repeated field) hold for them as written.
   return !rest.length || matchesExpression([rest], row, entity)
+}
+
+/**
+ * What a query's `field:x` terms name, in any alternative and not left out,
+ * lowercased — the games, or the scenarios, a summary card is drawn for.
+ */
+export function namedIn(expr, field) {
+  const named = new Set()
+  for (const group of parseExpression(expr ?? '')) {
+    for (const term of group) {
+      if (term.kind !== 'field' || term.negated || term.field.toLowerCase() !== field) continue
+      if (term.comparator === ':' || term.comparator === '=') named.add(String(term.value).toLowerCase())
+    }
+  }
+  return named
 }
 
 function matches(expression, row, entity) {

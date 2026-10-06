@@ -15,6 +15,7 @@ import Art from './components/Art.vue'
 import RecordPanel from './components/RecordPanel.vue'
 import CreatePanel from './components/CreatePanel.vue'
 import GameSummaryCards from './components/GameSummaryCards.vue'
+import ScenarioSummaryCards from './components/ScenarioSummaryCards.vue'
 import SessionPlay from './components/SessionPlay.vue'
 import SessionFrames from './components/SessionFrames.vue'
 import SetupPanel from './components/SetupPanel.vue'
@@ -77,14 +78,18 @@ useLayoutRoute(layout, { adapter: route, home })
 /**
  * What is open beside the browser, read off the layout's panel ids: a record
  * (`rec:<row id>`), a form making a new one of something (`new:<entity key>`),
- * a game's setup page (`setup:<game name>`), or a session being played
+ * a game's setup page (`setup:<game name>`, or `setup:<game name>/<scenario id>`
+ * to open on one of its scenarios), or a session being played
  * (`play:<session id>`). The id is all there is, so a URL naming the panels — a
  * reload, Back, a link — is enough to open them again.
  */
 function itemOf(id) {
   if (id.startsWith('rec:')) return { id, kind: 'record', rowId: id.slice(4) }
   if (id.startsWith('new:')) return { id, kind: 'create', entityKey: id.slice(4) }
-  if (id.startsWith('setup:')) return { id, kind: 'setup', game: id.slice(6) }
+  if (id.startsWith('setup:')) {
+    const [game, scenario = ''] = id.slice(6).split('/')
+    return { id, kind: 'setup', game, scenario }
+  }
   if (id.startsWith('play:')) return { id, kind: 'session', sessionId: id.slice(5) }
   return null
 }
@@ -95,7 +100,10 @@ function titleOf(item) {
     // Named after the session once the catalog has it.
     return { title: rowsById.value.get(`sessions:${item.sessionId}`)?.fields.name ?? 'Session' }
   }
-  if (item.kind === 'setup') return { title: `New ${item.game} session`, subtitle: 'Setup' }
+  if (item.kind === 'setup') {
+    const scenario = item.scenario && rowsById.value.get(`${item.game}/${item.scenario}`)?.fields.name
+    return { title: `New ${item.game} session`, subtitle: scenario ? `Setup · ${scenario}` : 'Setup' }
+  }
   if (item.kind === 'create') {
     const entity = schema.value?.entities.find((e) => e.key === item.entityKey)
     return { title: entity?.create?.replace('…', '') ?? 'New', subtitle: entity?.label }
@@ -160,8 +168,8 @@ function openSession(sessionId, { replace } = {}) {
 }
 provide(OPEN_SESSION, openSession)
 
-/** A game's setup page — every seat and option. */
-const openSetup = (gameName) => openTopLevel(`setup:${gameName}`)
+/** A game's setup page — every seat and option — open on one of its scenarios, or its first. */
+const openSetup = (gameName, scenario) => openTopLevel(`setup:${gameName}${scenario ? `/${scenario}` : ''}`)
 provide(OPEN_SETUP, openSetup)
 
 // A link from before the console was the only UI — the old play UI's
@@ -218,7 +226,16 @@ function close(id) {
   layout.value = removePanel(layout.value, id) ?? home()
 }
 
-function openRow(r, options) {
+/**
+ * The line a file opened to show it at, by its row id — a scenario's Edit opens
+ * the source at its definition. Stamped, so asking for the same line again (the
+ * file still open, scrolled elsewhere) is a change the editor sees.
+ */
+const fileLines = reactive(new Map())
+
+/** @param options  `line`: for a file, the line to show it at */
+function openRow(r, { line, ...options } = {}) {
+  if (line) fileLines.set(r.id, { line, at: Date.now() })
   open(`rec:${r.id}`, options)
 }
 
@@ -259,6 +276,8 @@ function openCreate(entity) {
 
 const itemFor = (id) => opened.value.find((o) => o.id === id)
 const gameRows = computed(() => rows.value?.games ?? [])
+const scenarioRows = computed(() => rows.value?.scenarios ?? [])
+const fileRows = computed(() => rows.value?.files ?? [])
 </script>
 
 <template>
@@ -283,10 +302,12 @@ const gameRows = computed(() => rows.value?.games ?? [])
           @activate="openRow"
           @create="openCreate"
         >
-          <!-- Pressing a game narrows to it (its type declares a scope); every
-               other row opens. The game itself then heads the cards. -->
+          <!-- Pressing a game or a scenario narrows to it (its type declares a
+               scope); every other row opens. The game or scenario itself then
+               heads the cards. -->
           <template #cards-before>
             <GameSummaryCards :games="gameRows" @open="openRow" @changed="refresh" />
+            <ScenarioSummaryCards :scenarios="scenarioRows" :files="fileRows" @open="openRow" @changed="refresh" />
           </template>
           <template #actions>
             <button type="button" class="cx-btn cx-btn--quiet" :disabled="loading" title="Reload everything from the server" @click="refresh">
@@ -298,6 +319,7 @@ const gameRows = computed(() => rows.value?.games ?? [])
           v-else-if="itemFor(panel.id)?.kind === 'record'"
           :row="rowsById.get(itemFor(panel.id).rowId) ?? null"
           :rows="rows"
+          :line="fileLines.get(itemFor(panel.id).rowId) ?? null"
           @changed="refresh"
           @created="(rowId) => openCreated(rowId)"
           @open="openRow"
@@ -312,6 +334,7 @@ const gameRows = computed(() => rows.value?.games ?? [])
         <SetupPanel
           v-else-if="itemFor(panel.id)?.kind === 'setup'"
           :game-name="itemFor(panel.id).game"
+          :scenario="itemFor(panel.id).scenario"
           @close="close(panel.id)"
           @created="(rowId, { replace }) => openCreated(rowId, replace ? panel.id : undefined)"
         />
