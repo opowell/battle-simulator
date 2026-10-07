@@ -62,39 +62,54 @@ export function scSpriteLayers(type, def) {
 // standing on a team-coloured base ring. The art is not recoloured: each sprite was
 // captured in whatever player colour its screenshot happened to use (purple, red,
 // none at all on Protoss gold), so tinting would mark some units and not others. The
-// ring is what says whose unit it is, the same way for every one. Workers draw a size
-// down and the massive units (battlecruiser, carrier, ultralisk) a size up, so a fleet
-// reads as bigger than the drones around it.
-function imageScale(def) {
+// ring is what says whose unit it is, the same way for every one.
+//
+// How big the picture draws: given `px`, the unit's size in the original game (the
+// larger side of its units.dat box, in game pixels), it is that against a 32 px
+// dragoon/goliath/siege tank — so a marine (20 px) stands at under two thirds of a
+// goliath and an overlord over it, as they do in the game. The art files can't say
+// this themselves: each was blown up by its own whole factor to a similar file size
+// (games/sc1/images/SPRITES.md), which is how a marine came to draw as big as a
+// dragoon. Clamped so a zergling stays clickable and a battlecruiser doesn't swallow
+// its escort. Without `px`, a rougher rule from the definition's tags: workers a size
+// down, the massive units (battlecruiser, carrier, ultralisk) a size up.
+const REFERENCE_PX = 32, MIN_SCALE = 0.6, MAX_SCALE = 1.5;
+function imageScale(def, px) {
+  if (px > 0) return Math.min(MAX_SCALE, Math.max(MIN_SCALE, px / REFERENCE_PX));
   const { special = [], hp = 0 } = def;
   if (special.includes('worker')) return 0.85;
   return (special.includes('massive') || hp >= 300) ? 1.35 : 1;
 }
 
-export function scImageSpriteLayers(src, def) {
-  const k = imageScale(def);
+// `pixelated`: the 1998 originals are low-resolution pictures blown up by a whole
+// factor, so the renderer keeps their hard pixel edges rather than smearing them when
+// it scales them again (the Remastered art is drawn smooth).
+export function scImageSpriteLayers(src, def, { px, pixelated = false } = {}) {
+  const k = imageScale(def, px);
   return [
     { shape: 'circle', rFrac: k * 0.95, fill: '#0000002e', stroke: 'team', strokeWidth: 2, dx: 0, dy: 0, rot: 0 },
-    { src, wFrac: k * 2.5, hFrac: k * 2.5, anchorX: 0.5, anchorY: 0.5, dx: 0, dy: 0, rot: 0 },
+    { src, wFrac: k * 2.5, hFrac: k * 2.5, anchorX: 0.5, anchorY: 0.5, dx: 0, dy: 0, rot: 0,
+      ...(pixelated ? { pixelated: true } : {}) },
   ];
 }
 
 // The clickable radius that picture needs, as a multiple of the token radius (the
 // renderers' `hitRFrac`): the art overhangs the ring, and a click on a marine's rifle
 // should still pick the marine.
-export function scImageHitRFrac(def) {
-  return imageScale(def) * 1.2;
+export function scImageHitRFrac(def, px) {
+  return imageScale(def, px) * 1.2;
 }
 
 // Building counterpart to scImageSpriteLayers: the structure's art on a team-outlined
 // footprint plate (a building's token is square, so its owner mark is too). The art
 // overhangs the plate a little, as a building's sprite overhangs its footprint in the
 // game. Sized by the token itself (scBuildingSize → the renderers' sizeFrac).
-export function scBuildingImageSpriteLayers(src) {
+export function scBuildingImageSpriteLayers(src, { pixelated = false } = {}) {
   return [
     { shape: 'rect', wFrac: 2, hFrac: 2, anchorX: 0.5, anchorY: 0.5, rxFrac: 0.18,
       fill: '#0000002e', stroke: 'team', strokeWidth: 2, dx: 0, dy: 0, rot: 0 },
-    { src, wFrac: 2.3, hFrac: 2.3, anchorX: 0.5, anchorY: 0.5, dx: 0, dy: 0, rot: 0 },
+    { src, wFrac: 2.3, hFrac: 2.3, anchorX: 0.5, anchorY: 0.5, dx: 0, dy: 0, rot: 0,
+      ...(pixelated ? { pixelated: true } : {}) },
   ];
 }
 

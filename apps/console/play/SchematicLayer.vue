@@ -1305,6 +1305,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                     :stroke="layerColor(u, layer.stroke)||'none'" :stroke-width="layer.strokeWidth||0">{{layer.text}}</text>
               <image v-else :x="-unitR(u)*layer.wFrac*(layer.anchorX??0.5)" :y="-unitR(u)*layer.hFrac*(layer.anchorY??0.5)"
                      :width="unitR(u)*layer.wFrac" :height="unitR(u)*layer.hFrac"
+                     :class="{ 'sl-pixel': layer.pixelated }"
                      :href="imgSrc(layer.src)"/>
             </g>
           </template>

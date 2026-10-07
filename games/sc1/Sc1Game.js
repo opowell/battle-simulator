@@ -47,9 +47,21 @@ const MAP_SPRITES = new Set([
   'forge', 'photon-cannon', 'templar-archives', 'stargate', 'robotics-facility',
 ]);
 const SPRITE_SETS = ['original', 'remastered'];
-const spriteSrc = (state, type) => {
-  const set = SPRITE_SETS.includes(state.gameSpecific?.spriteSet) ? state.gameSpecific.spriteSet : 'original';
-  return `/images/sc1/map-${set}/${type}`;
+const spriteSetOf = (state) =>
+  SPRITE_SETS.includes(state.gameSpecific?.spriteSet) ? state.gameSpecific.spriteSet : 'original';
+const spriteSrc = (state, type) => `/images/sc1/map-${spriteSetOf(state)}/${type}`;
+
+// How big each unit is in the original game: the larger side of its units.dat
+// dimension box, in game pixels. The map art draws each picture at this size against a
+// 32 px dragoon (games/starcraftSprite.js's imageScale) — the art files themselves are
+// all blown up to about the same size, so without it a marine stood as tall as a
+// dragoon. A type missing here falls back to the tag-based rule there.
+const UNIT_PX = {
+  scv: 23, marine: 20, firebat: 23, ghost: 22, vulture: 32, 'siege-tank': 32, goliath: 32,
+  wraith: 38, battlecruiser: 75, drone: 23, zergling: 16, hydralisk: 23, lurker: 32,
+  mutalisk: 44, scourge: 24, ultralisk: 38, overlord: 50, probe: 23, zealot: 23,
+  dragoon: 32, 'high-templar': 24, 'dark-templar': 26, archon: 32, corsair: 36,
+  carrier: 64, arbiter: 44,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -941,9 +953,10 @@ export const Sc1Game = {
         maxHp:     u.maxHp,
         moveRange: u.movesLeft,
         spriteLayers: MAP_SPRITES.has(u.type)
-          ? scImageSpriteLayers(spriteSrc(state, u.type), UNITS[u.type])
+          ? scImageSpriteLayers(spriteSrc(state, u.type), UNITS[u.type],
+              { px: UNIT_PX[u.type], pixelated: spriteSetOf(state) === 'original' })
           : scSpriteLayers(u.type, UNITS[u.type]),
-        hitRFrac: MAP_SPRITES.has(u.type) ? scImageHitRFrac(UNITS[u.type]) : undefined,
+        hitRFrac: MAP_SPRITES.has(u.type) ? scImageHitRFrac(UNITS[u.type], UNIT_PX[u.type]) : undefined,
         // Portrait-only (see the `ui` comment above) — only the side-panel portrait
         // (App.vue's portraitPath ?? imagePath fallback) uses it.
         portraitPath: UNIT_SPRITES.has(u.type) ? `/images/sc1/units/${u.type}` : undefined,
@@ -963,7 +976,7 @@ export const Sc1Game = {
       hp:       b.hp,
       maxHp:    b.maxHp,
       spriteLayers: MAP_SPRITES.has(b.type)
-        ? scBuildingImageSpriteLayers(spriteSrc(state, b.type))
+        ? scBuildingImageSpriteLayers(spriteSrc(state, b.type), { pixelated: spriteSetOf(state) === 'original' })
         : scBuildingSpriteLayers(b.type, BUILDINGS[b.type] ?? {}),
       sizeFrac:     scBuildingSize(BUILDINGS[b.type] ?? {}),
     }));
