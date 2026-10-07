@@ -998,6 +998,10 @@ function buildField(g, s) {
       // Widens the clickable hit area past the body radius for sprites that draw
       // outside it (see CsGame.js's armor ring and SchematicLayer's u.hitRFrac).
       hitRFrac:      c.hitRFrac,
+      // The unit's real outline in world tiles — { shape: 'circle', r } or { shape:
+      // 'rect', w, h, ang } — for views that draw it smaller than its sprite (the
+      // minimap). Absent, those views fall back to the board's token shape.
+      footprint:     c.footprint,
       description:   c.description,
       job:           c.job,
       moveRange:     c.moveRange,

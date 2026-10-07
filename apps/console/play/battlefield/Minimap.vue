@@ -117,6 +117,78 @@ function tileColor(t) {
 
 const canvasEl = ref(null);
 
+// ── terrain shapes ────────────────────────────────────────────────────────────
+// A shape map (field.shapes — the layered terrain SchematicLayer draws, decoration
+// included) has no per-tile colours worth showing, so the minimap paints the shapes
+// themselves, fills only (stroke widths are screen pixels on the board, meaningless at
+// this scale). Painted once into an offscreen canvas per shape list and scale, then
+// blitted: a pan repaints the minimap every frame, and a dressed map can run to a
+// couple of thousand primitives.
+let shapeCache = null;
+function shapeLayer(shapes, scale, dpr) {
+  if (shapeCache && shapeCache.shapes === shapes && shapeCache.scale === scale && shapeCache.dpr === dpr)
+    return shapeCache.canvas;
+  const c = document.createElement('canvas');
+  c.width = Math.round(cssW.value * dpr);
+  c.height = Math.round(cssH.value * dpr);
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0); // world units from here on
+  for (const sh of shapes) {
+    if (!sh.fill || sh.fill === 'none' || sh.shape === 'line') continue;
+    ctx.beginPath();
+    if (sh.shape === 'oval') ctx.ellipse(sh.x + sh.w / 2, sh.y + sh.h / 2, sh.w / 2, sh.h / 2, 0, 0, Math.PI * 2);
+    else if (sh.shape === 'poly') {
+      sh.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.closePath();
+    } else if (sh.rx && ctx.roundRect) ctx.roundRect(sh.x, sh.y, sh.w, sh.h, sh.rx);
+    else ctx.rect(sh.x, sh.y, sh.w, sh.h);
+    ctx.globalAlpha = sh.opacity ?? 1;
+    ctx.fillStyle = sh.fill;
+    ctx.fill();
+  }
+  shapeCache = { shapes, scale, dpr, canvas: c };
+  return c;
+}
+
+// ── unit marks ────────────────────────────────────────────────────────────────
+// Each unit is drawn in its own shape, not a generic square: the game's `footprint`
+// for it when it gives one (its real outline in world tiles — a tank's oriented hull
+// rectangle, a squad's circle), else the token shape the board draws it as
+// (ui.unitShapes, or a circle on a continuous map and a square on a grid).
+function unitShape(u) {
+  return props.field?.ui?.unitShapes?.[u.type]
+    ?? (props.field?.locationType === 'continuous' ? 'circle' : 'square');
+}
+
+function drawUnit(ctx, u, outline) {
+  const fp = u.footprint;
+  // Unit positions are already the point the board draws them at (a grid unit's x/y
+  // carry its cell-centre offset — see SessionView), so no half-tile shift here.
+  const cx = u.x * s.value, cy = u.y * s.value;
+  // Without a footprint, a mark is sized up from the tile so a single unit is still
+  // findable on a map drawn at 2px per tile; a footprint draws true to scale, but
+  // never below a findable minimum.
+  const r = fp?.r != null ? Math.max(1.5, fp.r * s.value) : Math.max(1.5, s.value * 0.9);
+  ctx.beginPath();
+  if (fp?.shape === 'rect') {
+    const w = Math.max(3, fp.w * s.value) / 2, h = Math.max(2, fp.h * s.value) / 2;
+    const c = Math.cos(fp.ang ?? 0), sn = Math.sin(fp.ang ?? 0);
+    [[w, h], [-w, h], [-w, -h], [w, -h]].forEach(([x, y], i) => {
+      const px = cx + x * c - y * sn, py = cy + x * sn + y * c;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.closePath();
+  } else {
+    const shape = fp?.shape ?? unitShape(u);
+    if (shape === 'circle') ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    else if (shape === 'triangle') {
+      ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy + r); ctx.lineTo(cx - r, cy + r); ctx.closePath();
+    } else ctx.rect(cx - r, cy - r, r * 2, r * 2);
+  }
+  ctx.fill();
+  if (outline) ctx.stroke();
+}
+
 function draw() {
   const c = canvasEl.value;
   if (!c || !s.value) return;
@@ -141,13 +213,27 @@ function draw() {
     ctx.fillRect(t.x * s.value, t.y * s.value, px, px);
   }
 
-  // Units: a dot each, in team colour. Sized up from the tile so a single unit is still
-  // findable on a map drawn at 2px per tile.
-  const r = Math.max(1.5, s.value * 0.9);
+  // Shape terrain over the tile fills; then any tile still in the dark is covered again,
+  // so the shapes withhold exactly what the tiles do.
+  const shapes = props.field?.shapes;
+  if (shapes?.length) {
+    ctx.drawImage(shapeLayer(shapes, s.value, dpr), 0, 0, cssW.value, cssH.value);
+    if (fogVisibleSet.value) {
+      ctx.fillStyle = props.rdr?.fogA;
+      for (const t of props.field?.tiles ?? [])
+        if (tileHidden(t)) ctx.fillRect(t.x * s.value, t.y * s.value, px, px);
+    }
+  }
+
+  // Units, in team colour — outlined over shape terrain, where a bare fill gets lost
+  // in the detail.
+  const outline = !!shapes?.length;
+  ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  ctx.lineWidth = 1;
   for (const u of props.units) {
     if (u.dead || !isVisible(u)) continue;
     ctx.fillStyle = u.teamObj?.raw ?? '#fff';
-    ctx.fillRect((u.x + 0.5) * s.value - r, (u.y + 0.5) * s.value - r, r * 2, r * 2);
+    drawUnit(ctx, u, outline);
   }
 
   // Viewport box. On a wrapping world the stage can straddle the seam, so the box is
