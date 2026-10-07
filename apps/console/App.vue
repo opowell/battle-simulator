@@ -427,8 +427,8 @@ const fileRows = computed(() => rows.value?.files ?? [])
 .cx-code { margin: 0; padding: 10px 12px; overflow: auto; max-height: 320px; font: 12px/1.5 var(--dc-mono); background: var(--dc-bg-1); border: 1px solid var(--dc-line); border-radius: var(--dc-radius-sm, 4px); white-space: pre; }
 
 /* A record's picture on its card: small, beside the name rather than over it,
-   and pixel art kept crisp. A game's card is its picture (schema.js), drawn at
-   appfr's own size for one. */
+   and pixel art kept crisp. A game's or a unit's card is its picture
+   (schema.js), drawn at appfr's own size for one. */
 .cx-window .dc-shell { --dc-card-image: 40px; }
 .cx-window .dc-card__image { image-rendering: pixelated; }
 

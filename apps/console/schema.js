@@ -158,6 +158,9 @@ export function buildSchema(catalog, { Art }) {
       key: 'units',
       label: 'Units',
       count: count(catalog.units.length),
+      // A unit's card is its picture and its name, like a game's; the type,
+      // the game and the starting count are the table's.
+      card: 'picture',
       columns: [
         ordinal,
         art,
