@@ -50,6 +50,28 @@ Each unit has 2 AP per turn. Moving costs 1 AP; attacking costs 1 AP.
 | `T` | Trees | Yes | Yes | −20% |
 | `#` | Wall / building | No | Yes | — |
 
+Shape maps also author `stonewall` (rules as a hedge — cover, passable, see-through —
+drawn as dry stone) and `bridge` (rules as a road).
+
+## How it looks
+
+`art.js` draws the map and the units; it decides no rule. Each authored terrain object is
+emitted once at its exact rule footprint, named (that is what "Inspect terrain" picks),
+then dressed in unnamed, click-transparent decoration that stays inside the footprint:
+crop rows and pasture for fields, a bank of bushes with the odd tree for hedgerows, coursed
+stones for walls, rutted lanes, a stone bridge with parapets, tree crowns for woods, reeds
+and water for ponds and the river, hipped/gabled roofs with chimneys for buildings.
+Woods and ponds are authored as rects of whole squares, so the drawn feature, the tile
+grid LOS/cover read and the continuous lookup free moves read are the same squares
+(`art.test.js` pins this).
+
+Units are top-down silhouettes (`spriteLayers`): tanks are a hull on two tracks with a
+turret and gun (Tiger biggest, Stuart smallest; Pz IV with skirts and a muzzle brake),
+infantry teams are their men inside a team ring with the weapon that names them (MG,
+long rifle, AT tube, mortar). CM has no facing rule, so the heading is presentation only:
+the way a unit has moved from its start, else toward the enemy's side. Each unit also
+carries a `footprint` (oriented hull rect / circle) that the minimap draws.
+
 ## Map layout
 
 Fixed 20×16 map:

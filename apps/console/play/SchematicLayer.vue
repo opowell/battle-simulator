@@ -871,6 +871,10 @@ const coveringShapes = computed(() => {
   if (idx < 0) return [];
   const s = shapeBBox(props.selectedShape);
   return props.field.shapes.slice(idx + 1)
+    // Only terrain covers terrain: an unnamed shape is decoration (a roof plane, a tree
+    // crown — click-transparent, see Battlefield's shape hit-test), and letting it punch
+    // the outline would shred the selected feature's edge wherever its own art sits.
+    .filter(cs => cs.name)
     .filter(cs => { const b = shapeBBox(cs); return s.x < b.x + b.w && s.x + s.w > b.x && s.y < b.y + b.h && s.y + s.h > b.y; });
 });
 

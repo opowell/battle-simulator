@@ -28,6 +28,17 @@ function fieldGrid() {
   return t;
 }
 
+// Rebuild some hedgerow banks as dry-stone walls: the same rule (cover, passable, see-
+// through - map.js gives 'stonewall' the hedge tile), drawn as stone. Each [x,y,w,h]
+// must be an existing hedge segment, so the field grid's layout is untouched.
+function stoneWalls(t, segs) {
+  for (const [x, y, w, h] of segs) {
+    const hedge = t.find(s => s.kind === 'hedge' && s.x === x && s.y === y && s.w === w && s.h === h);
+    if (!hedge) throw new Error(`stoneWalls: no hedge segment at ${x},${y} ${w}x${h}`);
+    hedge.kind = 'stonewall';
+  }
+}
+
 // Standard deploy zones on this grid: Allies on the north fields, Axis on the south.
 const GRID_DEPLOY = {
   allied: [
@@ -47,16 +58,21 @@ const GRID_DEPLOY = {
 function buildBocage() {
   const t = fieldGrid();
   const rect = (x, y, w, h, kind) => t.push({ shape: 'rect', x, y, w, h, kind });
-  const oval = (x, y, w, h, kind) => t.push({ shape: 'oval', x, y, w, h, kind });
-  for (const [x0, x1] of FIELD_XS) rect(x0, 9, x1 - x0 + 1, 1, 'road'); // E-W sunken lane
-  rect(9, 9, 1, 1, 'road');                                            // crossroads junction
-  for (const [y0, y1] of FIELD_YS) rect(9, y0, 1, y1 - y0 + 1, 'road'); // N-S sunken lane
-  oval(1, 4, 2, 2, 'woods'); oval(19, 1, 2, 2, 'woods'); oval(4, 7, 2, 2, 'woods');
-  oval(1, 10, 2, 2, 'woods'); oval(19, 13, 2, 2, 'woods'); oval(13, 10, 2, 2, 'woods');
-  oval(16, 7, 2, 2, 'woods'); oval(6, 13, 2, 2, 'woods');
+  // Sunken lanes, each one unbroken strip (the squares where they cross a hedge line are
+  // the open gaps between hedges, so road and open ground rule the same there).
+  rect(1, 9, 20, 1, 'road');                                            // E-W lane
+  rect(9, 1, 1, 14, 'road');                                            // N-S lane
+  rect(9, 9, 1, 1, 'road');                                             // crossroads
+  // Copses and ponds fill whole fields: square footprints, so the drawn wood is exactly
+  // the squares that block sight (LOS is cast over the tile grid - see los.js).
+  rect(1, 4, 2, 2, 'woods'); rect(19, 1, 2, 2, 'woods'); rect(4, 7, 2, 2, 'woods');
+  rect(1, 10, 2, 2, 'woods'); rect(19, 13, 2, 2, 'woods'); rect(13, 10, 2, 2, 'woods');
+  rect(16, 7, 2, 2, 'woods'); rect(6, 13, 2, 2, 'woods');
+  // The farm hamlet: houses and barns, its yards walled in stone rather than hedged.
+  stoneWalls(t, [[15, 4, 1, 2], [15, 7, 1, 2], [13, 6, 2, 1], [16, 6, 2, 1], [13, 3, 2, 1], [16, 3, 2, 1]]);
   rect(13, 4, 2, 1, 'building'); rect(16, 4, 2, 1, 'building'); rect(13, 5, 1, 1, 'building');
   rect(16, 5, 2, 1, 'building'); rect(14, 7, 1, 2, 'building'); rect(17, 7, 1, 1, 'building');
-  oval(10, 4, 2, 2, 'pond'); oval(7, 10, 2, 2, 'pond');
+  rect(10, 4, 2, 2, 'pond'); rect(7, 10, 2, 2, 'pond');
   return { width: 22, height: 16, terrain: t, deploy: GRID_DEPLOY };
 }
 
@@ -64,15 +80,13 @@ function buildBocage() {
 // only crossing. Water does not block LOS, so long guns rule the banks.
 function buildRiverLine() {
   const t = fieldGrid();
-  const rect = (x, y, w, h, kind) => t.push({ shape: 'rect', x, y, w, h, kind });
-  const oval = (x, y, w, h, kind) => t.push({ shape: 'oval', x, y, w, h, kind });
-  // River across the central rows (y8-9), segment per column so it reads as a wide flow.
-  for (const [x0, x1] of FIELD_XS) rect(x0, 8, x1 - x0 + 1, 2, 'water');
-  for (const hx of HEDGE_X) rect(hx, 8, 1, 2, 'water');
-  rect(10, 8, 2, 2, 'road'); rect(10, 7, 2, 1, 'road'); rect(10, 10, 2, 1, 'road'); // bridge + approaches
-  oval(2, 4, 2, 2, 'woods'); oval(19, 4, 2, 2, 'woods'); oval(5, 1, 2, 2, 'woods');
-  oval(16, 1, 2, 2, 'woods'); oval(2, 12, 2, 2, 'woods'); oval(19, 12, 2, 2, 'woods');
-  oval(6, 13, 2, 2, 'woods'); oval(13, 1, 2, 2, 'woods');
+  const rect = (x, y, w, h, kind, dir) => t.push({ shape: 'rect', x, y, w, h, kind, ...(dir ? { dir } : {}) });
+  rect(1, 8, 20, 2, 'water');                                           // the river, bank to bank
+  rect(10, 7, 2, 1, 'road'); rect(10, 10, 2, 1, 'road');                // bridge approaches
+  rect(10, 8, 2, 2, 'bridge', 'ns');                                    // the one crossing
+  rect(2, 4, 2, 2, 'woods'); rect(19, 4, 2, 2, 'woods'); rect(5, 1, 2, 2, 'woods');
+  rect(16, 1, 2, 2, 'woods'); rect(2, 12, 2, 2, 'woods'); rect(19, 12, 2, 2, 'woods');
+  rect(6, 13, 2, 2, 'woods'); rect(13, 1, 2, 2, 'woods');
   rect(16, 11, 2, 1, 'building'); rect(16, 12, 3, 1, 'building'); rect(4, 5, 2, 1, 'building');
   return { width: 22, height: 16, terrain: t, deploy: GRID_DEPLOY };
 }
@@ -82,15 +96,13 @@ function buildRiverLine() {
 function buildHillWoods() {
   const t = fieldGrid();
   const rect = (x, y, w, h, kind) => t.push({ shape: 'rect', x, y, w, h, kind });
-  const oval = (x, y, w, h, kind) => t.push({ shape: 'oval', x, y, w, h, kind });
-  for (const [x0, x1] of FIELD_XS) rect(x0, 9, x1 - x0 + 1, 1, 'road'); // lateral track on y=9
-  rect(9, 9, 1, 1, 'road');
+  rect(1, 9, 20, 1, 'road');                                            // lateral track on y=9
   // Dense wood lots scattered across the fields (block LOS).
-  oval(1, 1, 2, 2, 'woods'); oval(7, 1, 2, 2, 'woods'); oval(13, 1, 2, 2, 'woods'); oval(19, 1, 2, 2, 'woods');
-  oval(4, 4, 2, 2, 'woods'); oval(16, 4, 2, 2, 'woods'); oval(10, 4, 2, 2, 'woods');
-  oval(1, 7, 2, 2, 'woods'); oval(19, 7, 2, 2, 'woods');
-  oval(4, 10, 2, 2, 'woods'); oval(16, 10, 2, 2, 'woods'); oval(10, 10, 2, 2, 'woods');
-  oval(1, 13, 2, 2, 'woods'); oval(13, 13, 2, 2, 'woods');
+  for (const [x, y] of [[1, 1], [7, 1], [13, 1], [19, 1], [4, 4], [16, 4], [10, 4], [1, 7], [19, 7],
+                        [4, 10], [16, 10], [10, 10], [1, 13], [13, 13]])
+    rect(x, y, 2, 2, 'woods');
+  // Two farmsteads, their yards walled in stone.
+  stoneWalls(t, [[7, 3, 2, 1], [13, 12, 2, 1]]);
   rect(7, 4, 2, 1, 'building'); rect(7, 5, 1, 1, 'building'); rect(13, 10, 2, 1, 'building'); rect(14, 11, 1, 1, 'building');
   return { width: 22, height: 16, terrain: t, deploy: GRID_DEPLOY };
 }

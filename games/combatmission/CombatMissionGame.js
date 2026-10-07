@@ -6,6 +6,7 @@ import { hasLOS } from './los.js';
 import { resolveFire } from './combat.js';
 import { getCombatMissionBelief } from './belief.js';
 import { SHAPE_SCENARIOS } from './scenarios.js';
+import { terrainArt, unitArt } from './art.js';
 import { tilesToShapes } from '../terrainShapes.js';
 import { lineCost, isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { parsePos, num, posToWire } from '../coord.js';
@@ -332,11 +333,11 @@ const SHAPE_GROUND = '#7d8f5c';
 // Styles for turning the classic tile map into merged rectangle shapes so it renders as
 // layered SVGs too. Open ground (FLOOR) is left as background.
 const CM_TILE_SHAPE_STYLES = {
-  [TERRAIN.WALL]:  { fill: '#5a5045', stroke: '#6b5f50', name: 'Building', description: 'Impassable, blocks line of sight.' },
-  [TERRAIN.TREE]:  { fill: '#2f5c2f', stroke: '#3f6f3f', name: 'Woods',    description: 'Passable but slow; blocks LOS, +20% cover.' },
-  [TERRAIN.HEDGE]: { fill: '#4d6b3a', stroke: '#5f7d48', name: 'Hedgerow', description: 'Passable but slow; +30% cover, does not block LOS.' },
-  [TERRAIN.ROAD]:  { fill: '#9c8f6b', name: 'Road', description: 'Passable, no cover.' },
-  [TERRAIN.WATER]: { fill: '#35617a', opacity: 0.9, name: 'Water', description: 'Impassable, but does not block line of sight.' },
+  [TERRAIN.WALL]:  { kind: 'building', fill: '#5a5045', stroke: '#6b5f50', name: 'Building', description: 'Impassable, blocks line of sight.' },
+  [TERRAIN.TREE]:  { kind: 'woods', fill: '#2f5c2f', stroke: '#3f6f3f', name: 'Woods',    description: 'Passable but slow; blocks LOS, +20% cover.' },
+  [TERRAIN.HEDGE]: { kind: 'hedge', fill: '#4d6b3a', stroke: '#5f7d48', name: 'Hedgerow', description: 'Passable but slow; +30% cover, does not block LOS.' },
+  [TERRAIN.ROAD]:  { kind: 'road', fill: '#9c8f6b', name: 'Road', description: 'Passable, no cover.' },
+  [TERRAIN.WATER]: { kind: 'water', fill: '#35617a', opacity: 0.9, name: 'Water', description: 'Impassable, but does not block line of sight.' },
 };
 
 // Side-panel portraits (single image each, sourced from Wikimedia Commons — vehicle
@@ -372,7 +373,10 @@ function toGrid(state) {
   // (see games/coord.js), built directly from state.units.
   const unitList = (units ?? []).filter(u => u.alive).map(u => {
     const p = posToWire(u.position);
+    const art = unitArt(u.type, unitHeading(state, u));
     return {
+      // Top-down silhouette (tank hull + turret, a squad's men…) — see art.js.
+      ...(art ?? {}),
       id: u.id, x: p.x, y: p.y,
       glyph:     u.attrs.symbol,
       owner:     pidIdx[u.ownerId] ?? 0,
@@ -384,12 +388,42 @@ function toGrid(state) {
     };
   });
 
-  // Shape scenarios supply authored shapes (ovals + rects); the classic map has its tiles
-  // merged into rectangles. Either way CS/CM/War of Dots all render as layered SVGs.
-  const shapes = board.shapes
-    ?? tilesToShapes((x, y) => tiles[y][x], width, height, CM_TILE_SHAPE_STYLES);
+  // The terrain, drawn as the features it is (roofs, hedges, tree crowns, crop rows…) —
+  // see art.js. Facing arrows are off: a unit's silhouette already shows which way it
+  // points, and CM has no facing rule for an arrow to report.
+  const shapes = boardArt(board);
 
-  return { width, height, locationType: 'continuous', cells, units: unitList, shapes, ui: { hideGridLines: true } };
+  return { width, height, locationType: 'continuous', cells, units: unitList, shapes, ui: { hideGridLines: true, showFacing: false } };
+}
+
+// The drawn terrain for a board, built once per board object (a board never changes
+// during a game). Shape scenarios dress their authored shapes; the classic tile map has
+// its tiles merged into rectangles first (the border ring left out — art.js frames it).
+const boardArtCache = new WeakMap();
+function boardArt(board) {
+  let shapes = boardArtCache.get(board);
+  if (shapes) return shapes;
+  const { width, height, tiles } = board;
+  const terrain = board.shapes
+    ?? tilesToShapes((x, y) => (x === 0 || y === 0 || x === width - 1 || y === height - 1) ? null : tiles[y][x],
+                     width, height, CM_TILE_SHAPE_STYLES);
+  shapes = terrainArt(terrain, board);
+  boardArtCache.set(board, shapes);
+  return shapes;
+}
+
+// Which way a unit's silhouette points, in radians (0 = east, +y = south). CM has no
+// facing rule, so this is presentation only: a unit that has moved off its start faces
+// the way it went from there; one that hasn't faces the enemy's side of the map
+// (players[0] deploys north, so faces south). Read only from the unit's own position and
+// the public start roster, so it gives nothing away about anyone hidden.
+function unitHeading(state, u) {
+  const start = state.gameSpecific?.startRoster?.find(r => r.id === u.id);
+  if (start) {
+    const dx = num(u.position.x) - num(start.position.x), dy = num(u.position.y) - num(start.position.y);
+    if (Math.hypot(dx, dy) > 0.75) return Math.atan2(dy, dx);
+  }
+  return u.ownerId === state.players?.[0]?.id ? Math.PI / 2 : -Math.PI / 2;
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────

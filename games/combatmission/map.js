@@ -59,9 +59,13 @@ const CM_SHAPE_STYLES = {
   woods:    { tile: TERRAIN.TREE,  render: { fill: '#2f5c2f', stroke: '#3f6f3f' }, name: 'Woods',    description: 'Passable but slow; blocks LOS, +20% cover.' },
   trees:    { tile: TERRAIN.TREE,  render: { fill: '#2f5c2f', stroke: '#3f6f3f' }, name: 'Woods',    description: 'Passable but slow; blocks LOS, +20% cover.' },
   hedge:    { tile: TERRAIN.HEDGE, render: { fill: '#4d6b3a', stroke: '#5f7d48' }, name: 'Hedgerow', description: 'Passable but slow; +30% cover, does not block LOS.' },
+  // A dry-stone field wall: the same rule as a hedgerow bank (cover you can see over and
+  // climb), only drawn as stone — see art.js.
+  stonewall: { tile: TERRAIN.HEDGE, render: { fill: '#8f8a80', stroke: '#6d675e' }, name: 'Stone wall', description: 'Passable but slow (climb over); +30% cover, does not block LOS.' },
   road:     { tile: TERRAIN.ROAD,  render: { fill: '#9c8f6b' },                    name: 'Road',     description: 'Passable, no cover.' },
+  bridge:   { tile: TERRAIN.ROAD,  render: { fill: '#8e8574' },                    name: 'Bridge',   description: 'Passable, no cover.' },
   water:    { tile: TERRAIN.WATER, render: { fill: '#35617a', opacity: 0.9 },       name: 'Water',    description: 'Impassable, but does not block line of sight.' },
-  pond:     { tile: TERRAIN.WATER, render: { fill: '#35617a', opacity: 0.9 },       name: 'Water',    description: 'Impassable, but does not block line of sight.' },
+  pond:     { tile: TERRAIN.WATER, render: { fill: '#35617a', opacity: 0.9 },       name: 'Pond',     description: 'Impassable, but does not block line of sight.' },
   field:    { tile: TERRAIN.FLOOR, render: { fill: '#c2b34e', opacity: 0.4 },       name: 'Field',    description: 'Open ground.' },
 };
 
@@ -87,9 +91,12 @@ export function createMapFromShapes(def) {
       if (x > 0 && x < W - 1 && y > 0 && y < H - 1) tiles[y][x] = style.tile;
     });
     terrainShapes.push({ shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h, tile: style.tile });
+    // `kind` (and a bridge's `dir`) ride along so the renderer can draw the feature
+    // itself rather than a flat fill — see art.js.
     shapes.push({
       shape: s.shape ?? 'rect', x: s.x, y: s.y, w: s.w, h: s.h,
       ...style.render, name: style.name, description: style.description,
+      kind: s.kind, ...(s.dir ? { dir: s.dir } : {}),
     });
   }
 
