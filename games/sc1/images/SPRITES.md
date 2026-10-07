@@ -51,7 +51,7 @@ a team-coloured ring (units) or plate (buildings) instead of recolouring.
 | carrier | Carrier SC1 Game1.png | flat colour key | Carrier SCR Game1.jpg | flat colour key |
 | arbiter | Arbiter SC1 Game1.png | textured-background key | Arbiter SCR Game1.png | textured-background key |
 | **Buildings** | | | | |
-| command-center | CommandCenter SC1 Game1.png | flat colour key | CommandCenter SCR Game1.png | none (transparent) |
+| command-center | CommandCenter SC1 Game1.png | exact-black key (only pure #000 connected to the border), all pieces kept, not scaled — the flat key had dropped the roof tower and the crane as stray pieces | CommandCenter SCR Game1.png | none (transparent) |
 | supply-depot | SupplyDepot SC1 Game1.png | flat colour key | SupplyDepot SCR Game1.png | none (transparent) |
 | refinery | Refinery SC1 Game1.png | flat colour key | Refinery SCR Game1.png | none (transparent) |
 | barracks | Barracks SC1 Game1.png | flat colour key | — (no Remastered image on the wiki: uses the original) | |
