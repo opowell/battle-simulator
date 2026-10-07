@@ -111,3 +111,22 @@ test('sc1: self-play completes with a valid result', async () => {
   const { result } = await engine.run();
   assert.ok(['win', 'draw'].includes(result.outcome));
 });
+
+// SC1 plays we-go by default (defaultConfig, merged in by api-server). Each round both
+// seats plan from the same turn-start position and BOTH end-turns resolve inside the
+// round — so the turn advances by exactly one and every unit on both sides starts the
+// next round with its moves back, whichever seat's end-turn happened to land last.
+test('sc1: defaults to simultaneous turns, and a we-go round refreshes both sides', async () => {
+  assert.equal(Sc1Game.defaultConfig?.simultaneousTurns, true);
+  const engine = new GameEngine(Sc1Game, players(), { ...Sc1Game.defaultConfig, maxTurns: 6 });
+  for (let round = 1; round <= 4; round++) {
+    const { done } = await engine.step();
+    if (done) break;
+    const s = engine.state;
+    assert.equal(s.turnNumber, round + 1, `round ${round} advances the turn once`);
+    assert.equal(s.activePlayers.length, 1, 'a single seat at the turn start keeps the we-go path on');
+    for (const u of s.units.filter(un => un.alive))
+      assert.equal(u.movesLeft, UNITS[u.type].moves, `${u.ownerId}'s ${u.type} has its moves back`);
+  }
+  assert.ok(engine.log.length > 0 && engine.log.every(e => e.simultaneous));
+});

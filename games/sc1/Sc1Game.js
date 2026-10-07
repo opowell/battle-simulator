@@ -869,6 +869,12 @@ export const Sc1Game = {
     { id: 'zvp', name: 'Zerg vs Protoss',   description: 'Hive swarm vs shielded Templar',       config: { race1: 'zerg',     race2: 'protoss' } },
   ],
   colors: { open: '#6a7a50', elevated: '#8a7060', ramp: '#9a8868', minerals: '#2060a0', vespene: '#20884a', obstacle: '#3a2818' },
+  // Played we-go by default: both sides plan a whole turn of orders, then everything
+  // resolves together and plays back (engine/KineticResolver.js) — closer to a real-time
+  // game than one side moving its whole army while the other waits. A session can still
+  // turn it off (the "Simultaneous turns" engine option). Every SC1 action keeps a
+  // single activePlayers at the turn start, which is what the engine's we-go path needs.
+  defaultConfig: { simultaneousTurns: true },
   gameOptions: [
     MAP_ZOOM_OPTION,
     { id: 'spriteSet', label: 'Unit art', type: 'select', default: 'original',

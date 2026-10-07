@@ -1605,7 +1605,12 @@ async function handleGames(res) {
     minPlayers,
     maxPlayers,
     scenarios: game.scenarios ?? [],
-    gameOptions: [...(game.gameOptions ?? []), ...ENGINE_OPTIONS],
+    // An engine option a game sets in its `defaultConfig` (SC1 and CS default to
+    // simultaneous turns) starts the setup form at that value: the form sends every
+    // option it shows, so a form left at the generic default would quietly override
+    // the game's own.
+    gameOptions: [...(game.gameOptions ?? []), ...ENGINE_OPTIONS.map(o =>
+      game.defaultConfig && o.id in game.defaultConfig ? { ...o, default: game.defaultConfig[o.id] } : o)],
     ui: game.ui ?? {},
     // Preferred Quick play / Configure defaults (per-slot agents + engine-option
     // overrides), applied client-side over the generic defaults — see gameDefaults.js.
