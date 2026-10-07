@@ -1933,16 +1933,19 @@ function handleSqClick(col, row, x, y, mods) {
     // Armed via the "Inspect terrain…" toggle: clicks look up terrain info instead of
     // clearing the selection like a normal click would. Stays armed across clicks so
     // several tiles can be inspected in a row; toggle it off (or select a unit) to exit.
+    // A named feature shape under the click wins; failing that, the square's own terrain.
+    // Hit-test the point actually clicked when the layer reports one: a feature's named
+    // piece need not cover the middle of its square (a mineral field names its shadow
+    // oval, which sits in the top half). And a map drawn from shapes still has terrain
+    // under its open ground — falling back to it is what makes a click on plain
+    // ground say something rather than nothing.
     selectedId.value = null;
-    if (props.field.shapes?.length) {
-      const cx = col + 0.5, cy = row + 0.5;
-      const hit = [...props.field.shapes].reverse().find(s => s.name && pointInShape(s, cx, cy));
-      selectedShape.value = hit ? { ...hit, atX: col, atY: row } : null;
-      selectedSquare.value = null;
-    } else {
-      selectedSquare.value = props.field.hasTerrain ? { x: col, y: row } : null;
-      selectedShape.value = null;
-    }
+    const px = x ?? col + 0.5, py = y ?? row + 0.5;
+    const hit = props.field.shapes?.length
+      ? [...props.field.shapes].reverse().find(s => s.name && pointInShape(s, px, py))
+      : null;
+    selectedShape.value = hit ? { ...hit, atX: col, atY: row } : null;
+    selectedSquare.value = !hit && props.field.hasTerrain ? { x: col, y: row } : null;
     return;
   }
   if (aiming.value && x != null && y != null) {
