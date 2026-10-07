@@ -4,8 +4,8 @@
 // and each session opened inside the console as a tab beside the whole of that.
 // What is open, and where, is held in the URL with the query.
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch } from 'vue'
-import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, panelIds, panelNode, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'header-content-layout'
-import { api, playUrl } from './api.js'
+import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, openPopOut, panelIds, panelNode, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'header-content-layout'
+import { api } from './api.js'
 import { buildSchema } from './schema.js'
 import { buildRows } from './rows.js'
 import { createCatalogSource } from './source.js'
@@ -74,7 +74,19 @@ const layout = ref(home())
 const route = createHistoryAdapter()
 provide(ROUTE_ADAPTER_KEY, route)
 onBeforeUnmount(() => route.dispose?.())
-useLayoutRoute(layout, { adapter: route, home })
+const layoutRoute = useLayoutRoute(layout, { adapter: route, home })
+
+// Any tab but the browser pops out to a browser window holding it and nothing
+// else (appfr's popOut / solo): a session played in a window of its own, not the
+// whole console again. It moves rather than copies — see the panel-pop-out handler.
+const solo = layoutRoute.solo
+const popOutHref = (panel) => (panel.id === 'browse' ? null : layoutRoute.popOutHref(panel.id))
+/** A session tab's ↗: the same move, from a link, so a ⌘/middle click still makes a plain tab. */
+function popOutFromLink(event, panel) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+  event.preventDefault()
+  if (openPopOut(popOutHref(panel))) close(panel.id)
+}
 
 /**
  * What is open beside the browser, read off the layout's panel ids: a record
@@ -292,7 +304,10 @@ const fileRows = computed(() => rows.value?.files ?? [])
       :panels="panels"
       :theme="THEME"
       movable
+      :solo="solo"
+      :pop-out="popOutHref"
       @panel-close="close"
+      @panel-pop-out="({ panel }) => close(panel)"
     >
       <template #panel="{ panel }">
         <DataShell
@@ -350,10 +365,11 @@ const fileRows = computed(() => rows.value?.files ?? [])
         <a
           v-if="itemFor(panel.id)?.kind === 'session'"
           class="cx-btn cx-btn--quiet"
-          :href="playUrl.session(itemFor(panel.id).sessionId)"
+          :href="popOutHref(panel)"
           target="_blank"
           rel="noopener"
-          title="Open this session in a browser tab of its own"
+          title="Pop out to new window"
+          @click="popOutFromLink($event, panel)"
         >↗</a>
       </template>
     </WindowFrame>
