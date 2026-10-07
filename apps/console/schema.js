@@ -4,8 +4,8 @@
 // engine options, which several games offer), and `games` declares it as its
 // scope. So pressing a game narrows the whole corpus to that game, and its
 // numbers (Sessions 3, Units 6, …) drill into exactly those rows. Scenarios do
-// the same on `scenario` (rows.js says which rows carry one); every other kind
-// of row opens instead.
+// the same on `scenario`, and units on `unit` (rows.js says which rows carry
+// one); every other kind of row opens instead.
 //
 // Sorting: each entity lists its own sorts, the first being its default, and
 // every sort reads in the order its name says when ascending (the console's
@@ -161,10 +161,13 @@ export function buildSchema(catalog, { Art }) {
       // A unit's card is its picture and its name, like a game's; the type,
       // the game and the starting count are the table's.
       card: 'picture',
+      // Pressing a unit narrows to it: its game and the sides that start with
+      // it, under a card of its own (UnitSummaryCards).
+      scope: 'unit',
       columns: [
         ordinal,
         art,
-        identity('Unit'),
+        identity('Unit', { scope: true }),
         reference('Type', { mono: true, width: '140px' }),
         gameColumn,
         metric('starting', 'At start'),

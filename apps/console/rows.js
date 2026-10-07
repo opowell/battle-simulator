@@ -39,6 +39,21 @@ export function buildRows(catalog, values) {
     if (key) sessionsOf.set(key, (sessionsOf.get(key) ?? 0) + 1)
   }
 
+  // A unit narrowed to (`unit:"units:civ1/Militia"`) keeps the game it belongs
+  // to and the sides that start with it; its `unit` field is its own row id,
+  // prefixed, since a unit type can share an id with a scenario.
+  const unitOf = (u) => `units:${u.id}`
+  const unitsOf = new Map()
+  const unitsOfSide = new Map()
+  const sideName = new Map(catalog.sides.map((s) => [s.id, s.name]))
+  for (const u of catalog.units) {
+    unitsOf.set(u.game, [...(unitsOf.get(u.game) ?? []), unitOf(u)])
+    for (const side of u.owners) {
+      const key = `${u.game}/${side}`
+      unitsOfSide.set(key, [...(unitsOfSide.get(key) ?? []), unitOf(u)])
+    }
+  }
+
   // A game row's id IS its key: appfr narrows to a record by putting its id in
   // the scope term (`game:"chess"`), which every other row matches on `game`.
   // A scenario's is too (`scenario:"civ1/siege"`, matched on `scenario`), and
@@ -69,6 +84,7 @@ export function buildRows(catalog, values) {
       fog: g.fog,
       status: g.live ? 'loaded' : 'restart',
       scenario: scenariosOf.get(g.name) ?? [],
+      unit: unitsOf.get(g.name) ?? [],
     })),
 
     sessions: catalog.sessions.map((s) => {
@@ -120,7 +136,8 @@ export function buildRows(catalog, values) {
       art: { src: asset(u.imagePath), glyph: u.glyph ?? u.label[0] },
       starting: u.starting,
       onBoard: u.starting > 0,
-      sides: u.owners.join(', '),
+      sides: u.owners.map((side) => sideName.get(`${u.game}/${side}`) ?? side).join(', '),
+      unit: unitOf(u),
     })),
 
     sides: catalog.sides.map((s) => row('sides', 'Side', s, {
@@ -128,6 +145,7 @@ export function buildRows(catalog, values) {
       ref: s.side,
       art: gameArt(s.game),
       seat: s.seat,
+      unit: unitsOfSide.get(s.id) ?? [],
     })),
 
     agents: catalog.agents.map((a) => row('agents', 'Agent', a, {

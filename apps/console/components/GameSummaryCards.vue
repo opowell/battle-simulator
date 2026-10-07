@@ -25,13 +25,16 @@ const openSetup = useSetupOpener()
 /**
  * The games the query narrows to: `game:x` terms, in any alternative, not left
  * out. A game one of whose scenarios the query names gives way to that
- * scenario's card (ScenarioSummaryCards), which starts it the same ways.
+ * scenario's card (ScenarioSummaryCards), which starts it the same ways, and
+ * one of whose units it names to that unit's (UnitSummaryCards).
  */
 const named = computed(() => {
   const expr = shell.query.value.expr
   const wanted = namedIn(expr, 'game')
   const scenarios = namedIn(expr, 'scenario')
-  return props.games.filter((g) => wanted.has(g.record.name.toLowerCase()) && !g.fields.scenario.some((id) => scenarios.has(id.toLowerCase())))
+  const units = namedIn(expr, 'unit')
+  const yields = (g) => g.fields.scenario.some((id) => scenarios.has(id.toLowerCase())) || g.fields.unit.some((id) => units.has(id.toLowerCase()))
+  return props.games.filter((g) => wanted.has(g.record.name.toLowerCase()) && !yields(g))
 })
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`

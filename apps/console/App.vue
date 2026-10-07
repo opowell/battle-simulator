@@ -16,6 +16,7 @@ import RecordPanel from './components/RecordPanel.vue'
 import CreatePanel from './components/CreatePanel.vue'
 import GameSummaryCards from './components/GameSummaryCards.vue'
 import ScenarioSummaryCards from './components/ScenarioSummaryCards.vue'
+import UnitSummaryCards from './components/UnitSummaryCards.vue'
 import SessionPlay from './components/SessionPlay.vue'
 import SessionFrames from './components/SessionFrames.vue'
 import SetupPanel from './components/SetupPanel.vue'
@@ -277,6 +278,7 @@ function openCreate(entity) {
 const itemFor = (id) => opened.value.find((o) => o.id === id)
 const gameRows = computed(() => rows.value?.games ?? [])
 const scenarioRows = computed(() => rows.value?.scenarios ?? [])
+const unitRows = computed(() => rows.value?.units ?? [])
 const fileRows = computed(() => rows.value?.files ?? [])
 </script>
 
@@ -302,12 +304,13 @@ const fileRows = computed(() => rows.value?.files ?? [])
           @activate="openRow"
           @create="openCreate"
         >
-          <!-- Pressing a game or a scenario narrows to it (its type declares a
-               scope); every other row opens. The game or scenario itself then
+          <!-- Pressing a game, a scenario or a unit narrows to it (its type
+               declares a scope); every other row opens. The record itself then
                heads the cards. -->
           <template #cards-before>
             <GameSummaryCards :games="gameRows" @open="openRow" @changed="refresh" />
             <ScenarioSummaryCards :scenarios="scenarioRows" :files="fileRows" @open="openRow" @changed="refresh" />
+            <UnitSummaryCards :units="unitRows" @open="openRow" />
           </template>
           <template #actions>
             <button type="button" class="cx-btn cx-btn--quiet" :disabled="loading" title="Reload everything from the server" @click="refresh">

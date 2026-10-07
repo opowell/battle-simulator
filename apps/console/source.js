@@ -3,17 +3,19 @@
 // The catalog is small (a few hundred records), so the console fetches it whole
 // and filters, sorts and pages here, with appfr's own expression language and
 // facet matching. One departure: the scope terms appfr writes when narrowing to
-// a game or a scenario are `game:"cs"` and `scenario:"cs/dust2"`, and `:` is
+// a game, a scenario or a unit are `game:"cs"`, `scenario:"cs/dust2"` and
+// `unit:"units:cs/awp"`, and `:` is
 // containment, which would also take in csmini. A join key is matched EXACTLY
 // here — it names one record, never a family of them — under appfr's other
 // rules for a field: `-game:x` (a ⌘-press) leaves x out, and several positive
 // terms on one key in a group are any-of. A row without the key never matches a
 // term on it (appfr counts an unknown field as a match), so a scenario narrowed
-// to keeps its sessions and recordings, not every unit there is.
+// to keeps its sessions and recordings, not every unit there is (and a unit, its
+// game and the sides that start with it).
 
 import { columnsFor, cellValue, findSort, matchesExpression, matchesFacets, parseExpression } from 'header-content-layout'
 
-const SCOPE_FIELDS = ['game', 'scenario']
+const SCOPE_FIELDS = ['game', 'scenario', 'unit']
 
 /** The join key a term narrows on, or null for any other term. */
 function scopeFieldOf(term) {
