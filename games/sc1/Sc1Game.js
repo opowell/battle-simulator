@@ -862,7 +862,18 @@ export const Sc1Game = {
   // boxSelect: drag a box to pick up an army, then one click moves (or attacks with)
   // all of it — ordering two dozen units one at a time is not how this game is played.
   ui: { recolorTeamSprites: true, hideGridLines: true, showFacing: false, showRightSidebar: false,
-        boxSelect: true },
+        boxSelect: true,
+        // The "?" beside the game's name opens this; the help panel adds the map's mouse
+        // gestures (zoom, Cmd/Ctrl + drag to move it) under it on its own.
+        help: {
+          title: 'SC1',
+          sections: [
+            { heading: 'Objective', text: 'Destroy every enemy building. Your main base — Command Center, Hatchery or Nexus — is the one to protect.' },
+            { heading: 'Economy', text: 'Workers next to a mineral field gather minerals; next to your own refinery, extractor or assimilator they gather gas. Workers also build: stand one where the building should go and pick it from the orders. A finished building trains units — set its production from the orders.' },
+            { heading: 'Orders', text: 'Click a unit, then click where it should go or the enemy it should attack. Drag a box across the map to pick up a group; one click then moves or attacks with all of it.' },
+            { heading: 'Simultaneous turns', text: 'By default both sides give their orders at the same time. When everyone has ended the turn the orders resolve together and play back. Turn it off under Game settings to take turns instead.' },
+          ],
+        } },
   scenarios: [
     { id: 'tvz', name: 'Terran vs Zerg',    description: 'Biomech forces vs the Swarm',          config: { race1: 'terran',   race2: 'zerg' } },
     { id: 'pvt', name: 'Protoss vs Terran', description: 'Psionic warriors vs human marines',    config: { race1: 'protoss',  race2: 'terran' } },

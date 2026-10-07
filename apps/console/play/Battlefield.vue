@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useKeysLive } from './sessionScope.js';
+import { useDragPan } from './dragPan.js';
 import SchematicLayer    from './SchematicLayer.vue';
 import HtmlLayer         from './HtmlLayer.vue';
 import IsoLayer          from './IsoLayer.vue';
@@ -135,7 +136,8 @@ const showMenu = panelFlag('menu');
 const showHelp = panelFlag('help');
 // A unit in hand from the Add units panel ({ ownerId, type }): board clicks place it.
 const placingUnit = ref(null);
-const canShowHelp = computed(() => !!(ui.value?.help || KEYS.helpGroups(ui.value?.keys).length));
+// A zooming map always has something to say: its mouse gestures (HelpPanel's Map section).
+const canShowHelp = computed(() => !!(ui.value?.help || KEYS.helpGroups(ui.value?.keys).length || zoomEnabled.value));
 const menuProps = computed(() => ({
   serverErr: props.serverErr, gamesCount: props.gamesCount,
   showRuler: showRuler.value, showHpBars: showHpBars.value,
@@ -1113,6 +1115,16 @@ const viewCenter = computed(() => {
     x: clampAxis(center.value.x, w.w, stageW.value, tilePx.value, !!w.wrap),
     y: clampAxis(center.value.y, w.h, stageH.value, tilePx.value, false),
   };
+});
+
+// Grabbing the map: Cmd/Ctrl + drag, or a middle-button drag (see dragPan.js). It
+// starts from the centre as drawn — a clamped one, so a drag from the edge of the map
+// moves it at once rather than first winding back an unclamped centre.
+const dragPan = useDragPan({
+  enabled:   () => zoomEnabled.value,
+  tilePx:    () => tilePx.value,
+  center:    () => viewCenter.value ?? { x: props.field.world.w / 2, y: props.field.world.h / 2 },
+  setCenter: (c) => centerOn(c.x, c.y),
 });
 
 // ── world → screen transform ──────────────────────────────────
@@ -2706,7 +2718,9 @@ onUnmounted(() => {
       </div>
 
       <!-- Stage -->
-      <div ref="stageEl" class="bf-stage-area" :class="{ 'bf-stage-area--placing': placingUnit }" @wheel="handleWheel">
+      <div ref="stageEl" class="bf-stage-area"
+           :class="{ 'bf-stage-area--placing': placingUnit, 'bf-stage-area--panning': dragPan.panning.value }"
+           @wheel="handleWheel" @mousedown.capture="dragPan.onMousedown">
         <div v-if="forking" class="bf-fork-banner">
           <span>Exploring a forked line — not the real game</span>
           <span v-if="forkError" class="bf-fork-err">{{ forkError }}</span>
@@ -2852,7 +2866,7 @@ onUnmounted(() => {
   <GamePanels ref="gamePanels" v-model:open="openPanels"
     :menu="menuProps" :live-state="liveState" :game-def="gameDef"
     :ui="ui" :game="field.game" :teams="field?.teams ?? []"
-    :host-panels="hostPanels" :orders-title="isObserver ? 'Overview' : 'Orders'"
+    :host-panels="hostPanels" :map-zoom="zoomEnabled" :orders-title="isObserver ? 'Overview' : 'Orders'"
     :orders-subtitle="liveState?.phase ?? ''"
     @menu="onMenu" @arm="placingUnit = $event">
     <template #orders>
@@ -2908,6 +2922,7 @@ onUnmounted(() => {
 .bf-stage-area { flex: 1; position: relative; overflow: hidden; }
 /* A unit in hand from the Add units panel: the board takes it where clicked. */
 .bf-stage-area--placing, .bf-stage-area--placing :deep(*) { cursor: copy !important; }
+.bf-stage-area--panning, .bf-stage-area--panning :deep(*) { cursor: grabbing !important; }
 .bf-empty { padding: 12px 14px; font-size: 11px; color: var(--faint); }
 .bf-inspect-btn { margin: 0 14px 12px; width: calc(100% - 28px); }
 .bf-inspect-btn--on { border-color: var(--accent); color: var(--accent); }

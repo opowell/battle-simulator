@@ -32,6 +32,8 @@ const props = defineProps({
   ordersTitle: { type: String, default: 'Orders' },
   // ...and the phase of the turn it is giving them in, if the game has phases.
   ordersSubtitle: { type: String, default: '' },
+  // The board zooms and pans — the help lists the mouse gestures that move it.
+  mapZoom: { type: Boolean, default: false },
 });
 const emit = defineEmits(['update:open', 'menu', 'arm']);
 
@@ -88,7 +90,7 @@ defineExpose({
       <GameSettingsPanel :live-state="liveState" :game-def="gameDef" @close="close('game-settings')"/>
     </template>
     <template #help>
-      <HelpPanel :ui="ui"/>
+      <HelpPanel :ui="ui" :map-zoom="mapZoom"/>
     </template>
     <template #add-units>
       <AddUnitsPanel ref="addUnits" :live-state="liveState" :teams="teams" :recolor="!!ui?.recolorTeamSprites" @arm="emit('arm', $event)"/>
