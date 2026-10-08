@@ -236,7 +236,10 @@ export function resolveTimeline({ game, turnStart, plans, rng, orderKey, diffEve
 
     // Kinetic move: velocity toward the destination, exact arrival event.
     const b = action.unitId ? bodies.get(action.unitId) : null;
-    const from = pt(action.from), to = pt(action.to);
+    // An order that names only where it goes (a clicked point — combatmission's moves
+    // carry no `from`) starts from wherever the body stands when the order starts.
+    const to = pt(action.to);
+    const from = pt(action.from) ?? (b && to ? evalMotion(b.motion, t) : null);
     if (b && from && to && dur > 0 && !deathAt.has(action.unitId)) {
       const p = evalMotion(b.motion, t);
       const speed = Math.hypot(to.x - from.x, to.y - from.y) / dur;

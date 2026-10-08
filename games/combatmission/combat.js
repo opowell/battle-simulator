@@ -5,7 +5,9 @@ import { num } from '../coord.js';
 // Base hit chance before modifiers
 const BASE_HIT = 65;
 
-export function calcHitChance(shooter, target, board) {
+// `penalty` lowers the chance further — area fire (see rules.js) shoots at a spot,
+// not at the man, and is that much likelier to miss.
+export function calcHitChance(shooter, target, board, penalty = 0) {
   const dist = Math.sqrt(
     (num(shooter.position.x) - num(target.position.x)) ** 2 +
     (num(shooter.position.y) - num(target.position.y)) ** 2
@@ -14,11 +16,12 @@ export function calcHitChance(shooter, target, board) {
   chance -= Math.max(0, dist - 1) * 5;                    // range penalty
   chance -= getCoverBonus(board, target.position.x, target.position.y); // target cover
   chance -= shooter.suppression * 5;                       // shooter suppression
-  return Math.max(10, Math.min(90, Math.round(chance)));
+  chance -= penalty;
+  return Math.max(penalty ? 5 : 10, Math.min(90, Math.round(chance)));
 }
 
-export function resolveFire(shooter, target, board, rng) {
-  const hitChance = calcHitChance(shooter, target, board);
+export function resolveFire(shooter, target, board, rng, penalty = 0) {
+  const hitChance = calcHitChance(shooter, target, board, penalty);
   const roll = Math.floor(rng() * 100) + 1;
   const hit = roll <= hitChance;
 

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CombatMissionGame } from './index.js';
 import { num } from '../coord.js';
+import { ticksLeft, apLeft } from './rules.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
 
@@ -26,10 +27,11 @@ test('combatmission: both sides have units', () => {
   assert.ok(state.units.some(u => u.ownerId === 'axis'   && u.alive));
 });
 
-test('combatmission: units start with AP', () => {
+test('combatmission: units start with a turn to spend (a minute, or AP in discrete time)', () => {
   const state = CombatMissionGame.createInitialState(players());
-  const allied = state.units.filter(u => u.ownerId === 'allied');
-  assert.ok(allied.every(u => u.perTurn.ap > 0));
+  assert.ok(state.units.every(u => ticksLeft(u) > 0));
+  const discrete = CombatMissionGame.createInitialState(players(), { time: 'discrete' });
+  assert.ok(discrete.units.every(u => apLeft(u) > 0));
 });
 
 test('combatmission: allied player goes first', () => {
@@ -78,7 +80,7 @@ test('combatmission: end-turn restores AP for the next player', () => {
   const next = endTurn(noAP, 'allied');
   // Axis units should have full AP now
   const axisUnits = next.units.filter(u => u.ownerId === 'axis');
-  assert.ok(axisUnits.every(u => u.perTurn.ap > 0));
+  assert.ok(axisUnits.every(u => ticksLeft(u) > 0));
 });
 
 test('combatmission: move updates unit position', () => {
@@ -93,11 +95,11 @@ test('combatmission: move updates unit position', () => {
   assert.equal(num(moved.position.y), move.to.y);
 });
 
-test('combatmission: skip-unit zeroes AP for that unit', () => {
+test('combatmission: skip-unit spends the rest of that unit\'s turn', () => {
   const state = CombatMissionGame.createInitialState(players());
   const skip  = CombatMissionGame.getLegalActions(state, 'allied').find(a => a.type === 'skip-unit');
   const next  = CombatMissionGame.applyActions(state, [{ playerId: 'allied', action: skip }]);
-  assert.equal(next.units.find(u => u.id === skip.unitId).perTurn.ap, 0);
+  assert.equal(ticksLeft(next.units.find(u => u.id === skip.unitId)), 0);
 });
 
 // ---------------------------------------------------------------------------

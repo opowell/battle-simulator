@@ -1,15 +1,17 @@
 import { unitStrengthEval } from '../evalHelpers.js';
 import { UNIT_DEFS, createUnit } from './units.js';
 import { createMap, createMapFromShapes, renderMap, TERRAIN, isPassableContinuous, getMoveCostContinuous } from './map.js';
-import { getReachable } from './grid.js';
-import { hasLOS } from './los.js';
-import { resolveFire } from './combat.js';
+import { resolveSpaceTime } from '../spacetime.js';
+import {
+  getLegalActions, getSearchActions, isActionLegal, applyActions, getActionDuration,
+  getProjectileSpeed, actionKey, freshPerTurn, reachLeft, spaceTimeOf, sees,
+  ticksLeft, apLeft, TICKS_PER_SECOND,
+} from './rules.js';
 import { getCombatMissionBelief } from './belief.js';
 import { SHAPE_SCENARIOS } from './scenarios.js';
 import { terrainArt, unitArt } from './art.js';
 import { tilesToShapes } from '../terrainShapes.js';
-import { lineCost, isClearOfUnits, latticeActions } from '../continuousMove.js';
-import { parsePos, num, posToWire } from '../coord.js';
+import { num, posToWire } from '../coord.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
 import { tableUnits, whole } from '../../engine/foreignUnits.js';
 
@@ -63,161 +65,6 @@ function resolveScenario(scenId, players) {
   return { board: createMapFromShapes(scen), units: deployScenario(scen, players) };
 }
 
-// ── Legal actions ─────────────────────────────────────────────────────────────
-
-function getLegalActions(state, playerId) {
-  const { units, board } = state;
-  const myUnits = units.filter(u => u.alive && u.ownerId === playerId && u.perTurn.ap > 0);
-  const actions = [];
-
-  for (const unit of myUnits) {
-    const def = UNIT_DEFS[unit.type];
-
-    // Move (1 AP)
-    const reachable = getReachable(board, unit.position, def.moveRange, units);
-    for (const to of reachable) {
-      actions.push({ type: 'move', unitId: unit.id, to });
-    }
-
-    // Fire (1 AP) — target must be in range and have LOS
-    const enemies = units.filter(u => u.alive && u.ownerId !== playerId);
-    for (const enemy of enemies) {
-      const dist = Math.sqrt(
-        (num(enemy.position.x) - num(unit.position.x)) ** 2 +
-        (num(enemy.position.y) - num(unit.position.y)) ** 2
-      );
-      if (dist <= def.range && hasLOS(board, unit.position, enemy.position)) {
-        actions.push({ type: 'fire', unitId: unit.id, targetId: enemy.id });
-      }
-    }
-
-    actions.push({ type: 'skip-unit', unitId: unit.id });
-  }
-
-  actions.push({ type: 'end-turn', unitId: '__player__' });
-  return actions;
-}
-
-// ── isMoveLegal ───────────────────────────────────────────────────────────────
-// Geometric fallback for the human UI's continuous click-to-move (see the doom
-// equivalent in DoomGame.js and engine/ActionValidator.js): getLegalActions above
-// still enumerates a discrete candidate set for AI search (grid.js's weighted
-// Dijkstra), but a player's move can target any point their click resolves to —
-// legality here is a straight-line movement-cost/wall/occupancy check (still
-// respecting woods/hedgerow slowdown via getMoveCostContinuous) instead of exact
-// membership in that candidate set.
-function isMoveLegal(state, playerId, action) {
-  const { units, board } = state;
-  const unit = units.find(u => u.id === action.unitId);
-  if (!unit || !unit.alive || unit.ownerId !== playerId || unit.perTurn.ap <= 0) return false;
-  const def = UNIT_DEFS[unit.type];
-  // Continuous geometry runs in float64; convert the authoritative BigNumber position
-  // and the incoming wire coordinate to Number here (see games/coord.js §2).
-  const px = num(unit.position.x), py = num(unit.position.y);
-  const x = num(action.to.x), y = num(action.to.y);
-  if (!isPassableContinuous(board, x, y)) return false;
-  const cost = lineCost(px, py, x, y,
-    (qx, qy) => isPassableContinuous(board, qx, qy) ? getMoveCostContinuous(board, qx, qy) : Infinity);
-  if (cost > def.moveRange) return false;
-  if (!isClearOfUnits(x, y, units, unit.id)) return false;
-  return true;
-}
-
-// Dispatcher for the engine's continuous-action fallback (engine/ActionValidator.js):
-// only 'move' carries a continuous, not-pre-enumerated destination in Combat Mission.
-function isActionLegal(state, playerId, action) {
-  return action.type === 'move' ? isMoveLegal(state, playerId, action) : false;
-}
-
-// Continuous action set for the ObscuroAgent's tree search: each mover's discrete tile
-// moves are replaced by a lattice of exact reachable points (see games/continuousMove.js),
-// so the AI positions freely like a human. Fire/skip/end-turn pass through unchanged.
-function getSearchActions(state, playerId, res) {
-  const units = state.units;
-  return latticeActions(getLegalActions(state, playerId), {
-    type: 'move', point: 'to',
-    origin: a => { const u = units.find(x => x.id === a.unitId); return u ? { x: num(u.position.x), y: num(u.position.y), range: UNIT_DEFS[u.type].moveRange } : null; },
-    isLegal: (a, x, y) => isMoveLegal(state, playerId, { unitId: a.unitId, to: { x, y } }),
-  }, res);
-}
-
-// ── Apply actions ─────────────────────────────────────────────────────────────
-
-function applyActions(state, playerActions, rng = Math.random) {
-  const { playerId, action } = playerActions[0];
-  let { units } = state;
-  const playerIds = state.players.map(p => p.id);
-  const currentIdx = playerIds.indexOf(playerId);
-
-  if (action.type === 'end-turn') {
-    const nextIdx = (currentIdx + 1) % playerIds.length;
-    const nextPlayerId = playerIds[nextIdx];
-    const newTurn = nextIdx === 0 ? state.turnNumber + 1 : state.turnNumber;
-
-    // Restore AP and decay suppression for the player who is about to move
-    units = units.map(u => {
-      if (u.ownerId !== nextPlayerId) return u;
-      return {
-        ...u,
-        perTurn: { ap: UNIT_DEFS[u.type].ap },
-        suppression: Math.max(0, u.suppression - 1),
-      };
-    });
-
-    return {
-      ...state, units,
-      activePlayers: [nextPlayerId],
-      turnNumber: newTurn,
-      lastActions: playerActions,
-    };
-  }
-
-  if (action.type === 'move') {
-    // action.to: decimal strings (human continuous click) or integer tile (AI); store
-    // as the authoritative BigNumber position (see games/coord.js).
-    const to = parsePos(action.to);
-    units = units.map(u =>
-      u.id === action.unitId
-        ? { ...u, position: to, perTurn: { ...u.perTurn, ap: u.perTurn.ap - 1 } }
-        : u
-    );
-    return { ...state, units, lastActions: playerActions };
-  }
-
-  if (action.type === 'fire') {
-    const shooter = units.find(u => u.id === action.unitId);
-    const target  = units.find(u => u.id === action.targetId);
-    if (!shooter || !target) return state;
-
-    const result = resolveFire(shooter, target, state.board, rng);
-
-    units = units.map(u => {
-      if (u.id === action.unitId) {
-        return { ...u, perTurn: { ...u.perTurn, ap: u.perTurn.ap - 1 } };
-      }
-      if (u.id === action.targetId) {
-        const newHp = Math.max(0, u.hp - result.damage);
-        return { ...u, hp: newHp, alive: newHp > 0, suppression: u.suppression + result.targetSuppression };
-      }
-      return u;
-    });
-
-    return {
-      ...state, units, lastActions: playerActions,
-      gameSpecific: { ...state.gameSpecific, lastCombat: result },
-    };
-  }
-
-  if (action.type === 'skip-unit') {
-    units = units.map(u =>
-      u.id === action.unitId ? { ...u, perTurn: { ...u.perTurn, ap: 0 } } : u
-    );
-    return { ...state, units, lastActions: playerActions };
-  }
-
-  return state;
-}
-
 // ── Win condition ─────────────────────────────────────────────────────────────
 
 function getResult(state) {
@@ -245,11 +92,14 @@ function renderState(state) {
     }).join(', ');
   };
 
-  const combatLine = gameSpecific?.lastCombat
-    ? `Last fire: ${gameSpecific.lastCombat.hit ? 'HIT' : 'MISS'} ` +
-      `(roll ${gameSpecific.lastCombat.roll}/${gameSpecific.lastCombat.hitChance}% needed) ` +
-      `dmg=${gameSpecific.lastCombat.damage}`
-    : '';
+  const lc = gameSpecific?.lastCombat;
+  const combatLine = !lc ? ''
+    : lc.area
+      ? `Last fire: area fire at (${lc.at.x}, ${lc.at.y}) — ` +
+        (lc.hits.length ? lc.hits.map(h => `${h.targetId} ${h.hit ? `HIT dmg=${h.damage}` : 'MISS'}`).join(', ') : 'nobody there')
+      : `Last fire: ${lc.hit ? 'HIT' : 'MISS'} ` +
+        `(roll ${lc.roll}/${lc.hitChance}% needed) ` +
+        `dmg=${lc.damage}`;
 
   return [
     `═══ Turn ${turnNumber} — ${activePlayers[0]} ═══`,
@@ -266,7 +116,12 @@ function renderState(state) {
 
 function createInitialState(players, config = {}) {
   const { board, units: scenUnits } = resolveScenario(config.scenario, players);
-  const units = config.units ?? scenUnits;
+  // The time axis (discrete AP vs a continuous minute — see rules.js) comes from the
+  // session's `time` option over the game's default; sequential vs we-go play is the
+  // engine's own switch (simultaneousTurns), read here so the rules agree with it.
+  const st = { ...resolveSpaceTime(CombatMissionGame, config),
+    play: (config.play === 'simultaneous' || config.simultaneousTurns) ? 'simultaneous' : 'sequential' };
+  const units = (config.units ?? scenUnits).map(u => ({ ...u, perTurn: freshPerTurn(st, UNIT_DEFS[u.type]) }));
   return {
     gameName: 'CombatMission',
     turnNumber: 1,
@@ -277,6 +132,9 @@ function createInitialState(players, config = {}) {
     units,
     lastActions: null,
     gameSpecific: {
+      spacetime: st,
+      // Sides that have ended the current turn (it closes when all have — rules.js).
+      turnEnded: [],
       lastCombat: null,
       fogOfWar: config.fogOfWar ?? false,
       startRoster: units.map(u => ({
@@ -292,17 +150,10 @@ function createInitialState(players, config = {}) {
 // ── Fog of war ────────────────────────────────────────────────────────────────
 
 function getVisibleState(state, playerId) {
-  const VISION = 5;
   const myUnits = state.units.filter(u => u.alive && u.ownerId === playerId);
   return {
     ...state,
-    units: state.units.filter(u =>
-      u.ownerId === playerId ||
-      myUnits.some(m =>
-        Math.max(Math.abs(num(m.position.x) - num(u.position.x)), Math.abs(num(m.position.y) - num(u.position.y))) <= VISION &&
-        hasLOS(state.board, m.position, u.position)
-      )
-    ),
+    units: state.units.filter(u => u.ownerId === playerId || myUnits.some(m => sees(state.board, m, u))),
   };
 }
 
@@ -371,9 +222,11 @@ function toGrid(state) {
 
   // Continuous unit channel: real (possibly non-integer) positions as decimal strings
   // (see games/coord.js), built directly from state.units.
+  const st = spaceTimeOf(state);
   const unitList = (units ?? []).filter(u => u.alive).map(u => {
     const p = posToWire(u.position);
     const art = unitArt(u.type, unitHeading(state, u));
+    const def = UNIT_DEFS[u.type];
     return {
       // Top-down silhouette (tank hull + turret, a squad's men…) — see art.js.
       ...(art ?? {}),
@@ -383,7 +236,13 @@ function toGrid(state) {
       hp:        u.hp,
       maxHp:     u.maxHp,
       unitName:  UNIT_DEFS[u.type].label,
-      moveRange: UNIT_DEFS[u.type].moveRange,
+      // How far ONE move may still go this turn (the move circle, a group's formation
+      // reach) — 0 once the unit's budget is spent.
+      moveRange: reachLeft(st, u),
+      // What is left of the turn's budget: seconds of the minute, or action points.
+      stats: st.time === 'continuous'
+        ? { time: `${ticksLeft(u) / TICKS_PER_SECOND}s`, range: def.range }
+        : { AP: `${apLeft(u)}/${def.ap}`, range: def.range },
       portraitPath: UNIT_PORTRAITS.has(u.type) ? `/images/combatmission/units/${u.type}` : undefined,
     };
   });
@@ -428,26 +287,6 @@ function unitHeading(state, u) {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
-function getActionDuration(state, action) {
-  if (action.type === 'move') {
-    const unit = state.units.find(u => u.id === action.unitId);
-    if (!unit) return 1;
-    const from = unit.position;
-    const dist = Math.max(Math.abs(num(action.to.x) - num(from.x)), Math.abs(num(action.to.y) - num(from.y)));
-    return dist / (UNIT_DEFS[unit.type]?.moveRange ?? 2);
-  }
-  if (action.type === 'fire') {
-    const unit   = state.units.find(u => u.id === action.unitId);
-    const target = state.units.find(u => u.id === action.targetId);
-    if (!unit || !target) return 1;
-    const dx = num(target.position.x) - num(unit.position.x);
-    const dy = num(target.position.y) - num(unit.position.y);
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    return dist / 15;  // bullet travel at 15 tiles/sec
-  }
-  return 1;
-}
-
 export const CombatMissionGame = {
   // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
   // minus the enemy's. See games/evalHelpers.js.
@@ -459,13 +298,34 @@ export const CombatMissionGame = {
     { id: 'hill_woods',  name: 'Hill & Woods',  description: 'Shape terrain — scattered oval woods over open hills', config: { scenario: 'hill_woods' } },
     { id: 'ambush',      name: 'Ambush',        description: 'Platoon-level infantry ambush on the original mixed-terrain grid', config: { scenario: 'ambush' } },
   ],
+  // Combat Mission is fought under fog, both sides plotting at once, with each unit's
+  // minute spent in continuous time (rules.js). `spacetime` is the time axis for any
+  // session that doesn't name one; the setup screen's defaults are the options below
+  // plus uiDefaults (simultaneous turns is an engine option — api-server's
+  // ENGINE_OPTIONS — so the form takes its default from there); defaultConfig gives an
+  // API-made session the same we-go play.
+  spacetime: { space: 'continuous', time: 'continuous' },
+  defaultConfig: { simultaneousTurns: true },
+  uiDefaults: { config: { simultaneousTurns: true } },
   gameOptions: [
     MAP_ZOOM_OPTION,
-    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: false },
+    { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: true },
+    { id: 'time', label: 'Time', description: 'Continuous (each unit spends a minute of real time per turn — moving takes as long as the walk) or discrete (two action points a turn)', type: 'select', default: 'continuous',
+      options: [{ value: 'continuous', label: 'Continuous (a minute per turn)' }, { value: 'discrete', label: 'Discrete (2 AP per turn)' }] },
   ],
+  // boxSelect: drag a box over your units to take them all; a click then moves the group
+  // (keeping its shape) or fires every member that can at the enemy clicked.
+  // Fire is aimed on the map (targetAim): an enemy token fires at that unit, anywhere
+  // else is area fire at that spot.
+  ui: {
+    boxSelect: true,
+    aimedActionTypes: ['fire'],
+    targetAim: { fire: { button: 'Fire…', hint: 'Click an enemy to fire at it, or the ground to area-fire there' } },
+  },
   createInitialState,
-  createSetupUnit(_state, { id, ownerId, type, position }) {
-    return UNIT_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
+  createSetupUnit(state, { id, ownerId, type, position }) {
+    if (!UNIT_DEFS[type] || !position) return null;
+    return { ...createUnit(id, type, ownerId, position), perTurn: freshPerTurn(spaceTimeOf(state), UNIT_DEFS[type]) };
   },
   // Units from other games (engine/foreignUnits.js). The conversion factor is the
   // rifle squad: 10 hp, 5 attack, range 5, 2 moves; armour is read one higher than
@@ -491,6 +351,8 @@ export const CombatMissionGame = {
   renderState,
   getVisibleState,
   getActionDuration,
+  getProjectileSpeed,
+  actionKey,
   toGrid,
 
   sampleWorlds(observation, playerId, n, rng = Math.random) {
