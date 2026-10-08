@@ -1,9 +1,23 @@
-import { sidesEval } from '../evalHelpers.js';
 import { generateMap, getLargestConnectedRegion } from './map.js';
 import { getKDiceBelief, visibleTerritoryIds } from './belief.js';
 import { hexLayoutBounds, territoryBorders } from '../mapTypes/hexagon.js';
+import { MAX_DICE, winProbability } from './odds.js';
+import { KDiceAgent, evaluatePosition } from './agent.js';
 
-const MAX_DICE = 8;
+// The most dice a player may keep in reserve (DICE WARS' STOCK_MAX — see stockMaxOf).
+export const DEFAULT_STOCK_MAX = 64;
+
+/**
+ * The reserve cap a session plays with: the `stockMax` game option when it is a
+ * usable number, else DICE WARS' own 64. Stored on the state (gameSpecific.stockMax)
+ * so the rules, the AI and the leaderboard all read one value.
+ */
+function stockMaxOf(config = {}) {
+  const v = config.stockMax;
+  if (v === '' || v == null) return DEFAULT_STOCK_MAX;
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_STOCK_MAX;
+}
 
 function shuffle(arr, rng) {
   const a = [...arr];
@@ -30,8 +44,76 @@ function cloneState(state) {
     gameSpecific: {
       ...state.gameSpecific,
       eliminatedPlayers: [...state.gameSpecific.eliminatedPlayers],
+      stock: { ...(state.gameSpecific.stock ?? {}) },
     },
   };
+}
+
+/**
+ * A battle with its outcome already decided: the state after `action` either took
+ * the territory (`won`) or failed. The dice themselves are rolled by applyActions;
+ * this is the part both it and getChanceOutcomes (the search's view of the same
+ * attack, one branch per outcome) share, so the two can never disagree about what
+ * winning or losing does to the board.
+ */
+function resolveAttack(state, playerId, action, won) {
+  const newState = cloneState(state);
+  const gs = newState.gameSpecific;
+  const { territories } = newState.board;
+  const from = territories[action.from];
+  const to = territories[action.to];
+  const defenderId = to.owner;
+  if (won) {
+    // Attacker's dice - 1 move into the captured territory; attacker territory drops to 1
+    territories[action.to] = { ...to, owner: playerId, dice: Math.max(1, from.dice - 1) };
+    territories[action.from] = { ...from, dice: 1 };
+    const defStillHasTerr = Object.values(territories).some(t => t.owner === defenderId);
+    if (!defStillHasTerr && defenderId != null) {
+      gs.eliminatedPlayers = [...gs.eliminatedPlayers, defenderId];
+    }
+  } else {
+    // Attacker loses all but one die; defender unchanged
+    territories[action.from] = { ...from, dice: 1 };
+  }
+  newState.lastActions = [{ playerId, action }];
+  return newState;
+}
+
+// Whether an attack can be resolved at all on this state. Under fog, ObscuroAgent
+// applies legal actions (derived from the TRUE state) to belief-sampled worlds during
+// search; a sampled world can disagree with the acting territory (it no longer
+// belongs to playerId, or the target vanished), and such an attack is a no-op rather
+// than a crash — mirroring aow/civ1's attack-handler guards.
+function attackIsLive(state, playerId, action) {
+  const from = state.board.territories[action.from];
+  const to = state.board.territories[action.to];
+  return !!from && !!to && from.owner === playerId && to.owner !== playerId && from.dice >= 2;
+}
+
+/**
+ * Reinforcement at the end of a turn, as DICE WARS deals it (gamedesign.jp's
+ * game.js, start_supply / do_supply): the turn's income — the size of the largest
+ * connected region — is added to the player's stored dice, the total is capped at
+ * the reserve maximum, and then dice are taken from that pool ONE AT A TIME onto a
+ * territory picked uniformly from those still under MAX_DICE, until the pool is
+ * empty or every territory is full. Whatever could not be placed stays stored for
+ * the next turn. Mutates `territories` and returns { placed: {id: n}, stock }.
+ */
+function supplyDice(territories, playerId, income, stock, stockMax, rng) {
+  let pool = Math.min(stockMax, stock + income);
+  const placed = {};
+  const open = Object.values(territories)
+    .filter(t => t.owner === playerId && t.dice < MAX_DICE).map(t => t.id);
+  while (pool > 0 && open.length) {
+    const k = Math.floor(rng() * open.length);
+    const tid = open[k];
+    const t = territories[tid];
+    territories[tid] = { ...t, dice: t.dice + 1 };
+    placed[tid] = (placed[tid] ?? 0) + 1;
+    pool--;
+    if (territories[tid].dice >= MAX_DICE) open.splice(k, 1);
+  }
+  return { placed, stock: pool };
 }
 
 // ── Game definition ───────────────────────────────────────────────────────────
@@ -75,6 +157,10 @@ function createInitialState(players, config = {}) {
       lastBattle: null,
       eliminatedPlayers: [],
       fogOfWar: config.fogOfWar ?? false,
+      // Dice earned but not yet placed, per player (see supplyDice), and the most a
+      // player may hold back.
+      stock: Object.fromEntries(players.map(p => [p.id, 0])),
+      stockMax: stockMaxOf(config),
     },
   };
 }
@@ -108,18 +194,12 @@ function applyActions(state, playerActions, rng = Math.random) {
   const { territories, adjacency } = newState.board;
 
   if (action.type === 'attack') {
-    const from = territories[action.from];
-    const to = territories[action.to];
-    // Defensive guard: under fog, ObscuroAgent applies legal actions (derived
-    // from the TRUE state) to belief-sampled worlds during search. A sampled
-    // world can occasionally disagree with the acting territory (e.g. it no
-    // longer belongs to playerId, or the target vanished) — bail out rather
-    // than crash or corrupt state, mirroring aow/civ1's attack-handler guards.
-    if (!from || !to || from.owner !== playerId || to.owner === playerId) {
+    if (!attackIsLive(state, playerId, action)) {
       newState.lastActions = playerActions;
       return newState;
     }
-    const defenderId = to.owner;
+    const from = territories[action.from];
+    const to = territories[action.to];
 
     const attackerRolls = rollDice(from.dice, rng);
     const defenderRolls = rollDice(to.dice, rng);
@@ -127,22 +207,8 @@ function applyActions(state, playerActions, rng = Math.random) {
     const defenderSum = defenderRolls.reduce((a, b) => a + b, 0);
     const won = attackerSum > defenderSum;
 
-    if (won) {
-      // Attacker's dice - 1 move into the captured territory; attacker territory drops to 1
-      const moveIn = Math.max(1, from.dice - 1);
-      territories[action.to] = { ...to, owner: playerId, dice: moveIn };
-      territories[action.from] = { ...from, dice: 1 };
-
-      const defStillHasTerr = Object.values(territories).some(t => t.owner === defenderId);
-      if (!defStillHasTerr) {
-        gs.eliminatedPlayers = [...gs.eliminatedPlayers, defenderId];
-      }
-    } else {
-      // Attacker loses all but one die; defender unchanged
-      territories[action.from] = { ...from, dice: 1 };
-    }
-
-    gs.lastBattle = {
+    const resolved = resolveAttack(state, playerId, action, won);
+    resolved.gameSpecific.lastBattle = {
       from: action.from,
       to: action.to,
       attackerRolls,
@@ -157,37 +223,32 @@ function applyActions(state, playerActions, rng = Math.random) {
     // _stepDiscrete's `playerActions.push`), so mutating it here is how the
     // battle's outcome ends up visible in the game log after the fact rather
     // than only in the transient (next-turn-clearing) gameSpecific.lastBattle.
-    action.result = { attackerRolls, defenderRolls, attackerSum, defenderSum, won };
+    // The client plays the roll back from here too, before the territory changes
+    // colour (see SessionView's dice-roll beat).
+    action.result = {
+      attackerRolls, defenderRolls, attackerSum, defenderSum, won,
+      territories: territoryLooks(resolved, [action.from, action.to]),
+    };
+    resolved.lastActions = playerActions;
+    return resolved;
   }
 
   else if (action.type === 'end-turn') {
-    // Bonus dice count = largest connected region size - 1, but distributed
-    // randomly across every territory the player owns (not just that region).
+    // Income = the largest connected region; it joins the reserve, and the reserve is
+    // dealt out at random (supplyDice — DICE WARS' rule, which KDice kept).
     const region = getLargestConnectedRegion(playerId, territories, adjacency);
-    let bonusDice = Math.max(0, region.length - 1);
-
-    const owned = Object.values(territories).filter(t => t.owner === playerId).map(t => t.id);
-    const ownedShuffled = shuffle(owned, rng);
-    const reinforced = new Set();
-    let idx = 0;
-    let passes = 0;
-    while (bonusDice > 0 && passes < ownedShuffled.length) {
-      const tid = ownedShuffled[idx % ownedShuffled.length];
-      if (territories[tid].dice < MAX_DICE) {
-        territories[tid] = { ...territories[tid], dice: territories[tid].dice + 1 };
-        reinforced.add(tid);
-        bonusDice--;
-        passes = 0;
-      } else {
-        passes++;
-      }
-      idx++;
-    }
+    const stockMax = gs.stockMax ?? DEFAULT_STOCK_MAX;
+    const { placed, stock } = supplyDice(
+      territories, playerId, region.length, gs.stock?.[playerId] ?? 0, stockMax, rng);
+    gs.stock = { ...(gs.stock ?? {}), [playerId]: stock };
 
     // Stamp which territories got a bonus die onto the action (same trick as the
     // attack branch's action.result — see its comment) so the client can flash
     // them once, in one place, without re-deriving the diff from board state.
-    action.result = { reinforced: [...reinforced] };
+    action.result = {
+      reinforced: Object.keys(placed), income: region.length, stock,
+      territories: territoryLooks(newState, Object.keys(placed)),
+    };
 
     // Advance to next active player
     const activePlayers = newState.players
@@ -253,8 +314,9 @@ function renderState(state) {
     }
     const owned = Object.values(territories).filter(t => t.owner === p.id);
     const totalDice = owned.reduce((s, t) => s + t.dice, 0);
+    const stored = gameSpecific.stock?.[p.id] ?? 0;
     const mark = p.id === activeId ? ' ◄' : '';
-    lines.push(`  ${playerLabel(p.id)} ${p.name}: ${owned.length} territories, ${totalDice} dice${mark}`);
+    lines.push(`  ${playerLabel(p.id)} ${p.name}: ${owned.length} territories, ${totalDice} dice${stored ? `, ${stored} stored` : ''}${mark}`);
   }
 
   // Last battle
@@ -331,6 +393,71 @@ function getActionDuration(_state, action) {
   return 1;
 }
 
+/**
+ * The leaderboard: every player's territories, dice on the board, dice stored, and
+ * largest connected region (what their next reinforcement is), best first — the
+ * players still in by territories then dice, then the eliminated, most recently out
+ * first. Read from whatever state it is given, so under fog (a viewer's filtered
+ * state) the counts are of the territories that viewer can see, and say so.
+ */
+export function standings(state) {
+  const { players, board, gameSpecific } = state;
+  const { territories, adjacency } = board;
+  const out = gameSpecific.eliminatedPlayers ?? [];
+  const partial = Object.values(territories).some(t => t.owner == null);
+  const rows = players.map((p, seat) => {
+    const owned = Object.values(territories).filter(t => t.owner === p.id);
+    return {
+      playerId: p.id,
+      seat,
+      out: out.includes(p.id),
+      values: {
+        territories: owned.length,
+        dice: owned.reduce((n, t) => n + (t.dice ?? 0), 0),
+        stock: gameSpecific.stock?.[p.id] ?? 0,
+        region: getLargestConnectedRegion(p.id, territories, adjacency).length,
+      },
+    };
+  });
+  rows.sort((a, b) => {
+    if (a.out !== b.out) return a.out ? 1 : -1;
+    if (a.out) return out.indexOf(b.playerId) - out.indexOf(a.playerId);
+    return (b.values.territories - a.values.territories)
+      || (b.values.dice + b.values.stock - a.values.dice - a.values.stock)
+      || (a.seat - b.seat);
+  });
+  return {
+    title: 'Leaderboard',
+    columns: [
+      { key: 'territories', label: 'Land', title: 'Territories held' },
+      { key: 'dice', label: 'Dice', title: 'Dice on the board' },
+      { key: 'stock', label: 'Stored', title: `Dice in reserve, placed when there is room (at most ${gameSpecific.stockMax ?? DEFAULT_STOCK_MAX})` },
+      { key: 'region', label: 'Region', title: 'Largest connected region: the dice earned at the end of the turn' },
+    ],
+    rows: rows.map(({ seat, ...r }) => r),
+    note: partial ? 'Counts are of the territories you can see.' : null,
+  };
+}
+
+// How a territory's token is drawn for a stack of `dice` (see toGrid's comments).
+function tokenLook(dice) {
+  return { label: String(dice), pips: dice, sizeFrac: 1.35 + 1.15 * ((dice - 1) / (MAX_DICE - 1)) };
+}
+
+// What each of `ids` looks like right after an action: its owner and its token. Stamped
+// on the action's result so a client playing a bundle of actions back can show each
+// territory as it was at THAT point, not jump to the bundle's final board (see
+// SessionView's colour holds) — a territory taken twice in one AI round would
+// otherwise show its last owner before the battle that gave it to them.
+function territoryLooks(state, ids) {
+  const out = {};
+  for (const id of ids) {
+    const t = state.board.territories[id];
+    if (t) out[id] = { owner: t.owner, token: tokenLook(t.dice) };
+  }
+  return out;
+}
+
 // Each territory renders as a blob of colored hexes (owner's team colour on
 // every hex it owns — see SchematicLayer's 'team' tile-colour sentinel),
 // with a single dice-count "unit" token anchored at the territory's capital
@@ -370,6 +497,9 @@ function toGrid(state) {
         glyph: isCapital && !hidden ? String(t.dice) : '',
         unitId: isCapital ? t.id : undefined,
         unitName: isCapital && !hidden ? String(t.dice) : '',
+        // The count as the token's text (what a colour hold keeps showing — see
+        // SessionView's holdToken), the same as Risk's army count.
+        label: isCapital && !hidden ? String(t.dice) : '',
         hp: isCapital && !hidden ? t.dice : undefined,
         maxHp: MAX_DICE,
         // The stack, drawn rather than spelled: a dot per die under the token, and a
@@ -386,7 +516,7 @@ function toGrid(state) {
         // about half its blob, so the count is readable and the stack still
         // grows visibly with it.
         pips: isCapital && !hidden ? t.dice : undefined,
-        sizeFrac: isCapital && !hidden ? 1.35 + 1.15 * ((t.dice - 1) / (MAX_DICE - 1)) : undefined,
+        sizeFrac: isCapital && !hidden ? tokenLook(t.dice).sizeFrac : undefined,
       });
     }
   }
@@ -415,15 +545,43 @@ function toGrid(state) {
     grid: 'hexagon', hexSize,
     cells,
     territoryBorders: territoryBorderList,
+    // The leaderboard panel (apps/console/play/battlefield/StandingsPanel.vue).
+    standings: standings(state),
   };
 }
 
+// The search's view of an attack (ObscuroAgent's optional chance nodes): one branch
+// per outcome, at its exact probability, instead of the single roll applyActions
+// would sample — so a search weighs a 3-on-4 attack at the 19% it wins, not by
+// whichever way one throw happened to land. End-turn's random dealing stays a
+// single sampled outcome (no entry here).
+function getChanceOutcomes(state, action) {
+  if (action?.type !== 'attack') return null;
+  const playerId = state.activePlayers?.[0];
+  if (!attackIsLive(state, playerId, action)) return null;
+  const { territories } = state.board;
+  const p = winProbability(territories[action.from].dice, territories[action.to].dice);
+  return [
+    { state: resolveAttack(state, playerId, action, true), prob: p },
+    { state: resolveAttack(state, playerId, action, false), prob: 1 - p },
+  ].filter(o => o.prob > 0);
+}
+
 export const KDiceGame = {
-  // Territory control: each owned territory plus its dice, minus opponents'.
-  // Heuristic leaf for the generic ObscuroAgent; see games/evalHelpers.js.
-  evaluateState: (state, playerId) =>
-    sidesEval(Object.values(state.board.territories), playerId, t => 10 + (t.dice ?? 0), t => t.owner),
+  // The KDice AI's own position value (agent.js evaluatePosition: income, dice, the
+  // reserve, and what the neighbours can take back), as the leaf for the generic
+  // Obscuro/greedy agents too.
+  evaluateState: (state, playerId) => evaluatePosition(state, playerId),
   name: 'KDice',
+  // A dedicated KDice AI (agent.js): exact battle odds, an eye on the counter-attack,
+  // and dice kept in reserve. The default CPU seat (uiDefaults below).
+  agents: [
+    { id: 'kdice', name: 'AI (KDice)', agent: KDiceAgent },
+  ],
+  // Seven seats, as a KDice table has (and DICE WARS' default): you and six AIs.
+  uiDefaults: {
+    players: [{ agent: 'human' }, ...Array.from({ length: 6 }, () => ({ agent: 'kdice' }))],
+  },
   // Territories double as "units" showing their dice count as the marker letter (see
   // toGrid) — there's no unit heading to show, and the digit is essential info, so the
   // facing arrow (which would hide it behind a generic marker, see SchematicLayer) is off.
@@ -442,6 +600,7 @@ export const KDiceGame = {
   },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Distant territories are hidden until you border them', type: 'boolean', default: false },
+    { id: 'stockMax', label: 'Dice reserve', description: 'Dice that cannot be placed because every territory is full are stored, up to this many, and placed in later turns (DICE WARS: 64)', type: 'integer', default: DEFAULT_STOCK_MAX },
   ],
   createInitialState,
   getLegalActions,
@@ -452,5 +611,6 @@ export const KDiceGame = {
   getVisibleState,
   identityOf,
   sampleWorlds,
+  getChanceOutcomes,
   getActionDuration,
 };
