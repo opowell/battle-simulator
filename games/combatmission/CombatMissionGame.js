@@ -300,13 +300,11 @@ export const CombatMissionGame = {
   ],
   // Combat Mission is fought under fog, both sides plotting at once, with each unit's
   // minute spent in continuous time (rules.js). `spacetime` is the time axis for any
-  // session that doesn't name one; the setup screen's defaults are the options below
-  // plus uiDefaults (simultaneous turns is an engine option — api-server's
-  // ENGINE_OPTIONS — so the form takes its default from there); defaultConfig gives an
-  // API-made session the same we-go play.
+  // session that doesn't name one. Simultaneous turns is an engine option: defaultConfig
+  // turns it on for an API-made session and is also what the setup form starts that
+  // option at (api-server's handleGames).
   spacetime: { space: 'continuous', time: 'continuous' },
   defaultConfig: { simultaneousTurns: true },
-  uiDefaults: { config: { simultaneousTurns: true } },
   gameOptions: [
     MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: true },
@@ -353,7 +351,8 @@ export const CombatMissionGame = {
   getActionDuration,
   getProjectileSpeed,
   actionKey,
-  toGrid,
+  // The board, stamped with the session's time axis (the UI's time scrub reads it).
+  toGrid: (state) => ({ ...toGrid(state), spaceType: 'continuous', timeType: spaceTimeOf(state).time }),
 
   sampleWorlds(observation, playerId, n, rng = Math.random) {
     if (!observation.gameSpecific.fogOfWar) return [];

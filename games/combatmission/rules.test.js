@@ -31,8 +31,7 @@ test('combatmission defaults: fog on, simultaneous turns, continuous time', () =
   const opt = (id) => G.gameOptions.find(o => o.id === id);
   assert.equal(opt('fogOfWar').default, true);
   assert.equal(opt('time').default, 'continuous');
-  assert.equal(G.uiDefaults.config.simultaneousTurns, true, 'the setup form starts on we-go');
-  assert.equal(G.defaultConfig.simultaneousTurns, true, 'an API session plays we-go too');
+  assert.equal(G.defaultConfig.simultaneousTurns, true, 'we-go for an API session, and the setup form\'s default');
   const s = G.createInitialState(players(), { simultaneousTurns: true });
   assert.deepEqual([s.gameSpecific.spacetime.time, s.gameSpecific.spacetime.play], ['continuous', 'simultaneous']);
   assert.ok(s.units.every(u => u.perTurn.time === TURN_TICKS), 'every unit starts with the whole minute');
