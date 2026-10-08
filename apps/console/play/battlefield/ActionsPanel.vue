@@ -16,6 +16,9 @@ const props = defineProps({
   // Battlefield.vue's queuingMoves (games/moveQueue.js).
   queuingMoves:     { type: Boolean, default: false },
   displayedActions: { type: Array, default: () => [] },
+  // Other units are waiting on orders this list leaves out — it lists only the unit
+  // in hand's (see unitOrders.js) — so with none in hand it says how to reach them.
+  ordersElsewhere:  { type: Boolean, default: false },
   pendingPlayerId:  { type: String, default: null },
   // Observer lock-step: the turn on screen has finished and the game is parked
   // until Next (see App.vue's awaitingStep) — nothing is being computed.
@@ -349,6 +352,7 @@ function fmtAction(action) {
             {{queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
           </div>
           <div v-else-if="territoryHint" class="mono ap-hint">{{territoryHint}}</div>
+          <div v-else-if="ordersElsewhere && !activeUnitId" class="mono ap-hint">Select a unit to see its orders</div>
           <!-- Pair-action strength (Risk's attack dice): picked here, spent by a click on
                the map. "max" is the default and follows whatever the pair can manage. -->
           <div v-if="variantSpec && variantValues.length > 1" class="ap-variant">

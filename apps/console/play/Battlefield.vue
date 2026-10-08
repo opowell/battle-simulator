@@ -1162,6 +1162,7 @@ const ordersProps = computed(() => ({
   isDone: isDone.value, atLatest: atLatest.value, isPending: isPending.value,
   selectedId: selectedId.value, activeUnitId: activeUnitId.value, ui: ui.value,
   unitMoves: unitMoves.value, queuingMoves: queuingMoves.value, displayedActions: displayedActions.value,
+  ordersElsewhere: ordersElsewhere.value,
   pendingPlayerId: pendingPlayerId.value, liveState: props.liveState, units: displayUnits.value,
   awaitingStep: props.awaitingStep,
   aiming: aiming.value, civ: props.field.civ, cities: props.field.cities, military: props.field.military,
@@ -2336,9 +2337,19 @@ const displayedActions = computed(() => {
     return legalActions.value.filter(a =>
       selectedId.value ? a.unitId === selectedId.value : a.unitId === '__player__');
   }
-  if (unitMoves.value.length > 0)
-    return legalActions.value.filter(a => a.type !== 'move');
-  return legalActions.value;
+  // Everything else lists the orders of the unit in hand and the player's own actions
+  // (End Turn), never every unit's buttons at once (see unitOrders.js): another unit's
+  // orders turn up once that unit is picked up.
+  const own = ORDERS.ordersFor(legalActions.value, activeUnitId.value, tokenIds.value);
+  if (unitMoves.value.length > 0) return own.filter(a => a.type !== 'move');
+  return own;
+});
+const tokenIds = computed(() => new Set(displayUnits.value.map(u => u.id)));
+// Whether units other than the one in hand (if any) are waiting on orders the panel
+// is not listing — so it can say how to reach them.
+const ordersElsewhere = computed(() => {
+  if (ui.value.territoryClick || ui.value.freeSelection) return false;
+  return ORDERS.othersHaveOrders(legalActions.value, activeUnitId.value, tokenIds.value);
 });
 
 // A selection means one thing inside a phase (the territory you are placing armies on)
