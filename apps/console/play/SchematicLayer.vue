@@ -156,7 +156,7 @@ function handleBoardMouseLeave() { hoverWorld.value = null; }
 // stopping exactly at the clicked point (a location has no special meaning here,
 // only the bearing does).
 const shootRayEnd = computed(() => {
-  if (!['shoot', 'rotate', 'punch'].includes(props.aiming?.type) || !aimUnit.value || !hoverWorld.value) return null;
+  if (!['shoot', 'rotate', 'punch', 'target'].includes(props.aiming?.type) || !aimUnit.value || !hoverWorld.value) return null;
   const u = aimUnit.value, h = hoverWorld.value;
   const dx = h.x - u.x, dy = h.y - u.y;
   const dist = Math.hypot(dx, dy);
@@ -190,6 +190,16 @@ const shootRayEnd = computed(() => {
 
   const stop = Math.min(wallDist, unitDist);
   return { x: u.x + dirx * stop, y: u.y + diry * stop };
+});
+
+// A 'target' aim (a unit OR a spot — see Battlefield's startAim): the token the cursor
+// is on, when it is one the order may name; null means the order goes to the ground.
+const targetLock = computed(() => {
+  if (props.aiming?.type !== 'target' || !hoverWorld.value) return null;
+  const points = props.aiming.candidates
+    .map(c => props.units.find(un => un.id === c.targetId))
+    .filter(t => t && !t.dead);
+  return VISION.nearestWithin(hoverWorld.value.x, hoverWorld.value.y, points, props.aiming.lockRadius ?? 0);
 });
 
 // Per-unit outcome preview while aiming — a small "-NN" / "BLIND" badge over each
@@ -1392,6 +1402,19 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
               :x2="fit.x(shootRayEnd.x)" :y2="fit.y(shootRayEnd.y)"
               stroke="rgba(255,110,40,0.85)" stroke-width="2" stroke-dasharray="3 3"
               class="sl-noevents"/>
+        <line v-if="aiming.type === 'target' && shootRayEnd && aimUnit"
+              :x1="fit.x(aimUnit.x)" :y1="fit.y(aimUnit.y)"
+              :x2="fit.x(targetLock ? targetLock.x : shootRayEnd.x)" :y2="fit.y(targetLock ? targetLock.y : shootRayEnd.y)"
+              stroke="rgba(255,210,60,0.85)" stroke-width="2" stroke-dasharray="3 3"
+              class="sl-noevents"/>
+        <circle v-if="aiming.type === 'target' && targetLock"
+                :cx="fit.x(targetLock.x)" :cy="fit.y(targetLock.y)" :r="unitR(targetLock) + 4"
+                fill="none" stroke="rgba(255,60,60,0.95)" stroke-width="2.5"
+                class="sl-noevents sl-target-lock"/>
+        <circle v-else-if="aiming.type === 'target' && shootRayEnd"
+                :cx="fit.x(shootRayEnd.x)" :cy="fit.y(shootRayEnd.y)" :r="fit.len(aiming.blastRadius || 0)"
+                fill="rgba(255,110,40,0.22)" stroke="rgba(255,110,40,0.75)" stroke-width="1.5" stroke-dasharray="4 3"
+                class="sl-noevents sl-area-aim"/>
         <circle v-if="aiming.type === 'punch' && shootRayEnd"
                 :cx="fit.x(shootRayEnd.x)" :cy="fit.y(shootRayEnd.y)" :r="fit.len(aiming.blastRadius || 0)"
                 fill="rgba(255,110,40,0.28)" stroke="rgba(255,110,40,0.75)" stroke-width="1.5"

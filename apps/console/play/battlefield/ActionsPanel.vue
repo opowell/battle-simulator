@@ -82,7 +82,10 @@ const aimedActions = computed(() => {
     const key = `${action.type}:${action.unitId}:${action.grenade ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    if (action.type === 'shoot')
+    const target = props.ui?.targetAim?.[action.type];
+    if (target)   // aimed at a unit OR a spot (see Battlefield's startAim) — one button
+      out.push({ type: action.type, unitId: action.unitId, label: target.button ?? `${action.type}…`, __aim: true });
+    else if (action.type === 'shoot')
       out.push({ type: 'shoot', unitId: action.unitId, icon: action.icon, range: action.range, __aim: true });
     else if (action.type === 'move')
       out.push({ type: 'move', unitId: action.unitId, __aim: true });
@@ -340,7 +343,8 @@ function fmtAction(action) {
         </div>
         <template v-if="aiming">
           <div class="mono ap-hint ap-hint--aim">
-            {{aiming.type === 'throw' ? 'Click the map to throw'
+            {{aiming.hint ? aiming.hint
+              : aiming.type === 'throw' ? 'Click the map to throw'
               : aiming.type === 'move' ? 'Click the map to move'
               : aiming.type === 'rotate' ? 'Click the map to face that direction'
               : aiming.type === 'punch' ? 'Click the map to choose a punch direction' : 'Click the map to aim'}}

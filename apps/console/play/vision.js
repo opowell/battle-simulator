@@ -720,13 +720,26 @@ function nearestBearing(ox, oy, px, py, candidates) {
   return best;
 }
 
+// The candidate whose point is nearest (px,py), if one lies within `radius` — "click ON
+// it" rather than "aim toward it": an aim that takes either a unit or a bare spot
+// (Battlefield's 'target' aiming) locks onto a token only when the click lands on it,
+// and is a shot at the ground otherwise. Shared by the click and the hover preview.
+function nearestWithin(px, py, candidates, radius) {
+  let best = null, bestD = radius;
+  for (const c of candidates) {
+    const d = Math.hypot(c.x - px, c.y - py);
+    if (d <= bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
 // Public API. Attached to the global so both the browser (window.VISION, via the classic
 // <script>) and node (globalThis.VISION, via dynamic import in the test) see the same object.
 const VISION = {
   facingOn, resolveFov, resolveRange, unitHeading,
   pointVisibleToUnit, visionSources, visibleTileSet,
   unitVisionRegion, visionRegions, sectorPath, reachRegion, regionPath,
-  nearestBearing,
+  nearestBearing, nearestWithin,
   _internal: { angleDelta, TAU, blockedSet, hasLineOfSight, wallSegments, raySegT, segCircleAngles, closestSeg, boundaryPoint, occludedRegion,
     rayShapeIv, shapeExit, shapeOccludedRegion, ovalTangentAngles },
 };

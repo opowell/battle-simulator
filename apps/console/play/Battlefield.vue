@@ -248,7 +248,35 @@ function deselectUnit() {
 // and SchematicLayer's aiming overlay (throw arc + blast preview, or shoot's aim ray).
 const aiming = ref(null);
 
+// Click radius (world units) inside which a 'target' aim locks onto a token.
+const TARGET_LOCK_R = 0.6;
+
+// The token a 'target' aim at (x, y) locks onto, as that unit's legal action — or null
+// when the click is on bare ground. See ui.targetAim in startAim.
+function aimedTargetAt(x, y) {
+  const points = aiming.value.candidates
+    .map(a => { const t = displayUnits.value.find(un => un.id === a.targetId); return t && { a, x: t.x, y: t.y }; })
+    .filter(Boolean);
+  return VISION.nearestWithin(x, y, points, aiming.value.lockRadius)?.a ?? null;
+}
+
 function startAim(action) {
+  // ui.targetAim: { <actionType>: { button?, hint? } } — an order aimed at EITHER a unit
+  // or a spot. Clicking a token one of the unit's legal actions of that type names
+  // (targetId) gives that order; clicking anywhere else gives the same type at the point
+  // ({ target: {x, y} }), which the game's isActionLegal judges (area fire).
+  const targetSpec = ui.value.targetAim?.[action.type];
+  if (targetSpec) {
+    const mine = legalActions.value.filter(a => a.type === action.type && a.unitId === action.unitId);
+    aiming.value = {
+      type: 'target', actionType: action.type, unitId: action.unitId, hint: targetSpec.hint ?? null,
+      lockRadius: TARGET_LOCK_R,
+      range: mine.find(a => a.range != null)?.range ?? null,
+      blastRadius: mine.find(a => a.blast != null)?.blast ?? 0,
+      candidates: mine.filter(a => a.targetId != null),
+    };
+    return;
+  }
   if (action.type === 'throw') {
     aiming.value = {
       type: 'throw', unitId: action.unitId, grenade: action.grenade,
@@ -1932,9 +1960,20 @@ function groupOrderAt({ targetId = null, x = null, y = null }) {
 // A token clicked on the map: with a group in hand, a click on something it can attack
 // is an attack order, not a change of selection. Anything else is a plain click, which
 // picks out that one unit — a member of the group included, as in an RTS.
+// The same for one unit in hand, for the order types a game aims at units (ui.targetAim):
+// clicking an enemy the selected unit can fire at fires at it.
+function soloTargetOrder(id) {
+  const types = ui.value.targetAim;
+  if (!types || !id || !selectedId.value || id === selectedId.value || groupIds.value.length > 1) return null;
+  if (!isPending.value || !atLatest.value || forking.value) return null;
+  return legalActions.value.find(a => a.unitId === selectedId.value && a.targetId === id && types[a.type]) ?? null;
+}
+
 function handleTokenSelect(id) {
   const acts = id && !groupIds.value.includes(id) ? groupOrderAt({ targetId: id }) : null;
   if (acts) { emit('submit-actions', { playerId: pendingPlayerId.value, actions: acts }); return; }
+  const solo = soloTargetOrder(id);
+  if (solo) { submitAction(solo); return; }
   groupIds.value = [];
   selectUnit(id);
 }
@@ -1964,7 +2003,14 @@ function handleSqClick(col, row, x, y, mods) {
   if (aiming.value && x != null && y != null) {
     const u = displayUnits.value.find(un => un.id === aiming.value.unitId);
     if (u) {
-      if (aiming.value.type === 'throw') {
+      if (aiming.value.type === 'target') {
+        // On a token it may target: that order. Elsewhere in reach: the same order at
+        // the spot (an out-of-range click just cancels, as a throw's does).
+        const locked = aimedTargetAt(x, y);
+        if (locked) submitAction(locked);
+        else if (Math.hypot(x - u.x, y - u.y) <= (aiming.value.range ?? Infinity))
+          submitAction({ type: aiming.value.actionType, unitId: u.id, target: { x: String(x), y: String(y) } });
+      } else if (aiming.value.type === 'throw') {
         // Same continuous-point rule as move above: gate on range client-side so an
         // out-of-range click just cancels aiming; the server (isThrowLegal) is the
         // real authority (walls etc.).
