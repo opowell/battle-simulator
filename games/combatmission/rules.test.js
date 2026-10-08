@@ -113,6 +113,8 @@ test('combatmission continuous time: a walk costs its length in time, a burst a 
   assert.equal(ticksLeft(r(t)), TURN_TICKS - 150);
   t = step(t, { type: 'fire', unitId: 'r', targetId: 'e' });
   assert.equal(ticksLeft(r(t)), TURN_TICKS - 450);
+  assert.deepEqual(r(t).aimAt, { x: 6.5, y: 5.5 }, 'the shooter turns to what it fired at');
+  assert.equal(r(step(t, { type: 'move', unitId: 'r', to: { x: '4.5', y: '6.5' } })).aimAt, undefined, 'until it moves');
   assert.equal(G.isActionLegal(t, 'allied', { type: 'fire', unitId: 'r', targetId: 'e' }), false, '15 s left is too little for a burst');
   assert.equal(G.isActionLegal(t, 'allied', { type: 'move', unitId: 'r', to: { x: '4.5', y: '6.5' } }), true, '…but enough for one more cell');
   assert.equal(G.isActionLegal(t, 'allied', { type: 'move', unitId: 'r', to: { x: '4.5', y: '7.5' } }), false, 'not two');

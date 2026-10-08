@@ -334,12 +334,21 @@ export function applyActions(state, playerActions, rng = Math.random) {
     const to = parsePos(action.to);
     const cost = walkCost(state.board, actor.position, num(to.x), num(to.y));
     const ticks = moveTicks(def, Number.isFinite(cost) ? cost : dist(actor.position, to));
-    const units = state.units.map(u => u.id === actor.id ? { ...u, position: to, perTurn: spend(st, u, ticks) } : u);
+    // A unit that moves stops facing whatever it last fired at (see `aimAt` below).
+    const units = state.units.map(u => {
+      if (u.id !== actor.id) return u;
+      const { aimAt: _aim, ...rest } = u;
+      return { ...rest, position: to, perTurn: spend(st, u, ticks) };
+    });
     return done({ ...state, units });
   }
 
   if (action.type === 'fire') {
-    const paid = (units) => units.map(u => u.id === actor.id ? { ...u, perTurn: spend(st, u, fireTicks(def)) } : u);
+    // `aimAt`: where the shooter last fired — presentation only (its silhouette turns to
+    // face it, CombatMissionGame's unitHeading), never read by a rule.
+    const aimed = action.targetId != null ? state.units.find(u => u.id === action.targetId)?.position : action.target;
+    const aimAt = aimed ? { x: num(aimed.x), y: num(aimed.y) } : undefined;
+    const paid = (units) => units.map(u => u.id === actor.id ? { ...u, perTurn: spend(st, u, fireTicks(def)), aimAt } : u);
     if (action.targetId != null) {
       const target = state.units.find(u => u.id === action.targetId);
       if (!target) return state;

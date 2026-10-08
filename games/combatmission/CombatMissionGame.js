@@ -277,6 +277,11 @@ function boardArt(board) {
 // (players[0] deploys north, so faces south). Read only from the unit's own position and
 // the public start roster, so it gives nothing away about anyone hidden.
 function unitHeading(state, u) {
+  // Having fired since it last moved, a unit faces what it fired at (rules.js `aimAt`).
+  if (u.aimAt) {
+    const dx = u.aimAt.x - num(u.position.x), dy = u.aimAt.y - num(u.position.y);
+    if (dx || dy) return Math.atan2(dy, dx);
+  }
   const start = state.gameSpecific?.startRoster?.find(r => r.id === u.id);
   if (start) {
     const dx = num(u.position.x) - num(start.position.x), dy = num(u.position.y) - num(start.position.y);
