@@ -360,6 +360,67 @@ test('a fog player seat is never sent deltas', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// A board's static parts (engine/gridStatics.js): a shape map's terrain is sent
+// once per connection (and not at all to a REST caller that says it holds it), and
+// the shipped client puts it back so nothing downstream sees a board without it.
+// ---------------------------------------------------------------------------
+
+test('a shape map\'s terrain goes over a socket once, and the shipped client puts it back', async () => {
+  const api = await loadBrowserApi();
+  const s = await post('/sessions', {
+    game: 'combatmission',
+    players: [{ id: 'allied', agent: 'human' }, { id: 'axis', agent: 'random' }],
+  });
+  // A caller that says nothing gets whole boards, each field named by its key.
+  const whole = await get(`/sessions/${s.id}?player=allied`);
+  assert.ok(whole.grid.shapes.length > 500, 'the dressed map should be a big shape set');
+  assert.ok(whole.grid.statics?.shapes, 'the shapes should be named by key');
+  const raw = [];
+  observe(s.id, (msg) => raw.push(msg), '?player=allied');
+  const got = [];
+  const sub = api.subscribeSession(s.id, 'allied', (full) => got.push(full));
+  try {
+    await sleep(1000);
+    // Acting through the shipped client: its request names what it holds, and the
+    // move makes the server push the seat a fresh snapshot.
+    const answered = await api.action(s.id, 'allied', whole.legalActions.find(a => a.type === 'move'));
+    await sleep(1500);
+    const ref = await get(`/sessions/${s.id}?player=allied`);
+    for (const [what, snap] of [['the action\'s answer', answered], ['the last pushed update', got.at(-1)]]) {
+      assert.deepEqual(snap.grid.shapes, ref.grid.shapes, `${what} lost its terrain`);
+      assert.deepEqual(snap.grid.cells, ref.grid.cells, `${what} lost its cells`);
+    }
+    assert.ok(got.length >= 2, `the client saw ${got.length} updates`);
+  } finally { sub.close(); }
+
+  assert.ok(raw[0].grid.shapes, 'the first message on a socket carries the terrain');
+  const later = raw.slice(1).filter(m => m.grid);
+  assert.ok(later.length >= 1, 'no later message to check');
+  for (const m of later) {
+    assert.equal(m.grid.shapes, undefined, 'a later message re-sent the terrain');
+    assert.equal(m.grid.statics.shapes, raw[0].grid.statics.shapes);
+  }
+  const lean = await fetch(`${BASE}/sessions/${s.id}?player=allied`, { headers: { 'x-grid-have': whole.grid.statics.shapes } }).then(r => r.json());
+  assert.equal(lean.grid.shapes, undefined, 'a REST caller holding the terrain is not sent it again');
+  assert.equal(lean.grid.statics.shapes, whole.grid.statics.shapes);
+});
+
+test('a socket that asks to resync is sent the terrain again', async () => {
+  const s = await post('/sessions', {
+    game: 'combatmission',
+    players: [{ id: 'allied', agent: 'human' }, { id: 'axis', agent: 'random' }],
+  });
+  const seen = [];
+  const ws = observe(s.id, (msg) => seen.push(msg), '?player=allied');
+  await sleep(800);
+  assert.ok(seen[0]?.grid?.shapes, 'the first message carries the terrain');
+  ws.send(JSON.stringify({ resync: true }));
+  await sleep(800);
+  assert.ok(seen.length >= 2, 'the resync was not answered');
+  assert.ok(seen.at(-1).grid.shapes, 'a resync must re-send the terrain');
+});
+
+// ---------------------------------------------------------------------------
 // Customised starting units (engine/startingSetup.js) over the wire: what a
 // setup screen asks for, and what a session created from its answer plays.
 // ---------------------------------------------------------------------------

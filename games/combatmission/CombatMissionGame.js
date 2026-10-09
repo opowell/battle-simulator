@@ -202,23 +202,14 @@ const UNIT_PORTRAITS = new Set([
 
 function toGrid(state) {
   const { board, units } = state;
-  const { width, height, tiles } = board;
+  const { width, height } = board;
   const pidIdx = {};
   (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
 
   // Terrain-only cells (terrain conveyed by the shapes below). Unit positions travel in
-  // the continuous `units` channel, not by exact-match into this integer grid.
-  const cells = [];
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const t = tiles[y][x];
-      cells.push({
-        x, y,
-        color: SHAPE_GROUND,
-        terrain: TERRAIN_INFO[t] ?? TERRAIN_INFO[TERRAIN.FLOOR],
-      });
-    }
-  }
+  // the continuous `units` channel, not by exact-match into this integer grid — so the
+  // cells, like the art, are the same for the whole game (see boardCells).
+  const cells = boardCells(board);
 
   // Continuous unit channel: real (possibly non-integer) positions as decimal strings
   // (see games/coord.js), built directly from state.units.
@@ -253,6 +244,25 @@ function toGrid(state) {
   const shapes = boardArt(board);
 
   return { width, height, locationType: 'continuous', cells, units: unitList, shapes, ui: { hideGridLines: true, showFacing: false } };
+}
+
+// The terrain-only cells for a board, built once per board object. Handing back the
+// same array every snapshot is also what lets the wire send it once (a board part
+// that comes back as the very same object is static — engine/gridStatics.js).
+const boardCellsCache = new WeakMap();
+function boardCells(board) {
+  let cells = boardCellsCache.get(board);
+  if (cells) return cells;
+  const { width, height, tiles } = board;
+  cells = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const t = tiles[y][x];
+      cells.push({ x, y, color: SHAPE_GROUND, terrain: TERRAIN_INFO[t] ?? TERRAIN_INFO[TERRAIN.FLOOR] });
+    }
+  }
+  boardCellsCache.set(board, cells);
+  return cells;
 }
 
 // The drawn terrain for a board, built once per board object (a board never changes

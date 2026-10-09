@@ -20,6 +20,7 @@ import { fileURLToPath }         from 'node:url';
 
 
 import { WebSocketServer } from './vendor/ws/wrapper.mjs';
+import { stripStatics, stripBodyStatics, haveFromHeader } from './engine/gridStatics.js';
 import { GridTimeline } from './engine/gridFrames.js';
 
 import { GameEngine, rosterError, rosterFromState, setupPreview, cellMapper, SETUP_KEY } from './engine/index.js';
@@ -581,7 +582,11 @@ class Session {
     const full = client.observer
       ? (client.viewAs ? this.toJSON(client.viewAs) : this.toJSON(null, { observer: true }))
       : this.toJSON(client.playerId);
-    const payload = JSON.stringify(this._deltaFor(client, full));
+    // The board's static parts (terrain shapes, …) go once per connection, then by
+    // key only — see engine/gridStatics.js; `client._statics` is what this socket holds.
+    const msg = this._deltaFor(client, full);
+    client._statics ??= {};
+    const payload = JSON.stringify(msg?.grid ? { ...msg, grid: stripStatics(msg.grid, client._statics) } : msg);
     const delay = client.observer ? this.observerDelay : 0;
     if (delay > 0) {
       setTimeout(() => {
@@ -1522,7 +1527,10 @@ function readBody(req) {
 
 
 function send(res, status, body) {
-  const payload = JSON.stringify(body, null, 2);
+  // Compact: a snapshot is hundreds of KB, and indenting it nearly doubled that.
+  // A board's static parts are left out when the caller says it already holds them
+  // (the console's X-Grid-Have header — see engine/gridStatics.js).
+  const payload = JSON.stringify(stripBodyStatics(body, haveFromHeader(res.req?.headers?.['x-grid-have'])));
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(payload);
 }
@@ -2821,7 +2829,7 @@ function handleUpgrade(req, socket, head, prefix = '') {
     // base makes the next send a whole snapshot, which re-aligns both ends.
     ws.on('message', (raw) => {
       let msg; try { msg = JSON.parse(raw); } catch { return; }
-      if (msg?.resync) { client._base = null; session._sendTo(client); }
+      if (msg?.resync) { client._base = null; client._statics = null; session._sendTo(client); }
     });
     ws.on('close', drop);
     ws.on('error', drop);

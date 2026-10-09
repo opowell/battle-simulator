@@ -4,9 +4,47 @@
 const _BASE_PATH = window.location.pathname.replace(/\/ui\/.*$/, '');
 const _BASE = window.location.origin + _BASE_PATH;
 
+// ── A board's static parts ──────────────────────────────────────────────────
+// The server sends a board's unchanging fields (terrain shapes, …) by content key:
+// `grid.statics` names each one's key, and the value itself is left out when we
+// already hold it (see engine/gridStatics.js). These put the values back, so every
+// consumer still gets whole boards — and the SAME array object for as long as the
+// terrain doesn't change, which lets caches keyed on it (the minimap's) hold.
+//
+// REST: we name the keys we hold in an X-Grid-Have header; a few are kept, most
+// recently used last (several sessions can be open at once).
+const _statics = new Map();
+const _STATICS_KEEP = 24;
+function _keepStatic(key, value) {
+  _statics.delete(key);
+  _statics.set(key, value);
+  while (_statics.size > _STATICS_KEEP) _statics.delete(_statics.keys().next().value);
+}
+/**
+ * Fill a board's left-out static fields from `lookup(key)` (and remember the ones it
+ * carries). False if a value was left out that `lookup` doesn't have — the caller
+ * must then get the board again whole.
+ */
+function _fillStatics(grid, lookup) {
+  if (!grid?.statics) return true;
+  for (const [field, key] of Object.entries(grid.statics)) {
+    if (grid[field] != null) { _keepStatic(key, grid[field]); continue; }
+    const value = lookup(key);
+    if (value == null) return false;
+    grid[field] = value;
+    _keepStatic(key, value);
+  }
+  return true;
+}
+// The places a response carries a board — the same two the server strips.
+const _boardsOf = (body) => [body?.grid, body?.session?.grid].filter(Boolean);
+
 async function _req(path, opts) {
+  // What we hold right now, pinned: the response is filled from THESE values even if
+  // another request's answer evicts some of them from the cache while this is in flight.
+  const held = new Map(_statics);
   const r = await fetch(_BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(held.size ? { 'X-Grid-Have': [...held.keys()].join(',') } : {}) },
     ...opts,
   });
   if (!r.ok) {
@@ -17,7 +55,11 @@ async function _req(path, opts) {
     try { message = JSON.parse(text).error ?? text; } catch { /* not JSON — use as-is */ }
     throw new Error(message);
   }
-  return r.json();
+  const body = await r.json();
+  if (body && typeof body === 'object') {
+    for (const grid of _boardsOf(body)) if (!_fillStatics(grid, (k) => held.get(k))) throw new Error('board arrived without its terrain');
+  }
+  return body;
 }
 
 // Game state carries root-relative image paths computed server-side (e.g.
@@ -212,7 +254,21 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
   // changed cells and the new log entries only; rebuild the whole snapshot here so
   // every consumer downstream keeps receiving exactly what it always did.
   let base = null;
+  // The static board fields this socket has sent us, by field: { shapes: {key, value} }.
+  // The server keeps the same record for the connection (see engine/gridStatics.js).
+  let held = {};
   function rehydrate(msg) {
+    // Static fields first, so a delta is rebuilt over a whole board. A key we don't
+    // hold can't be filled in — same remedy as a delta with no base: resync.
+    const grid = msg?.grid;
+    if (grid?.statics) {
+      for (const [field, key] of Object.entries(grid.statics)) {
+        if (grid[field] != null) held[field] = { key, value: grid[field] };
+        else if (held[field]?.key === key) grid[field] = held[field].value;
+        else return null;
+      }
+      _fillStatics(grid, () => null); // remember them for REST requests too
+    }
     if (!msg?.delta) { base = msg; return msg; }
     // A delta against a base we don't have (a REST poll landed in between, or this
     // is the first message after a reconnect) can't be applied — asking for a whole
@@ -251,6 +307,8 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
   // still be different positions and the very next delta would fail the same way.
   function resync() {
     if (closed || !ws || ws.readyState !== 1) return; // socket down: the poll covers us
+    // The server also forgets what this socket holds, and sends every static field
+    // again. `held` is kept: messages already on their way were stripped against it.
     try { ws.send(JSON.stringify({ resync: true })); } catch {}
   }
 
@@ -264,7 +322,8 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
     if (closed) return;
     try { ws = new WebSocket(wsUrl); }
     catch { startPoll(); scheduleRetry(); return; }
-    ws.onopen    = () => { backoff = 1000; stopPoll(); };
+    // A new socket starts with nothing sent, on the server's side and so on ours.
+    ws.onopen    = () => { backoff = 1000; held = {}; stopPoll(); };
     ws.onmessage = (ev) => {
       try {
         const full = rehydrate(JSON.parse(ev.data));
