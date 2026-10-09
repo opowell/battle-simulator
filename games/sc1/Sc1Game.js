@@ -886,6 +886,19 @@ export const Sc1Game = {
   // turn it off (the "Simultaneous turns" engine option). Every SC1 action keeps a
   // single activePlayers at the turn start, which is what the engine's we-go path needs.
   defaultConfig: { simultaneousTurns: true },
+  // Once per turn number, every unit gets its moves and attack back. Taking turns,
+  // end-turn already does this for the next seat. We-go, it does not suffice: the
+  // round resolves both seats' queues together, so an order (a move, gathering)
+  // that resolves after the other seat's end-turn would leave its unit spent for
+  // the whole next round.
+  beginTurn(state) {
+    if (state.gameSpecific.refreshedTurn === state.turnNumber) return state;
+    return {
+      ...state,
+      units: state.units.map(u => u.alive ? { ...u, movesLeft: UNITS[u.type].moves, attacksLeft: 1 } : u),
+      gameSpecific: { ...state.gameSpecific, refreshedTurn: state.turnNumber },
+    };
+  },
   gameOptions: [
     MAP_ZOOM_OPTION,
     { id: 'spriteSet', label: 'Unit art', type: 'select', default: 'original',

@@ -125,7 +125,8 @@ test('sc1: defaults to simultaneous turns, and a we-go round refreshes both side
     const s = engine.state;
     assert.equal(s.turnNumber, round + 1, `round ${round} advances the turn once`);
     assert.equal(s.activePlayers.length, 1, 'a single seat at the turn start keeps the we-go path on');
-    for (const u of s.units.filter(un => un.alive))
+    // What the next round plans from: the engine runs beginTurn before anyone plans.
+    for (const u of Sc1Game.beginTurn(s).units.filter(un => un.alive))
       assert.equal(u.movesLeft, UNITS[u.type].moves, `${u.ownerId}'s ${u.type} has its moves back`);
   }
   assert.ok(engine.log.length > 0 && engine.log.every(e => e.simultaneous));
