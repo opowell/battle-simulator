@@ -354,7 +354,12 @@ function fmtAction(action) {
         </template>
         <template v-else>
           <div v-if="unitMoves.length && !ui?.aimedActionTypes?.includes('move')" class="mono ap-hint">
-            {{queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move'}}
+            <!-- ui.hideMoveTargets (civ1): the squares are not highlighted, so name the
+                 ways to move instead — a click (the square under the pointer is framed,
+                 see HtmlLayer) or the direction keys. -->
+            {{ui?.hideMoveTargets
+              ? (queuingMoves ? 'Click a square to queue a move there' : 'Click a square or use the arrow keys to move')
+              : (queuingMoves ? 'Tap a highlighted square to queue a move' : 'Tap a highlighted square to move')}}
           </div>
           <div v-else-if="territoryHint" class="mono ap-hint">{{territoryHint}}</div>
           <div v-else-if="ordersElsewhere && !activeUnitId" class="mono ap-hint">Select a unit to see its orders</div>

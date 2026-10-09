@@ -1913,6 +1913,14 @@ export const Civ1Game = {
     hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
     blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
     mapZoom: true, defaultTileSize: 50, moveQueue: true,
+    // No tint on the squares the unit in hand can reach: the original marked none —
+    // the blinking unit and the direction keys were the whole interface. The square
+    // under the pointer is framed when a click there would move (HtmlLayer), and the
+    // Orders panel says how to move. Applies to every civ1 map, not just the battles.
+    hideMoveTargets: true,
+    // …nor the ring of outlined squares round it that the board draws for a unit's
+    // sight: with no grid lines anywhere else, those borders read as a stray grid.
+    hideSelectedVision: true,
     // A square draws only the unit on top of its stack, over a copy of itself one pixel
     // down and to the right — what CIV.EXE's draw-unit routine does whenever the unit
     // has another in its stack (OpenCivOne MapManagement F0_2aea_0e29). The units under

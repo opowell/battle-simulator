@@ -229,6 +229,9 @@ const squareFogVisibleSet = computed(() => {
 // Tiles the selected unit sees specifically — outlined on top of the team-wide shading.
 const selectedVisionSet = computed(() => {
   if (!squareFogVisibleSet.value) return null;
+  // ui.hideSelectedVision: no outline round the squares the piece in hand sees — on a
+  // map with no grid lines (civ1) that ring of per-square borders reads as one.
+  if (props.field.ui?.hideSelectedVision) return null;
   const sel = props.revealAll ? null : props.selectedId;
   if (sel == null) return null;
   const sources = VISION.visionSources(props.units, viewerId.value, sel);
@@ -421,6 +424,10 @@ const cells = computed(() => {
   const sel   = selectedSquare.value;
   const selE  = props.selectedEmptySquare;
   const showLegal = !props.aiming && !props.field.ui?.aimedActionTypes?.includes('move');
+  // ui.hideMoveTargets (civ1 — the original marked no squares): no fill on the squares
+  // the piece in hand can reach; the one under the pointer is framed instead, so a
+  // click still says where it would go before it is made.
+  const hideTargets = !!props.field.ui?.hideMoveTargets;
   // Drop target: only highlighted while hovering a square the dragged piece may legally reach.
   const dragSq = (dragUnit.value && dragHoverSq.value
     && legal.has(`${dragHoverSq.value[0]},${dragHoverSq.value[1]}`)) ? dragHoverSq.value : null;
@@ -452,7 +459,8 @@ const cells = computed(() => {
         units:   unitsAt.get(k) ?? [],
         stackTop: stackTopAt.get(k) ?? null,
         checker: checkerOn.value && (rx + y) % 2 === 1,
-        legal:   showLegal && legal.has(k),
+        legal:   showLegal && !hideTargets && legal.has(k),
+        target:  showLegal && hideTargets && legal.has(k),
         dragHover: !!dragSq && dragSq[0] === x && dragSq[1] === y,
         lastMove: last.has(k),
         selTint: !!sel  && sel.x  === x && sel.y  === y,
@@ -755,7 +763,7 @@ function handleUnitClick(e, u) {
 
     <!-- The board: an exact-pixel CSS grid, one cell per square -->
     <div class="hl-board" :style="boardStyle">
-      <div v-for="c in cells" :key="c.rk" class="hl-cell"
+      <div v-for="c in cells" :key="c.rk" class="hl-cell" :class="{ 'hl-cell--target': c.target }"
            :style="{ background: c.color }"
            @click.stop="handleCellClick(c)">
         <!-- Coastline tile (civ1 oceans) under the terrain art, then any stacked overlays -->
@@ -1015,6 +1023,10 @@ img.hl-fill { display: block; width: 100%; height: 100%; }
 .hl-seltint  { background: rgba(255,255,255,0.35); }
 .hl-lastmove { background: rgba(242,180,65,0.35); }
 .hl-legal    { background: rgba(66,198,230,0.28); border: 1.5px solid rgba(66,198,230,0.7); }
+/* A square the piece in hand may move to, under ui.hideMoveTargets: framed only while
+   the pointer is on it. Drawn as the cell's last grid item, over its terrain layers. */
+.hl-cell--target:hover::after { content: ''; grid-area: 1 / 1; pointer-events: none; z-index: 1;
+                                border: 2px solid rgba(255,255,255,0.85); }
 .hl-draghover { background: rgba(66,198,230,0.55); border: 2px solid rgba(66,198,230,0.9); }
 .hl-dashed   { border: 2px dashed rgba(255,255,255,0.85); }
 .hl-ghost { position: absolute; display: grid; transform: translate(-50%, -50%); pointer-events: none; z-index: 2; opacity: 0.9; }
