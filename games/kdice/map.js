@@ -4,6 +4,12 @@ import {
 
 const HEX_SIZE = 1;
 const TERRITORIES_PER_PLAYER = 8;
+// ...but a full table can't have eight each and still be read: at seven seats that is
+// 56 territories, and the board has to fit them on one screen beside the leaderboard,
+// which leaves a dice count a few pixels high. Past MAX_TERRITORIES each seat gets a
+// smaller share (42 at the default seven — still a bigger map than the old four-seat
+// default's 32).
+const MAX_TERRITORIES = 42;
 const GROW_TO = 8;            // cells grown per territory before it annexes its frontier
 const MIN_TERRITORY_SIZE = 6;
 // How much grid each territory gets to grow into. The land only ever uses a
@@ -26,7 +32,7 @@ const GRID_ASPECT = 1.3;
  * the real hex blobs.
  */
 export function generateMap(numPlayers, rng, opts = {}) {
-  const territoryCount = Math.max(numPlayers * TERRITORIES_PER_PLAYER, numPlayers * 2);
+  const territoryCount = Math.max(Math.min(numPlayers * TERRITORIES_PER_PLAYER, MAX_TERRITORIES), numPlayers * 4);
   const rows = opts.rows ?? Math.round(Math.sqrt(territoryCount * CELLS_PER_TERRITORY / GRID_ASPECT));
   const cols = opts.cols ?? Math.round(rows * GRID_ASPECT);
 
