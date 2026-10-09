@@ -52,13 +52,31 @@
     }
 
     const oldByUnit = tokensById(oldGrid);
+    const cameFrom = arrivedFrom(oldGrid, newGrid);
     for (const t of cellTokens(newGrid)) {
       if (t.fixture) continue;
-      const was = oldByUnit.get(t.id);
+      // A piece the old board did not show — out of sight until this update — has no
+      // square to set off from, unless the game says where it walked in from.
+      const was = oldByUnit.get(t.id) ?? cameFrom.get(t.id);
       if (!was || (was.x === t.x && was.y === t.y)) continue;
       moved.set(t.id, { from: { x: was.x, y: was.y }, to: { x: t.x, y: t.y } });
     }
     return moved;
+  }
+
+  /**
+   * Where the pieces that came into sight in this update walked in from, as
+   * `Map(unitId -> { x, y })`, read off the board's optional `arrivals` channel
+   * (`[{ id, unitId, from }]`, numbered like `battles` — civ1's logArrivals). Only the
+   * entries the old board had not seen count, and the latest one for a piece wins: it is
+   * the step that brought it into view the last time. The square it names is in the
+   * fog, so the piece is seen to walk out of it rather than appear where it stopped.
+   */
+  function arrivedFrom(oldGrid, newGrid) {
+    const out = new Map();
+    const seen = Math.max(0, ...(oldGrid?.arrivals ?? []).map(a => a.id));
+    for (const a of newGrid?.arrivals ?? []) if (a.id > seen && a.from) out.set(a.unitId, a.from);
+    return out;
   }
 
   // Every piece a cell stands for: the one it draws, plus any sharing the square
