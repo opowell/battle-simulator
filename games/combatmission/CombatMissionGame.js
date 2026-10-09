@@ -356,6 +356,9 @@ export const CombatMissionGame = {
   getActionDuration,
   getProjectileSpeed,
   actionKey,
+  // A move names only its destination; in a we-go round it glides from where the unit
+  // stands (engine/KineticResolver.js).
+  movesFromBody: true,
   // The board, stamped with the session's time axis (the UI's time scrub reads it).
   toGrid: (state) => ({ ...toGrid(state), spaceType: 'continuous', timeType: spaceTimeOf(state).time }),
 

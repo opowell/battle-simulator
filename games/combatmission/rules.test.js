@@ -161,6 +161,8 @@ test('combatmission we-go: an aimed shot follows a target that is moving', async
   assert.ok(tank.hp < 12, 'the shot found it');
   assert.equal(num(tank.position.y), 8.5, 'and it still got where it was going');
   assert.ok(e.playback.frames.some(f => f.projectiles?.length), 'the shot is in the playback');
+  assert.ok(e.playback.frames.some(f => { const t = f.units.find(u => u.id === 'tank'); return t.y > 6.6 && t.y < 8.4; }),
+    'the tank glides there (movesFromBody), rather than jumping on arrival');
   assert.equal(e.state.turnNumber, 2, 'the round closed the turn');
 });
 
