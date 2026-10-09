@@ -173,3 +173,52 @@ test('civ1 battles: the animation is declared with the original\'s eight explosi
   assert.equal(spec.frames.length, 8);
   assert.ok(spec.frames.every((f, i) => f === `/images/civ1/units/combat_${i + 1}`));
 });
+
+test('civ1 battles: a stack that dies with its defender is in the record, so it is seen to die', () => {
+  const state = attack(world({ units: [
+    unit('a', 'p1', 'legion', 5, 5),
+    unit('d', 'p2', 'phalanx', 6, 5),
+    unit('s', 'p2', 'settlers', 6, 5),
+  ] }), 'a', 'd', attackerWins);
+  const [b] = state.gameSpecific.battles;
+  assert.equal(b.defender.id, 'd');
+  assert.deepEqual(b.fallen, [{ id: 's', type: 'settlers', ownerId: 'p2' }]);
+  assert.deepEqual(Civ1Game.toGrid(state).battles[0].fallen.map(t => t.unitId), ['s']);
+  // A lone defender has nobody falling with it.
+  const lone = attack(world({ units: [unit('a', 'p1', 'legion', 5, 5), unit('d', 'p2', 'militia', 6, 5)] }),
+    'a', 'd', attackerWins);
+  assert.equal(lone.gameSpecific.battles[0].fallen, undefined);
+});
+
+// A raider marching out of the fog used to simply appear where it stopped: the board
+// only animates a piece it saw on both sides of an update. The arrivals record says
+// where each one stepped into sight from.
+test('civ1 arrivals: a rival walking into sight is recorded for whoever it walked in on', () => {
+  let state = world({ fogOfWar: true, seats: 3, units: [
+    unit('mine', 'p1', 'militia', 10, 5),
+    unit('raider', 'p2', 'cavalry', 7, 5, { moveThirds: 6 }),
+    unit('far', 'p3', 'militia', 25, 15),
+  ] });
+  state = Civ1Game.applyActions(state, [{ playerId: 'p2', action: { type: 'move', unitId: 'raider', to: { x: 9, y: 5 } } }]);
+  assert.deepEqual(state.units.find(u => u.id === 'raider').position, { x: 9, y: 5 });
+  assert.deepEqual(state.gameSpecific.arrivals,
+    [{ n: 1, unitId: 'raider', from: { x: 7, y: 5 }, to: { x: 9, y: 5 }, seats: ['p1'] }]);
+  // Only the seat it walked in on hears of it, without the list of who else did.
+  assert.deepEqual(Civ1Game.getVisibleState(state, 'p1').gameSpecific.arrivals,
+    [{ n: 1, unitId: 'raider', from: { x: 7, y: 5 }, to: { x: 9, y: 5 } }]);
+  assert.deepEqual(Civ1Game.getVisibleState(state, 'p3').gameSpecific.arrivals, []);
+  assert.deepEqual(Civ1Game.toGrid(Civ1Game.getVisibleState(state, 'p1')).arrivals,
+    [{ id: 1, unitId: 'raider', from: { x: 7, y: 5 } }]);
+
+  // A step taken in plain sight is an ordinary move, not an arrival.
+  state = Civ1Game.applyActions(state, [{ playerId: 'p2', action: { type: 'move', unitId: 'raider', to: { x: 9, y: 4 } } }]);
+  assert.equal(state.gameSpecific.arrivals.length, 1);
+});
+
+test('civ1 arrivals: none without fog, and none in a view an agent is searching through', () => {
+  const units = () => [unit('mine', 'p1', 'militia', 10, 5), unit('raider', 'p2', 'cavalry', 7, 5, { moveThirds: 6 })];
+  const step = s => Civ1Game.applyActions(s, [{ playerId: 'p2', action: { type: 'move', unitId: 'raider', to: { x: 9, y: 5 } } }]);
+  assert.equal(step(world({ units: units() })).gameSpecific.arrivals, undefined);
+  const view = Civ1Game.getVisibleState(world({ fogOfWar: true, units: units() }), 'p2');
+  assert.equal(step(view).gameSpecific.arrivals, undefined);
+});

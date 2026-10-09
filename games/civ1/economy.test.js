@@ -154,6 +154,33 @@ test('economy: a finished improvement is not built twice', () => {
   assert.ok(!buildableForCity(s, s.cities[0]).includes('temple'), 'and could not choose it again');
 });
 
+// The original puts a new unit in its city. This used to look for a free square from
+// the city outwards, so with a garrison home the unit turned up outside — on the
+// eastern neighbour, the first one searched — in the open and unexplained.
+test('economy: a finished unit stands in its own city, garrison or not', () => {
+  let s = miniState({ size: 3 });
+  s.units = [{ id: 'g', ownerId: 'p1', type: 'militia', position: { x: 5, y: 5 }, alive: true, hp: 10, maxHp: 10, moveThirds: 3, attrs: { fortified: true }, queue: [] }];
+  s.cities[0].shields = 9;
+  s = Civ1Game.applyActions(s, [{ playerId: 'p1', action: { type: 'end-turn', unitId: '__player__' } }]);
+  const built = s.units.filter(u => u.id !== 'g');
+  assert.equal(built.length, 1, 'one militia built');
+  assert.deepEqual(built[0].position, { x: 5, y: 5 });
+  assert.equal(built[0].homeCityId, 'c1');
+});
+
+test('economy: a battle can halt production — no shields, no units, nothing to choose', () => {
+  let s = miniState({ size: 3 });
+  s.gameSpecific.noProduction = true;
+  s.cities[0].shields = 9;
+  for (let i = 0; i < 3; i++) s = Civ1Game.applyActions(s, [{ playerId: 'p1', action: { type: 'end-turn', unitId: '__player__' } }]);
+  assert.equal(s.units.length, 0);
+  assert.equal(s.cities[0].shields, 9, 'nothing banked either');
+  assert.ok(!Civ1Game.getLegalActions(s, 'p1').some(a => a.type === 'set-production'));
+  const city = Civ1Game.toGrid(s).cities[0];
+  assert.equal(city.productionNote, 'Builds nothing during this battle');
+  assert.equal(city.buildTurnsLeft, null);
+});
+
 test('economy: change-government enters anarchy then adopts the new government', () => {
   let s = miniState({ techs: ['monarchy', 'ceremonial-burial', 'code-of-laws'] });
   s = Civ1Game.applyActions(s, [{ playerId: 'p1', action: { type: 'change-government', government: 'monarchy', unitId: '__player__' } }]);

@@ -27,6 +27,22 @@ test('a unit that only just appeared has nowhere to hop from', () => {
   assert.equal(movedTokens(before, after).size, 0);
 });
 
+// civ1's logArrivals: a piece that walked out of the fog says where it stepped in from,
+// so it is seen to walk in rather than appear beside you.
+test('a unit that walked into sight hops from where the board says it came from', () => {
+  const before = grid([cell(1, 1), cell(2, 1)], { arrivals: [{ id: 4, unitId: 'old', from: { x: 0, y: 0 } }] });
+  const after  = grid([cell(1, 1), cell(2, 1, 'u1')], { arrivals: [
+    { id: 4, unitId: 'old', from: { x: 0, y: 0 } },
+    { id: 5, unitId: 'u1', from: { x: 5, y: 1 } },
+    { id: 6, unitId: 'u1', from: { x: 4, y: 1 } },
+  ] });
+  // The latest arrival wins: it is the step that brought the unit into view last.
+  assert.deepEqual(movedTokens(before, after).get('u1'), { from: { x: 4, y: 1 }, to: { x: 2, y: 1 } });
+  // One the last board already had is old news.
+  const again = grid([cell(1, 1), cell(2, 1, 'old')], { arrivals: before.arrivals });
+  assert.equal(movedTokens(before, again).size, 0);
+});
+
 // The bug this file exists for: a civ1 city square draws the CITY and carries its
 // GARRISON's unitId (see Civ1Game.toGrid), so animating "u1 moved to the city square"
 // slides the city sprite, its size badge and its name plaque over to meet the unit —

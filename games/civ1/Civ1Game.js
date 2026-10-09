@@ -340,7 +340,8 @@ function getLegalActions(state, playerId) {
   // barbarians own units and sometimes cities but no ledger at all (barbarians.js),
   // and buildOwnerCtx reads straight through to their advances.
   const ctx = state.gameSpecific.civ?.[playerId] ? buildOwnerCtx(state, playerId) : null;
-  for (const city of cities) {
+  // A battle whose cities build nothing (noProduction) has nothing to choose.
+  for (const city of state.gameSpecific.noProduction ? [] : cities) {
     if (city.ownerId !== playerId) continue;
     if (city.productionSetTurn === state.turnNumber) continue;
     for (const item of buildableForCity(state, city, ctx)) {
@@ -513,6 +514,10 @@ function resolveAttack(state, units, cities, attackerId, targetId, rng) {
     // of a city's is dead the city stands empty, still its owner's, until someone walks in.
     const city = cities.find(c => c.position.x === defPos.x && c.position.y === defPos.y);
     if (!city && !state.board.tiles[`${defPos.x},${defPos.y}`]?.fortress) {
+      // The rest of the stack goes in the record too (`fallen`): a unit that dies
+      // without a fight of its own still has to be seen to die, not simply be missing.
+      const fallen = units.filter(u => u.id !== attackerId && u.id !== targetId && at(u, defPos));
+      if (fallen.length) battle.fallen = fallen.map(fighter);
       units = units.map(u => (u.id !== attackerId && at(u, defPos)) ? { ...u, alive: false, hp: 0 } : u);
     } else if (city && beatenGarrisonCostsACitizen(state, city, attacker)) {
       // …and every defender beaten there costs the city a citizen. One that had only
@@ -564,6 +569,42 @@ function logBattles(gameSpecific, battles) {
   return { ...gameSpecific, battles: [...kept, ...battles.map(b => ({ ...b, n: ++n }))].slice(-BATTLES_KEPT) };
 }
 
+// Rival units that walked into someone's sight, kept for the board the way the fights
+// are (logBattles): a running numbered record of `{ n, unitId, from, to, seats }` —
+// the square a unit set off from out of a seat's sight, and the one it ended its move
+// on in it. Without it a raider marching out of the fog simply appears where it
+// stopped, beside your unit, as if it had been standing there all along: the client
+// only animates a piece it saw on both boards. getVisibleState hands each seat only
+// its own entries (and strips the seat lists).
+//
+// Real moves only — a view an agent is searching through (`observed`) imagines no
+// arrivals, and a game without fog has none to show.
+const ARRIVALS_KEPT = 32;
+function logArrivals(before, after) {
+  const gs = after.gameSpecific;
+  if (!gs?.explored || gs.observed || gs.fogOfWar === false) return after;
+  const was = new Map(before.units.filter(u => u.alive).map(u => [u.id, u.position]));
+  const sight = new Map();
+  const sees = (state, pid, pos) => {
+    const key = `${state === before ? 'b' : 'a'}:${pid}`;
+    if (!sight.has(key)) sight.set(key, sightedTiles(state, pid));
+    return sight.get(key).has(`${pos.x},${pos.y}`);
+  };
+  const found = [];
+  for (const u of after.units) {
+    const from = u.alive ? was.get(u.id) : null;
+    if (!from || (from.x === u.position.x && from.y === u.position.y)) continue;
+    const seats = after.players.map(p => p.id).filter(pid => pid !== u.ownerId
+      && !sees(before, pid, from) && sees(after, pid, u.position));
+    if (seats.length) found.push({ unitId: u.id, from: { ...from }, to: { ...u.position }, seats });
+  }
+  if (!found.length) return after;
+  const kept = gs.arrivals ?? [];
+  let n = kept.at(-1)?.n ?? 0;
+  return { ...after, gameSpecific: { ...gs,
+    arrivals: [...kept, ...found.map(a => ({ ...a, n: ++n }))].slice(-ARRIVALS_KEPT) } };
+}
+
 const reaches = (unit, board, units, cities, playerId, to) =>
   getReachableTiles(unit, board, units, playerId, cities).some(t => t.x === to.x && t.y === to.y);
 
@@ -609,7 +650,7 @@ function applyActions(state, playerActions, rng = Math.random) {
   // (rememberUnseenChanges). Only the mover's sight can grow during their own action,
   // so only the mover can have a remembered square come back into view.
   const mover = playerActions[0].playerId;
-  const acted = rememberUnseenChanges(state, applyOneAction(state, playerActions, rng));
+  const acted = logArrivals(state, rememberUnseenChanges(state, applyOneAction(state, playerActions, rng)));
   const next = forgetSeen(markExplored(acted, mover), mover);
   // One choke point for the two bookkeeping steps behind "a civ with no cities is
   // destroyed": record who holds a city, then finish off whoever no longer does.
@@ -1235,6 +1276,13 @@ function createFixedMapState(map, players, config) {
       ...(map.revealed ? { revealMap: true, knownCities: cities.map(c => c.id) } : {}),
       // How far back the board opens (toGrid's ui.openingSpan).
       ...(map.openingSpan ? { openingSpan: map.openingSpan } : {}),
+      // A map with an objective is a battle, not an empire: toGrid drops the empire
+      // screens (Cities, Military, Rates, Science) and their keys from the board. A map
+      // may say otherwise with its own `battle` field.
+      ...((map.battle ?? !!map.objective) ? { battle: true } : {}),
+      // `production: false`: the cities on this map build nothing (economy.js), so the
+      // armies it deals are all there will be. Outpost — see fixedMaps.js.
+      ...(map.production === false ? { noProduction: true } : {}),
       rules: resolveRules(config),
       // Barbarian activity level (see barbarians.js). Only the id is stored — the
       // schedule it selects lives in the module, so it never has to survive a
@@ -1622,6 +1670,10 @@ function getVisibleState(state, playerId) {
       battles: state.gameSpecific.battles?.filter(b =>
         b.attacker.ownerId === playerId || b.defender.ownerId === playerId
         || canSee(b.from) || canSee(b.at)),
+      // The rival units this player watched walk out of the fog (logArrivals) — theirs
+      // alone, and without the list of who else did.
+      arrivals: state.gameSpecific.arrivals?.filter(a => a.seats.includes(playerId))
+        .map(({ seats, ...a }) => a),
     },
     lastActions: state.lastActions?.filter(pa => pa.playerId === playerId) ?? null,
   };
@@ -1861,6 +1913,14 @@ export const Civ1Game = {
     hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
     blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
     mapZoom: true, defaultTileSize: 50, moveQueue: true,
+    // No tint on the squares the unit in hand can reach: the original marked none —
+    // the blinking unit and the direction keys were the whole interface. The square
+    // under the pointer is framed when a click there would move (HtmlLayer), and the
+    // Orders panel says how to move. Applies to every civ1 map, not just the battles.
+    hideMoveTargets: true,
+    // …nor the ring of outlined squares round it that the board draws for a unit's
+    // sight: with no grid lines anywhere else, those borders read as a stray grid.
+    hideSelectedVision: true,
     // A square draws only the unit on top of its stack, over a copy of itself one pixel
     // down and to the right — what CIV.EXE's draw-unit routine does whenever the unit
     // has another in its stack (OpenCivOne MapManagement F0_2aea_0e29). The units under
@@ -2575,7 +2635,11 @@ export const Civ1Game = {
           // Never negative: a city whose unit has nowhere to spawn (findAdjacentFree
           // in economy.js) keeps banking shields past the cost, and the raw subtraction
           // then reads as "-30 turns left" on the city screen. Zero means "paid for".
-          buildTurnsLeft: out.shields > 0 ? Math.max(0, Math.ceil((buildCost(c.production) - c.shields) / out.shields)) : null,
+          buildTurnsLeft: out.shields > 0 && !state.gameSpecific.noProduction
+            ? Math.max(0, Math.ceil((buildCost(c.production) - c.shields) / out.shields)) : null,
+          // A battle whose cities build nothing (fixedMaps.js `production: false`) says
+          // so on the city screen, in place of a build that would never finish.
+          ...(state.gameSpecific.noProduction ? { productionNote: 'Builds nothing during this battle' } : {}),
           trade: out.trade, luxury: out.luxury, gold: out.gold, science: out.science,
           happy: out.happiness.happy, content: out.happiness.content, unhappy: out.happiness.unhappy,
           // One face per citizen, by mood — the original's row of little people, which
@@ -2675,11 +2739,15 @@ export const Civ1Game = {
         const tribe = getCiv(tribeOf(state, pid));
         return [pid, [
           { value: tribe.name, title: `${tribe.leader} of the ${tribe.name}` },
-          { icon: 'zap', value: c.gold, title: 'Treasury' },
-          { value: c.government, title: 'Government' },
-          { value: `${c.taxRate}/${c.luxRate}/${100 - c.taxRate - c.luxRate}`, title: 'Tax / Luxury / Science' },
-          ...(c.researchName ? [{ value: c.researchName, title: 'Researching' }] : []),
-          ...(c.anarchyTurns ? [{ value: 'Anarchy', warn: true }] : []),
+          // A battle's header names the side and nothing of the empire behind it —
+          // treasury, rates and research are what the hidden empire screens are about.
+          ...(state.gameSpecific.battle ? [] : [
+            { icon: 'zap', value: c.gold, title: 'Treasury' },
+            { value: c.government, title: 'Government' },
+            { value: `${c.taxRate}/${c.luxRate}/${100 - c.taxRate - c.luxRate}`, title: 'Tax / Luxury / Science' },
+            ...(c.researchName ? [{ value: c.researchName, title: 'Researching' }] : []),
+            ...(c.anarchyTurns ? [{ value: 'Anarchy', warn: true }] : []),
+          ]),
         ]];
       }));
 
@@ -2702,7 +2770,12 @@ export const Civ1Game = {
     const battles = (state.gameSpecific.battles ?? []).map(b => ({
       id: b.n, from: b.from, at: b.at, won: b.won,
       attacker: battleToken(b.attacker), defender: battleToken(b.defender),
+      // The rest of a stack that died with its defender (resolveAttack).
+      ...(b.fallen?.length ? { fallen: b.fallen.map(battleToken) } : {}),
     }));
+    // Rival units that walked into this viewer's sight (logArrivals): where each stood
+    // before it did, so the board walks it out of the fog instead of having it appear.
+    const arrivals = (state.gameSpecific.arrivals ?? []).map(a => ({ id: a.n, unitId: a.unitId, from: a.from }));
 
     // wrap: true tells the client the map is a horizontal cylinder (see wrapX above) —
     // Battlefield's click-to-pan centres on any column instead of clamping near the
@@ -2712,7 +2785,7 @@ export const Civ1Game = {
     // times, next to the turn counter (GameHeader.vue). Computed per snapshot from
     // state.turnNumber, so scrubbing the history timeline moves the calendar too.
     return {
-      width, height, cells, wrap: boardWraps(board), civ, cities: citiesOut, military, statusChips, extraTeams, battles,
+      width, height, cells, wrap: boardWraps(board), civ, cities: citiesOut, military, statusChips, extraTeams, battles, arrivals,
       turnLabel: objectiveLabel(state) ?? yearLabel(state.turnNumber),
       zones: objectiveZones(state),
       // Per-session view settings, layered over the static `ui` above (see App.vue's
@@ -2726,6 +2799,13 @@ export const Civ1Game = {
         autoEndTurn: state.gameSpecific?.autoEndTurn !== false,
         ...(state.gameSpecific?.revealMap ? { terrainKnown: true } : {}),
         ...(state.gameSpecific?.openingSpan ? { openingSpan: state.gameSpecific.openingSpan } : {}),
+        // A battle (fixedMaps.js) is fought with the army on the map, so the empire's
+        // screens have nothing to say: no Cities / Military / Rates / Science buttons
+        // (ActionsPanel's empirePanels), and none of the advisor keys that open them.
+        ...(state.gameSpecific?.battle ? {
+          empirePanels: false,
+          keys: { ...this.ui.keys, bindings: this.ui.keys.bindings.filter(b => !b.panel) },
+        } : {}),
       },
     };
   },

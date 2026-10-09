@@ -1175,12 +1175,16 @@ const activeField = computed(() => {
     }
     // The attacker of the fight on screen: on the square it struck from, pushed along
     // its lunge while that lasts (see lungeShift) — in the same two forms as a slide.
+    // `known`: drawn whatever the board's own fog says. The server only sends a fight
+    // this viewer witnessed, but the board judges sight from where the viewer's pieces
+    // stand NOW — and when the attack killed the only ones near, the attacker would
+    // strike unseen and the viewer's units simply vanish.
     if (fighting?.beat.battle.attacker.unitId === u.id) {
       const { battle, spec } = fighting.beat;
       const x = battle.from.x + off, y = battle.from.y + off;
-      if (fighting.phase !== 'lunge') return { ...u, path: [[x, y]] };
+      if (fighting.phase !== 'lunge') return { ...u, known: true, path: [[x, y]] };
       const { dx, dy } = lungeShift(battle, spec, fighting.p, field.world);
-      return { ...u, path: [[x + dx, y + dy]], baseX: x, baseY: y, tweenDx: dx, tweenDy: dy };
+      return { ...u, known: true, path: [[x + dx, y + dy]], baseX: x, baseY: y, tweenDx: dx, tweenDy: dy };
     }
     const moving = hopFor(hopAnim.value, u.id);
     if (moving) {
@@ -1201,7 +1205,7 @@ const activeField = computed(() => {
       : q.kind === 'battle' && q.battle.attacker.unitId === u.id);
     if (queued) {
       const { x, y } = queued.kind === 'hop' ? hopFor(queued, u.id).steps[0] : queued.battle.from;
-      return { ...u, path: [[x + off, y + off]] };
+      return { ...u, path: [[x + off, y + off]], ...(queued.kind === 'battle' ? { known: true } : {}) };
     }
     return u;
   });
@@ -1262,6 +1266,14 @@ const battleFx = computed(() => {
     const b = beat.battle;
     const now = battleAnim.value?.beat === beat ? battleAnim.value : null;
     const lostAt = b.won ? b.at : b.from;
+    // Whoever died with the defender (`fallen` — civ1's stack death), drawn under it:
+    // they stand on the square until the explosion is over, rather than being missing
+    // from the moment the update arrived.
+    if (b.won) for (const [i, f] of (b.fallen ?? []).entries()) {
+      if (drawn.has(f.unitId) || ghosted.has(f.unitId)) continue;
+      ghosted.add(f.unitId);
+      ghosts.push({ key: `${b.id}f${i}`, unit: ghostOf(f, `ghost:${b.id}f${i}`), x: b.at.x, y: b.at.y, lunging: false });
+    }
     // The defender under the attacker: the attacker is drawn over it, as it lunges in.
     if (b.won && !drawn.has(b.defender.unitId) && !ghosted.has(b.defender.unitId)) {
       ghosted.add(b.defender.unitId);
