@@ -20,7 +20,7 @@ import { fileURLToPath }         from 'node:url';
 
 
 import { WebSocketServer } from './vendor/ws/wrapper.mjs';
-import { stripStatics, stripBodyStatics, haveFromHeader } from './engine/gridStatics.js';
+import { stripStatics, stripBodyStatics, haveFromHeader, socketHolder } from './engine/gridStatics.js';
 import { GridTimeline } from './engine/gridFrames.js';
 
 import { GameEngine, rosterError, rosterFromState, setupPreview, cellMapper, SETUP_KEY } from './engine/index.js';
@@ -582,11 +582,12 @@ class Session {
     const full = client.observer
       ? (client.viewAs ? this.toJSON(client.viewAs) : this.toJSON(null, { observer: true }))
       : this.toJSON(client.playerId);
-    // The board's static parts (terrain shapes, …) go once per connection, then by
-    // key only — see engine/gridStatics.js; `client._statics` is what this socket holds.
+    // The board's static parts (terrain shapes, …) go only to a socket that doesn't
+    // hold them yet, else by key — see engine/gridStatics.js.
     const msg = this._deltaFor(client, full);
-    client._statics ??= {};
-    const payload = JSON.stringify(msg?.grid ? { ...msg, grid: stripStatics(msg.grid, client._statics) } : msg);
+    client.statics ??= socketHolder();
+    const payload = JSON.stringify(msg?.grid
+      ? { ...msg, grid: stripStatics(msg.grid, client.statics.has, client.statics.sent) } : msg);
     const delay = client.observer ? this.observerDelay : 0;
     if (delay > 0) {
       setTimeout(() => {
@@ -2818,7 +2819,8 @@ function handleUpgrade(req, socket, head, prefix = '') {
   // to see everything — a per-player view is strictly less information).
   const viewAs = observer ? (url.searchParams.get('viewAs') || null) : null;
   wss.handleUpgrade(req, socket, head, (ws) => {
-    const client = { ws, playerId, observer, viewAs };
+    // `have`: the board parts (by key) the client already holds — engine/gridStatics.js.
+    const client = { ws, playerId, observer, viewAs, statics: socketHolder(url.searchParams.get('have')) };
     session.wsClients.add(client);
     // Immediate snapshot so a freshly-connected client is in sync without a REST
     // round-trip (observers get the delayed, full-information view via _sendTo).
@@ -2829,7 +2831,7 @@ function handleUpgrade(req, socket, head, prefix = '') {
     // base makes the next send a whole snapshot, which re-aligns both ends.
     ws.on('message', (raw) => {
       let msg; try { msg = JSON.parse(raw); } catch { return; }
-      if (msg?.resync) { client._base = null; client._statics = null; session._sendTo(client); }
+      if (msg?.resync) { client._base = null; client.statics.forget(); session._sendTo(client); }
     });
     ws.on('close', drop);
     ws.on('error', drop);

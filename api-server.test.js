@@ -403,6 +403,19 @@ test('a shape map\'s terrain goes over a socket once, and the shipped client put
   const lean = await fetch(`${BASE}/sessions/${s.id}?player=allied`, { headers: { 'x-grid-have': whole.grid.statics.shapes } }).then(r => r.json());
   assert.equal(lean.grid.shapes, undefined, 'a REST caller holding the terrain is not sent it again');
   assert.equal(lean.grid.statics.shapes, whole.grid.statics.shapes);
+
+  // The console opens a new socket every turn: one that names the terrain it holds
+  // is not sent it even first — and the shipped client, which names what it holds,
+  // still hands its consumer whole boards from a new subscription.
+  const named = [];
+  observe(s.id, (msg) => named.push(msg), `?player=allied&have=${whole.grid.statics.shapes}`);
+  const again = [];
+  const sub2 = api.subscribeSession(s.id, 'allied', (full) => again.push(full));
+  try { await sleep(1000); } finally { sub2.close(); }
+  assert.ok(named[0]?.grid, 'the named socket was sent nothing');
+  assert.equal(named[0].grid.shapes, undefined, 'a socket that holds the terrain was sent it anyway');
+  assert.ok(again[0], 'the second subscription saw nothing');
+  assert.deepEqual(again[0].grid.shapes, whole.grid.shapes, 'a new subscription lost the terrain');
 });
 
 test('a socket that asks to resync is sent the terrain again', async () => {

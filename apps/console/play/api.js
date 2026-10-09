@@ -36,8 +36,10 @@ function _fillStatics(grid, lookup) {
   }
   return true;
 }
-// The places a response carries a board — the same two the server strips.
-const _boardsOf = (body) => [body?.grid, body?.session?.grid].filter(Boolean);
+// The places a response carries a board — the same ones the server strips (a
+// snapshot, a reconfigure's answer, the whole boards a history page opens with).
+const _boardsOf = (body) => [body?.grid, body?.session?.grid,
+  ...(Array.isArray(body?.frames) ? body.frames.map(f => f?.full) : [])].filter(Boolean);
 
 async function _req(path, opts) {
   // What we hold right now, pinned: the response is filled from THESE values even if
@@ -246,7 +248,7 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
   const query = observer
     ? ('?observer=1' + (viewAs ? '&viewAs=' + encodeURIComponent(viewAs) : ''))
     : (playerId ? '?player=' + playerId : '');
-  const wsUrl = _WS_BASE + '/sessions/' + id + '/ws' + query;
+  const wsBase = _WS_BASE + '/sessions/' + id + '/ws' + query;
   let ws = null, closed = false, pollTimer = null, retryTimer = null, backoff = 1000;
 
   // Last full snapshot handed to onUpdate — the base the server's deltas patch
@@ -254,18 +256,23 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
   // changed cells and the new log entries only; rebuild the whole snapshot here so
   // every consumer downstream keeps receiving exactly what it always did.
   let base = null;
-  // The static board fields this socket has sent us, by field: { shapes: {key, value} }.
-  // The server keeps the same record for the connection (see engine/gridStatics.js).
-  let held = {};
+  // The static board fields this socket may leave out (see engine/gridStatics.js) —
+  // the same record the server keeps for the connection: what we named on connecting
+  // (`pinned`, key -> value, fixed for the socket's life) and the last of each field
+  // it has sent us since (`held`: { shapes: {key, value} }).
+  let held = {}, pinned = new Map();
   function rehydrate(msg) {
     // Static fields first, so a delta is rebuilt over a whole board. A key we don't
     // hold can't be filled in — same remedy as a delta with no base: resync.
     const grid = msg?.grid;
     if (grid?.statics) {
       for (const [field, key] of Object.entries(grid.statics)) {
-        if (grid[field] != null) held[field] = { key, value: grid[field] };
-        else if (held[field]?.key === key) grid[field] = held[field].value;
-        else return null;
+        if (grid[field] == null) {
+          const value = held[field]?.key === key ? held[field].value : pinned.get(key);
+          if (value == null) return null;
+          grid[field] = value;
+        }
+        held[field] = { key, value: grid[field] };
       }
       _fillStatics(grid, () => null); // remember them for REST requests too
     }
@@ -320,10 +327,16 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
 
   function connect() {
     if (closed) return;
-    try { ws = new WebSocket(wsUrl); }
+    // A new socket starts with nothing sent, on the server's side and so on ours —
+    // only what we name here, pinned so the cache can't drop it from under us. The
+    // console opens a socket every turn, so this is what keeps the map from coming
+    // again each time.
+    held = {};
+    pinned = new Map(_statics);
+    const have = [...pinned.keys()].join(',');
+    try { ws = new WebSocket(wsBase + (have ? (query ? '&' : '?') + 'have=' + encodeURIComponent(have) : '')); }
     catch { startPoll(); scheduleRetry(); return; }
-    // A new socket starts with nothing sent, on the server's side and so on ours.
-    ws.onopen    = () => { backoff = 1000; held = {}; stopPoll(); };
+    ws.onopen    = () => { backoff = 1000; stopPoll(); };
     ws.onmessage = (ev) => {
       try {
         const full = rehydrate(JSON.parse(ev.data));
