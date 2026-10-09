@@ -157,16 +157,40 @@ function triggerFx(unitId, fx) {
 // Each blink is one on/off cycle of TERRITORY_BLINK_MS; playNext (below) then
 // holds the queue for a further TERRITORY_PAUSE_MS once the blinking ends,
 // before the next queued action starts — the "beat" pause the caller asked for.
-// holdOwner (attacks only — see oldOwnerOf above) is the pre-attack owner index;
+// holdOwner (attacks only — see runningOwner below) is the pre-attack owner index;
 // while a territory's flash entry exists, SchematicLayer keeps painting it that
 // colour instead of its true (already-updated) one, so a conquered territory only
 // visibly flips to the winner's colour once its flash finishes and this entry
 // is removed — not the instant the underlying state changes.
-const territoryFx = ref({}); // territoryId -> { key, blinks, holdOwner }
+const territoryFx = ref({}); // territoryId -> { key, blinks, holdOwner, holdToken }
 let territoryFxKey = 0;
 const territoryFxTimers = new Map();
 const TERRITORY_BLINK_MS = 300;
 const TERRITORY_PAUSE_MS = 1000;
+
+// A battle's dice, thrown on screen (battlefield/DiceRollOverlay.vue) before the board
+// shows what they did: they tumble for ROLL_SPIN_MS, then land on the faces actually
+// thrown, and only once they have been on show for ROLL_SETTLE_MS does the territory
+// change hands on the board. A bundled AI round (more than a couple of beats queued)
+// throws faster. Null when no roll is on screen.
+const rollFx = ref(null);
+const ROLL_SPIN_MS = 450, ROLL_SETTLE_MS = 600;
+const ROLL_BRISK = 0.55;
+let rollTimer = null, rollKey = 0;
+function showRoll(roll, spinMs) {
+  clearTimeout(rollTimer);
+  const key = ++rollKey;
+  rollFx.value = { ...roll, key, phase: 'rolling' };
+  rollTimer = setTimeout(() => { if (rollFx.value?.key === key) rollFx.value = { ...rollFx.value, phase: 'settled' }; }, spinMs);
+}
+// The last roll stays up a moment after the queue empties, so the outcome of a single
+// attack — a player's own — can be read before it goes.
+function dropRollSoon() {
+  if (!rollFx.value) return;
+  const key = rollFx.value.key;
+  clearTimeout(rollTimer);
+  rollTimer = setTimeout(() => { if (rollFx.value?.key === key) rollFx.value = null; }, 1600);
+}
 
 // A colour hold (an entry with blinks: 0 — see the bundleHold pre-population) exists
 // only to keep a territory looking un-conquered until the attack beat that flips it
@@ -186,17 +210,26 @@ function clearColourHolds() {
   territoryFx.value = next;
 }
 
-function triggerTerritoryFx(territoryId, blinks, holdOwner, holdLabel = null) {
+// `holdToken` is the token's pre-action look ({ label?, pips?, sizeFrac? }), held with
+// the colour. `opts.holdMs` keeps the hold up longer than the blinking (a dice roll
+// still on screen); `opts.after` ({ holdOwner, holdToken }) is how the territory looks
+// once the action is done — when the action is one step of a bundle, the board's own
+// (final) look may be several steps further on, so the hold moves to `after` rather
+// than lifting, and the next step's flash (or the queue going idle) takes it from there.
+function triggerTerritoryFx(territoryId, blinks, holdOwner, holdToken = null, opts = {}) {
   if (!territoryId) return;
   territoryFxKey += 1;
-  territoryFx.value = { ...territoryFx.value, [territoryId]: { key: territoryFxKey, blinks, holdOwner, holdLabel } };
+  territoryFx.value = { ...territoryFx.value, [territoryId]: { key: territoryFxKey, blinks, holdOwner, holdToken } };
   clearTimeout(territoryFxTimers.get(territoryId));
+  const key = territoryFxKey;
   territoryFxTimers.set(territoryId, setTimeout(() => {
-    const next = { ...territoryFx.value };
-    delete next[territoryId];
-    territoryFx.value = next;
     territoryFxTimers.delete(territoryId);
-  }, blinks * TERRITORY_BLINK_MS));
+    if (territoryFx.value[territoryId]?.key !== key) return;
+    const next = { ...territoryFx.value };
+    if (opts.after) next[territoryId] = { key, blinks: 0, holdOwner: opts.after.holdOwner ?? null, holdToken: opts.after.holdToken ?? null };
+    else delete next[territoryId];
+    territoryFx.value = next;
+  }, Math.max(blinks * TERRITORY_BLINK_MS, opts.holdMs ?? 0)));
 }
 
 // ── turn replay (simultaneous mode) ───────────────────────────
@@ -346,6 +379,7 @@ function playNext() {
     // animated, so ack it in observer lock-step mode.
     if (!hopAnim.value && !fxBusy.value && !battleAnim.value && animQueue.value.length === 0) {
       clearColourHolds();
+      dropRollSoon();
       maybeAckAdvance();
     }
     return;
@@ -357,17 +391,25 @@ function playNext() {
     for (const f of beat.flashes) triggerFx(f.unitId, f.fx);
     let delay = FX_BEAT_MS;
     const territoryFlashes = beat.territoryFlashes ?? [];
+    // A long tail of beats — a bundled AI turn, which the player now waits out before
+    // their own turn is announced — plays at a brisker beat, so ten battles take a few
+    // seconds rather than twenty.
+    const brisk = animQueue.value.length > 2;
+    // A battle with dice: they are thrown first, and the territories hold their old
+    // look until the dice have landed and been seen (see rollFx).
+    const rollMs = beat.roll ? (ROLL_SPIN_MS + ROLL_SETTLE_MS) * (brisk ? ROLL_BRISK : 1) : 0;
+    if (beat.roll) showRoll(beat.roll, ROLL_SPIN_MS * (brisk ? ROLL_BRISK : 1) / playbackSpeed.value);
+    else if (territoryFlashes.length) dropRollSoon();
     if (territoryFlashes.length) {
       let maxBlinks = 0;
       for (const tf of territoryFlashes) {
-        triggerTerritoryFx(tf.territoryId, tf.blinks, tf.holdOwner, tf.holdLabel);
+        triggerTerritoryFx(tf.territoryId, tf.blinks, tf.holdOwner, tf.holdToken,
+          { holdMs: rollMs / playbackSpeed.value, after: tf.after });
         maxBlinks = Math.max(maxBlinks, tf.blinks);
       }
-      // The pause separates one battle from the next. A long tail of them — a bundled
-      // AI turn, which the player now waits out before their own turn is announced —
-      // plays at a brisker beat, so ten battles take a few seconds rather than twenty.
-      const pause = animQueue.value.length > 2 ? TERRITORY_PAUSE_MS / 4 : TERRITORY_PAUSE_MS;
-      delay = maxBlinks * TERRITORY_BLINK_MS + pause;
+      // The pause separates one battle from the next.
+      const pause = brisk ? TERRITORY_PAUSE_MS / 4 : TERRITORY_PAUSE_MS;
+      delay = Math.max(maxBlinks * TERRITORY_BLINK_MS, rollMs) + pause;
     }
     // The footer's speed control scales this like every other playback it drives, so a
     // player who doesn't want to watch the AI's turn at all can wind it up.
@@ -578,20 +620,25 @@ watch(liveState, (newState, oldState) => {
   // its old count — until the flash for that attack plays. Without the count, a bundled
   // AI turn gives itself away: every number on the board lands at its final value the
   // instant the update arrives, seconds before the battles that produced it animate.
-  // (See territoryFx's holdOwner/holdLabel, read by the renderers' tileColor and token.)
+  // (See territoryFx's holdOwner/holdToken, read by the renderers' tileColor and token.)
   // Built once per watch fire, not per attack, since one update can bundle several AI
   // turns' worth of attacks — see the bundleHold pre-population below.
-  const oldOwnerByTerritory = new Map();
-  const oldLabelByTerritory = new Map();
-  for (const c of oldState.grid.cells) {
-    if (c.territoryId == null) continue;
-    if (!oldOwnerByTerritory.has(c.territoryId)) oldOwnerByTerritory.set(c.territoryId, c.owner);
-    if (c.label != null && c.label !== '' && !oldLabelByTerritory.has(c.territoryId)) {
-      oldLabelByTerritory.set(c.territoryId, c.label);
+  // A territory's token as the board draws it — its count, and the pips and size that
+  // grow with it (kdice) — or null for a cell that carries none.
+  const tokenOf = (c) => ((c.label != null && c.label !== '') || c.pips != null)
+    ? { label: c.label ?? null, pips: c.pips ?? null, sizeFrac: c.sizeFrac ?? null } : null;
+  const ownersAndTokens = (grid) => {
+    const owners = new Map(), tokens = new Map();
+    for (const c of grid.cells) {
+      if (c.territoryId == null) continue;
+      if (!owners.has(c.territoryId)) owners.set(c.territoryId, c.owner);
+      const tok = tokenOf(c);
+      if (tok && !tokens.has(c.territoryId)) tokens.set(c.territoryId, tok);
     }
-  }
-  const oldOwnerOf = (territoryId) => oldOwnerByTerritory.get(territoryId) ?? null;
-  const oldLabelOf = (territoryId) => oldLabelByTerritory.get(territoryId) ?? null;
+    return { owners, tokens };
+  };
+  const { owners: oldOwnerByTerritory, tokens: oldTokenByTerritory } = ownersAndTokens(oldState.grid);
+  const sameToken = (a, b) => (a?.label ?? null) === (b?.label ?? null) && (a?.pips ?? null) === (b?.pips ?? null);
   // Every territory id on this board. An action counts as a territory attack when it
   // names two of them — whichever field it uses for the attacker (kdice puts it in
   // unitId, risk in from) — so the flash follows the ids, not one game's action shape.
@@ -609,6 +656,12 @@ watch(liveState, (newState, oldState) => {
   // ownership, which could already exclude a territory a later entry in this
   // same bundle went on to capture from them.
   const runningOwner = new Map(oldOwnerByTerritory);
+  // ...and each territory's token, the same way. Both advance on the territories an
+  // action stamps in its result (`result.territories`: { id: { owner, token } } —
+  // kdice), so a step of the bundle is shown as it was after THAT step.
+  const runningToken = new Map(oldTokenByTerritory);
+  const holdNow = (tid) => ({ holdOwner: runningOwner.get(tid) ?? null, holdToken: runningToken.get(tid) ?? null });
+  const teamColor = (idx) => activeField.value?.teams?.[idx - 1]?.raw ?? '#8a96a1';
   const territoriesOwnedBy = (playerId) => {
     const idx = pidIdxByPlayer.get(playerId);
     if (idx == null) return [];
@@ -634,25 +687,17 @@ watch(liveState, (newState, oldState) => {
   // capture, and they are what most of a Risk bundle consists of.
   const bundleHold = {};
   if (fxOn) {
-    const newOwnerByTerritory = new Map();
-    const newLabelByTerritory = new Map();
-    for (const c of newState.grid.cells) {
-      if (c.territoryId == null) continue;
-      if (!newOwnerByTerritory.has(c.territoryId)) newOwnerByTerritory.set(c.territoryId, c.owner);
-      if (c.label != null && c.label !== '' && !newLabelByTerritory.has(c.territoryId)) {
-        newLabelByTerritory.set(c.territoryId, c.label);
-      }
-    }
+    const { owners: newOwnerByTerritory, tokens: newTokenByTerritory } = ownersAndTokens(newState.grid);
     for (const [tid, newOwner] of newOwnerByTerritory) {
       const oldOwner = oldOwnerByTerritory.get(tid);
-      const oldLabel = oldLabelByTerritory.get(tid);
+      const oldToken = oldTokenByTerritory.get(tid);
       const ownerChanged = oldOwner != null && oldOwner !== newOwner;
-      const labelChanged = oldLabel != null && oldLabel !== newLabelByTerritory.get(tid);
-      if (!ownerChanged && !labelChanged) continue;
+      const tokenChanged = oldToken != null && !sameToken(oldToken, newTokenByTerritory.get(tid));
+      if (!ownerChanged && !tokenChanged) continue;
       bundleHold[tid] = {
         key: 0, blinks: 0,
         holdOwner: ownerChanged ? oldOwner : null,
-        holdLabel: labelChanged ? oldLabel : null,
+        holdToken: tokenChanged ? oldToken : null,
       };
     }
   }
@@ -749,6 +794,7 @@ watch(liveState, (newState, oldState) => {
     if (fxOn) {
       const flashes = [];
       const territoryFlashes = [];
+      let rollBeat = null;
       // Territory-attack games target a second territory via action.to rather than an
       // events list — flash the whole attacker + defender territory instead of the
       // generic single-unit circle (see the renderers' territoryFx). An attack
@@ -759,11 +805,28 @@ watch(liveState, (newState, oldState) => {
       const attackerTid = FX_ACTION_TYPES.has(action?.type)
         ? [action.unitId, action.from].find(v => territoryIds.has(v)) ?? null
         : null;
+      // How each territory this action changed looks once it is done (see runningToken).
+      const stamped = action?.result?.territories ?? null;
+      const afterOf = (tid) => {
+        const t = stamped?.[tid];
+        if (!t) return undefined;
+        return { holdOwner: pidIdxByPlayer.get(t.owner) ?? runningOwner.get(tid) ?? null, holdToken: t.token ?? null };
+      };
       if (attackerTid && territoryIds.has(action.to) && action.to !== attackerTid) {
         territoryFlashes.push(
-          { territoryId: attackerTid, blinks: 3, holdOwner: oldOwnerOf(attackerTid), holdLabel: oldLabelOf(attackerTid) },
-          { territoryId: action.to, blinks: 3, holdOwner: oldOwnerOf(action.to), holdLabel: oldLabelOf(action.to) },
+          { territoryId: attackerTid, blinks: 3, ...holdNow(attackerTid), after: afterOf(attackerTid) },
+          { territoryId: action.to, blinks: 3, ...holdNow(action.to), after: afterOf(action.to) },
         );
+        // Dice thrown (kdice): the roll plays out on screen before the board changes.
+        const r = action.result;
+        if (Array.isArray(r?.attackerRolls) && Array.isArray(r?.defenderRolls)) {
+          const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+          rollBeat = {
+            attacker: { rolls: r.attackerRolls, sum: r.attackerSum ?? sum(r.attackerRolls), color: teamColor(runningOwner.get(attackerTid)) },
+            defender: { rolls: r.defenderRolls, sum: r.defenderSum ?? sum(r.defenderRolls), color: teamColor(runningOwner.get(action.to)) },
+            won: !!r.won,
+          };
+        }
       } else if (action?.unitId && FX_ACTION_TYPES.has(action.type)) {
         flashes.push({ unitId: action.unitId, fx: { type: 'action', ...fxSquare(action.unitId) } });
       }
@@ -775,7 +838,13 @@ watch(liveState, (newState, oldState) => {
       // recipients.
       if (action?.type === 'end-turn' && action.result?.reinforced) {
         const playerId = entry.playerActions?.[0]?.playerId;
-        for (const tid of territoriesOwnedBy(playerId)) territoryFlashes.push({ territoryId: tid, blinks: 1 });
+        // The dice placed land on the board with the flash, not before it. Every flashed
+        // territory keeps its hold through the flash, placed on or not: a flash entry
+        // replaces the bundle's colour hold, and one that lifted on its own would show a
+        // territory a later attack in the bundle takes in its taker's colour already.
+        for (const tid of territoriesOwnedBy(playerId)) {
+          territoryFlashes.push({ territoryId: tid, blinks: 1, ...holdNow(tid), after: afterOf(tid) ?? holdNow(tid) });
+        }
       }
       // An action naming one territory and nothing else (Risk's place-armies — the
       // click that puts a single army down): blink it once. Everything such an action
@@ -789,7 +858,7 @@ watch(liveState, (newState, oldState) => {
         if (ev.type === 'damage')    flashes.push({ unitId: ev.targetId, fx: { type: 'damage', amount: ev.amount, died: ev.died, ...fxSquare(ev.targetId) } });
         else if (ev.type === 'heal') flashes.push({ unitId: ev.targetId, fx: { type: 'heal',   amount: ev.amount, ...fxSquare(ev.targetId) } });
       }
-      if (flashes.length || territoryFlashes.length) beats.push({ kind: 'fx', flashes, territoryFlashes });
+      if (flashes.length || territoryFlashes.length) beats.push({ kind: 'fx', flashes, territoryFlashes, roll: rollBeat });
       // Knockback: a struck unit that also moved slides after the hit lands.
       if (hopsOn) for (const ev of entry.events ?? [])
         if (ev.type === 'damage' && moved.has(ev.targetId) && !claimed.has(ev.targetId)) pushHop(ev.targetId);
@@ -798,7 +867,14 @@ watch(liveState, (newState, oldState) => {
     // Advance runningOwner for a won attack so later entries in this same bundle
     // (e.g. that player's own end-turn reinforcement, or another player's attack)
     // see this territory's owner as of here, not the bundle's eventual final state.
-    if (action?.type === 'attack' && action.result?.won && action.to) {
+    const stampedLooks = action?.result?.territories;
+    if (stampedLooks && typeof stampedLooks === 'object') {
+      for (const [tid, look] of Object.entries(stampedLooks)) {
+        const idx = pidIdxByPlayer.get(look?.owner);
+        if (idx != null) runningOwner.set(tid, idx);
+        if (look?.token) runningToken.set(tid, look.token);
+      }
+    } else if (action?.type === 'attack' && action.result?.won && action.to) {
       const attackerIdx = pidIdxByPlayer.get(entry.playerActions?.[0]?.playerId);
       if (attackerIdx != null) runningOwner.set(action.to, attackerIdx);
     }
@@ -816,8 +892,10 @@ watch(liveState, (newState, oldState) => {
     playNext();
   } else {
     // Nothing to animate for this update — so nothing to hold a colour for, and any
-    // hold left from an earlier one has missed its chance to be played out.
-    clearColourHolds();
+    // hold left from an earlier one has missed its chance to be played out. Unless an
+    // earlier update is still playing: its holds are what keep the territories it has
+    // yet to show from changing hands early, and the queue going idle lifts them.
+    if (!animating()) clearColourHolds();
   }
 });
 
@@ -1117,6 +1195,9 @@ function buildField(g, s) {
     // (see StatusChips.vue) — a game's toGrid may set this; the design app has no
     // idea what the chips mean, it just renders whatever the game hands it.
     statusChips: g.statusChips ?? null,
+    // A leaderboard ({ title?, columns, rows, note? }) a game's toGrid may set — shown in
+    // the docked Standings panel (battlefield/StandingsPanel.vue). Absent for most games.
+    standings: g.standings ?? null,
     // Optional per-turn label a game may set beside the turn counter in the header —
     // civ1 puts the calendar year there ("3550 BC"). Absent for games where a turn
     // is just a turn.
@@ -1711,6 +1792,7 @@ function playScenario(scenarioId) {
                    :field="activeField"
                    :unit-fx="unitFx"
                    :territory-fx="territoryFx"
+                   :roll-fx="rollFx"
                    :battle-fx="battleFx"
                    :history-fields="historyFields"
                    :reveal-fields="revealFields"

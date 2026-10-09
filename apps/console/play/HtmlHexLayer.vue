@@ -24,9 +24,10 @@ const props = defineProps({
   activeUnitId: { type: String, default: null },
   hoveredId:    { type: String, default: null },
   rdr:          Object,
-  // Territory-wide flash keyed by territoryId (see App.vue's territoryFx): { key,
-  // blinks, holdOwner } — `key` restarts the animation, `blinks` is how many hard
-  // on/off cycles to run, and `holdOwner` keeps the pre-attack colour until it ends.
+  // Territory-wide flash keyed by territoryId (see SessionView's territoryFx): { key,
+  // blinks, holdOwner, holdToken } — `key` restarts the animation, `blinks` is how many
+  // hard on/off cycles to run, and `holdOwner`/`holdToken` keep the pre-attack colour
+  // and count until the battle has been shown.
   territoryFx:  { type: Object, default: () => ({}) },
 });
 // Only 'sq-click': a hex, a token and the background all report WHERE the click landed
@@ -234,12 +235,17 @@ function tokenStyle(u) {
 // this the board contradicts itself mid-animation: the blob still the old owner's
 // colour, the number on it already the result of a battle that hasn't been shown yet —
 // and a bundled AI turn spoils its whole outcome the moment it arrives.
+// The held token is the whole look of the count — its text, and the pips and size
+// that grow with it (kdice) — so a stack doesn't shrink or swell ahead of its battle.
 const displayUnits = computed(() => (props.units ?? []).map(u => {
   const fx = props.territoryFx?.[u.id];
-  if (!fx || (fx.holdOwner == null && fx.holdLabel == null)) return u;
+  const tok = fx?.holdToken;
+  if (!fx || (fx.holdOwner == null && !tok)) return u;
   return {
     ...u,
-    label: fx.holdLabel ?? u.label,
+    label: tok?.label ?? u.label,
+    pips: tok?.pips ?? u.pips,
+    sizeFrac: tok?.sizeFrac ?? u.sizeFrac,
     teamObj: fx.holdOwner != null ? (props.field.teams[fx.holdOwner - 1] ?? u.teamObj) : u.teamObj,
   };
 }));

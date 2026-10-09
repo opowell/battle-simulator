@@ -21,6 +21,8 @@ import DatabasePanel     from './battlefield/DatabasePanel.vue';
 import BottomBar         from './battlefield/BottomBar.vue';
 import Minimap           from './battlefield/Minimap.vue';
 import GamePanels        from './battlefield/GamePanels.vue';
+import StandingsPanel    from './battlefield/StandingsPanel.vue';
+import DiceRollOverlay   from './battlefield/DiceRollOverlay.vue';
 import SettingsChangeNotice from './battlefield/SettingsChangeNotice.vue';
 import GameOverOverlay   from './battlefield/GameOverOverlay.vue';
 import UnitInfoOverlay   from './battlefield/UnitInfoOverlay.vue';
@@ -41,6 +43,8 @@ const props = defineProps({
   field:         Object,
   unitFx:        { type: Object, default: () => ({}) },
   territoryFx:   { type: Object, default: () => ({}) },
+  // A battle's dice on screen (SessionView's rollFx — see DiceRollOverlay), or null.
+  rollFx:        { type: Object, default: null },
   // The fights being played out on the board (App.vue's battleFx): fighters it no longer
   // draws itself, and the explosion frame showing — and a piece walking into a city,
   // drawn by a stand-in until it arrives. Null when none of that is on the board.
@@ -146,6 +150,7 @@ const menuProps = computed(() => ({
   canChangeSettings: props.liveState?.status === 'active' && !!props.gameDef,
   canShowHelp: canShowHelp.value,
   hasOrders: ordersDocked.value, hasMinimap: hostPanels.value.includes('minimap'),
+  hasStandings: hostPanels.value.includes('standings'), standingsTitle: standings.value?.title ?? '',
   observerPlayers: isObserver.value ? observerPlayers.value : [],
   teams: props.field?.teams ?? [], observerView: props.observerView,
 }));
@@ -1181,9 +1186,25 @@ const isDone          = computed(() => isLive.value && props.liveState.status !=
 // (An observer has no orders to give: their panel is the empire overview, which only
 // a game with one has — the same test ActionsPanel's hasContent makes.)
 const hasOrders = computed(() => isLive.value && (!isObserver.value || !!props.field?.civ || isDone.value));
+// A game whose board carries a leaderboard (grid.standings — kdice's) shows it where
+// its orders are: docked as a third panel on a map that zooms, and otherwise in the
+// left column under the orders — a fixed board is fitted to the stage, and a docked
+// column would shrink the whole map to make room for a few rows of numbers.
+// While the board is still playing back what just happened, the table keeps showing how
+// things stood before it: the update that brought a bundled AI round already carries the
+// round's final standings, and those would give away every battle before it is thrown.
+const latestStandings = computed(() => displayField.value?.standings ?? props.field?.standings ?? null);
+const standings = ref(latestStandings.value);
+watch([latestStandings, () => props.animating, atLatest], ([next, busy, live]) => {
+  if (!busy || !live || !standings.value) standings.value = next;
+});
 const hostPanels = computed(() => zoomEnabled.value
-  ? [...(hasOrders.value ? ['orders'] : []), 'minimap']
+  ? [...(hasOrders.value ? ['orders'] : []), 'minimap', ...(standings.value ? ['standings'] : [])]
   : []);
+const standingsProps = computed(() => ({
+  standings: standings.value, teams: props.field?.teams ?? [],
+  activeId: props.liveState?.status === 'active' ? (props.liveState?.pendingPlayer ?? null) : null,
+}));
 const ordersDocked = computed(() => hostPanels.value.includes('orders'));
 // ActionsPanel's wiring, shared by its two homes (the docked panel, the left column).
 const ordersProps = computed(() => ({
@@ -2771,6 +2792,7 @@ onUnmounted(() => {
           <!-- A map that zooms has its orders (and minimap) in panels of their own,
                docked beside the board (GamePanels' hostPanels, below). -->
           <ActionsPanel v-if="isLive && !ordersDocked" v-bind="ordersProps" v-on="ordersOn"/>
+          <StandingsPanel v-if="standings && !hostPanels.includes('standings')" v-bind="standingsProps" titled/>
         </div>
       </div>
 
@@ -2848,6 +2870,8 @@ onUnmounted(() => {
           @sq-click="handleSqClick"
           @set-marker="handleSetMarker"
           @box-select="handleBoxSelect"/>
+        <!-- A battle's dice, over whichever board is drawn (kept out of the v-if chain above). -->
+        <DiceRollOverlay v-if="rollFx && atLatest && !revealAll" :key="rollFx.key" :roll="rollFx"/>
       </div>
 
       <!-- Right sidebar. Games whose map wants the width, and which say what the
@@ -2924,6 +2948,7 @@ onUnmounted(() => {
     :menu="menuProps" :live-state="liveState" :game-def="gameDef"
     :ui="ui" :game="field.game" :teams="field?.teams ?? []"
     :host-panels="hostPanels" :map-zoom="zoomEnabled" :orders-title="isObserver ? 'Overview' : 'Orders'"
+    :standings-title="standings?.title ?? 'Standings'"
     :orders-subtitle="liveState?.phase ?? ''"
     @menu="onMenu" @arm="placingUnit = $event">
     <template #orders>
@@ -2937,6 +2962,9 @@ onUnmounted(() => {
         :fog="fog" :revealAll="layerRevealAll" :viewerOverride="perspectiveViewer"
         :exploredTiles="exploredTileSet"
         @goto="handleMinimapGoto"/>
+    </template>
+    <template #standings>
+      <StandingsPanel v-if="standings && hostPanels.includes('standings')" v-bind="standingsProps"/>
     </template>
   </GamePanels>
   </div>

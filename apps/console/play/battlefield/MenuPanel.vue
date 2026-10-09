@@ -21,6 +21,8 @@ defineProps({
   // The board's own panels this game has (see GamePanels' hostPanels), reopened from here.
   hasOrders:  Boolean,
   hasMinimap: Boolean,
+  hasStandings: Boolean,
+  standingsTitle: { type: String, default: '' },
   // How panels are shown: 'float' over the board, or 'dock'ed in a column beside it.
   panelMode: { type: String, default: 'float' },
   // Observer-only; omitted (empty) for a seated player, which hides the section.
@@ -70,6 +72,9 @@ const apiLabel = 'api · ' + window.location.host + window.api.basePath;
       </button>
       <button v-if="hasMinimap" class="btn btn-ghost mp-btn" @click="$emit('open-panel', 'minimap')">
         <BsIcon name="crosshair" :size="14" color="var(--dim)"/> Minimap
+      </button>
+      <button v-if="hasStandings" class="btn btn-ghost mp-btn" @click="$emit('open-panel', 'standings')">
+        <BsIcon name="flag" :size="14" color="var(--dim)"/> {{standingsTitle || 'Standings'}}
       </button>
       <button v-if="canChangeSettings" class="btn btn-ghost mp-btn" @click="$emit('open-panel', 'game-settings')">
         <BsIcon name="sliders" :size="14" color="var(--accent)"/> Game settings
