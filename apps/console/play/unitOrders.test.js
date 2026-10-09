@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 // unitOrders.js is a classic browser global (no ESM export, so vue3-sfc-loader can
 // load it); importing it for its side effect publishes the API on globalThis.ORDERS.
 await import('./unitOrders.js');
-const { orderOwner, ordersFor, othersHaveOrders } = globalThis.ORDERS;
+const { orderOwner, ordersFor, othersHaveOrders, onOwnScreen } = globalThis.ORDERS;
 
 const actions = [
   { type: 'move', unitId: 'u1', to: 'a1' },
@@ -46,4 +46,15 @@ test('it can tell when other units are still waiting on orders', () => {
   assert.equal(othersHaveOrders(actions, null), true);
   assert.equal(othersHaveOrders(actions.slice(0, 2), 'u1'), false);
   assert.equal(othersHaveOrders(actions.slice(4), null), false);
+});
+
+test('a building\'s production is its order; a city\'s is the city screen\'s', () => {
+  // SC1/SC2: the command center on the board trains SCVs — listed when it is picked up.
+  assert.equal(onOwnScreen({ type: 'set-production', buildingId: 'b0', unitType: 'scv' }), false);
+  assert.deepEqual(types(ordersFor(actions, 'b0').filter(a => !onOwnScreen(a))), ['set-production', 'play-card', 'end-turn']);
+  // civ1: a city's production, and the empire's rates, are set on screens of their own.
+  assert.equal(onOwnScreen({ type: 'set-production', cityId: 'c1', item: 'militia', unitId: '__player__' }), true);
+  assert.equal(onOwnScreen({ type: 'set-tax', rate: 50, unitId: '__player__' }), true);
+  assert.equal(onOwnScreen({ type: 'set-research', tech: 'bronze-working' }), true);
+  assert.equal(onOwnScreen({ type: 'end-turn', unitId: '__player__' }), false);
 });

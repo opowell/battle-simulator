@@ -349,12 +349,26 @@ export function getLegalActions(state, playerId) {
       // Check extra requirements for advanced units
       const extraReqs = getUnitRequirements(unitType);
       if (!hasRequirements(state, playerId, extraReqs)) continue;
-      actions.push({ type: 'set-production', buildingId: b.id, unitType });
+      actions.push({ type: 'set-production', buildingId: b.id, unitType,
+        label: productionLabel(unitType), ...(MAP_SPRITES.has(unitType) ? { icon: spriteSrc(state, unitType) } : {}) });
     }
   }
 
   actions.push({ type: 'end-turn', unitId: '__player__' });
   return actions;
+}
+
+// What a production order says on its button in the Orders panel: what it makes and
+// what that costs — "Train SCV · 50 minerals · 4 turns". A Zerg building morphs larvae,
+// and a zergling egg hatches two.
+const UNIT_NAMES = { scv: 'SCV' };
+const unitName = (type) => UNIT_NAMES[type] ?? type.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+function productionLabel(unitType) {
+  const u = UNITS[unitType];
+  const cost = [`${u.cost.minerals} minerals`, ...(u.cost.gas ? [`${u.cost.gas} gas`] : [])];
+  const turns = `${u.buildTime} turn${u.buildTime === 1 ? '' : 's'}`;
+  const what = u.special.includes('pair') ? `2 ${unitName(unitType)}s` : unitName(unitType);
+  return [`${u.race === 'zerg' ? 'Morph' : 'Train'} ${what}`, ...cost, turns].join(' · ');
 }
 
 // Extra requirements for units beyond just their buildingType

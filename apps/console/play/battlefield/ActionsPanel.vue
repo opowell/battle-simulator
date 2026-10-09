@@ -130,12 +130,9 @@ const empireShown     = computed(() => !!props.civ && props.ui?.empirePanels !==
 // result to report, whoever is watching.
 const hasContent      = computed(() => !props.observing || empireShown.value || props.isDone);
 
-// set-production also moves out: with more than one city its flat label ("Build
-// militia") doesn't even say which city, and the City Inspector overlay (opened by
-// clicking a city — see Battlefield.vue's selectedCity) already disambiguates that
-// for free.
-const OVERLAY_HANDLED = new Set(['set-tax', 'set-luxury', 'set-research', 'set-production']);
-const allListActions = computed(() => aimedActions.value.filter(a => !OVERLAY_HANDLED.has(a.type)));
+// Rates, research and a city's production are set on screens of their own, not here
+// (unitOrders.js's onOwnScreen); a building's production is its order like any other.
+const allListActions = computed(() => aimedActions.value.filter(a => !ORDERS.onOwnScreen(a)));
 
 // A field whose value is a LENGTH OF TIME (ui.timeEntry — chess's "hold this piece
 // where it stands", in the quadrants where time runs continuously). Time there is a
@@ -276,9 +273,11 @@ function fmtAction(action) {
   if (t === 'queue-pop') return 'Undo last queued move';
   if (t === 'crouch')    return 'Crouch';
   if (t === 'stand')     return 'Stand Up';
-  // Civ1 empire/settler actions. (set-tax/set-luxury/set-research/set-production are
-  // filtered out of this list entirely — see OVERLAY_HANDLED — so no label is needed
-  // for them here; their overlays format their own buttons.)
+  // A building's production order without a label of its own (SC1 gives one).
+  if (t === 'set-production' && action.unitType) return `Train ${action.unitType}`;
+  // Civ1 empire/settler actions. (set-tax/set-luxury/set-research, and a city's
+  // set-production, are filtered out of this list entirely — see ORDERS.onOwnScreen — so
+  // no label is needed for them here; their overlays format their own buttons.)
   if (t === 'change-government') return `Revolution → ${action.government}`;
   if (t === 'launch-spaceship') return '🚀 Launch Spaceship';
   if (t === 'found-city')     return 'Found City';

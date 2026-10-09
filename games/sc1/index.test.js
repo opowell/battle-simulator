@@ -131,3 +131,13 @@ test('sc1: defaults to simultaneous turns, and a we-go round refreshes both side
   }
   assert.ok(engine.log.length > 0 && engine.log.every(e => e.simultaneous));
 });
+
+test('sc1: a production order says on its button what it makes and what that costs', () => {
+  const state = Sc1Game.createInitialState(players('terran', 'zerg'));
+  const prod = (pid) => Sc1Game.getLegalActions(state, pid).filter(a => a.type === 'set-production');
+  const scv = prod('p1').find(a => a.unitType === 'scv');
+  assert.equal(scv.buildingId, 'b0');
+  assert.equal(scv.label, 'Train SCV · 50 minerals · 4 turns');
+  assert.match(scv.icon, /\/images\/sc1\/map-original\/scv$/);
+  assert.equal(prod('p2').find(a => a.unitType === 'zergling').label, 'Morph 2 Zerglings · 50 minerals · 2 turns');
+});

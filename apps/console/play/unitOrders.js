@@ -8,7 +8,8 @@
 //   • node    — `await import('./unitOrders.js')` exposes globalThis.ORDERS for the
 //               unit tests (see unitOrders.test.js).
 //
-// Nothing here knows any game: an action is whatever getLegalActions returned.
+// Nothing here knows any game: an action is whatever getLegalActions returned — save
+// for the few action types that a screen of their own issues (onOwnScreen).
 (function (root) {
   'use strict';
 
@@ -52,5 +53,18 @@
     });
   }
 
-  root.ORDERS = { orderOwner, ordersFor, othersHaveOrders };
+  // Issued from a screen of their own, so the Orders list leaves them out: the empire's
+  // tax/luxury/research rates (one action per legal value — a dozen-plus buttons — set
+  // on the Rates and Science screens), and a CITY's production, named by `cityId`: with
+  // several cities a flat "Build militia" would not even say which one, and the city
+  // screen, opened by clicking the city, picks them by cityId. A set-production that
+  // names a `buildingId` instead is the order of a token on the board (a barracks, a
+  // command center) with no screen of its own: it is listed, like any order, when that
+  // building is the one in hand (ordersFor).
+  const OWN_SCREEN = new Set(['set-tax', 'set-luxury', 'set-research']);
+  function onOwnScreen(action) {
+    return OWN_SCREEN.has(action.type) || (action.type === 'set-production' && action.cityId != null);
+  }
+
+  root.ORDERS = { orderOwner, ordersFor, othersHaveOrders, onOwnScreen };
 })(typeof window !== 'undefined' ? window : globalThis);
