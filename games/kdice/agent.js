@@ -25,9 +25,7 @@
 //     attacking from full territories; without, it waits and lets the stacks grow.
 // ---------------------------------------------------------------------------
 
-import { MAX_DICE, winProbability } from './odds.js';
-
-const DEFAULT_STOCK_MAX = 64;
+import { MAX_DICE, DEFAULT_STOCK_MAX, winProbability } from './odds.js';
 
 // Position weights (see evaluatePosition).
 export const WEIGHTS = {

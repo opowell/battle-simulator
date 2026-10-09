@@ -6,6 +6,9 @@
 // distributions of n six-sided dice.
 
 export const MAX_DICE = 8;
+// The most dice a player may keep in reserve: KDice stores the surplus "up to 4x the
+// maximum" a territory holds, 32 (DICE WARS, which it clones, allowed 64).
+export const DEFAULT_STOCK_MAX = 4 * MAX_DICE;
 
 // sumDist[n][s] = P(n d6 sum to s), for n = 0..MAX_DICE.
 const sumDist = [[1]];

@@ -1,15 +1,15 @@
 import { generateMap, getLargestConnectedRegion } from './map.js';
 import { getKDiceBelief, visibleTerritoryIds } from './belief.js';
 import { hexLayoutBounds, territoryBorders } from '../mapTypes/hexagon.js';
-import { MAX_DICE, winProbability } from './odds.js';
+import { MAX_DICE, DEFAULT_STOCK_MAX, winProbability } from './odds.js';
 import { KDiceAgent, evaluatePosition } from './agent.js';
 
-// The most dice a player may keep in reserve (DICE WARS' STOCK_MAX — see stockMaxOf).
-export const DEFAULT_STOCK_MAX = 64;
+// The most dice a player may keep in reserve (KDice's 32 — see odds.js and stockMaxOf).
+export { DEFAULT_STOCK_MAX };
 
 /**
  * The reserve cap a session plays with: the `stockMax` game option when it is a
- * usable number, else DICE WARS' own 64. Stored on the state (gameSpecific.stockMax)
+ * usable number, else KDice's own 32. Stored on the state (gameSpecific.stockMax)
  * so the rules, the AI and the leaderboard all read one value.
  */
 function stockMaxOf(config = {}) {
@@ -600,7 +600,7 @@ export const KDiceGame = {
   },
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Distant territories are hidden until you border them', type: 'boolean', default: false },
-    { id: 'stockMax', label: 'Dice reserve', description: 'Dice that cannot be placed because every territory is full are stored, up to this many, and placed in later turns (DICE WARS: 64)', type: 'integer', default: DEFAULT_STOCK_MAX },
+    { id: 'stockMax', label: 'Dice reserve', description: 'Dice that cannot be placed because every territory is full are stored, up to this many, and placed in later turns (KDice: 32; DICE WARS: 64)', type: 'integer', default: DEFAULT_STOCK_MAX },
   ],
   createInitialState,
   getLegalActions,

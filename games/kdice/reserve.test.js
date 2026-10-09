@@ -22,13 +22,13 @@ const endTurn = (state) => KDiceGame.applyActions(state, [{ playerId: 'p1', acti
 const p1Dice = (state) => Object.values(state.board.territories).filter(t => t.owner === 'p1').reduce((n, t) => n + t.dice, 0);
 const regionOf = (state) => getLargestConnectedRegion('p1', state.board.territories, state.board.adjacency).length;
 
-test('kdice reserve: every player starts with an empty reserve, capped at 64 by default', () => {
+test('kdice reserve: every player starts with an empty reserve, capped at 32 by default', () => {
   const s = KDiceGame.createInitialState(players(3));
   assert.deepEqual(s.gameSpecific.stock, { p1: 0, p2: 0, p3: 0 });
   assert.equal(s.gameSpecific.stockMax, DEFAULT_STOCK_MAX);
-  assert.equal(DEFAULT_STOCK_MAX, 64);
+  assert.equal(DEFAULT_STOCK_MAX, 32);
   assert.equal(KDiceGame.createInitialState(players(), { stockMax: 20 }).gameSpecific.stockMax, 20);
-  assert.equal(KDiceGame.createInitialState(players(), { stockMax: '' }).gameSpecific.stockMax, 64);
+  assert.equal(KDiceGame.createInitialState(players(), { stockMax: '' }).gameSpecific.stockMax, 32);
 });
 
 test('kdice reserve: with every territory full, the whole income is stored', () => {
@@ -63,9 +63,9 @@ test('kdice reserve: stored dice are placed in later turns, before anything is k
   for (const t of Object.values(next.board.territories)) assert.ok(t.dice <= 8);
 });
 
-test('kdice reserve: the reserve never exceeds its cap (DICE WARS caps income + stock at 64)', () => {
-  const s = withP1(KDiceGame.createInitialState(players()), 8, 60);
-  assert.equal(endTurn(s).gameSpecific.stock.p1, 64);
+test('kdice reserve: the reserve never exceeds its cap (KDice caps income + stock at 32)', () => {
+  const s = withP1(KDiceGame.createInitialState(players()), 8, 30);
+  assert.equal(endTurn(s).gameSpecific.stock.p1, 32);
   const capped = withP1(KDiceGame.createInitialState(players(), { stockMax: 5 }), 8, 0);
   assert.equal(endTurn(capped).gameSpecific.stock.p1, Math.min(5, regionOf(capped)));
 });
