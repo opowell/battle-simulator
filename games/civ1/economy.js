@@ -262,9 +262,13 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
     }
 
     // ── Production ─────────────────────────────────────────────────────────────
-    shields += out.shields;
+    // A battle can halt it (a fixed map's `production: false` — fixedMaps.js): the
+    // armies are what the map deals, and nothing joins them halfway through. The
+    // shields are not banked either, so the city screen has nothing filling up.
+    const halted = !!state.gameSpecific?.noProduction;
+    if (!halted) shields += out.shields;
     const cost = buildCost(production);
-    if (shields >= cost) {
+    if (!halted && shields >= cost) {
       const info = improvementDef(production);
       if (info) {
         // Improvement or wonder: add to the city (wonders only if still unclaimed).
@@ -300,7 +304,15 @@ export function processOwnerEconomy(state, ownerId, nextId, makeUnit) {
         // delivered nothing at all. Bank them and move the city on.
         if (spaceship[part] >= SPACESHIP[production].cap) production = DEFAULT_PRODUCTION;
       } else if (UNITS[production]) {
-        const spawn = findAdjacentFree(city.position, state.board, units);
+        // A new unit stands IN its city, as the original's did — it is the garrison's
+        // newest member, not a stranger outside the walls. This used to look for a free
+        // square from the city outwards, a rule from before friendly units could stack:
+        // the city square was "taken" by its own garrison, so the unit appeared on the
+        // first empty neighbour — east, by the search order — unfortified, in the open.
+        // Ships cannot stand on land here (map.js), so they still look for a free square.
+        const spawn = UNITS[production].domain === 'sea'
+          ? findAdjacentFree(city.position, state.board, units)
+          : { ...city.position };
         if (spawn) {
           const minted = mintId('u', idCounter, taken);
           idCounter = minted.next; taken.add(minted.id);

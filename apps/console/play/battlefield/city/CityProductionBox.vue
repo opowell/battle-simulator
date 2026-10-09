@@ -43,7 +43,13 @@ const choices = computed(() => props.productionActions.map(a => ({
 </script>
 
 <template>
-  <div class="cp">
+  <!-- A game can say the city builds nothing at all (`productionNote` — civ1: a battle
+       whose cities are frozen). Then that sentence is the whole box: no item, no shields
+       filling up, no menu. -->
+  <div v-if="city.productionNote" class="cp">
+    <div class="mono cp-note">{{city.productionNote}}</div>
+  </div>
+  <div v-else class="cp">
     <!-- The item being built is itself the change-production control: clicking it opens
          the menu of everything else this city could build, and clicking it again closes
          it. There is no separate button. -->
@@ -98,6 +104,7 @@ const choices = computed(() => props.productionActions.map(a => ({
 .cp-now-txt { min-width: 0; flex: 1; }
 .cp-name { font-size: 15px; font-weight: 700; text-transform: capitalize; }
 .cp-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.cp-note { font-size: 12px; color: var(--dim); padding: 4px; }
 .cp-hint { font-size: 10px; color: var(--faint); margin-top: 3px; }
 .cp-caret { flex: none; color: var(--dim); font-size: 15px; padding-right: 4px; }
 .cp-menu { display: flex; flex-direction: column; gap: 3px; max-height: 320px; overflow-y: auto;

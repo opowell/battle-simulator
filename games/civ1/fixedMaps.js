@@ -312,7 +312,7 @@ export const FIXED_MAPS = [
     id: 'outpost',
     name: 'Outpost',
     next: 'mountain-pass',
-    description: 'Easy: raiders are coming out of the northern forest. Hold your frontier stockade for 10 turns with two phalanxes and a horseman',
+    description: 'Easy: raiders are coming out of the northern forest. Hold your frontier stockade for 10 turns with two phalanxes, a militia and a horseman',
     // You are the defender here: the raiders (seat 2) have to take the stockade, and
     // you have only to still hold it when the tenth round is over. Tundra and forest,
     // a frozen river past the walls to the sea, two hills over the approaches.
@@ -341,11 +341,19 @@ export const FIXED_MAPS = [
     cities: [
       { side: 1, x: 10, y: 3, size: 3, buildings: ['palace'] },
     ],
+    // The stockade builds nothing: what you hold it with is the four units below. It
+    // used to turn out a militia every few turns, out on the square east of the walls
+    // (economy.js put a new unit beside its city then) — which, with the city screens
+    // hidden in a battle (toGrid), the player saw only as free units from nowhere. The
+    // militia it would have built is in the garrison from the start instead: without
+    // it you held 76% of the time, with it 93% (it was 87% with the production).
+    production: false,
     objective: { type: 'take-city', attacker: 2, defender: 1, turns: 10 },
     units: [
       { side: 1, type: 'phalanx', x: 10, y: 3, fortified: true },
       { side: 1, type: 'phalanx', x: 10, y: 3, fortified: true },
       { side: 1, type: 'cavalry', x: 10, y: 3 },
+      { side: 1, type: 'militia', x: 10, y: 3, fortified: true },
       { side: 2, type: 'legion',  x: 3, y: 2 },
       { side: 2, type: 'legion',  x: 3, y: 3 },
       { side: 2, type: 'legion',  x: 3, y: 4 },

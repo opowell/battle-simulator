@@ -92,6 +92,21 @@ for (const id of LADDER.slice(0, -1)) {
   });
 }
 
+test('battle ladder: a battle shows no empire — no Cities/Military/Rates/Science, nor their keys', () => {
+  for (const id of LADDER) {
+    const { ui, statusChips } = Civ1Game.toGrid(start(id));
+    assert.equal(ui.empirePanels, false, id);
+    assert.ok(!ui.keys.bindings.some(b => b.panel), `${id}: no advisor keys`);
+    assert.ok(ui.keys.bindings.some(b => b.action === 'fortify'), `${id}: the unit keys stay`);
+    assert.equal(statusChips.p1.length, 1, `${id}: the header names the side, nothing more`);
+  }
+  // An empire game keeps all of it.
+  const world = Civ1Game.toGrid(Civ1Game.createInitialState(players(), { width: 20, height: 12, seed: 3 }));
+  assert.equal(world.ui.empirePanels, undefined);
+  assert.equal(world.ui.keys, undefined, 'the static key list stands');
+  assert.ok(world.statusChips.p1.length > 1);
+});
+
 test('outpost: you defend — the raiders, seat 2, have the clock against them', () => {
   const s = start('outpost');
   const { attackerId, defenderId, cityIds } = s.gameSpecific.objective;
@@ -181,4 +196,8 @@ test('outpost: plays to an end with the heuristic on both sides, inside its ten 
   }
   assert.ok(engine.result, 'the battle is decided');
   assert.ok(engine.state.turnNumber <= 11, `ended on turn ${engine.state.turnNumber}`);
+  // The stockade builds nothing (fixedMaps.js `production: false`): every unit the
+  // defender had was dealt by the map. It used to turn out militia beside the walls.
+  const dealt = getFixedMap('outpost').units.filter(u => u.side === 1).length;
+  assert.equal(engine.state.units.filter(u => u.ownerId === 'p1').length, dealt);
 });

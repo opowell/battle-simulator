@@ -117,10 +117,15 @@ const researchActions = computed(() => props.displayedActions.filter(a => a.type
 const overviewId      = computed(() => props.overviewPlayerId ?? props.pendingPlayerId);
 const myCiv           = computed(() => props.civ?.[overviewId.value] ?? null);
 
+// The overview screens' buttons — unless the game says this position has no empire
+// to show (ui.empirePanels false: civ1's battles, which are fought with the army on the
+// map and nothing behind it).
+const empireShown     = computed(() => !!props.civ && props.ui?.empirePanels !== false);
+
 // With no seat and no overview screens to offer, an observer's panel would be an
 // empty titled box — draw nothing at all instead. A finished game still has its
 // result to report, whoever is watching.
-const hasContent      = computed(() => !props.observing || !!props.civ || props.isDone);
+const hasContent      = computed(() => !props.observing || empireShown.value || props.isDone);
 
 // set-production also moves out: with more than one city its flat label ("Build
 // militia") doesn't even say which city, and the City Inspector overlay (opened by
@@ -312,7 +317,7 @@ function fmtAction(action) {
         · {{liveState.phase}}
       </span>
     </div>
-    <div v-if="civ" class="ap-empire">
+    <div v-if="empireShown" class="ap-empire">
       <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'cities')">Cities</button>
       <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'military')">Military</button>
       <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'rates')">Rates</button>

@@ -340,7 +340,8 @@ function getLegalActions(state, playerId) {
   // barbarians own units and sometimes cities but no ledger at all (barbarians.js),
   // and buildOwnerCtx reads straight through to their advances.
   const ctx = state.gameSpecific.civ?.[playerId] ? buildOwnerCtx(state, playerId) : null;
-  for (const city of cities) {
+  // A battle whose cities build nothing (noProduction) has nothing to choose.
+  for (const city of state.gameSpecific.noProduction ? [] : cities) {
     if (city.ownerId !== playerId) continue;
     if (city.productionSetTurn === state.turnNumber) continue;
     for (const item of buildableForCity(state, city, ctx)) {
@@ -1235,6 +1236,13 @@ function createFixedMapState(map, players, config) {
       ...(map.revealed ? { revealMap: true, knownCities: cities.map(c => c.id) } : {}),
       // How far back the board opens (toGrid's ui.openingSpan).
       ...(map.openingSpan ? { openingSpan: map.openingSpan } : {}),
+      // A map with an objective is a battle, not an empire: toGrid drops the empire
+      // screens (Cities, Military, Rates, Science) and their keys from the board. A map
+      // may say otherwise with its own `battle` field.
+      ...((map.battle ?? !!map.objective) ? { battle: true } : {}),
+      // `production: false`: the cities on this map build nothing (economy.js), so the
+      // armies it deals are all there will be. Outpost — see fixedMaps.js.
+      ...(map.production === false ? { noProduction: true } : {}),
       rules: resolveRules(config),
       // Barbarian activity level (see barbarians.js). Only the id is stored — the
       // schedule it selects lives in the module, so it never has to survive a
@@ -2575,7 +2583,11 @@ export const Civ1Game = {
           // Never negative: a city whose unit has nowhere to spawn (findAdjacentFree
           // in economy.js) keeps banking shields past the cost, and the raw subtraction
           // then reads as "-30 turns left" on the city screen. Zero means "paid for".
-          buildTurnsLeft: out.shields > 0 ? Math.max(0, Math.ceil((buildCost(c.production) - c.shields) / out.shields)) : null,
+          buildTurnsLeft: out.shields > 0 && !state.gameSpecific.noProduction
+            ? Math.max(0, Math.ceil((buildCost(c.production) - c.shields) / out.shields)) : null,
+          // A battle whose cities build nothing (fixedMaps.js `production: false`) says
+          // so on the city screen, in place of a build that would never finish.
+          ...(state.gameSpecific.noProduction ? { productionNote: 'Builds nothing during this battle' } : {}),
           trade: out.trade, luxury: out.luxury, gold: out.gold, science: out.science,
           happy: out.happiness.happy, content: out.happiness.content, unhappy: out.happiness.unhappy,
           // One face per citizen, by mood — the original's row of little people, which
@@ -2675,11 +2687,15 @@ export const Civ1Game = {
         const tribe = getCiv(tribeOf(state, pid));
         return [pid, [
           { value: tribe.name, title: `${tribe.leader} of the ${tribe.name}` },
-          { icon: 'zap', value: c.gold, title: 'Treasury' },
-          { value: c.government, title: 'Government' },
-          { value: `${c.taxRate}/${c.luxRate}/${100 - c.taxRate - c.luxRate}`, title: 'Tax / Luxury / Science' },
-          ...(c.researchName ? [{ value: c.researchName, title: 'Researching' }] : []),
-          ...(c.anarchyTurns ? [{ value: 'Anarchy', warn: true }] : []),
+          // A battle's header names the side and nothing of the empire behind it —
+          // treasury, rates and research are what the hidden empire screens are about.
+          ...(state.gameSpecific.battle ? [] : [
+            { icon: 'zap', value: c.gold, title: 'Treasury' },
+            { value: c.government, title: 'Government' },
+            { value: `${c.taxRate}/${c.luxRate}/${100 - c.taxRate - c.luxRate}`, title: 'Tax / Luxury / Science' },
+            ...(c.researchName ? [{ value: c.researchName, title: 'Researching' }] : []),
+            ...(c.anarchyTurns ? [{ value: 'Anarchy', warn: true }] : []),
+          ]),
         ]];
       }));
 
@@ -2726,6 +2742,13 @@ export const Civ1Game = {
         autoEndTurn: state.gameSpecific?.autoEndTurn !== false,
         ...(state.gameSpecific?.revealMap ? { terrainKnown: true } : {}),
         ...(state.gameSpecific?.openingSpan ? { openingSpan: state.gameSpecific.openingSpan } : {}),
+        // A battle (fixedMaps.js) is fought with the army on the map, so the empire's
+        // screens have nothing to say: no Cities / Military / Rates / Science buttons
+        // (ActionsPanel's empirePanels), and none of the advisor keys that open them.
+        ...(state.gameSpecific?.battle ? {
+          empirePanels: false,
+          keys: { ...this.ui.keys, bindings: this.ui.keys.bindings.filter(b => !b.panel) },
+        } : {}),
       },
     };
   },
