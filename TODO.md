@@ -1,27 +1,31 @@
-Import scenarios. 
-Battle mode.
-Games specific State evaluation.
-Simultaneous action phase.
-Real-time action phase.
-Rooms, clients and players.
-Fix scale for all games: most are too small.
-Add map zoom.
-Import game modules from
-- TableTop Simulator
-- Vassal
-
-Stack:
-- App server (jas)
-- Session manager
-  - sessions
-  - rooms
-  - apps
-  - clients
-  - players
-
-Clients connect to the server
-
-- Board game
-  - board
-  - piece
-- Chess
+- all games
+  - orders: only show orders for active unit
+- SC1:
+  - how to move map with mouse? cmd+drag?
+  - marines look too big
+  - command center looks broken
+  - "Inspect terrain" does not do anything - remove, or make it work.
+  - Terrain 
+  - "Pop out to new window" should open a window with only the selected panel, not any of its siblings or parents.
+  - default "simultaneous move".
+- Civ1, Outpost scenario:
+  - hide Cities/Military/Science/Rates actions.
+  - free militia appear east of the city for no reason??
+  - show all visible enemy units / attacks - your units should never just disappear when they get attacked and die.
+  - do not show map grid lines, or teal background for squares you can move to.
+- Combat mission
+  - default:
+    - fog on.
+    - simultaneous move
+    - continuous time
+  - allow box-drag to select units.
+  - increase map fidelity: basic shapes are fine, but should be able to make out houses, roads, hedgerows, trees, walls, etc.
+  - make units different sizes/shapes: tanks a rectangle with a turret, etc.
+  - attacks should be targets on a specific location or enemy.
+  - minimap: use actual shape of units (circles), not squares.
+- kdice
+  - show a leaderboard
+  - default: 7 players on a map, larger map?
+  - territories should only change color after battle has taken place.
+  - AI: too many suicidal attacks, learn to store up.
+  - store dice when all territories full (up to 64? check original game).
