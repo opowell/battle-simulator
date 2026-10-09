@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CombatMissionGame } from './index.js';
-import { num } from '../coord.js';
+import { num, BigNumber } from '../coord.js';
+import { isPassable, isPassableContinuous } from './map.js';
 import { ticksLeft, apLeft } from './rules.js';
 import { GameEngine } from '../../engine/index.js';
 import { RandomAgent } from '../../agents/index.js';
@@ -100,6 +101,57 @@ test('combatmission: skip-unit spends the rest of that unit\'s turn', () => {
   const skip  = CombatMissionGame.getLegalActions(state, 'allied').find(a => a.type === 'skip-unit');
   const next  = CombatMissionGame.applyActions(state, [{ playerId: 'allied', action: skip }]);
   assert.equal(ticksLeft(next.units.find(u => u.id === skip.unitId)), 0);
+});
+
+// ---------------------------------------------------------------------------
+// Where units stand: the middle of a square, never against the map's edge
+// ---------------------------------------------------------------------------
+
+const SCENARIOS = ['bocage', 'river_line', 'hill_woods', 'ambush'];
+// Exactly x.5 — the authoritative BigNumber, not a float that happens to print so.
+const centred = (v) => v.minus(v.integerValue(BigNumber.ROUND_FLOOR)).eq(0.5);
+
+for (const scenario of SCENARIOS) {
+  test(`combatmission (${scenario}): units deploy in the middle of open squares, clear of the edge`, () => {
+    const state = CombatMissionGame.createInitialState(players(), { scenario });
+    const { board } = state;
+    const drawn = new Map(CombatMissionGame.toGrid(state).units.map(u => [u.id, u]));
+    for (const u of state.units) {
+      const { x, y } = u.position;
+      assert.ok(centred(x) && centred(y), `${u.id} stands at (${x}, ${y}), not a square's middle`);
+      assert.ok(isPassable(board, x, y) && isPassableContinuous(board, num(x), num(y)), `${u.id} starts on open ground`);
+      // The token as the board draws it (its footprint) stays off the border ring.
+      const f = drawn.get(u.id).footprint;
+      const [hx, hy] = f.shape === 'circle' ? [f.r, f.r]
+        : [Math.abs(f.w / 2 * Math.cos(f.ang)) + Math.abs(f.h / 2 * Math.sin(f.ang)),
+           Math.abs(f.w / 2 * Math.sin(f.ang)) + Math.abs(f.h / 2 * Math.cos(f.ang))];
+      assert.ok(num(x) - hx >= 1 && num(y) - hy >= 1 && num(x) + hx <= board.width - 1 && num(y) + hy <= board.height - 1,
+        `${u.id} (${u.type}) is drawn over the map's edge`);
+      // The wire carries the exact decimal.
+      assert.equal(drawn.get(u.id).x, x.toString());
+    }
+  });
+}
+
+test('combatmission: every enumerated move ends in the middle of a square, in either time', () => {
+  for (const time of ['continuous', 'discrete']) {
+    const state = CombatMissionGame.createInitialState(players(), { time });
+    const moves = CombatMissionGame.getLegalActions(state, 'allied').filter(a => a.type === 'move');
+    assert.ok(moves.length > 0);
+    for (const m of moves) assert.ok([m.to.x, m.to.y].every(v => v % 1 === 0.5), `${time}: move to (${m.to.x}, ${m.to.y})`);
+    // …and lands there exactly.
+    const next = CombatMissionGame.applyActions(state, [{ playerId: 'allied', action: moves[0] }]);
+    const p = next.units.find(u => u.id === moves[0].unitId).position;
+    assert.ok(centred(p.x) && centred(p.y));
+  }
+});
+
+test('combatmission: the border ring is wall to free movement on every side', () => {
+  const { board } = CombatMissionGame.createInitialState(players());
+  const W = board.width, H = board.height;
+  for (const [x, y] of [[0.5, 5.5], [5.5, 0.5], [W - 0.5, 5.5], [5.5, H - 0.5], [0.99, 1.5], [1.5, 0.99]])
+    assert.equal(isPassableContinuous(board, x, y), false, `(${x}, ${y}) is border`);
+  assert.equal(isPassableContinuous(board, 1, 1.5), isPassable(board, 1, 1), 'the first square starts at 1');
 });
 
 // ---------------------------------------------------------------------------

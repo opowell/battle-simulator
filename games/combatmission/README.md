@@ -82,6 +82,16 @@ Fixed 20×16 map:
 - **Hedgerows**: scattered around edges and mid-field (not on road row)
 - **Road**: horizontal at y=7 (x=1–18)
 
+## Where units stand
+
+Positions are exact points (BigNumber, `games/coord.js`); square (x, y) is the area
+[x, x+1) × [y, y+1), and rules read the square a point is in by flooring it (LOS,
+cover, spotting, the AI's tile moves). Units deploy in the **middle** of their square
+(x+0.5, y+0.5), the tile-graph moves go square middle to square middle, and sampled fog
+worlds place hidden units the same way — so no unit straddles four squares or sits half
+over the border. The border ring (squares 0 and width-1 / height-1) is wall on all four
+sides, to free movement as on the tile grid.
+
 ## Special mechanics
 
 - **Action Points (AP)** — each unit has 2 AP per turn; `move` costs 1 AP, `fire` costs 1 AP

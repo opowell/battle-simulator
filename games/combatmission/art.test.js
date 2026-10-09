@@ -45,11 +45,12 @@ for (const scenario of SCENARIOS) {
     }
   });
 
+  // The whole board, border ring included: the ring is wall to free movement on all
+  // four sides, as it is on the tile grid (it used to be open from 0 to 1 west/north).
   test(`combatmission art (${scenario}): free movement sees the same terrain as the tile grid`, () => {
     const { board } = CombatMissionGame.createInitialState(players(), { scenario });
-    if (!board.terrainShapes) return; // the hand-laid map's tiles are its only geometry
-    for (let y = 1.05; y < board.height - 1; y += 0.1) {
-      for (let x = 1.05; x < board.width - 1; x += 0.1) {
+    for (let y = 0.05; y < board.height; y += 0.1) {
+      for (let x = 0.05; x < board.width; x += 0.1) {
         const a = getTileContinuous(board, x, y), b = board.tiles[Math.floor(y)][Math.floor(x)];
         const same = a === b || [a, b].every(t => t === TERRAIN.FLOOR || t === TERRAIN.ROAD);
         assert.ok(same, `(${x.toFixed(2)},${y.toFixed(2)}) continuous '${a}' vs tile '${b}'`);

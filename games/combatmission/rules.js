@@ -41,7 +41,7 @@
 
 import { UNIT_DEFS } from './units.js';
 import { isPassableContinuous, getMoveCostContinuous } from './map.js';
-import { getReachable } from './grid.js';
+import { getReachable, squareCentre } from './grid.js';
 import { hasLOS } from './los.js';
 import { calcHitChance, resolveFire } from './combat.js';
 import { lineCost, isClearOfUnits, latticeActions } from '../continuousMove.js';
@@ -236,13 +236,13 @@ export function getLegalActions(state, playerId) {
     if (!unit.alive || unit.ownerId !== playerId || !hasBudget(st, unit)) continue;
     const def = defOf(unit);
 
-    // Moves: the tile graph's reachable cells (a finite set for search). In continuous
-    // time a single move is capped at one discrete move's worth, and must be a straight
-    // walk the clock can pay for — the unit may still make several.
+    // Moves: to the middle of each square the tile graph reaches (a finite set for
+    // search). In continuous time a single move is capped at one discrete move's worth,
+    // and must be a straight walk the clock can pay for — the unit may still make several.
     const reach = Math.min(reachLeft(st, unit), def.moveRange);
     if (reach > 0) {
-      for (const to of getReachable(board, unit.position, reach, units)) {
-        const move = { type: 'move', unitId: unit.id, to };
+      for (const sq of getReachable(board, unit.position, reach, units)) {
+        const move = { type: 'move', unitId: unit.id, to: squareCentre(sq.x, sq.y) };
         if (st.time !== 'continuous' || isMoveLegal(state, playerId, move)) actions.push(move);
       }
     }

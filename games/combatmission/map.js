@@ -107,8 +107,10 @@ export function createMapFromShapes(def) {
 // shape geometry (later shapes win ties, matching the rasterization order above).
 // Falls back to the rasterized tile grid for hand-laid boards (createMap) that have
 // no continuous shape source — there, the tile grid *is* the ground truth.
+// The border ring is the squares 0 and width-1 (height-1), i.e. x < 1 or x >= width-1:
+// wall here exactly as on the tile grid, on all four sides.
 export function getTileContinuous(board, x, y) {
-  if (x <= 0 || y <= 0 || x >= board.width - 1 || y >= board.height - 1) return TERRAIN.WALL;
+  if (x < 1 || y < 1 || x >= board.width - 1 || y >= board.height - 1) return TERRAIN.WALL;
   if (board.terrainShapes) {
     for (let i = board.terrainShapes.length - 1; i >= 0; i--) {
       const s = board.terrainShapes[i];

@@ -1,5 +1,12 @@
 import { isPassable, getMoveCost } from './map.js';
 
+// Square (x, y) is the area [x, x+1) × [y, y+1) — positions are points on the board and
+// rules read the square a point is in by flooring it (map.js getTile). A unit stands in
+// the MIDDLE of a square: deployed there, moved there by the tile-graph moves below, and
+// placed there in sampled fog worlds. A corner would be on four squares' boundary at
+// once, drawn half over the map's border. The half is exact (BigNumber and float alike).
+export const squareCentre = (x, y) => ({ x: x + 0.5, y: y + 0.5 });
+
 // Weighted reachability — all tiles reachable within `range` movement points, where
 // entering difficult terrain (woods, hedgerows) costs more than open ground (see
 // getMoveCost). Dijkstra over small integer costs; the map is small so an O(n²) queue

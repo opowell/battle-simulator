@@ -7,6 +7,7 @@ import { UNIT_DEFS } from './units.js';
 import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
 import { RandomAgent } from '../../agents/RandomAgent.js';
 import { GameEngine } from '../../engine/index.js';
+import { num, tilePos } from '../coord.js';
 
 const players = () => [{ id: 'allied', name: 'Allies' }, { id: 'axis', name: 'Axis' }];
 
@@ -30,6 +31,7 @@ test('combatmission fog: sampleWorlds places enemies outside vision+LOS', () => 
   for (const w of worlds) {
     for (const u of w.units.filter(u => u.ownerId === 'axis' && !seen.has(u.id))) {
       assert.ok(u.position.x >= 0 && u.position.x < width && u.position.y >= 0 && u.position.y < height, 'in bounds');
+      assert.deepEqual([num(u.position.x) % 1, num(u.position.y) % 1], [0.5, 0.5], 'stands in the middle of a square');
       const visible = myUnits.some(m =>
         Math.max(Math.abs(m.position.x - u.position.x), Math.abs(m.position.y - u.position.y)) <= 5 &&
         hasLOS(s.board, m.position, u.position));
@@ -57,7 +59,8 @@ test('combatmission fog: belief pins a sighting then keeps it in reach after it 
       { id: e.id, ownerId: 'axis', type: e.type, position: { ...e.position }, alive: true, hp: e.hp },
     ],
   });
-  assert.deepEqual([...belief.pieces.get(e.id).possible], [`${e.position.x},${e.position.y}`], 'pinned to sighted tile');
+  const sq = tilePos(e.position);
+  assert.deepEqual([...belief.pieces.get(e.id).possible], [`${sq.x},${sq.y}`], 'pinned to sighted tile');
   assert.equal(belief.pieces.get(e.id).hp, e.hp);
 
   belief.beginTurn({
@@ -66,7 +69,7 @@ test('combatmission fog: belief pins a sighting then keeps it in reach after it 
   });
   const possible = [...belief.pieces.get(e.id).possible].map(key => key.split(',').map(Number));
   assert.ok(possible.length > 0, 'still tracked after disappearing');
-  const maxDist = Math.max(...possible.map(([x, y]) => Math.max(Math.abs(x - e.position.x), Math.abs(y - e.position.y))));
+  const maxDist = Math.max(...possible.map(([x, y]) => Math.max(Math.abs(x - sq.x), Math.abs(y - sq.y))));
   assert.ok(maxDist <= reach, `within one turn's travel (${maxDist} <= ${reach})`);
 });
 

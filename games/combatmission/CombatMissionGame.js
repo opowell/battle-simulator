@@ -9,6 +9,7 @@ import {
 } from './rules.js';
 import { getCombatMissionBelief } from './belief.js';
 import { SHAPE_SCENARIOS } from './scenarios.js';
+import { squareCentre } from './grid.js';
 import { terrainArt, unitArt } from './art.js';
 import { tilesToShapes } from '../terrainShapes.js';
 import { num, posToWire } from '../coord.js';
@@ -17,29 +18,32 @@ import { tableUnits, whole } from '../../engine/foreignUnits.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
 
+// Placements name the SQUARE a unit starts in; it stands in the middle of it (grid.js).
+const deployAt = (id, type, ownerId, sq) => createUnit(id, type, ownerId, squareCentre(sq.x, sq.y));
+
 function createScenario(players) {
   const [allied, axis] = players;
   let n = 0;
   const id = () => `u${n++}`;
   return [
     // Allies (US) — deploy in northern half (y 1–6)
-    createUnit(id(), 'rifle-squad',  allied.id, { x:  1, y:  2 }),
-    createUnit(id(), 'rifle-squad',  allied.id, { x:  8, y:  1 }),
-    createUnit(id(), 'mg-team',      allied.id, { x:  1, y:  4 }),
-    createUnit(id(), 'sniper',       allied.id, { x:  5, y:  1 }),
-    createUnit(id(), 'bazooka-team', allied.id, { x:  3, y:  3 }),
-    createUnit(id(), 'mortar-team',  allied.id, { x:  2, y:  6 }),
-    createUnit(id(), 'sherman',      allied.id, { x:  9, y:  5 }),
-    createUnit(id(), 'stuart',       allied.id, { x: 14, y:  4 }),
+    deployAt(id(), 'rifle-squad',  allied.id, { x:  1, y:  2 }),
+    deployAt(id(), 'rifle-squad',  allied.id, { x:  8, y:  1 }),
+    deployAt(id(), 'mg-team',      allied.id, { x:  1, y:  4 }),
+    deployAt(id(), 'sniper',       allied.id, { x:  5, y:  1 }),
+    deployAt(id(), 'bazooka-team', allied.id, { x:  2, y:  3 }), // beside the village (3–6, 3–5), not in it
+    deployAt(id(), 'mortar-team',  allied.id, { x:  2, y:  6 }),
+    deployAt(id(), 'sherman',      allied.id, { x:  9, y:  5 }),
+    deployAt(id(), 'stuart',       allied.id, { x: 14, y:  4 }),
     // Axis (German) — deploy in southern half (y 8–14)
-    createUnit(id(), 'volks-squad',   axis.id,  { x:  1, y: 14 }),
-    createUnit(id(), 'volks-squad',   axis.id,  { x: 11, y: 14 }),
-    createUnit(id(), 'mg42-team',     axis.id,  { x: 18, y: 10 }),
-    createUnit(id(), 'german-sniper', axis.id,  { x: 14, y: 14 }),
-    createUnit(id(), 'panzerschreck', axis.id,  { x: 16, y: 11 }),
-    createUnit(id(), 'mortar-ger',    axis.id,  { x: 17, y: 13 }),
-    createUnit(id(), 'panzer-iv',     axis.id,  { x:  5, y: 12 }),
-    createUnit(id(), 'tiger',         axis.id,  { x: 11, y:  9 }),
+    deployAt(id(), 'volks-squad',   axis.id,  { x:  1, y: 14 }),
+    deployAt(id(), 'volks-squad',   axis.id,  { x: 11, y: 14 }),
+    deployAt(id(), 'mg42-team',     axis.id,  { x: 18, y: 10 }),
+    deployAt(id(), 'german-sniper', axis.id,  { x: 14, y: 14 }),
+    deployAt(id(), 'panzerschreck', axis.id,  { x: 17, y: 11 }), // beside the farmhouse (13–16, 10–12)
+    deployAt(id(), 'mortar-ger',    axis.id,  { x: 17, y: 13 }),
+    deployAt(id(), 'panzer-iv',     axis.id,  { x:  5, y: 12 }),
+    deployAt(id(), 'tiger',         axis.id,  { x: 11, y:  9 }),
   ];
 }
 
@@ -49,7 +53,7 @@ function deployScenario(scen, players) {
   const [allied, axis] = players;
   let n = 0;
   const id = () => `u${n++}`;
-  const side = (list, ownerId) => list.map(([type, x, y]) => createUnit(id(), type, ownerId, { x, y }));
+  const side = (list, ownerId) => list.map(([type, x, y]) => deployAt(id(), type, ownerId, { x, y }));
   return [
     ...side(scen.deploy.allied, allied.id),
     ...side(scen.deploy.axis,   axis.id),
@@ -377,6 +381,6 @@ export const CombatMissionGame = {
     const belief = getCombatMissionBelief(observation, playerId);
     belief.beginTurn(observation);
     return belief.sample(observation, n, rng,
-      (id, ownerId, type, x, y) => createUnit(id, type, ownerId, { x, y }));
+      (id, ownerId, type, x, y) => deployAt(id, type, ownerId, { x, y }));
   },
 };
