@@ -39,26 +39,6 @@ export function getMoveCostContinuous(board, x, y) {
 }
 
 /**
- * Find an unoccupied tile adjacent (including diagonals) to a position.
- */
-export function findAdjacentFree(pos, board, units, buildings) {
-  const unitPos   = new Set(units.filter(u => u.alive).map(u => `${tileNum(u.position.x)},${tileNum(u.position.y)}`));
-  const buildPos  = new Set(buildings.filter(b => b.alive).map(b => `${b.position.x},${b.position.y}`));
-  const dirs = [[0,1],[1,0],[-1,0],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
-  for (const [dx, dy] of dirs) {
-    const nx = pos.x + dx, ny = pos.y + dy;
-    const k = `${nx},${ny}`;
-    const t = board.tiles[k];
-    if (!t) continue;
-    const td = TERRAIN[t.terrain];
-    if (!td?.passable.ground) continue;
-    if (unitPos.has(k) || buildPos.has(k)) continue;
-    return { x: nx, y: ny };
-  }
-  return null;
-}
-
-/**
  * Get all tiles reachable by a unit with Dijkstra.
  * Ground units blocked by obstacles, minerals (impassable), buildings, and enemy units.
  * Air units can fly over everything except obstacle borders.

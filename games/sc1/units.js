@@ -174,3 +174,16 @@ export const UNITS = {
     special:['cloak-allies','recall'],
   },
 };
+
+// How big each unit is in the original game: the larger side of its units.dat
+// dimension box, in game pixels. The map art draws each picture at this size against a
+// 32 px dragoon (games/starcraftSprite.js's imageScale) — the art files themselves are
+// all blown up to about the same size, so without it a marine stood as tall as a
+// dragoon. A type missing here falls back to the tag-based rule there.
+export const UNIT_PX = {
+  scv: 23, marine: 20, firebat: 23, ghost: 22, vulture: 32, 'siege-tank': 32, goliath: 32,
+  wraith: 38, battlecruiser: 75, drone: 23, zergling: 16, hydralisk: 23, lurker: 32,
+  mutalisk: 44, scourge: 24, ultralisk: 38, overlord: 50, probe: 23, zealot: 23,
+  dragoon: 32, 'high-templar': 24, 'dark-templar': 26, archon: 32, corsair: 36,
+  carrier: 64, arbiter: 44,
+};

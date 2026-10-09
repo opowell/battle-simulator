@@ -5,6 +5,7 @@ import { Sc1Belief } from './belief.js';
 import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
 import { RandomAgent } from '../../agents/RandomAgent.js';
 import { GameEngine } from '../../engine/index.js';
+import { tilePos } from '../coord.js';
 
 const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 
@@ -65,7 +66,9 @@ test('sc1 fog: belief pins a sighting then expands within move range', () => {
     buildings: [],
   });
   const pc = belief.unitPieces.get(enemy.id);
-  assert.deepEqual([...pc.possible], [`${enemy.position.x},${enemy.position.y}`], 'pinned at sight');
+  // Belief lives in whole squares; the unit stands somewhere inside one.
+  const at = tilePos(enemy.position);
+  assert.deepEqual([...pc.possible], [`${at.x},${at.y}`], 'pinned at sight');
 
   // Turn 2: scout retreats far away; enemy out of view.
   belief.beginTurn({
@@ -77,7 +80,7 @@ test('sc1 fog: belief pins a sighting then expands within move range', () => {
   assert.ok(possible.length > 0, 'still tracked after losing sight');
   const moves = enemy.movesLeft ?? 2;
   const maxDist = Math.max(...possible.map(([x, y]) =>
-    Math.max(Math.abs(x - enemy.position.x), Math.abs(y - enemy.position.y))));
+    Math.max(Math.abs(x - at.x), Math.abs(y - at.y))));
   assert.ok(maxDist <= moves, `stays within one turn of travel (got ${maxDist} <= ${moves})`);
 });
 

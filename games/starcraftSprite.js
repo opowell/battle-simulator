@@ -127,6 +127,27 @@ export function scBuildingSize(def) {
   return 1.5;
 }
 
+// ── How much of the map a token covers, in squares ───────────────────────────
+// What the layers above draw, measured in board squares rather than token radii, so a
+// game can keep its units off the ground its structures stand on (games/sc1/placement.js).
+//
+// TOKEN_R is the renderers' standard token radius on a square board wider than ten
+// squares — the only kind SC1/SC2 maps are (unitR in apps/console/play/SchematicLayer.vue
+// and HtmlLayer.vue: 0.42 of a square). Every size here is a multiple of it.
+export const TOKEN_R = 0.42;
+
+// Half the side of a structure's plate (the wFrac-2 rect above): the square, centred on
+// the structure, that it covers on the map.
+export function scBuildingHalfSide(def) {
+  return TOKEN_R * scBuildingSize(def);
+}
+
+// Radius of the team ring a unit with map art stands on (scImageSpriteLayers' circle):
+// the patch of ground the unit itself covers.
+export function scUnitRingR(def, px) {
+  return TOKEN_R * imageScale(def, px) * 0.95;
+}
+
 // Structure counterpart to scSpriteLayers: a squared-off plated body, so a big token
 // reads as a building rather than as an oversized unit. Same idiom otherwise — all
 // primitives, team-colored, type letter on top.

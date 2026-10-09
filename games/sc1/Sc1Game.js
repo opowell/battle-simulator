@@ -1,10 +1,11 @@
 import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
 import { TERRAIN } from './terrain.js';
-import { UNITS } from './units.js';
+import { UNITS, UNIT_PX } from './units.js';
 import { BUILDINGS } from './buildings.js';
 import { resolveAttack, resolveAttackVsBuilding, inRange, chebyshev } from './combat.js';
-import { generateMap, findAdjacentFree, getReachableTiles, renderMap, isPassableContinuous, getMoveCostContinuous } from './map.js';
+import { generateMap, getReachableTiles, renderMap, isPassableContinuous, getMoveCostContinuous } from './map.js';
 import { getSc1Belief } from './belief.js';
+import { spotBeside, footprintUnder } from './placement.js';
 import { lineCost, isClearOfUnits } from '../continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
 import { scSpriteLayers, scImageSpriteLayers, scImageHitRFrac, scBuildingSpriteLayers, scBuildingImageSpriteLayers, scBuildingSize } from '../starcraftSprite.js';
@@ -50,19 +51,6 @@ const SPRITE_SETS = ['original', 'remastered'];
 const spriteSetOf = (state) =>
   SPRITE_SETS.includes(state.gameSpecific?.spriteSet) ? state.gameSpecific.spriteSet : 'original';
 const spriteSrc = (state, type) => `/images/sc1/map-${spriteSetOf(state)}/${type}`;
-
-// How big each unit is in the original game: the larger side of its units.dat
-// dimension box, in game pixels. The map art draws each picture at this size against a
-// 32 px dragoon (games/starcraftSprite.js's imageScale) — the art files themselves are
-// all blown up to about the same size, so without it a marine stood as tall as a
-// dragoon. A type missing here falls back to the tag-based rule there.
-const UNIT_PX = {
-  scv: 23, marine: 20, firebat: 23, ghost: 22, vulture: 32, 'siege-tank': 32, goliath: 32,
-  wraith: 38, battlecruiser: 75, drone: 23, zergling: 16, hydralisk: 23, lurker: 32,
-  mutalisk: 44, scourge: 24, ultralisk: 38, overlord: 50, probe: 23, zealot: 23,
-  dragoon: 32, 'high-templar': 24, 'dark-templar': 26, archon: 32, corsair: 36,
-  carrier: 64, arbiter: 44,
-};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -179,16 +167,19 @@ function processBuildingQueues(state, playerId, nextId) {
     const { unitType, turnsLeft } = b.queue;
     if (turnsLeft > 1) return { ...b, queue: { ...b.queue, turnsLeft: turnsLeft - 1 } };
 
-    // Unit is ready — spawn it
-    const spawnPos = findAdjacentFree(b.position, state.board, units, state.buildings.filter(x => x.id !== b.id));
-    if (!spawnPos) return b; // no room, queue stalls
-
+    // Unit is ready — put it down beside the building, clear of its plate
+    // (placement.js); a zergling egg hatches two.
     const count = UNITS[unitType]?.special.includes('pair') ? 2 : 1;
+    let placed = 0;
     for (let i = 0; i < count; i++) {
-      const sp = i === 0 ? spawnPos : findAdjacentFree(spawnPos, state.board, units, state.buildings.filter(x => x.id !== b.id));
-      if (!sp) break;
-      units = [...units, makeUnit(`u${idCounter++}`, playerId, unitType, sp.x, sp.y)];
+      const unit = makeUnit(`u${idCounter}`, playerId, unitType, 0, 0);
+      const spot = spotBeside({ board: state.board, units, buildings: state.buildings }, b, unit);
+      if (!spot) break;
+      units = [...units, { ...unit, position: spot }];
+      idCounter++;
+      placed++;
     }
+    if (!placed) return b; // no room, queue stalls
     return { ...b, queue: null };
   });
 
@@ -732,14 +723,14 @@ export function createInitialState(players, config = {}) {
   const { width, height, tiles, shapes, bases } = generateMap();
   const board = { width, height, tiles, shapes, bases };
 
-  // Main-base centres (inside their mineral rings). Offsets below point toward the open
-  // ring entrance, so nothing spawns on a mineral/gas/rock tile.
+  // Main-base centres (inside their mineral rings).
   const pos1 = bases.main1;  // P1: bottom-left corner
   const pos2 = bases.main2;  // P2: top-right corner
 
   // Main building type per race
   const mainBldg = { terran: 'command-center', zerg: 'hatchery', protoss: 'nexus' };
   const workerType = { terran: 'scv', zerg: 'drone', protoss: 'probe' };
+  const startMilitary = { terran: 'marine', zerg: 'zergling', protoss: 'zealot' };
 
   let idCtr = 0;
   const buildings = [
@@ -747,21 +738,24 @@ export function createInitialState(players, config = {}) {
     makeBuilding(`b${idCtr++}`, p2.id, mainBldg[race2], pos2.x, pos2.y, 0),
   ];
 
-  // Starting workers in the pocket, next to the mineral ring (P2 mirrors via −offset).
-  const workerOffsets = [[0, 1], [1, 1], [-1, 1], [1, 0]];
+  // Four workers each, between the main building and its minerals, then two fighters
+  // out the base's open side — all beside the building's plate, never on it (see
+  // placement.js). Dealt alternately, so the ids stay u2 = P1's first worker, u3 =
+  // P2's, and so on.
   const units = [];
-
-  for (const [dx, dy] of workerOffsets) {
-    units.push(makeUnit(`u${idCtr++}`, p1.id, workerType[race1], pos1.x + dx, pos1.y + dy));
-    units.push(makeUnit(`u${idCtr++}`, p2.id, workerType[race2], pos2.x - dx, pos2.y - dy));
+  const deal = (owner, base, type) => {
+    const unit = makeUnit(`u${idCtr++}`, owner, type, 0, 0);
+    const spot = spotBeside({ board, units, buildings }, base, unit);
+    if (!spot) throw new Error(`sc1: no room beside ${base.type} for a starting ${type}`);
+    units.push({ ...unit, position: spot });
+  };
+  for (let i = 0; i < 4; i++) {
+    deal(p1.id, buildings[0], workerType[race1]);
+    deal(p2.id, buildings[1], workerType[race2]);
   }
-
-  // Starting military units, out in front of the ring entrance.
-  const startMilitary = { terran: 'marine', zerg: 'zergling', protoss: 'zealot' };
-  const mil = startMilitary;
-  for (const [dx, dy] of [[2, 0], [2, -1]]) {
-    units.push(makeUnit(`u${idCtr++}`, p1.id, mil[race1], pos1.x + dx, pos1.y + dy));
-    units.push(makeUnit(`u${idCtr++}`, p2.id, mil[race2], pos2.x - dx, pos2.y - dy));
+  for (let i = 0; i < 2; i++) {
+    deal(p1.id, buildings[0], startMilitary[race1]);
+    deal(p2.id, buildings[1], startMilitary[race2]);
   }
 
   return {
@@ -908,6 +902,36 @@ export const Sc1Game = {
   createInitialState,
   createSetupUnit(_state, { id, ownerId, type, position }) {
     return UNITS[type] ? makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0) : null;
+  },
+  // A customised opening roster may put a unit down on a structure: the setup board
+  // shows squares, not the plate a base covers, and its squares stand for their
+  // centres — most of a main base's pocket is under the plate. Each such unit steps
+  // out to the nearest free spot beside the structure (placement.js), the same way the
+  // game's own opening and every finished unit are put down. Only at the opening: in a
+  // game being played, a unit's position is the game's, not the editor's.
+  applyStartingUnits(state, _config, { midGame = false } = {}) {
+    if (midGame) return state;
+    let units = state.units;
+    let moved = false;
+    for (const u of state.units) {
+      if (u.alive === false) continue;
+      const under = footprintUnder(u, state.buildings);
+      if (!under) continue;
+      const spot = spotBeside({ board: state.board, units, buildings: state.buildings }, under, u);
+      if (!spot) continue;
+      units = units.map(o => o.id === u.id ? { ...o, position: spot } : o);
+      moved = true;
+    }
+    if (!moved) return state;
+    const roster = state.gameSpecific.startRoster;
+    return {
+      ...state, units,
+      gameSpecific: {
+        ...state.gameSpecific,
+        // The belief tracker's common knowledge is where units START — which is here.
+        startRoster: roster ? { ...roster, units: units.map(u => ({ ...u })) } : roster,
+      },
+    };
   },
   // Units from other games (engine/foreignUnits.js). The conversion factor is the
   // marine: 40 hp, 6 damage, range 4, 2 moves. Shields count as hp, and armour is
