@@ -536,11 +536,11 @@ the side YOU play:
 | battle | ground | goal | army | turns | you win |
 | --- | --- | --- | --- | --- | --- |
 | `desert-raiders` | 16x9 desert, river | rout: destroy every raider | 7 v 6 | 12 | 99% (99/100) |
-| `outpost` | 13x8 tundra, forest | hold your hill stockade (you DEFEND; seat 2 attacks) | 3 v 5 | 10 | 87% (87/100) |
+| `outpost` | 13x8 tundra, forest | hold your hill stockade (you DEFEND; seat 2 attacks) | 4 v 5 | 10 | 93% (93/100) |
 | `mountain-pass` | 16x9 mountains | seize: stand a unit on the fort in the gap | 10 v 4 | 12 | ~78% (157/200) |
 | `caravan` | 18x9 jungle coast, road | escort: the caravan reaches the post alive | 8 v 7 | 14 | ~49% (98/200) |
-| `two-rivers` | 15x11 swampy delta | take BOTH towns | 18 v 9 | 16 | ~26% (53/200) |
-| `siege` | 26x17 island | take the city past six forts | 28 v 20 | 20 | 22% |
+| `two-rivers` | 15x11 swampy delta | take BOTH towns | 18 v 9 | 16 | ~18% (17/100; 19/100 with the old spawn rule) |
+| `siege` | 26x17 island | take the city past six forts | 28 v 20 | 20 | ~5% (5/100; 12/100 with the old spawn rule) |
 
 What the AI needed for the new goals (ai.js):
 - **Escort, attacker:** the escort never steps level with the leading unit until the step
@@ -562,6 +562,17 @@ on the post brought it to ~49%. Two Rivers on its first, wider map was 0%: the a
 ten turns walking and both towns raised militia the whole time. Outpost on open tundra
 with a size-2 stockade: the raiders razed it 70% of the time; on a hill at size 3, 13%.
 Desert Raiders measured easier than Outpost, so it went first.
+
+2026-10-08: Outpost's stockade no longer builds (fixedMaps `production: false`): it had
+been putting a militia on the square east of its walls every few turns, which the player
+saw as free units from nowhere. Without them the defender held 76% (76/100); a fourth
+unit in the starting garrison (a fortified militia) brought it to 93% (93/100). In the
+same change a city's new land unit stands in the city rather than beside it (economy.js),
+for every civ1 game — the original's rule. Re-measured at 100 games each, old rule vs new,
+on the same code otherwise: Two Rivers 19% vs 17% (no effect); Siege 12% vs 5% (the 22%
+above was already stale before this change; a defender's new units now start behind the
+walls instead of outside them, where the attackers picked them off). Siege's balance is
+left for the user to decide.
 
 ## Revised order
 
