@@ -1108,7 +1108,7 @@ class Session {
 
     // ── From here on, nothing can be refused. ──────────────────────────────
     const enginePlayers = this._reseat(game, nextDefs);
-    const fog = toConfig.fog ?? toConfig.fogOfWar ?? false;
+    const fog = toConfig.fog ?? toConfig.fogOfWar ?? game.defaultConfig?.fogOfWar ?? false;
     const engineConfig = { ...game.defaultConfig, ...toConfig, fogOfWar: fog };
 
     if (rebuild) {
@@ -1796,14 +1796,15 @@ async function handleCreateSession(req, res) {
     if (problem) return err(res, 400, problem);
   }
 
-  const fogOfWar = config.fog ?? config.fogOfWar ?? false;
+  const fogOfWar = config.fog ?? config.fogOfWar ?? entry.game.defaultConfig?.fogOfWar ?? false;
   // A game can declare engine-level defaults (e.g. CS runs in simultaneous "we-go"
-  // mode). Request config still wins, so a session can override them.
+  // mode, Combat Mission is fought under fog). Request config still wins, so a
+  // session can override them.
   // No maxTurns in the request means no turn limit — the game runs until it ends.
   const engine = new GameEngine(entry.game, players, { ...entry.game.defaultConfig, ...config, fogOfWar });
   const id = randomUUID();
   const params = { game: gameName, players: defs, config };
-  const session = new Session(id, gameName, engine, apiAgents, config.fog ?? config.fogOfWar ?? false, config.debugAI ?? false, params);
+  const session = new Session(id, gameName, engine, apiAgents, fogOfWar, config.debugAI ?? false, params);
   sessions.set(id, session);
 
   // With no human players and observers allowed, connect the creator as an

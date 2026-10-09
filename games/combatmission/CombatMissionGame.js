@@ -305,11 +305,11 @@ export const CombatMissionGame = {
   ],
   // Combat Mission is fought under fog, both sides plotting at once, with each unit's
   // minute spent in continuous time (rules.js). `spacetime` is the time axis for any
-  // session that doesn't name one. Simultaneous turns is an engine option: defaultConfig
-  // turns it on for an API-made session and is also what the setup form starts that
-  // option at (api-server's handleGames).
+  // session that doesn't name one. Simultaneous turns and fog are read from defaultConfig
+  // by an API-made session (which skips gameOptions defaults); it is also what the setup
+  // form starts the simultaneous-turns option at (api-server's handleGames).
   spacetime: { space: 'continuous', time: 'continuous' },
-  defaultConfig: { simultaneousTurns: true },
+  defaultConfig: { simultaneousTurns: true, fogOfWar: true },
   gameOptions: [
     MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemies within sight and line of sight', type: 'boolean', default: true },

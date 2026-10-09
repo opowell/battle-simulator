@@ -635,3 +635,19 @@ test('settings changed while two AIs are playing land between moves, and the gam
   assert.equal(snap.changes.length, 2);
   await fetch(`${BASE}/sessions/${s.id}`, { method: 'DELETE' });
 });
+
+// A game's defaultConfig is what a session that names nothing plays: Combat Mission
+// is fought under fog, and an API-made session skips the setup form's gameOptions.
+test('a session that names no fog takes the game\'s default', async () => {
+  const s = await post('/sessions', {
+    game: 'combatmission',
+    players: [{ id: 'p1', agent: 'human' }, { id: 'p2', agent: 'human' }],
+  });
+  assert.equal((await get(`/sessions/${s.id}`)).fog, true);
+  const off = await post('/sessions', {
+    game: 'combatmission',
+    players: [{ id: 'p1', agent: 'human' }, { id: 'p2', agent: 'human' }],
+    config: { fog: false },
+  });
+  assert.equal((await get(`/sessions/${off.id}`)).fog, false, 'a request still wins');
+});
