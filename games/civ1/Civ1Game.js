@@ -1671,8 +1671,9 @@ function getVisibleState(state, playerId) {
         b.attacker.ownerId === playerId || b.defender.ownerId === playerId
         || canSee(b.from) || canSee(b.at)),
       // The rival units this player watched walk out of the fog (logArrivals) — theirs
-      // alone, and without the list of who else did.
-      arrivals: state.gameSpecific.arrivals?.filter(a => a.seats.includes(playerId))
+      // alone, and without the list of who else did. An entry with no list is one an
+      // earlier pass already handed this viewer: a view gets viewed again (searchActions).
+      arrivals: state.gameSpecific.arrivals?.filter(a => !a.seats || a.seats.includes(playerId))
         .map(({ seats, ...a }) => a),
     },
     lastActions: state.lastActions?.filter(pa => pa.playerId === playerId) ?? null,

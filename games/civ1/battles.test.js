@@ -207,6 +207,9 @@ test('civ1 arrivals: a rival walking into sight is recorded for whoever it walke
   assert.deepEqual(Civ1Game.getVisibleState(state, 'p1').gameSpecific.arrivals,
     [{ n: 1, unitId: 'raider', from: { x: 7, y: 5 }, to: { x: 9, y: 5 } }]);
   assert.deepEqual(Civ1Game.getVisibleState(state, 'p3').gameSpecific.arrivals, []);
+  // A view viewed again (an agent's search moves do this) keeps them, and doesn't throw.
+  assert.deepEqual(Civ1Game.getVisibleState(Civ1Game.getVisibleState(state, 'p1'), 'p1').gameSpecific.arrivals,
+    [{ n: 1, unitId: 'raider', from: { x: 7, y: 5 }, to: { x: 9, y: 5 } }]);
   assert.deepEqual(Civ1Game.toGrid(Civ1Game.getVisibleState(state, 'p1')).arrivals,
     [{ id: 1, unitId: 'raider', from: { x: 7, y: 5 } }]);
 
