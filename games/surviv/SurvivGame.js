@@ -18,6 +18,7 @@ import { orientToEnemies } from '../vision.js';
 import { segmentClearOf, nearestPointOnShape } from '../terrainShapes.js';
 import { makePos, parsePos, num, posToWire } from '../coord.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
+import { lend, whole } from '../../engine/foreignUnits.js';
 
 const MOVE_EPS = 0.05; // see games/cs/CsGame.js's identical constant for why this floor exists
 const ROTATE_COST = 1; // flat moveAllowance tax for a 'rotate' action (turn in place, no move)
@@ -47,6 +48,22 @@ function makeUnit(id, ownerId, pos) {
     vest: 0, helmet: 0,
     perTurn: { hasActed: false, moveAllowance: MOVE_RANGE },
   };
+}
+
+// ── Units from other games (engine/foreignUnits.js) ──────────────────────────
+// A player's kind is the kind of weapon it holds; each kind is read as the first
+// weapon of it (fists, the Colt, the Vector, …). A unit from another game is a
+// player of the nearest kind carrying a weapon of its own — that kind's, with the
+// unit's punch and reach — which it never trades for loot.
+const KIND_WEAPON = {};
+for (const [id, w] of Object.entries(WEAPONS)) KIND_WEAPON[w.category] ??= id;
+const round1 = (v) => Math.max(0.5, Math.round(v * 10) / 10);
+
+function foreignWeapon(kind, stats, spec) {
+  const base = KIND_WEAPON[kind];
+  return lend(WEAPONS, `${spec.from}:${spec.type}@${kind}`, () => ({
+    ...WEAPONS[base], damage: whole(stats.attack), range: round1(stats.range), sprite: base, foreign: true,
+  }));
 }
 
 function spawnUnits(map) {
@@ -130,6 +147,7 @@ function applyLoot(units, unitId, loot) {
     if (loot.kind === 'weapon') {
       const newTier = WEAPONS[loot.item].tier ?? 0;
       const curTier = WEAPONS[u.weapon].tier ?? 0;
+      if (WEAPONS[u.weapon].foreign) return u; // a unit from another game keeps its own arms
       if (newTier <= curTier) return u; // never downgrades a held weapon
       return { ...u, weapon: loot.item, type: WEAPONS[loot.item].category, ammo: fullAmmo(loot.item) };
     }
@@ -553,7 +571,7 @@ function applyActions(state, playerActions, rng = Math.random) {
 
   if (action.type === 'end-turn') {
     const otherTeam = playerId === 'red' ? 'blue' : 'red';
-    units = units.map(u => u.ownerId !== playerId ? u : { ...u, perTurn: { hasActed: false, moveAllowance: MOVE_RANGE } });
+    units = units.map(u => u.ownerId !== playerId ? u : { ...u, perTurn: { hasActed: false, moveAllowance: u.moveRange ?? MOVE_RANGE } });
     return {
       ...state, units,
       activePlayers: [gs.teamPlayerMap[otherTeam]],
@@ -661,15 +679,16 @@ function spriteLayers(u) {
   const back = rot2(0.20, 0.55, rad);
   layers.push({ src: '/images/surviv/player/hand', wFrac: 0.5, hFrac: 0.5, anchorX: 0.5, anchorY: 0.5, dx: back.dx, dy: back.dy, rot: 0 });
 
-  if (u.weapon !== 'fists') {
-    const sz = WEAPON_SVG_SIZE[u.weapon];
+  const drawn = wpn.sprite ?? u.weapon;
+  if (drawn !== 'fists') {
+    const sz = WEAPON_SVG_SIZE[drawn];
     const isKnife = wpn.category === 'melee';
     const hFrac = isKnife ? 1.1 : 2.0;
     const wFrac = hFrac * (sz.w / sz.h);
     const anchorY = isKnife ? 0.5 : GRIP_ANCHOR_Y;
     const gripLocal = isKnife ? 0.35 : (0.1 + supportFwd * 0.1);
     const grip = rot2(gripLocal, 0.05, rad);
-    layers.push({ src: `/images/surviv/weapons/${u.weapon}`, wFrac, hFrac, anchorX: 0.5, anchorY,
+    layers.push({ src: `/images/surviv/weapons/${drawn}`, wFrac, hFrac, anchorX: 0.5, anchorY,
                   dx: grip.dx, dy: grip.dy, rot: deg + 90 });
   }
 
@@ -682,7 +701,7 @@ function spriteLayers(u) {
 function equipmentList(u) {
   const wpn = WEAPONS[u.weapon];
   return [
-    { label: 'Weapon', value: wpn.name, icon: WEAPON_ICON(u.weapon) },
+    { label: 'Weapon', value: wpn.name, icon: WEAPON_ICON(wpn.sprite ?? u.weapon) },
     ...(isMelee(u.weapon) ? [] : [{ label: 'Ammo', value: `${u.ammo.mag} / ${u.ammo.reserve}` }]),
     { label: 'Vest',   value: u.vest   ? `Level ${u.vest}`   : 'None', icon: u.vest   ? EQUIP_ICON('vest', u.vest)     : undefined },
     { label: 'Helmet', value: u.helmet ? `Level ${u.helmet}` : 'None', icon: u.helmet ? EQUIP_ICON('helmet', u.helmet) : undefined },
@@ -874,6 +893,34 @@ export const SurvivGame = {
   scenarios: [
     { id: 'sandbar_island', name: 'Sandbar Island', description: '10v10 across a mirrored island — forest lanes and river crossings funnel both teams into a loot-rich central town', config: { mapId: 'sandbar_island' } },
   ],
+  // A player for a customised roster, holding the first weapon of its kind.
+  createSetupUnit(state, { id, ownerId, type, position }) {
+    const weapon = KIND_WEAPON[type];
+    const mate = (state.units ?? []).find(u => u.ownerId === ownerId);
+    const at = position ?? mate?.position;
+    if (!weapon || !at) return null;
+    return { ...makeUnit(id, ownerId, at), type, weapon, ammo: fullAmmo(weapon), facing: mate?.facing ?? 0 };
+  },
+  // The conversion factor is the rifleman (the FAMAS: 24 a hit, 8 squares) with
+  // his 100 hp and 4 squares a turn. Vests and helmets come off the ground, not
+  // with a unit, so a unit's defense rides in its hp.
+  foreignUnits: {
+    scale: { hp: STARTING_HP, attack: WEAPONS.famas.damage, defense: 1, range: WEAPONS.famas.range, move: MOVE_RANGE },
+    fold: { defense: 'hp' },
+    profiles: () => Object.fromEntries(Object.entries(KIND_WEAPON).map(([kind, w]) => [kind, {
+      hp: STARTING_HP, attack: WEAPONS[w].damage, range: WEAPONS[w].range, move: MOVE_RANGE, domain: 'land',
+    }])),
+    adopt: (u, s, spec) => {
+      const weapon = foreignWeapon(u.type, s, spec);
+      const hp = whole(s.hp);
+      return { ...u, hp, maxHp: hp, weapon, ammo: fullAmmo(weapon), moveRange: s.move, perTurn: { ...u.perTurn, moveAllowance: s.move } };
+    },
+    realize: (_kind, s) => ({ hp: whole(s.hp), attack: whole(s.attack), defense: s.defense, range: round1(s.range), move: s.move }),
+    art: (kind) => ({
+      imagePath: KIND_WEAPON[kind] && KIND_WEAPON[kind] !== 'fists' ? WEAPON_ICON(KIND_WEAPON[kind]) : null,
+      glyph: 'P', name: `${kind} player`,
+    }),
+  },
   createInitialState,
   actionKey:        survivActionKey,
   getLegalActions:  withTeam(getLegalActions),

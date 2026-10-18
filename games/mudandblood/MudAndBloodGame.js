@@ -131,11 +131,12 @@ export const MudAndBloodGame = {
   },
   // Units from other games (engine/foreignUnits.js). The conversion factor is the
   // rifleman: 8 hp, 4 damage a hit (its 3–5 roll), range 10, 2 moves; there is no
-  // armour. A unit's rules are read off the unit itself (attrs), so that is where
+  // armour, so a unit's defense rides in its hp. A unit's rules are read off the unit itself (attrs), so that is where
   // its stats are written — and it plays as a plain soldier, never the medic or the
   // officer, whose healing and command would come with it.
   foreignUnits: {
-    scale: { hp: 8, attack: 4, range: 10, move: 2 },
+    scale: { hp: 8, attack: 4, defense: 1, range: 10, move: 2 },
+    fold: { defense: 'hp' },
     profiles: () => Object.fromEntries(Object.entries(UNIT_DEFS).map(([type, d]) => [type, {
       hp: d.maxHP, attack: meanOf(d.damage), range: d.maxRange, move: d.moveRange, domain: 'land',
       ...(d.canHeal || d.isOfficer ? { chassis: false } : {}),

@@ -316,6 +316,9 @@ export function createUnit(id, job, ownerId, position, facing = 0) {
   return {
     id,
     ownerId,
+    // A unit's type is its job — what a roster names and what the other games
+    // read it as (engine/foreignUnits.js).
+    type: job,
     job,
     race: def.race,
     position,

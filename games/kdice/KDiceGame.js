@@ -3,6 +3,30 @@ import { getKDiceBelief, visibleTerritoryIds } from './belief.js';
 import { hexLayoutBounds, territoryBorders } from '../mapTypes/hexagon.js';
 import { MAX_DICE, DEFAULT_STOCK_MAX, winProbability } from './odds.js';
 import { KDiceAgent, evaluatePosition } from './agent.js';
+import { whole } from '../../engine/foreignUnits.js';
+
+/**
+ * Every unit a roster laid out, turned into dice: its hp's worth, on the territory
+ * it names if its side holds that one (else its side's first), as many as fit under
+ * the cap and the rest into its side's reserve, as far as that holds. The dice are
+ * then dice like any other, so no unit is left standing.
+ */
+function absorbUnits(state) {
+  const territories = { ...state.board.territories };
+  const stock = { ...(state.gameSpecific.stock ?? {}) };
+  const stockMax = state.gameSpecific.stockMax ?? DEFAULT_STOCK_MAX;
+  for (const u of state.units ?? []) {
+    if (u.alive === false) continue;
+    const named = territories[u.position];
+    const t = named?.owner === u.ownerId ? named : Object.values(territories).find(x => x.owner === u.ownerId);
+    if (!t) continue;
+    const n = whole(u.hp ?? 1);
+    const fits = Math.min(n, MAX_DICE - t.dice);
+    territories[t.id] = { ...t, dice: t.dice + fits };
+    stock[u.ownerId] = Math.min(stockMax, (stock[u.ownerId] ?? 0) + n - fits);
+  }
+  return { ...state, units: [], board: { ...state.board, territories }, gameSpecific: { ...state.gameSpecific, stock } };
+}
 
 // The most dice a player may keep in reserve (KDice's 32 — see odds.js and stockMaxOf).
 export { DEFAULT_STOCK_MAX };
@@ -603,6 +627,24 @@ export const KDiceGame = {
     { id: 'stockMax', label: 'Dice reserve', description: 'Dice that cannot be placed because every territory is full are stored, up to this many, and placed in later turns (KDice: 32; DICE WARS: 64)', type: 'integer', default: DEFAULT_STOCK_MAX },
   ],
   createInitialState,
+  // A roster here is extra dice: each unit in it is laid down as dice.
+  setupUnitTypes: () => ['die'],
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return type === 'die' ? { id, ownerId, type, position, alive: true, hp: 1, maxHp: 1 } : null;
+  },
+  applyStartingUnits: (state) => absorbUnits(state),
+  // Units from other games (engine/foreignUnits.js). The conversion factor is one
+  // die. A die has no punch or guard of its own — every die rolls the same — so a
+  // unit's attack and defense ride in its hp with its toughness, and the lot is how
+  // many dice it is worth. A battle is between neighbours, and so is a move.
+  foreignUnits: {
+    scale: { hp: 1, attack: 1, defense: 1, range: 1, move: 1 },
+    fold: { attack: 'hp', defense: 'hp' },
+    absorb: true,
+    profiles: () => ({ die: { hp: 1, attack: 1, defense: 1, range: 1, move: 1, domain: 'land' } }),
+    realize: (_type, s) => ({ hp: whole(s.hp), attack: s.attack, defense: s.defense, range: 1, move: 1 }),
+    art: () => ({ glyph: '⚀', name: 'die' }),
+  },
   getLegalActions,
   applyActions,
   getResult,

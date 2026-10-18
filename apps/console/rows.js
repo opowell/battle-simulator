@@ -78,6 +78,7 @@ export function buildRows(catalog, values) {
       sessions: g.sessions,
       scenarios: g.scenarios,
       units: g.units,
+      unitFactor: g.unitFactor,
       recordings: g.recordings,
       files: g.files,
       playing: g.sessions > 0,

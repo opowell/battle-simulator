@@ -4,7 +4,8 @@ import {
   retreatNeighbors, toAxial, hexesBetween,
 } from './hex.js';
 import { hexLayoutBounds } from '../mapTypes/hexagon.js';
-import { unitStats, baseDice, maxRange, UNIT_TYPES } from './units.js';
+import { unitStats, baseDice, maxRange, UNIT_TYPES, kindOf } from './units.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
 import {
   TERRAIN, terrainAt, terrainInfo, defenseReduction, passable, blocksLOS,
   mustStopOn, enterMax, isHill, ignoresFirstFlag,
@@ -85,8 +86,8 @@ function reachable(unit, board, occ) {
         const stop = mustStopOn(tt);
         let battleAllowed;
         if (stop) battleAllowed = false;                   // no battle on entry (all units)
-        else if (unit.type === 'artillery') battleAllowed = false; // move OR battle
-        else if (unit.type === 'armor') battleAllowed = true;      // move up to 3 and battle
+        else if (kindOf(unit.type) === 'artillery') battleAllowed = false; // move OR battle
+        else if (kindOf(unit.type) === 'armor') battleAllowed = true;      // move up to 3 and battle
         else battleAllowed = nsteps === 1;                 // infantry: move 1 and battle
         out.set(k, { col: nb.col, row: nb.row, steps: nsteps, battleAllowed });
         if (!stop) next.push({ pos: nb, steps: nsteps });
@@ -98,7 +99,7 @@ function reachable(unit, board, occ) {
 }
 
 function canBattleNow(u) {
-  if (u.type === 'artillery' && u.perTurn.moved) return false; // move OR battle
+  if (kindOf(u.type) === 'artillery' && u.perTurn.moved) return false; // move OR battle
   return !u.perTurn.battled && (!u.perTurn.moved || u.perTurn.battleAllowed);
 }
 
@@ -155,7 +156,7 @@ function resolveBattle(gs, units, board, players, attacker, defender, rng) {
     dice = Math.max(0, dice - defenseReduction(defTerrain, defender.type, attackerElevated));
   }
 
-  const { rolls, hits, flags } = rollBattle(dice, defender.type, rng);
+  const { rolls, hits, flags } = rollBattle(dice, kindOf(defender.type), rng);
 
   let figuresLost = Math.min(hits, defender.figures);
 
@@ -193,11 +194,11 @@ function resolveBattle(gs, units, board, players, attacker, defender, rng) {
   // target hex lets infantry/armor advance into it; armor may then battle again.
   const closeAssault = range === 1;
   const vacated = closeAssault && (!defender.alive || retreated) && !unitAt(units, originalHex.col, originalHex.row);
-  if (attacker.alive && attacker.type !== 'artillery' && vacated) {
+  if (attacker.alive && kindOf(attacker.type) !== 'artillery' && vacated) {
     gs.pendingAdvance = {
       unitId: attacker.id,
       hex: originalHex,
-      allowOverrun: attacker.type === 'armor' && !attacker.perTurn.overrunDone,
+      allowOverrun: kindOf(attacker.type) === 'armor' && !attacker.perTurn.overrunDone,
     };
   }
 }
@@ -216,6 +217,41 @@ export const Memoir44Game = {
   gameOptions: [MAP_ZOOM_OPTION],
 
   ui: { showFacing: false, showHpBars: true, showRoster: true },
+
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return UNIT_TYPES[type] && position ? makeUnit(id, ownerId, type, position.col, position.row) : null;
+  },
+
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // infantry block: 4 figures, 3 dice at close range, reaching 3 hexes, moving 2.
+  // Its defense is how many die faces it shrugs off — a die kills infantry one
+  // time in two and armor one in three, so 2 and 3 — and that is all the rules
+  // know, so a unit's own defense rides in its figures. Its dice fall away with
+  // range the way its chassis's do.
+  foreignUnits: {
+    ...tableUnits({
+      table: UNIT_TYPES,
+      scale: { hp: 4, attack: 3, defense: 2, range: 3, move: 2 },
+      read: (e) => ({
+        hp: e.figures, attack: e.diceByRange[0], defense: e.kind === 'armor' ? 3 : 2,
+        range: e.diceByRange.length, move: e.moveMax, domain: 'land',
+      }),
+      write: (e, s) => {
+        const len = whole(s.range);
+        const f = s.attack / e.diceByRange[0];
+        const moveMax = whole(s.move);
+        return {
+          ...e,
+          figures: whole(s.hp),
+          diceByRange: Array.from({ length: len }, (_, i) => whole(e.diceByRange[Math.floor(i * e.diceByRange.length / len)] * f)),
+          moveMax,
+          moveAndBattle: e.moveAndBattle === 0 ? 0 : Math.min(moveMax, whole(e.moveAndBattle * moveMax / e.moveMax)),
+        };
+      },
+      art: (type) => ({ glyph: UNIT_TYPES[type]?.glyph, name: UNIT_TYPES[type]?.name ?? type }),
+    }),
+    fold: { defense: 'hp' },
+  },
 
   createInitialState(players, config = {}) {
     const scenario = getScenario(config.scenario);

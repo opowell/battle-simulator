@@ -20,18 +20,18 @@ function endTurn(state, playerId) {
 
 test('aow: both sides field squads', () => {
   const s = AowGame.createInitialState(players());
-  assert.ok(s.squads.some(q => q.ownerId === 'p1' && q.alive));
-  assert.ok(s.squads.some(q => q.ownerId === 'p2' && q.alive));
+  assert.ok(s.units.some(q => q.ownerId === 'p1' && q.alive));
+  assert.ok(s.units.some(q => q.ownerId === 'p2' && q.alive));
 });
 
 test('aow: no squad exceeds 14 men', () => {
   const s = AowGame.createInitialState(players());
-  assert.ok(s.squads.every(q => totalMen(q) <= MAX_MEN));
+  assert.ok(s.units.every(q => totalMen(q) <= MAX_MEN));
 });
 
 test('aow: squads start fully supplied and steady', () => {
   const s = AowGame.createInitialState(players());
-  assert.ok(s.squads.every(q => q.supply === 100 && q.morale === 100));
+  assert.ok(s.units.every(q => q.supply === 100 && q.morale === 100));
 });
 
 test('aow: map has forts, villages and flags', () => {
@@ -67,17 +67,17 @@ test('aow: a move relocates the squad and marks it acted', () => {
   const s = AowGame.createInitialState(players());
   const mv = AowGame.getLegalActions(s, 'p1').find(a => a.type === 'move');
   const next = AowGame.applyActions(s, [{ playerId: 'p1', action: mv }]);
-  const moved = next.squads.find(q => q.id === mv.unitId);
+  const moved = next.units.find(q => q.id === mv.unitId);
   assert.ok(moved.acted);
 });
 
 test('aow: continuous move to an arbitrary passable point is accepted', () => {
   const s = AowGame.createInitialState(players());
-  const sq = s.squads.find(q => q.ownerId === 'p1');
+  const sq = s.units.find(q => q.ownerId === 'p1');
   const action = { type: 'move', unitId: sq.id, to: { x: String(sq.position.x + 0.3), y: String(sq.position.y) } };
   assert.ok(AowGame.isActionLegal(s, 'p1', action));
   const next = AowGame.applyActions(s, [{ playerId: 'p1', action }]);
-  assert.ok(next.squads.find(q => q.id === sq.id));
+  assert.ok(next.units.find(q => q.id === sq.id));
 });
 
 test('aow: end-turn hands over and advances the turn counter', () => {
@@ -92,11 +92,11 @@ test('aow: end-turn hands over and advances the turn counter', () => {
 test('aow: a fort garrison trains reinforcements over a turn', () => {
   const s = AowGame.createInitialState(players());
   const fort = s.board.features.find(f => f.type === 'fort' && f.owner === 'p1');
-  const idx = s.squads.findIndex(q => q.ownerId === 'p1');
-  s.squads[idx] = { ...s.squads[idx], men: { knight: 2 }, position: { x: fort.x, y: fort.y } };
-  const before = totalMen(s.squads[idx]);
+  const idx = s.units.findIndex(q => q.ownerId === 'p1');
+  s.units[idx] = { ...s.units[idx], men: { knight: 2 }, position: { x: fort.x, y: fort.y } };
+  const before = totalMen(s.units[idx]);
   const after = endTurn(s, 'p1');
-  const grown = after.squads.find(q => q.id === s.squads[idx].id);
+  const grown = after.units.find(q => q.id === s.units[idx].id);
   assert.ok(totalMen(grown) > before, 'fort should add a man');
 });
 
@@ -117,7 +117,7 @@ test('aow: capturing the enemy flag wins', () => {
 
 test('aow: destroying the enemy army wins', () => {
   const s = AowGame.createInitialState(players());
-  const noP2 = { ...s, squads: s.squads.map(q => q.ownerId === 'p2' ? { ...q, alive: false } : q) };
+  const noP2 = { ...s, units: s.units.map(q => q.ownerId === 'p2' ? { ...q, alive: false } : q) };
   const r = AowGame.getResult(noP2);
   assert.equal(r?.winnerId, 'p1');
   assert.equal(r.reason, 'army-destroyed');
@@ -141,7 +141,7 @@ test('aow: evaluateState is zero-sum', () => {
   assert.equal(ev('p1') + ev('p2'), 0);
 
   // Losing men must cost the owner exactly what it gains the opponent.
-  s.squads.find(q => q.ownerId === 'p1').alive = false;
+  s.units.find(q => q.ownerId === 'p1').alive = false;
   assert.equal(ev('p1') + ev('p2'), 0);
 });
 

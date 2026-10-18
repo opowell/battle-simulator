@@ -13,22 +13,33 @@
 // rule that one knight slows the whole column).
 export const UNITS = {
   knight: {
-    power: 4, speed: 2.4, beats: 'barbarian', combatant: true, symbol: 'K',
+    kind: 'knight', power: 4, speed: 2.4, beats: 'barbarian', combatant: true, symbol: 'K',
     name: 'Knight', description: 'Armoured and strong. Beats barbarians; falls to archers.',
   },
   barbarian: {
-    power: 3, speed: 4.2, beats: 'archer', combatant: true, symbol: 'B',
+    kind: 'barbarian', power: 3, speed: 4.2, beats: 'archer', combatant: true, symbol: 'B',
     name: 'Barbarian', description: 'Swift and fierce. Beats archers; falls to knights.',
   },
   archer: {
-    power: 3, speed: 3.4, beats: 'knight', combatant: true, symbol: 'A',
+    kind: 'archer', power: 3, speed: 3.4, beats: 'knight', combatant: true, symbol: 'A',
     name: 'Archer', description: 'Deadly at range, defends forts. Beats knights; falls to barbarians.',
   },
   spy: {
-    power: 0, speed: 5.0, beats: null, combatant: false, symbol: 'S',
+    kind: 'spy', power: 0, speed: 5.0, beats: null, combatant: false, symbol: 'S',
     name: 'Spy', description: 'Sees twice as far; never fights.',
   },
 };
 
 export const UNIT_KEYS = Object.keys(UNITS);
 export const COMBAT_TYPES = ['knight', 'barbarian', 'archer'];
+
+// Men from other games (engine/foreignUnits.js) are registered in UNITS too, under
+// keys of their own ('sc1:marine'), as a copy of the soldier type they fight as —
+// its `kind`. Nothing that LISTS the types sees them; anything that reads a
+// squad's men must go by these two instead of COMBAT_TYPES.
+
+/** The type a man of `type` fights as: knight, barbarian, archer or spy. */
+export const kindOf = (type) => UNITS[type]?.kind ?? type;
+
+/** The types of man in `men` that fight, any game's. */
+export const fightersIn = (men) => Object.keys(men ?? {}).filter(t => UNITS[t]?.combatant && men[t] > 0);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  registerGames, convertStats, foreignSpec, foreignCatalog, dressGrid, tableUnits, whole, rescaleRoll,
+  registerGames, convertStats, foreignSpec, foreignCatalog, dressGrid, tableUnits, whole, rescaleRoll, factorOf,
 } from './foreignUnits.js';
 import { buildInitialState, rosterFromState, applyRoster, rosterError, setupUnitTypes, setupPreview, cellMapper } from './startingSetup.js';
 import { ChessGame } from '../games/chess/index.js';
@@ -90,6 +90,37 @@ test('a stat converts by the ratio of the two games\' conversion factors', () =>
 test('a stat one side has no reading of is not converted at all', () => {
   const out = convertStats({ hp: 100, range: 20 }, Source, { foreignUnits: { scale: { hp: 10 } } });
   assert.deepEqual(out, { hp: 10 });
+});
+
+test('a game\'s general adjustment factor scales its strength against every other game, not its distances', () => {
+  const strong = { foreignUnits: { ...Source.foreignUnits, factor: 2 } };
+  // Twice as strong as its numbers say: its trooper is worth two of the host's spearmen...
+  assert.deepEqual(convertStats({ hp: 100, attack: 20, defense: 20, range: 20, move: 10 }, strong, Host),
+    { hp: 20, attack: 4, defense: 4, range: 2, move: 1 });
+  // ...and a spearman lent to it comes in at half.
+  const host = { foreignUnits: { ...Host.foreignUnits, factor: 2 } };
+  assert.deepEqual(convertStats({ hp: 100, attack: 20, defense: 20, range: 20, move: 10 }, Source, host),
+    { hp: 5, attack: 1, defense: 1, range: 2, move: 1 });
+  // Two games with the same factor compare exactly as their scales say.
+  const both = { foreignUnits: { ...Source.foreignUnits, factor: 3 } };
+  assert.deepEqual(convertStats({ hp: 250, attack: 30, move: 20 }, both, { foreignUnits: { ...Host.foreignUnits, factor: 3 } }),
+    { hp: 25, attack: 3, move: 2 });
+  assert.equal(factorOf(Host), 1, 'a game that declares none has factor 1');
+});
+
+test('a stat a host can\'t set unit by unit rides in the one it folds into', () => {
+  // No armour in this host: twice the chassis's defense comes in as twice the hp.
+  const Armourless = {
+    ...Host,
+    foreignUnits: { ...Host.foreignUnits, fold: { defense: 'hp' } },
+  };
+  const Walls = { ...Source, foreignUnits: { ...Source.foreignUnits, profiles: () => ({ wall: { hp: 100, attack: 20, defense: 80, range: 20, move: 10, domain: 'land' } }) } };
+  registerGames({ armourless: Armourless, walls: Walls });
+  // A standard trooper's hp (10 here) behind four troopers' armour (8 here).
+  const wall = foreignSpec(Armourless, base(), 'walls', 'wall');
+  const kept = HOST_UNITS[wall.chassis].defense;
+  assert.equal(wall.stats.defense, kept, 'it keeps the chassis\'s defense');
+  assert.equal(wall.stats.hp, 10 * 8 / kept);
 });
 
 test('a damage roll is rescaled to a new average with its spread kept', () => {
@@ -268,7 +299,7 @@ test('every game\'s units can be put into every other game, and the catalog says
     const ps = name === 'chess' ? [{ id: 'white', name: 'W' }, { id: 'black', name: 'B' }] : players;
     const base = game.createInitialState(ps, {});
     const offered = foreignCatalog(game, base).map(g => g.game).sort();
-    const expected = ['chess', 'civ1', 'doom', 'host', 'sc1', 'source'].filter(g => g !== name);
+    const expected = ['armourless', 'chess', 'civ1', 'doom', 'host', 'sc1', 'source', 'walls'].filter(g => g !== name);
     assert.deepEqual(offered, expected, `${name} should be offered every other game's units`);
   }
 });

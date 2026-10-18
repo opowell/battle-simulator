@@ -1,4 +1,5 @@
 import { unitStrengthEval } from '../evalHelpers.js';
+import { whole } from '../../engine/foreignUnits.js';
 import { ABILITIES } from './abilities.js';
 import { JOB_DEFS, createUnit } from './units.js';
 import { createMap, renderMap, getTile } from './map.js';
@@ -594,9 +595,10 @@ function cardinalAngle(dx, dy) {
   return dy > 0 ? Math.PI / 2 : -Math.PI / 2;                     // S / N
 }
 
-// A unit's full per-turn move budget, its job's moveRange plus any move-plus support.
+// A unit's full per-turn move budget, its job's moveRange (or its own, for a unit
+// from another game) plus any move-plus support.
 function effectiveMoveRange(unit) {
-  return JOB_DEFS[unit.job].moveRange + (unit.support === 'move-plus' ? 1 : 0);
+  return (unit.moveRange ?? JOB_DEFS[unit.job].moveRange) + (unit.support === 'move-plus' ? 1 : 0);
 }
 
 // ── Legal actions ─────────────────────────────────────────────────────────────
@@ -926,7 +928,7 @@ function getActionDuration(state, action) {
     const dist = Math.max(Math.abs(action.to.x - from.x), Math.abs(action.to.y - from.y));
     // Faster units (higher spd) move more quickly
     const speed = (unit.stats?.spd ?? 5) / 5;
-    return dist / (speed * (JOB_DEFS[unit.job]?.moveRange ?? 3));
+    return dist / (speed * (unit.moveRange ?? JOB_DEFS[unit.job]?.moveRange ?? 3));
   }
   if (action.type === 'ability') {
     const unit = state.units.find(u => u.id === action.unitId);
@@ -995,6 +997,42 @@ export const FFTAGame = {
   gameOptions: [
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only units near its own', type: 'boolean', default: false },
   ],
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return JOB_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
+  },
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // soldier: 28 hp, 10 attack, 8 defense, a sword's reach, 3 squares. A job's
+  // attack is the stronger of its weapon and its magic, its range the farthest
+  // its abilities strike. A unit from elsewhere plays as the closest job, its
+  // weapon and magic scaled together to its punch, its defense and resistance to
+  // its guard, its stride its own; its reach is the job's abilities'.
+  foreignUnits: {
+    scale: { hp: 28, attack: 10, defense: 8, range: 1, move: 3 },
+    profiles: () => Object.fromEntries(Object.entries(JOB_DEFS).map(([job, d]) => [job, {
+      hp: d.stats.hp, attack: Math.max(d.stats.atk, d.stats.mag), defense: d.stats.def,
+      range: Math.max(1, ...d.abilities.map(k => (ABILITIES[k]?.target === 'enemy' ? ABILITIES[k].range ?? 0 : 0))),
+      move: d.moveRange, domain: 'land',
+    }])),
+    adopt: (u, s) => {
+      const d = JOB_DEFS[u.job].stats;
+      const punch = s.attack / Math.max(d.atk, d.mag);
+      const guard = s.defense / d.def;
+      const hp = whole(s.hp);
+      return {
+        ...u, hp, maxHp: hp, moveRange: whole(s.move),
+        stats: { ...u.stats, hp, atk: whole(d.atk * punch), mag: whole(d.mag * punch), def: whole(d.def * guard), res: whole(d.res * guard) },
+      };
+    },
+    realize: (job, s) => {
+      const d = JOB_DEFS[job].stats;
+      const punch = s.attack / Math.max(d.atk, d.mag);
+      return {
+        hp: whole(s.hp), attack: Math.max(whole(d.atk * punch), whole(d.mag * punch)), defense: whole(d.def * s.defense / d.def),
+        range: FFTAGame.foreignUnits.profiles()[job].range, move: whole(s.move),
+      };
+    },
+    art: (job) => ({ imagePath: JOB_DEFS[job] ? `/images/ffta/${job}/portrait` : null, glyph: JOB_DEFS[job]?.symbol, name: JOB_LABELS[job] ?? job }),
+  },
   createInitialState,
   getLegalActions,
   applyActions,

@@ -1,14 +1,17 @@
-import { UNITS, COMBAT_TYPES } from './units.js';
+import { UNITS, fightersIn, kindOf } from './units.js';
 import { TERRAIN } from './terrain.js';
 import { terrainAt } from './map.js';
 
 function combatMenOf(men) {
-  return COMBAT_TYPES.reduce((a, t) => a + (men[t] ?? 0), 0);
+  return fightersIn(men).reduce((a, t) => a + men[t], 0);
 }
 
 function dominant(men) {
+  // Men from other games count as the kind they fight as.
+  const byKind = {};
+  for (const t of fightersIn(men)) byKind[kindOf(t)] = (byKind[kindOf(t)] ?? 0) + men[t];
   let best = null, bestN = 0;
-  for (const t of COMBAT_TYPES) { const n = men[t] ?? 0; if (n > bestN) { best = t; bestN = n; } }
+  for (const [k, n] of Object.entries(byKind)) if (n > bestN) { best = k; bestN = n; }
   return best;
 }
 
@@ -18,10 +21,10 @@ function dominant(men) {
 // far harder). This is the number attrition is rolled against.
 function effStrength(men, supply, morale, board, pos, onFort, enemyMen) {
   let base = 0;
-  for (const t of COMBAT_TYPES) base += (men[t] ?? 0) * UNITS[t].power;
+  for (const t of fightersIn(men)) base += men[t] * UNITS[t].power;
   const enemyDom = dominant(enemyMen);
   let counter = 0;
-  for (const t of COMBAT_TYPES) if (UNITS[t].beats === enemyDom) counter += (men[t] ?? 0) * UNITS[t].power;
+  for (const t of fightersIn(men)) if (UNITS[t].beats === enemyDom) counter += men[t] * UNITS[t].power;
 
   const condition = 0.4 + 0.3 * (supply / 100) + 0.3 * (morale / 100);
   const terr = TERRAIN[terrainAt(board, pos.x, pos.y)];
@@ -32,7 +35,7 @@ function effStrength(men, supply, morale, board, pos, onFort, enemyMen) {
 
 function loseOneMan(men) {
   // Casualty falls on the largest combat group first.
-  const order = [...COMBAT_TYPES].sort((a, b) => (men[b] ?? 0) - (men[a] ?? 0));
+  const order = fightersIn(men).sort((a, b) => (men[b] ?? 0) - (men[a] ?? 0));
   for (const t of order) if ((men[t] ?? 0) > 0) { men[t]--; if (men[t] === 0) delete men[t]; return; }
 }
 

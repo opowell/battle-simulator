@@ -234,7 +234,7 @@ export function generateMap(width, height, rng, homes, seed = 1) {
 }
 
 export function renderMap(state) {
-  const { board, squads } = state;
+  const { board, units: squads } = state;
   const { width, height } = board;
   const [p1] = state.players;
 

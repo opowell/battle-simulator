@@ -615,12 +615,14 @@ export const DoomGame = {
   },
   // Units from other games (engine/foreignUnits.js). The conversion factor is the
   // zombieman: 20 hp, 7.5 damage a shot, range 6, 6 tiles of AP a turn; there is
-  // no armour to read (only the marine wears any). A shot's damage is every pellet
+  // no armour to read (only the marine wears any, and only what it picks up), so a
+  // unit's defense rides in its hp. A shot's damage is every pellet
   // of it. The marine's side fights with the marine's guns and the demons' with
   // their own attacks, so a foreign marine-side unit plays as a marine (its hp is
   // converted, its gun is the marine's) and a demon-side one as a demon.
   foreignUnits: {
-    scale: { hp: 20, attack: 7.5, range: 6, move: 6 },
+    scale: { hp: 20, attack: 7.5, defense: 1, range: 6, move: 6 },
+    fold: { defense: 'hp' },
     profiles: () => ({
       doomguy: { hp: 100, attack: meanOf(WEAPONS.shotgun.damage) * WEAPONS.shotgun.pellets, range: WEAPONS.shotgun.range, move: 8, domain: 'land', owners: ['marine'] },
       ...Object.fromEntries(Object.entries(MONSTER_DEFS).map(([type, d]) => [type, {
@@ -641,9 +643,9 @@ export const DoomGame = {
       if (!d) {
         // The marine's gun and stride are the marine's own; only its hp is converted.
         const own = DoomGame.foreignUnits.profiles().doomguy;
-        return { hp: whole(s.hp), attack: own.attack, range: own.range, move: own.move };
+        return { hp: whole(s.hp), attack: own.attack, defense: s.defense, range: own.range, move: own.move };
       }
-      return { hp: whole(s.hp), attack: meanOf(rescaleRoll(d.damage, s.attack / d.pellets)) * d.pellets, range: whole(s.range), move: whole(s.move) };
+      return { hp: whole(s.hp), attack: meanOf(rescaleRoll(d.damage, s.attack / d.pellets)) * d.pellets, defense: s.defense, range: whole(s.range), move: whole(s.move) };
     },
     art: (type) => ({ imagePath: UNIT_PORTRAITS.has(type) ? `/images/doom/units/${type}` : null, glyph: type === 'doomguy' ? '@' : MONSTER_DEFS[type]?.symbol, name: type }),
   },

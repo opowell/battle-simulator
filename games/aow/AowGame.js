@@ -1,5 +1,5 @@
 import { TERRAIN } from './terrain.js';
-import { UNITS, COMBAT_TYPES } from './units.js';
+import { UNITS } from './units.js';
 import { resolveEncounter } from './combat.js';
 import {
   mulberry32, generateMap, renderMap, terrainAt, isPassablePoint, forageAt,
@@ -13,6 +13,13 @@ import { castleShapes, villageShapes, flagShapes } from './decor.js';
 import { movePointLattice } from '../continuousMove.js';
 import { posToWire } from '../coord.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
+
+// A squad raised for a customised roster: this many men of one kind.
+const SQUAD_SIZE = 10;
+
+/** A squad's men as a short string (6K 4A), the game's own types first. */
+const composition = (men, sep) => Object.keys(men).filter(t => men[t] && UNITS[t]).map(t => `${men[t]}${UNITS[t].symbol}`).join(sep);
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 const CONTACT = 0.9;   // squads this close trigger an encounter
@@ -66,7 +73,9 @@ function createInitialState(players, config = {}) {
     currentPhase: 'action',
     players,
     board,
-    squads,
+    // The squads are the game's units — every other part of the engine (the roster
+    // editor, units from other games) knows a game's pieces by that name.
+    units: squads,
     lastActions: null,
     gameSpecific: {
       fogOfWar: config.fogOfWar ?? false,
@@ -79,7 +88,7 @@ function createInitialState(players, config = {}) {
 // ── Legal actions ─────────────────────────────────────────────────────────────
 
 function actableSquads(state, playerId) {
-  return state.squads.filter(s => s.alive && s.ownerId === playerId && !s.acted);
+  return state.units.filter(s => s.alive && s.ownerId === playerId && !s.acted);
 }
 
 function getLegalActions(state, playerId) {
@@ -102,7 +111,7 @@ function getLegalActions(state, playerId) {
 // advances partway). See engine/ActionValidator.js.
 function isActionLegal(state, playerId, action) {
   if (action.type !== 'move') return false;
-  const sq = state.squads.find(s => s.id === action.unitId);
+  const sq = state.units.find(s => s.id === action.unitId);
   if (!sq || !sq.alive || sq.ownerId !== playerId || sq.acted) return false;
   const to = { x: num(action.to.x), y: num(action.to.y) };
   if (!isPassablePoint(state.board, to.x, to.y)) return false;
@@ -131,7 +140,7 @@ function applyActions(state, playerActions, rng = Math.random) {
   const { playerId, action } = playerActions[0];
   const playerIds  = state.players.map(p => p.id);
   const currentIdx = playerIds.indexOf(playerId);
-  let squads = state.squads.map(s => ({ ...s, men: { ...s.men }, position: { ...s.position } }));
+  let squads = state.units.map(s => ({ ...s, men: { ...s.men }, position: { ...s.position } }));
   let board  = { ...state.board, features: state.board.features.map(f => ({ ...f })) };
   let gs     = state.gameSpecific;
 
@@ -142,7 +151,7 @@ function applyActions(state, playerActions, rng = Math.random) {
     const nextPlayerId = playerIds[nextIdx];
     const newTurn      = nextIdx === 0 ? state.turnNumber + 1 : state.turnNumber;
     squads = squads.map(s => s.ownerId === nextPlayerId ? { ...s, acted: false } : s);
-    return { ...state, squads, board, gameSpecific: gs, activePlayers: [nextPlayerId], turnNumber: newTurn, lastActions: playerActions };
+    return { ...state, units: squads, board, gameSpecific: gs, activePlayers: [nextPlayerId], turnNumber: newTurn, lastActions: playerActions };
   }
 
   const sq = squads.find(s => s.id === action.unitId);
@@ -150,7 +159,7 @@ function applyActions(state, playerActions, rng = Math.random) {
   // ── skip-unit ───────────────────────────────────────────────────────────────
   if (action.type === 'skip-unit') {
     if (sq) sq.acted = true;
-    return { ...state, squads, board, gameSpecific: gs, lastActions: playerActions };
+    return { ...state, units: squads, board, gameSpecific: gs, lastActions: playerActions };
   }
 
   // ── move (continuous march, possibly into an encounter) ─────────────────────
@@ -173,10 +182,10 @@ function applyActions(state, playerActions, rng = Math.random) {
     // Feature capture at the resting place.
     captureFeatures(board, sq);
 
-    return { ...state, squads, board, gameSpecific: gs, lastActions: playerActions };
+    return { ...state, units: squads, board, gameSpecific: gs, lastActions: playerActions };
   }
 
-  return { ...state, squads, board, gameSpecific: gs, lastActions: playerActions };
+  return { ...state, units: squads, board, gameSpecific: gs, lastActions: playerActions };
 }
 
 function nearestEnemy(squads, sq) {
@@ -295,7 +304,7 @@ function getResult(state) {
     return { outcome: 'win', winnerId: p2.id, reason: 'flags-captured' };
 
   for (const [p, opp] of [[p1, p2], [p2, p1]]) {
-    if (!state.squads.some(s => s.alive && s.ownerId === p.id))
+    if (!state.units.some(s => s.alive && s.ownerId === p.id))
       return { outcome: 'win', winnerId: opp.id, reason: 'army-destroyed' };
   }
   return null;
@@ -305,12 +314,12 @@ function getResult(state) {
 // A squad sights the enemy within its vision; a spy in the squad doubles that range.
 function getVisibleState(state, playerId) {
   if (!state.gameSpecific.fogOfWar) return state;
-  const mine = state.squads.filter(s => s.alive && s.ownerId === playerId);
+  const mine = state.units.filter(s => s.alive && s.ownerId === playerId);
   const sees = e => mine.some(m => {
     const range = (hasSpy(m) ? 6 : 3);
     return Math.hypot(m.position.x - e.position.x, m.position.y - e.position.y) <= range;
   });
-  return { ...state, squads: state.squads.filter(s => s.ownerId === playerId || sees(s)) };
+  return { ...state, units: state.units.filter(s => s.ownerId === playerId || sees(s)) };
 }
 
 // Fog belief is not modelled for AoW's squad layer; the ObscuroAgent falls back to the
@@ -320,7 +329,7 @@ function sampleWorlds() { return []; }
 // ── Render (terminal) ──────────────────────────────────────────────────────────
 
 function renderState(state) {
-  const { turnNumber, activePlayers, squads, players } = state;
+  const { turnNumber, activePlayers, units: squads, players } = state;
   const [p1, p2] = players;
   const flags = state.board.features.filter(f => f.type === 'flag');
 
@@ -328,7 +337,7 @@ function renderState(state) {
     const mine = squads.filter(s => s.alive && s.ownerId === pid);
     if (!mine.length) return `${pid}: — defeated —`;
     const parts = mine.map(s => {
-      const comp = COMBAT_TYPES.concat('spy').filter(t => s.men[t]).map(t => `${s.men[t]}${UNITS[t].symbol}`).join('');
+      const comp = composition(s.men, '');
       return `[${comp} sup${Math.round(s.supply)} mor${Math.round(s.morale)}]`;
     });
     return `${pid}: ${parts.join(' ')}`;
@@ -362,7 +371,7 @@ function evaluateState(state, playerId) {
   const sign = ownerId => (ownerId == null ? 0 : ownerId === playerId ? 1 : -1);
 
   let score = 0;
-  for (const s of state.squads) {
+  for (const s of state.units) {
     if (!s.alive) continue;
     score += sign(s.ownerId) * squadStrength(s);
   }
@@ -414,10 +423,10 @@ function toGrid(state) {
     }
   }
 
-  const unitList = state.squads.filter(s => s.alive).map(s => {
+  const unitList = state.units.filter(s => s.alive).map(s => {
     const p = posToWire(s.position);
     const dom = dominantType(s) ?? (s.men.spy ? 'spy' : 'knight');
-    const comp = COMBAT_TYPES.concat('spy').filter(t => s.men[t]).map(t => `${s.men[t]}${UNITS[t].symbol}`).join(' ');
+    const comp = composition(s.men, ' ');
     return {
       id: s.id, x: p.x, y: p.y,
       glyph: String(totalMen(s)),
@@ -453,6 +462,37 @@ function terrainInfo(key) {
 
 // ── Export ──────────────────────────────────────────────────────────────────
 
+// Units from other games (engine/foreignUnits.js). A squad is the piece that
+// marches and fights, so it is what a unit from elsewhere becomes, and what this
+// game lends out: ten men of one kind. Its hp is its men, its attack each man's
+// power, its move his marching pace; a fight is a brawl at contact (range 1) and
+// no man wears more than his kind does, so a unit's defense rides in its men.
+// The conversion factor is a squad of ten archers. A unit from elsewhere is a
+// squad of men of its own, fighting as the nearest kind of man (spies never
+// fight, so nothing becomes one); a squad holds 14 at most, so any more strength
+// than that is in each man's power.
+function lentUnits() {
+  const menOf = (s) => Math.min(MAX_MEN, whole(s.hp));
+  const table = tableUnits({
+    table: UNITS,
+    scale: { hp: SQUAD_SIZE, attack: UNITS.archer.power, defense: 1, range: 1, move: UNITS.archer.speed },
+    read: (e) => ({ hp: SQUAD_SIZE, attack: e.power, range: 1, move: e.speed, domain: 'land' }),
+    write: (e, s) => ({
+      ...e, power: Math.round(s.attack * Math.max(1, s.hp / MAX_MEN) * 10) / 10,
+      speed: Math.max(0.5, Math.round(s.move * 10) / 10),
+    }),
+    chassis: (_type, e) => !!e.combatant,
+    art: (type) => ({ glyph: UNITS[type]?.symbol, name: UNITS[type]?.name ?? type }),
+  });
+  return {
+    ...table,
+    fold: { defense: 'hp' },
+    adopt: (u, s) => ({ ...u, men: { [u.type]: menOf(s) } }),
+    // Its men are its own count, not the ten a squad is read as.
+    realize: (type, s, spec) => ({ ...table.realize(type, s, spec), hp: menOf(s) }),
+  };
+}
+
 export const AowGame = {
   name: 'AncientArtOfWar',
   evaluateState,
@@ -465,6 +505,12 @@ export const AowGame = {
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each side sees only enemy squads near its own (spies see farther)', type: 'boolean', default: false },
   ],
   createInitialState,
+  // A squad for a customised roster: ten men of the one kind.
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    if (!UNITS[type] || !position) return null;
+    return makeSquad(ownerId, { [type]: SQUAD_SIZE }, Number(position.x), Number(position.y), { id, type });
+  },
+  foreignUnits: lentUnits(),
   getLegalActions,
   isActionLegal,
   applyActions,

@@ -4,6 +4,28 @@ import { resolveCombat } from './RiskCombat.js';
 import { getRiskBelief } from './belief.js';
 import { LAYOUT, SEA_ROUTES, HEX_SIZE, routeKey } from './RiskLayout.js';
 import { hexLayoutBounds, territoryBorders } from '../mapTypes/hexagon.js';
+import { whole } from '../../engine/foreignUnits.js';
+
+// The printed game's pieces: an infantryman is one army, a horseman five, a cannon
+// ten. The rules only ever count armies; the pieces are what a roster names and what
+// the other games read a Risk army as (engine/foreignUnits.js).
+const PIECES = { infantry: 1, cavalry: 5, artillery: 10 };
+
+/**
+ * Every unit a roster laid out, turned into armies on the board: its hp's worth, on
+ * the territory it names if its side holds that one, else on its side's first. The
+ * armies are then armies like any other, so no unit is left standing.
+ */
+function absorbUnits(state) {
+  const territories = { ...state.board.territories };
+  for (const u of state.units ?? []) {
+    if (u.alive === false) continue;
+    const named = territories[u.position];
+    const t = named?.owner === u.ownerId ? named : TERRITORY_IDS.map(id => territories[id]).find(x => x?.owner === u.ownerId);
+    if (t) territories[t.id] = { ...t, armies: t.armies + whole(u.hp ?? 1) };
+  }
+  return { ...state, units: [], board: { ...state.board, territories } };
+}
 
 // ── Cards ─────────────────────────────────────────────────────────────────────
 
@@ -931,6 +953,28 @@ export const RiskGame = {
     },
   ],
   createInitialState,
+  // A roster here is reinforcements: each unit in it is laid down as armies.
+  setupUnitTypes: () => Object.keys(PIECES),
+  createSetupUnit(_state, { id, ownerId, type, position }) {
+    return PIECES[type] ? { id, ownerId, type, position, alive: true, hp: PIECES[type], maxHp: PIECES[type] } : null;
+  },
+  applyStartingUnits: (state) => absorbUnits(state),
+  // Units from other games (engine/foreignUnits.js). The conversion factor is one
+  // army. An army has no punch or guard of its own — every army rolls the same die
+  // — so a unit's attack and defense ride in its hp with its toughness, and the lot
+  // is how many armies it is worth: twice a standard infantryman's hp, attack and
+  // defense is eight. A battle is between neighbours, and a turn's move one border.
+  foreignUnits: {
+    scale: { hp: 1, attack: 1, defense: 1, range: 1, move: 1 },
+    fold: { attack: 'hp', defense: 'hp' },
+    absorb: true,
+    profiles: () => Object.fromEntries(Object.entries(PIECES).map(([type, n]) => [type, {
+      hp: n, attack: 1, defense: 1, range: 1, move: 1, domain: 'land', ...(type === 'infantry' ? {} : { chassis: false }),
+    }])),
+    // What a unit's armies are: its hp, rounded as armies are.
+    realize: (_type, s) => ({ hp: whole(s.hp), attack: s.attack, defense: s.defense, range: 1, move: 1 }),
+    art: (type) => ({ glyph: type[0].toUpperCase(), name: type }),
+  },
   getLegalActions,
   applyActions,
   getResult,

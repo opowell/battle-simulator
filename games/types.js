@@ -126,12 +126,26 @@
  *   own types (its chassis), with its stats converted, drawn as itself. Fields:
  *     scale       the CONVERSION FACTOR: what one point of each common stat (hp,
  *                 attack, defense, range, move) is worth in this game's own numbers —
- *                 in practice, its standard line infantryman. A stat converts as
- *                 value × host.scale / source.scale.
+ *                 in practice, its standard line infantryman. All five, always. A stat
+ *                 converts as value × host.scale / source.scale.
+ *     factor      the GENERAL ADJUSTMENT FACTOR (default 1): how strong this game's
+ *                 units count against every other game's. Its hp, attack and defense
+ *                 are compared `factor` times over — a game with factor 2 lends units
+ *                 twice as strong, and takes units in at half. Range and move are
+ *                 board distances, which `scale` alone compares.
+ *     fold        { defense: 'hp' } for a stat the rules can't set unit by unit (no
+ *                 armour, or only two settings of it): a foreign unit keeps its
+ *                 chassis's, and carries the rest of its own in the other stat. A
+ *                 profile may leave a folded stat out; it reads as one point.
+ *     absorb      true for a game that counts its pieces rather than fielding units
+ *                 (Risk's armies, KDice's dice): a unit laid out there becomes its
+ *                 hp's worth of them, in the game's own applyStartingUnits.
  *     profiles()  { type: { hp, attack, defense, range, move, domain, chassis?, owners? } }
  *                 every type it lends out or can carry a foreign unit as, in its own
- *                 numbers; `chassis: false` keeps a type back (a settler's specials
- *                 would come with it), `owners` limits it to the sides that can play it.
+ *                 numbers — every unit has all five stats (games/foreignUnits.test.js
+ *                 holds every game to it); `chassis: false` keeps a type back (a
+ *                 settler's specials would come with it), `owners` limits it to the
+ *                 sides that can play it.
  *     art(type, seat)   { imagePath, glyph, name } — how its unit looks on another board.
  *     table + write(entry, stats)   for rules that read stats from a type table: the
  *                 foreign type is registered there (non-enumerably) as the chassis's
@@ -140,7 +154,7 @@
  *     adopt(unit, stats)   for rules that read stats off the unit (attrs): writes them.
  *     realize(chassis, stats)   what a unit given `stats` really ends up with, for
  *                 showing (tableUnits derives it).
- *   A game without it neither lends units nor takes them.
+ *   Every registered game declares it: every game's units go into every other.
  *
  * @property {() => object} [unitStats]
  *   Optional. { type: { hp, attack, defense, range, move, domain } } in this game's

@@ -1,5 +1,6 @@
 import { getWarodDotsBelief } from './belief.js';
 import { forEachCell } from '../terrainShapes.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
 
 const T = 28;
 const COLS = 40;
@@ -21,10 +22,13 @@ const TERRAIN_COLOR = [
   '#5a4a30', // BRIDGE
 ];
 
+// `kind` is which of the two the terrain rules treat it as — a unit from another
+// game (registered here as a copy of one, engine/foreignUnits.js) is that one.
 const UNIT_DEF = {
-  light: { cost: 200, hp: 60,  speed: 75, dmg: 6,  atkRate: 0.9, range: 38, moraleDmg: 3 },
-  heavy: { cost: 400, hp: 150, speed: 35, dmg: 16, atkRate: 0.5, range: 38, moraleDmg: 8 },
+  light: { kind: 'light', cost: 200, hp: 60,  speed: 75, dmg: 6,  atkRate: 0.9, range: 38, moraleDmg: 3 },
+  heavy: { kind: 'heavy', cost: 400, hp: 150, speed: 35, dmg: 16, atkRate: 0.5, range: 38, moraleDmg: 8 },
 };
+const kindOf = (type) => UNIT_DEF[type]?.kind ?? type;
 
 const GOLD_PER_SEC = 18;
 const UNIT_UPKEEP  = 0.8;
@@ -271,7 +275,9 @@ const WOD_SHAPE_SCENARIOS = { lakelands: WOD_LAKELANDS, divide: WOD_DIVIDE };
 function makeUnit(id, type, owner, x, y) {
   const def = UNIT_DEF[type];
   return {
-    id, type, owner,
+    // `ownerId` is the side as every other game names it (the roster editor, units
+    // from other games); the rules here read `owner`. A unit never changes sides.
+    id, type, owner, ownerId: owner,
     x, y, tx: x, ty: y,
     hp: def.hp, maxHp: def.hp,
     morale: 100,
@@ -295,15 +301,15 @@ function getTerrainAt(grid, x, y) {
 function speedMod(terrain, type) {
   if (terrain === TERRAIN.MOUNTAINS) return 0;
   if (terrain === TERRAIN.WATER) return 0.45;
-  if (terrain === TERRAIN.FOREST || terrain === TERRAIN.HILLS) return type === 'heavy' ? 0.5 : 0.78;
-  if (terrain === TERRAIN.SAND && type === 'light') return 0.65;
+  if (terrain === TERRAIN.FOREST || terrain === TERRAIN.HILLS) return kindOf(type) === 'heavy' ? 0.5 : 0.78;
+  if (terrain === TERRAIN.SAND && kindOf(type) === 'light') return 0.65;
   if (terrain === TERRAIN.BRIDGE) return 0.9;
   return 1.0;
 }
 
 function dmgMod(terrain, type) {
   if (terrain === TERRAIN.WATER) return 0.6;
-  if ((terrain === TERRAIN.FOREST || terrain === TERRAIN.HILLS) && type === 'heavy') return 0.65;
+  if ((terrain === TERRAIN.FOREST || terrain === TERRAIN.HILLS) && kindOf(type) === 'heavy') return 0.65;
   return 1.0;
 }
 
@@ -539,6 +545,42 @@ export const WarodDotsGame = {
     { id: 'divide',    name: 'The Divide', description: 'Shape terrain — a river splits the map; two bridges are the only fast crossings', config: { scenario: 'divide' } },
   ],
 
+  // A unit for a customised roster: where it is told (a board square), else just
+  // beside its side's capital.
+  createSetupUnit(state, { id, ownerId, type, position }) {
+    if (!UNIT_DEF[type]) return null;
+    let x, y;
+    if (position && typeof position === 'object' && Number.isFinite(Number(position.x))) {
+      x = (Number(position.x) + 0.5) * T; y = (Number(position.y) + 0.5) * T;
+    } else {
+      const cap = state.board?.cities?.find(c => c.isCapital && c.owner === ownerId)
+        ?? state.board?.cities?.find(c => c.owner === ownerId);
+      const near = cap ? { x: cap.cx, y: cap.cy } : state.units.find(u => u.owner === ownerId);
+      if (!near) return null;
+      x = near.x + T * 0.4; y = near.y + T * 0.4;
+    }
+    return makeUnit(id, type, ownerId, x, y);
+  },
+
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // light infantryman: 60 hp, 5.4 damage a second (6 a blow, 0.9 blows a second),
+  // reaching 38 px, marching 75 px a second. Nobody wears armour — only terrain
+  // covers — so a unit's defense rides in its hp. It fights on the ground the way
+  // its chassis does.
+  foreignUnits: {
+    ...tableUnits({
+      table: UNIT_DEF,
+      scale: { hp: 60, attack: 5.4, defense: 1, range: 38, move: 75 },
+      read: (e) => ({ hp: e.hp, attack: e.dmg * e.atkRate, range: e.range, move: e.speed, domain: 'land' }),
+      write: (e, s) => ({
+        ...e, hp: whole(s.hp), dmg: Math.max(1, Math.round(s.attack / e.atkRate * 10) / 10), range: whole(s.range), speed: whole(s.move),
+        moraleDmg: Math.max(1, Math.round(e.moraleDmg * s.attack / (e.dmg * e.atkRate))),
+      }),
+      art: (type) => ({ glyph: kindOf(type) === 'heavy' ? 'H' : 'L', name: kindOf(type) === 'heavy' ? 'Heavy Infantry' : 'Light Infantry' }),
+    }),
+    fold: { defense: 'hp' },
+  },
+
   createInitialState(players, config = {}) {
     const rng = config.rng ?? mulberry32((Date.now() ^ 0xdeadbeef) >>> 0);
     const shapeScen = config.scenario && WOD_SHAPE_SCENARIOS[config.scenario];
@@ -749,8 +791,8 @@ export const WarodDotsGame = {
 
         let glyph = '', owner = 0, hp, maxHp, unitId, unitName, isActive;
         if (unit) {
-          glyph = unit.type === 'heavy' ? 'H' : 'L';
-          unitName = unit.type === 'heavy' ? 'Heavy Infantry' : 'Light Infantry';
+          glyph = kindOf(unit.type) === 'heavy' ? 'H' : 'L';
+          unitName = kindOf(unit.type) === 'heavy' ? 'Heavy Infantry' : 'Light Infantry';
           owner = pidIdx[unit.owner] ?? 0;
           hp = unit.hp; maxHp = unit.maxHp;
           unitId = unit.id;

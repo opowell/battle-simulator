@@ -33,6 +33,7 @@
 
 import { seesPoint, filterVisibleUnits, euclidean } from '../vision.js';
 import * as ST from '../spacetime.js';
+import { whole } from '../../engine/foreignUnits.js';
 
 // ── Constants ───────────────────────────────────────────────────────────────
 const WIDTH = 8, HEIGHT = 6;
@@ -210,7 +211,9 @@ function canMove(st, unit, state) {
 
 function makeUnit(id, ownerId, num, x, y, facing) {
   return {
-    id, ownerId, num,
+    // Every unit is the same soldier; the type is what a roster and the other
+    // games (engine/foreignUnits.js) call it.
+    id, ownerId, num, type: 'soldier',
     position: { x, y },
     facing,
     hp: MAX_HP, maxHp: MAX_HP,
@@ -314,6 +317,8 @@ export function getLegalActions(state, playerId) {
     if (unit.loaded) {
       for (const e of enemies) {
         if (!unitSees(unit, e.position.x, e.position.y)) continue;
+        // A unit from another game reaches only as far as its own weapon.
+        if (unit.range != null && Math.hypot(e.position.x - unit.position.x, e.position.y - unit.position.y) > unit.range) continue;
         if (firstUnitAlongRay(unit.position, e.position, state.units) !== e) continue;
         actions.push({ type: 'shoot', unitId: unit.id, targetId: e.id });
       }
@@ -394,12 +399,13 @@ export function applyActions(state, playerActions) {
     const dx = target.position.x - shooter.position.x;
     const dy = target.position.y - shooter.position.y;
     let killed = false;
+    const damage = shooter.damage ?? SHOT_DAMAGE;
     const units = state.units.map(u => {
       if (u.id === action.unitId) {
         return { ...u, loaded: false, facing: facingOf(dx, dy), perTurn: { ...u.perTurn, time: u.perTurn.time - 1 } };
       }
       if (u.id === action.targetId) {
-        const hp = Math.max(0, u.hp - SHOT_DAMAGE);
+        const hp = Math.max(0, u.hp - damage);
         killed = u.alive && hp <= 0;
         return { ...u, hp, alive: hp > 0 };
       }
@@ -408,7 +414,7 @@ export function applyActions(state, playerActions) {
     const gameSpecific = killed
       ? { ...state.gameSpecific, alive: { ...state.gameSpecific.alive, [target.ownerId]: state.gameSpecific.alive[target.ownerId] - 1 } }
       : state.gameSpecific;
-    return { ...state, units, gameSpecific, lastAction: { playerId, ...action, damage: SHOT_DAMAGE, killed } };
+    return { ...state, units, gameSpecific, lastAction: { playerId, ...action, damage, killed } };
   }
 
   return state;
@@ -656,6 +662,34 @@ export const CsMiniGame = {
   // this) — 1 real sim-second of a turn plays back over 2 wall-clock seconds.
   // True sim-time (action costs, move speed) is untouched.
   replayPaceMultiplier: 2,
+  createSetupUnit(state, { id, ownerId, type, position }) {
+    const mates = (state.units ?? []).filter(u => u.ownerId === ownerId);
+    if (type !== 'soldier' || !position || !mates.length) return null;
+    const u = makeUnit(id, ownerId, Math.max(...mates.map(m => m.num ?? 0)) + 1, position.x, position.y, mates[0].facing);
+    return { ...u, perTurn: freshPerTurn(spaceTimeOf(state), u, state) };
+  },
+  // The survivor counts getResult reads are the roster's, whatever it now is.
+  applyStartingUnits(state) {
+    const alive = Object.fromEntries(state.players.map(p => [p.id, state.units.filter(u => u.alive && u.ownerId === p.id).length]));
+    return { ...state, gameSpecific: { ...state.gameSpecific, alive } };
+  },
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // one soldier there is: 5 hp, 1 damage a shot, no armour (so a unit's defense
+  // rides in its hp), 3 squares a turn; a shot reaches whatever it sees, 5 squares
+  // out. A unit from elsewhere hits as hard and walks as fast as its own numbers
+  // say, and shoots no farther than its own reach.
+  foreignUnits: {
+    scale: { hp: MAX_HP, attack: SHOT_DAMAGE, defense: 1, range: VISION_RANGE, move: MOVE_RANGE },
+    fold: { defense: 'hp' },
+    profiles: () => ({ soldier: { hp: MAX_HP, attack: SHOT_DAMAGE, range: VISION_RANGE, move: MOVE_RANGE, domain: 'land' } }),
+    adopt: (u, s) => {
+      const hp = whole(s.hp);
+      const out = { ...u, hp, maxHp: hp, damage: whole(s.attack), range: s.range, speedMul: s.move / MOVE_RANGE };
+      return Number.isFinite(u.perTurn?.moveLeft) ? { ...out, perTurn: { ...u.perTurn, moveLeft: kinematics.speed(out) } } : out;
+    },
+    realize: (_type, s) => ({ hp: whole(s.hp), attack: whole(s.attack), defense: s.defense, range: s.range, move: s.move }),
+    art: () => ({ glyph: 'S', name: 'soldier' }),
+  },
   createInitialState,
   getLegalActions,
   applyActions,

@@ -4,6 +4,7 @@ import { resolveBattle } from './combat.js';
 import { getAxisAlliesBelief } from './belief.js';
 import { sidesEval } from '../evalHelpers.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
+import { tableUnits, whole } from '../../engine/foreignUnits.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -773,9 +774,32 @@ export const AxisAlliesGame = {
   toGrid,
   getVisibleState,
   evaluateState,
-  // Attack and defense are what a d6 must roll at or under to hit; a battle is
-  // fought within one territory, so there is no range.
-  unitStats: () => Object.fromEntries(Object.entries(UNITS).map(([type, u]) =>
-    [type, { hp: u.hp, attack: u.attack, defense: u.defense, move: u.moves, domain: u.domain }])),
+  // A unit for a customised roster: in the territory it is told, else where its
+  // side already has a unit of its domain (a ship needs a sea zone).
+  createSetupUnit(state, { id, ownerId, type, position }) {
+    if (!UNITS[type]) return null;
+    const domain = UNITS[type].domain === 'sea' ? 'sea' : 'land';
+    const mine = (state.units ?? []).filter(u => u.alive && u.ownerId === ownerId);
+    const territory = typeof position === 'string' && TERRITORIES[position] ? position
+      : (mine.find(u => (UNITS[u.type]?.domain === 'sea' ? 'sea' : 'land') === domain) ?? mine[0])?.territory;
+    return territory ? makeUnit(id, ownerId, type, territory) : null;
+  },
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // infantryman: 1 hp, attacking on a 1 and defending on a 2 (what a d6 must roll
+  // at or under to hit), 1 territory a turn. A battle is fought within one
+  // territory, so every unit's range is that territory. A d6 can't roll over 6, so
+  // a punch or a guard beyond that is capped there. Transports and carriers never
+  // carry a foreign unit: their cargo rules go by the type's name.
+  foreignUnits: tableUnits({
+    table: UNITS,
+    scale: { hp: 1, attack: 1, defense: 2, range: 1, move: 1 },
+    read: (e) => ({ hp: e.hp, attack: e.attack, defense: e.defense, range: 1, move: e.moves, domain: e.domain }),
+    write: (e, s) => ({
+      ...e, hp: whole(s.hp), attack: Math.min(6, whole(s.attack, 0)), defense: Math.min(6, whole(s.defense, 0)),
+      moves: whole(s.move), capacity: 0,
+    }),
+    chassis: (_type, e) => !(e.capacity > 0),
+    art: (type) => ({ imagePath: UNIT_PORTRAITS.has(type) ? `/images/axisallies/units/${type}` : null, glyph: type[0].toUpperCase(), name: type }),
+  }),
   sampleWorlds,
 };

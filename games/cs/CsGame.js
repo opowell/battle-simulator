@@ -22,6 +22,7 @@ import { isClearOfUnits, latticeActions } from '../continuousMove.js';
 import { filterVisibleUnits, orientToEnemies } from '../vision.js';
 import { makePos, parsePos, num, posToWire } from '../coord.js';
 import { MAP_ZOOM_OPTION } from '../renderOptions.js';
+import { lend, whole } from '../../engine/foreignUnits.js';
 
 
 const MOVE_RANGE     = 8; // per-turn move allowance (budget, not a single-move cap) — see perTurn.moveAllowance; doubled alongside the 3x map/vision resize (2026-07-17)
@@ -176,7 +177,27 @@ function spawnUnits(map) {
 // Weapon/equipment icons (see counterstrike.fandom.com's "List of weapons" and "List
 // of equipment") — every WEAPONS/GRENADES key plus armor/helmet/defusekit has a
 // same-named file in games/cs/images/weapons/.
-const WEAPON_ICON = w => `/images/cs/weapons/${w}`;
+const WEAPON_ICON = w => `/images/cs/weapons/${WEAPONS[w]?.sprite ?? w}`;
+
+// ── Units from other games (engine/foreignUnits.js) ──────────────────────────
+// A player's kind is the kind of weapon it has drawn; each kind is read as the
+// first weapon of it (the knife, the pistol, the MAC-10, …). A unit from another
+// game is a player of the nearest kind carrying a weapon of its own in that kind's
+// slot — that kind's first weapon, with the unit's punch and reach — and walking
+// at its own pace with it drawn.
+const KIND_WEAPON = {};
+for (const [id, w] of Object.entries(WEAPONS)) KIND_WEAPON[w.category] ??= id;
+const round1 = (v) => Math.max(0.5, Math.round(v * 10) / 10);
+
+function foreignWeapon(kind, stats, spec) {
+  const base = KIND_WEAPON[kind];
+  return lend(WEAPONS, `${spec.from}:${spec.type}@${kind}`, () => ({
+    ...WEAPONS[base], damage: whole(stats.attack), range: round1(stats.range), cost: 0, sprite: base, foreign: true,
+  }));
+}
+
+/** A unit's move budget for a turn with `slot` drawn: its own pace (a foreign unit's) or a player's. */
+const paceOf = (u, slot = u.active) => (u.moveRange ?? MOVE_RANGE) * SLOT_MOVE_MULT[slot] * (u.crouched ? CROUCH_MOVE_MULT : 1);
 
 // ── Map sprite: body + hands + held weapon, all flat-color primitives — surviv.io's look
 // (see apps/console/play/SchematicLayer.vue's generic `unit.spriteLayers` renderer, whose `shape:
@@ -567,7 +588,10 @@ function startNewRound(state, roundWinner) {
   const roundReward = (team) =>
     roundWinner === team ? WIN_REWARD : lossReward(gs.consecutiveLosses[team]);
   const prevMoney = new Map(state.units.map(u => [u.id, u.money]));
-  const units = spawnUnits(gs.map).map(u => ({
+  // Everyone respawns as the round's opening roster dealt them — the map's two
+  // teams, or whatever a customised roster (units from other games among them) put
+  // in their place.
+  const units = (gs.roster ?? spawnUnits(gs.map)).map(u => ({
     ...u,
     money: Math.min(MAX_MONEY, (prevMoney.get(u.id) ?? STARTING_MONEY) + roundReward(u.ownerId)),
   }));
@@ -645,7 +669,7 @@ function beginTurn(state) {
     ...u,
     blinded: Math.max(0, (u.blinded ?? 0) - 1),
     perTurn: { hasActed: false,
-               moveAllowance: MOVE_RANGE * SLOT_MOVE_MULT[u.active] * (u.crouched ? CROUCH_MOVE_MULT : 1) },
+               moveAllowance: paceOf(u) },
   } : u);
 
   const next = {
@@ -1109,7 +1133,7 @@ function toGrid(state) {
       moveRange:     u.perTurn?.moveAllowance,
       equipment:     equipmentList(u),
       statusEffects: [...(u.blinded ? ['blinded'] : []), ...(u.crouched ? ['crouched'] : [])],
-      moved:         u.perTurn?.moveAllowance < MOVE_RANGE * SLOT_MOVE_MULT[u.active] * (u.crouched ? CROUCH_MOVE_MULT : 1),
+      moved:         u.perTurn?.moveAllowance < paceOf(u),
       acted:         u.perTurn?.hasActed,
       // Fraction of incoming damage this unit shrugs off — lets the design UI's aiming
       // overlay show a generic "expected damage" preview (rawDamage * (1 - reduction))
@@ -1153,6 +1177,7 @@ function toGrid(state) {
 
 export function createInitialState(players, config = {}) {
   const winRounds = config.winRounds ?? 8;
+  const units = spawnUnits(MAPS[config.mapId ?? config.scenario ?? 'de_dust2'] ?? MAPS.de_dust2);
   const maxRounds = config.maxRounds ?? 15;
   const map       = MAPS[config.mapId ?? config.scenario ?? 'de_dust2'] ?? MAPS.de_dust2;
 
@@ -1170,9 +1195,11 @@ export function createInitialState(players, config = {}) {
     currentPhase: 'buy',
     players,
     board: { width: map.width, height: map.height },
-    units: spawnUnits(map),
+    units,
     lastActions: null,
     gameSpecific: {
+      // Who every round starts with, as they spawn (see startNewRound).
+      roster: units,
       roundNumber: 1,
       tScore: 0, ctScore: 0,
       winRounds, maxRounds,
@@ -1308,6 +1335,55 @@ export const CsGame = {
   // the engine config by api-server / the demo so sessions get this automatically.
   defaultConfig: { simultaneousTurns: true },
   createInitialState,
+  // A player for a customised roster, with the first weapon of its kind drawn, in
+  // the look of its team's other players.
+  createSetupUnit(state, { id, ownerId, type, position }) {
+    const weapon = KIND_WEAPON[type];
+    const mates = (state.units ?? []).filter(u => u.ownerId === ownerId);
+    const mate = mates[0];
+    const at = position ?? mate?.position;
+    if (!weapon || !at || !mate) return null;
+    const unit = makeUnit(id, ownerId, at, FACTIONS[ownerId]?.[mates.length % FACTIONS[ownerId].length] ?? mate.faction);
+    const slot = WEAPON_SLOT(type);
+    return {
+      ...unit, type, facing: mate.facing ?? 0, active: slot,
+      weapons: { ...unit.weapons, [slot]: weapon },
+      ammo: slot === 'melee' ? unit.ammo : { ...unit.ammo, [slot]: fullAmmo(weapon) },
+      perTurn: { ...unit.perTurn, moveAllowance: MOVE_RANGE * SLOT_MOVE_MULT[slot] },
+    };
+  },
+  // Every round respawns the roster the session opened with (startNewRound), so
+  // an edited one is what each round starts with. A unit kept through a mid-game
+  // edit respawns as it first did, not as the edit found it.
+  applyStartingUnits(state, _config, { midGame = false } = {}) {
+    const was = new Map((state.gameSpecific.roster ?? []).map(u => [u.id, u]));
+    const roster = state.units.map(u => (midGame && was.get(u.id)) || u);
+    return { ...state, gameSpecific: { ...state.gameSpecific, roster } };
+  },
+  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // rifleman: 100 hp, an M4A4 (33 a hit, 9 squares), walking at a rifle's pace.
+  // Kevlar is bought, not brought, so a unit's defense rides in its hp.
+  foreignUnits: {
+    scale: { hp: 100, attack: WEAPONS.m4a4.damage, defense: 1, range: WEAPONS.m4a4.range, move: MOVE_RANGE * SLOT_MOVE_MULT.primary },
+    fold: { defense: 'hp' },
+    profiles: () => Object.fromEntries(Object.entries(KIND_WEAPON).map(([kind, w]) => [kind, {
+      hp: 100, attack: WEAPONS[w].damage, range: WEAPONS[w].range, move: MOVE_RANGE * SLOT_MOVE_MULT[WEAPON_SLOT(kind)], domain: 'land',
+    }])),
+    adopt: (u, s, spec) => {
+      const slot = WEAPON_SLOT(u.type);
+      const weapon = foreignWeapon(u.type, s, spec);
+      const hp = whole(s.hp);
+      const moved = { ...u, moveRange: s.move / SLOT_MOVE_MULT[slot] };
+      return {
+        ...moved, hp, maxHp: hp, active: slot,
+        weapons: { ...u.weapons, [slot]: weapon },
+        ammo: slot === 'melee' ? u.ammo : { ...u.ammo, [slot]: fullAmmo(weapon) },
+        perTurn: { ...u.perTurn, moveAllowance: paceOf(moved, slot) },
+      };
+    },
+    realize: (_kind, s) => ({ hp: whole(s.hp), attack: whole(s.attack), defense: s.defense, range: round1(s.range), move: s.move }),
+    art: (kind) => ({ imagePath: KIND_WEAPON[kind] ? WEAPON_ICON(KIND_WEAPON[kind]) : null, glyph: 'P', name: `${kind} player` }),
+  },
   actionKey:        csActionKey,
   getLegalActions:  withTeam(getLegalActions),
   isActionLegal:    withTeam(isActionLegal),

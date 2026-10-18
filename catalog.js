@@ -21,7 +21,7 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { STATS } from './engine/foreignUnits.js';
+import { STATS, profilesOf, factorOf, takesPart } from './engine/foreignUnits.js';
 
 /**
  * The unit types `game` defines, one record each: what the setup screen would
@@ -31,7 +31,7 @@ import { STATS } from './engine/foreignUnits.js';
  * one the setup screen's unit picker draws — and keeps no art only when that
  * has none either.
  *
- * `profiles` is the game's unitStats(), else its foreignUnits.profiles() — its
+ * `profiles` is the game's unitStats(), else its foreignUnits profiles — its
  * units' hp, attack, defense, range and move in its own numbers (games/types.js)
  * — and gives each type it knows its `stats`; a type it doesn't know has none.
  */
@@ -221,7 +221,7 @@ export function buildCatalog({ games, sessions, recordings, files, setupPreview,
     let unitsError = null;
     try {
       const players = (entry.defaultPlayers ?? []).map((p) => ({ id: p.id, name: p.name ?? p.id }));
-      const stats = game.unitStats?.() ?? game.foreignUnits?.profiles?.() ?? {};
+      const stats = game.unitStats?.() ?? profilesOf(game);
       units = unitRecords(name, setupPreview(game, players, {}), stats);
     } catch (e) { unitsError = e.message; }
     out.units.push(...units);
@@ -262,6 +262,9 @@ export function buildCatalog({ games, sessions, recordings, files, setupPreview,
       scenarios: (game.scenarios ?? []).length,
       units: units.length,
       unitsError,
+      // The general adjustment factor its units' strength is compared with other
+      // games' by (engine/foreignUnits.js); null for a game that lends none.
+      unitFactor: takesPart(game) ? factorOf(game) : null,
       options: (game.gameOptions ?? []).length,
       agents: agents.size,
       files: (files[name] ?? []).length,

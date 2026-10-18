@@ -4,6 +4,9 @@
 
 export const UNIT_TYPES = {
   infantry: {
+    // Which of the three it is to the rules (a unit from another game, registered
+    // here as a copy of one of them, is that one).
+    kind: 'infantry',
     name: 'Infantry',
     figures: 4,
     // move 1 and battle, OR move 2 and do not battle (see moveThenBattle in the game).
@@ -18,6 +21,7 @@ export const UNIT_TYPES = {
     glyph: 'I',
   },
   armor: {
+    kind: 'armor',
     name: 'Armor',
     figures: 3,
     moveAndBattle: 3,
@@ -30,6 +34,7 @@ export const UNIT_TYPES = {
     glyph: 'A',
   },
   artillery: {
+    kind: 'artillery',
     name: 'Artillery',
     figures: 2,
     // Move 1 OR battle (never both) — enforced in the game via moveAndBattle: 0.
@@ -46,6 +51,11 @@ export const UNIT_TYPES = {
 
 export function unitStats(type) {
   return UNIT_TYPES[type];
+}
+
+/** Which of infantry, armor and artillery a unit of `type` fights as. */
+export function kindOf(type) {
+  return UNIT_TYPES[type]?.kind ?? type;
 }
 
 // Dice rolled before terrain reductions, given range (1-based hex distance).

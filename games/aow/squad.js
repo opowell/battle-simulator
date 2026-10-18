@@ -1,4 +1,4 @@
-import { UNITS, COMBAT_TYPES } from './units.js';
+import { UNITS, fightersIn, kindOf } from './units.js';
 
 export const MAX_MEN = 14; // a squad holds up to 14 men (the original's cap)
 
@@ -16,13 +16,19 @@ export function resetSquadIds() { _idCtr = 0; }
 export function makeSquad(ownerId, men, x, y, extra = {}) {
   const clean = {};
   let total = 0;
-  for (const t of Object.keys(UNITS)) {
+  // The game's own types in their own order (a tie for the dominant type goes to
+  // the first), then any men from other games (engine/foreignUnits.js).
+  const own = Object.keys(UNITS);
+  for (const t of [...own, ...Object.keys(men).filter(k => !own.includes(k))]) {
+    if (!UNITS[t]) continue;
     const n = Math.max(0, Math.floor(men[t] ?? 0));
     if (n > 0) { clean[t] = n; total += n; }
   }
   return {
     id: extra.id ?? `s${_idCtr++}`,
     ownerId,
+    // What a roster calls it: the kind of man it was raised from, mostly.
+    type: extra.type ?? dominantType({ men: clean }) ?? (clean.spy ? 'spy' : 'knight'),
     men: clean,
     position: { x, y },
     alive: total > 0,
@@ -38,7 +44,7 @@ export function totalMen(squad) {
 }
 
 export function combatMen(squad) {
-  return COMBAT_TYPES.reduce((a, t) => a + (squad.men[t] ?? 0), 0);
+  return fightersIn(squad.men).reduce((a, t) => a + squad.men[t], 0);
 }
 
 export function hasSpy(squad) {
@@ -56,7 +62,7 @@ export function squadSpeed(squad) {
 // broken squad fights at a fraction of its paper strength.
 export function squadStrength(squad) {
   let base = 0;
-  for (const t of COMBAT_TYPES) base += (squad.men[t] ?? 0) * UNITS[t].power;
+  for (const t of fightersIn(squad.men)) base += squad.men[t] * UNITS[t].power;
   const condition = 0.4 + 0.3 * (squad.supply / 100) + 0.3 * (squad.morale / 100);
   return base * condition;
 }
@@ -64,17 +70,17 @@ export function squadStrength(squad) {
 // Count of men of the type that beats `enemyType` (rock-paper-scissors specialist bonus).
 export function counterMen(squad, enemyType) {
   let n = 0;
-  for (const t of COMBAT_TYPES) if (UNITS[t].beats === enemyType) n += (squad.men[t] ?? 0);
+  for (const t of fightersIn(squad.men)) if (UNITS[t].beats === enemyType) n += squad.men[t];
   return n;
 }
 
 // The dominant combat type in a squad — used to decide which counter the enemy needs.
+// Men from other games count as the kind they fight as.
 export function dominantType(squad) {
+  const byKind = {};
+  for (const t of fightersIn(squad.men)) byKind[kindOf(t)] = (byKind[kindOf(t)] ?? 0) + squad.men[t];
   let best = null, bestN = 0;
-  for (const t of COMBAT_TYPES) {
-    const n = squad.men[t] ?? 0;
-    if (n > bestN) { best = t; bestN = n; }
-  }
+  for (const [k, n] of Object.entries(byKind)) if (n > bestN) { best = k; bestN = n; }
   return best;
 }
 
@@ -83,7 +89,7 @@ export function inflictCasualties(squad, n) {
   const men = { ...squad.men };
   let remaining = Math.min(n, combatMen({ men }) );
   // Proportional loss across combat types, largest groups first.
-  const order = [...COMBAT_TYPES].sort((a, b) => (men[b] ?? 0) - (men[a] ?? 0));
+  const order = fightersIn(men).sort((a, b) => (men[b] ?? 0) - (men[a] ?? 0));
   let guard = 0;
   while (remaining > 0 && combatMenObj(men) > 0 && guard++ < 100) {
     for (const t of order) {
@@ -98,7 +104,7 @@ export function inflictCasualties(squad, n) {
 }
 
 function combatMenObj(men) {
-  return COMBAT_TYPES.reduce((a, t) => a + (men[t] ?? 0), 0);
+  return fightersIn(men).reduce((a, t) => a + men[t], 0);
 }
 
 export function clamp(v, lo = 0, hi = 100) {

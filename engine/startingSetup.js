@@ -250,6 +250,13 @@ function place(unit, position) {
 // ---------------------------------------------------------------------------
 
 /**
+ * The [col, row] square a toGrid cell stands for. Nearly every board draws its
+ * cells AT their square, but a hex board laid out in pixels (Memoir '44) draws
+ * them at x,y and names the square beside it as col,row.
+ */
+export const gridSquare = (c) => [c?.col ?? c?.x, c?.row ?? c?.y];
+
+/**
  * How this game's unit positions relate to the [col,row] cells of its `toGrid`
  * board, worked out from the positions it actually opens with:
  *
@@ -353,7 +360,8 @@ export function describeSetup(game, base, { config = {}, extraTypes = [] } = {})
   const cellByXY = new Map();
   for (const c of grid?.cells ?? []) {
     if (c.unitId) cellById.set(c.unitId, c);
-    if (c.x != null && c.y != null) cellByXY.set(`${c.x},${c.y}`, c);
+    const [cx, cy] = gridSquare(c);
+    if (cx != null && cy != null) cellByXY.set(`${cx},${cy}`, c);
   }
   for (const u of grid?.units ?? []) if (u.id) cellById.set(u.id, u);
 
@@ -417,7 +425,7 @@ export function describeSetup(game, base, { config = {}, extraTypes = [] } = {})
       cells: (grid.cells ?? []).map(c => ({
         x: c.x, y: c.y, color: c.color ?? null,
         bgImage: typeof c.bgImage === 'string' ? c.bgImage : (c.bgImage?.image ?? null),
-        pos: map.placeable ? map.fromCell(c.x, c.y) : null,
+        pos: map.placeable ? map.fromCell(...gridSquare(c)) : null,
       })),
     } : null,
   };

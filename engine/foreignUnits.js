@@ -19,21 +19,46 @@
  *     host value = source value × host.scale[stat] / source.scale[stat]
  *
  * so a unit twice as tough as a marine comes out twice as tough as a legion. The
- * vocabulary is deliberately small — what nearly every game has some reading of:
+ * vocabulary is deliberately small — what every game has some reading of:
  *
  *   hp       how much punishment it takes before it dies
  *   attack   how hard it hits (damage, combat strength — the game's own notion)
- *   defense  how well it resists being hit (0 = not at all)
+ *   defense  how well it resists being hit
  *   range    how far it attacks, in its own board's cells (1 = adjacent)
  *   move     how far it moves in a turn, in its own board's cells
  *
  * plus a `domain` ('land' | 'sea' | 'air') that decides which chassis it may take.
- * A stat one side has no reading of is not converted: the chassis keeps its own.
+ * Every unit of every game has all five (games/foreignUnits.test.js holds every
+ * registered game to it).
+ *
+ * ── The general adjustment factor ────────────────────────────────────────────
+ * `scale` makes one game's standard infantryman the same as another's. Whether
+ * that is fair — whether a Doom marine SHOULD stand level with a civ1 militia —
+ * is a separate question, answered by each game's `factor` (default 1): its
+ * strength stats (hp, attack, defense) count `factor` times over when they are
+ * compared with another game's. A game with factor 2 lends out units twice as
+ * strong, and a unit lent to it comes in at half. Range and move are distances on
+ * a board — `scale` alone says how one board's cells compare with another's — so
+ * the factor leaves them be.
+ *
+ * ── A stat a game's rules can't set unit by unit ─────────────────────────────
+ * Doom, X-Com and Mud and Blood have no armour: a hit is a hit. Memoir '44 has
+ * one, but only two settings of it (which die faces kill infantry, which armor).
+ * Such a game says where the stat goes instead, `fold: { defense: 'hp' }`. A
+ * foreign unit then keeps its chassis's defense, and its own above or below that
+ * is carried in its hp — twice the defense takes twice the hits to kill, which is
+ * what twice the hp does. A game with no armour at all needn't give its profiles
+ * a defense: they read as the standard, one point (`scale.defense`).
  *
  * ── What a game declares (all optional; see games/types.js) ──────────────────
  *
  *   game.foreignUnits = {
- *     scale,                       // the conversion factor, per stat
+ *     scale,                       // the conversion factor, per stat — all five
+ *     factor,                      // the general adjustment factor (default 1)
+ *     fold,                        // { stat: 'hp' } for a stat its rules have no knob for
+ *     absorb,                      // true for a game that counts its pieces (Risk's armies,
+ *                                  //   KDice's dice): a unit laid out there becomes its hp's worth
+ *                                  //   of them (its applyStartingUnits does it), not a unit drawn as itself
  *     profiles(),                  // { type: { hp, attack, …, domain, chassis? } } in its own numbers —
  *                                  //   every type it lends out, and every type it can put a foreign unit in
  *     art(type, seat),             // { imagePath, glyph, name } — how its unit looks, for seat 0, 1, …
@@ -60,6 +85,25 @@
 
 /** The stats of the common vocabulary, in the order they are shown. */
 export const STATS = ['hp', 'attack', 'defense', 'range', 'move'];
+
+/** The stats a game's general adjustment factor applies to: strength, not distance. */
+export const STRENGTH_STATS = ['hp', 'attack', 'defense'];
+
+/** A game's general adjustment factor (1 unless it declares one). */
+export function factorOf(game) {
+  const f = game?.foreignUnits?.factor;
+  return typeof f === 'number' && Number.isFinite(f) && f > 0 ? f : 1;
+}
+
+/** What one point of `stat` in `game`'s numbers is worth in the common vocabulary. */
+function worth(game, stat) {
+  const s = game?.foreignUnits?.scale?.[stat];
+  if (!(s > 0)) return null;
+  return (STRENGTH_STATS.includes(stat) ? factorOf(game) : 1) / s;
+}
+
+/** The stats `game`'s rules carry in another stat ({ defense: 'hp' }), as entries. */
+const folded = (game) => Object.entries(game?.foreignUnits?.fold ?? {});
 
 const games = new Map();   // registry name ('sc1') → game definition
 
@@ -102,19 +146,31 @@ const profileCache = new WeakMap();
 export function profilesOf(game) {
   if (!takesPart(game)) return {};
   let p = profileCache.get(game);
-  if (!p) { p = game.foreignUnits.profiles() ?? {}; profileCache.set(game, p); }
+  if (!p) {
+    p = game.foreignUnits.profiles() ?? {};
+    // A stat the rules carry in another one reads, on every unit, as the standard.
+    const standard = folded(game).map(([k]) => [k, game.foreignUnits.scale?.[k]]).filter(([, v]) => v > 0);
+    if (standard.length) {
+      p = Object.fromEntries(Object.entries(p).map(([type, prof]) => [type, { ...Object.fromEntries(standard), ...prof }]));
+    }
+    profileCache.set(game, p);
+  }
   return p;
 }
 
-/** `stats` in `from`'s numbers, in `to`'s — only the stats both have a reading of. */
+/**
+ * `stats` in `from`'s numbers, in `to`'s — only the stats both have a reading of.
+ * Each goes through the common vocabulary: its worth in `from` over its worth in
+ * `to`, which is the ratio of the two scales times, for a strength stat, the ratio
+ * of the two games' general adjustment factors.
+ */
 export function convertStats(stats, from, to) {
   const out = {};
-  const a = from?.foreignUnits?.scale ?? {};
-  const b = to?.foreignUnits?.scale ?? {};
   for (const k of STATS) {
     const v = stats?.[k];
-    if (typeof v !== 'number' || !Number.isFinite(v) || !(a[k] > 0) || !(b[k] > 0)) continue;
-    out[k] = v * b[k] / a[k];
+    const a = worth(from, k), b = worth(to, k);
+    if (typeof v !== 'number' || !Number.isFinite(v) || a == null || b == null) continue;
+    out[k] = v * a / b;
   }
   return out;
 }
@@ -132,11 +188,13 @@ export function rescaleRoll([lo, hi], mean) {
   return [a, Math.max(a, whole(hi * f))];
 }
 
-/** The common-vocabulary reading of `stats` in `game`'s numbers (each stat over its scale). */
+/** The common-vocabulary reading of `stats` in `game`'s numbers (each stat at its worth). */
 function common(stats, game) {
-  const s = game.foreignUnits.scale;
   const out = {};
-  for (const k of STATS) if (typeof stats?.[k] === 'number' && s[k] > 0) out[k] = stats[k] / s[k];
+  for (const k of STATS) {
+    const w = worth(game, k);
+    if (typeof stats?.[k] === 'number' && w != null) out[k] = stats[k] * w;
+  }
   return out;
 }
 
@@ -191,6 +249,14 @@ export function foreignSpec(host, base, from, type, ownerId = null) {
     const v = converted[k] ?? own[k];
     if (v != null) stats[k] = v;
   }
+  // A stat the host's rules can't set unit by unit rides in the one they carry it
+  // in: twice its chassis's defense, twice the hp. The unit keeps the chassis's.
+  for (const [k, into] of folded(host)) {
+    const kept = own[k] ?? host.foreignUnits.scale?.[k];
+    if (!(kept > 0) || typeof stats[k] !== 'number' || typeof stats[into] !== 'number') continue;
+    stats[into] *= stats[k] / kept;
+    stats[k] = kept;
+  }
   return { from, type, chassis, stats, source: profile };
 }
 
@@ -228,6 +294,20 @@ export function seatOf(base, ownerId) {
   if (i >= 0) return i;
   const owners = [...new Set((base?.units ?? []).map(u => u?.ownerId))];
   return Math.max(0, owners.indexOf(ownerId));
+}
+
+/**
+ * `table[key]`, registered the way a foreign type is (non-enumerable, frozen, once)
+ * — for a game whose rules read a unit's stats from some OTHER table than its
+ * type's, such as the weapon it carries (CS, Surviv). `make()` builds the entry the
+ * first time; the key should name everything it depends on, so that registering
+ * it again — another session, a replay — finds the same one.
+ */
+export function lend(table, key, make) {
+  if (!Object.prototype.hasOwnProperty.call(table, key)) {
+    Object.defineProperty(table, key, { value: Object.freeze(make()), enumerable: false, configurable: false, writable: false });
+  }
+  return key;
 }
 
 const chassisOfKey = new WeakMap();   // host table → Map(registered key → chassis it copies)
@@ -371,7 +451,7 @@ export function dressGrid(game, state, grid, toCell = null) {
   }
   const cells = Array.isArray(grid.cells) ? grid.cells.map((c) => {
     let out = c;
-    const u = c.unitId != null ? byId.get(c.unitId) : (c.glyph && c.x != null ? placed.get(`${c.x},${c.y}`) : undefined);
+    const u = c.unitId != null ? byId.get(c.unitId) : (c.glyph && (c.col ?? c.x) != null ? placed.get(`${c.col ?? c.x},${c.row ?? c.y}`) : undefined);
     if (u) out = dress(out, u);
     if (Array.isArray(c.stack) && c.stack.some(s => byId.has(s.unitId))) {
       out = { ...out, stack: c.stack.map(s => (byId.has(s.unitId) ? dress(s, byId.get(s.unitId)) : s)) };
