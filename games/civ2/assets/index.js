@@ -72,7 +72,7 @@ export const assets = {
     cavalry:           { emoji: '🐎', img: `${BASE}/units/cavalry` },
     artillery:         { emoji: '💥', img: `${BASE}/units/artillery` },
     // modern land
-    infantry:          { emoji: '🪖', img: `${BASE}/units/infantry` },
+    infantry:          { emoji: '🪖' },   // Civ2 itself has no Infantry, so no sprite
     'mech-infantry':   { emoji: '🤖', img: `${BASE}/units/mech_infantry` },
     armor:             { emoji: '🛡️', img: `${BASE}/units/armor` },
     howitzer:          { emoji: '💥', img: `${BASE}/units/howitzer` },

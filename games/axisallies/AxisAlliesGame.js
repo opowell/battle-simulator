@@ -773,5 +773,9 @@ export const AxisAlliesGame = {
   toGrid,
   getVisibleState,
   evaluateState,
+  // Attack and defense are what a d6 must roll at or under to hit; a battle is
+  // fought within one territory, so there is no range.
+  unitStats: () => Object.fromEntries(Object.entries(UNITS).map(([type, u]) =>
+    [type, { hp: u.hp, attack: u.attack, defense: u.defense, move: u.moves, domain: u.domain }])),
   sampleWorlds,
 };

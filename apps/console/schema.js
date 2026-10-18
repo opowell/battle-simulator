@@ -25,6 +25,17 @@ const metric = (key, label, extra = {}) => ({ key, role: 'metric', kind: 'number
 const state = { key: 'status', role: 'state', kind: 'status', label: 'State', width: '112px' }
 const started = { key: 'updated', role: 'updated', kind: 'date', label: 'Started', sort: 'age', width: '96px', hideBelow: 760 }
 
+// A unit stat, exactly: 2/3 rather than 0.666…, and chess's √3 (a piece worth 3
+// pawns, foreignUnits' square-law reading) rather than 1.7320508075688772.
+const stat = (value) => {
+  if (value == null || value === '') return '—'
+  const { fmt, asFraction } = globalThis.EXACT ?? {}
+  if (!fmt || asFraction(value)) return fmt ? fmt(value) : String(value)
+  const square = value * value
+  return Math.abs(square - Math.round(square)) < 1e-9 ? `√${Math.round(square)}` : String(value)
+}
+const unitStat = (key, label, hint, hideBelow) => metric(key, label, { format: stat, width: '84px', hint, hideBelow })
+
 const kb = (value) => (value == null ? '' : `${Math.max(1, Math.round(Number(value) / 1024))} KB`)
 const count = (n) => n.toLocaleString('en')
 const distinct = (values) => [...new Set(values.filter((v) => v != null && v !== ''))].sort()
@@ -159,22 +170,44 @@ export function buildSchema(catalog, { Art }) {
       label: 'Units',
       count: count(catalog.units.length),
       // A unit's card is its picture and its name, like a game's; the type,
-      // the game and the starting count are the table's.
+      // the game, the stats and the starting count are the table's.
       card: 'picture',
       // Pressing a unit narrows to it: its game and the sides that start with
       // it, under a card of its own (UnitSummaryCards).
       scope: 'unit',
+      // The stats are the game's foreignUnits profile, in that game's own numbers
+      // (a civ1 attack of 4 and an SC1 attack of 6 are not the same thing).
       columns: [
         ordinal,
         art,
         identity('Unit', { scope: true }),
-        reference('Type', { mono: true, width: '140px' }),
+        reference('Type', { mono: true, width: '140px', hideBelow: 1100 }),
         gameColumn,
-        metric('starting', 'At start'),
-        { key: 'sides', label: 'Sides', hideBelow: 760 },
+        unitStat('attack', 'Attack', 'How hard it hits, in its own game\'s numbers', 620),
+        unitStat('defense', 'Defense', 'How well it resists being hit (0 = not at all)', 620),
+        unitStat('hp', 'HP', 'How much punishment it takes before it dies', 760),
+        unitStat('move', 'Move', 'How far it moves in a turn, in board cells', 760),
+        unitStat('range', 'Range', 'How far it attacks, in board cells (1 = adjacent)', 900),
+        { key: 'domain', label: 'Domain', width: '84px', hideBelow: 900 },
+        metric('starting', 'Starting', { width: '96px', hint: 'How many of it the default opening position gives all sides together', hideBelow: 900 }),
+        { key: 'sides', label: 'Sides', hideBelow: 1100 },
       ],
-      sorts: [{ key: 'game', label: 'game' }, { key: 'name', label: 'name' }, { key: 'starting', label: 'at start' }],
-      facets: [byGame, toggle('onBoard', 'At start', 'Only units a side starts with')],
+      sorts: [
+        { key: 'game', label: 'game' },
+        { key: 'name', label: 'name' },
+        { key: 'attack', label: 'attack' },
+        { key: 'defense', label: 'defense' },
+        { key: 'hp', label: 'hp' },
+        { key: 'move', label: 'move' },
+        { key: 'range', label: 'range' },
+        { key: 'starting', label: 'starting' },
+      ],
+      facets: [
+        byGame,
+        chips('domain', 'Domain', ['land', 'sea', 'air']),
+        toggle('hasStats', 'Has stats', 'Only units whose game gives their stats'),
+        toggle('onBoard', 'Starting', 'Only units a side starts with'),
+      ],
     },
     {
       key: 'sides',

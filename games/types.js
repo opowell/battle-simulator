@@ -142,6 +142,12 @@
  *                 showing (tableUnits derives it).
  *   A game without it neither lends units nor takes them.
  *
+ * @property {() => object} [unitStats]
+ *   Optional. { type: { hp, attack, defense, range, move, domain } } in this game's
+ *   own numbers, any stat left out — what the console's Units table shows. Defaults
+ *   to foreignUnits.profiles(); a game that doesn't lend its units out can still
+ *   say what they are.
+ *
  * @property {(config: object) => object} [resolveSetupConfig]
  *   Optional. The session config with anything the game would otherwise roll fresh
  *   on each createInitialState call pinned down (civ1/civ2: a blank map seed).

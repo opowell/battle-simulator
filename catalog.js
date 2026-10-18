@@ -21,6 +21,7 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { STATS } from './engine/foreignUnits.js';
 
 /**
  * The unit types `game` defines, one record each: what the setup screen would
@@ -29,8 +30,12 @@ import { resolve } from 'node:path';
  * it is pictured by the preview's unitArt — the game's own art hook, the same
  * one the setup screen's unit picker draws — and keeps no art only when that
  * has none either.
+ *
+ * `profiles` is the game's unitStats(), else its foreignUnits.profiles() — its
+ * units' hp, attack, defense, range and move in its own numbers (games/types.js)
+ * — and gives each type it knows its `stats`; a type it doesn't know has none.
  */
-export function unitRecords(gameName, preview) {
+export function unitRecords(gameName, preview, profiles = {}) {
   const byType = new Map();
   const typeOf = (entry) => entry.type ?? entry.label ?? entry.id;
   for (const type of preview.unitTypes ?? []) {
@@ -72,7 +77,17 @@ export function unitRecords(gameName, preview) {
     glyph: unit.glyph,
     starting: unit.starting,
     owners: [...unit.owners],
+    stats: statsOf(profiles?.[unit.type]),
   }));
+}
+
+/** The common stats a profile has a reading of, and its domain; null without one. */
+function statsOf(profile) {
+  if (!profile) return null;
+  const stats = {};
+  for (const key of STATS) if (Number.isFinite(profile[key])) stats[key] = profile[key];
+  if (profile.domain) stats.domain = profile.domain;
+  return stats;
 }
 
 /** One live session as a record: who is in it, how far it has got, how it ended. */
@@ -206,7 +221,8 @@ export function buildCatalog({ games, sessions, recordings, files, setupPreview,
     let unitsError = null;
     try {
       const players = (entry.defaultPlayers ?? []).map((p) => ({ id: p.id, name: p.name ?? p.id }));
-      units = unitRecords(name, setupPreview(game, players, {}));
+      const stats = game.unitStats?.() ?? game.foreignUnits?.profiles?.() ?? {};
+      units = unitRecords(name, setupPreview(game, players, {}), stats);
     } catch (e) { unitsError = e.message; }
     out.units.push(...units);
 

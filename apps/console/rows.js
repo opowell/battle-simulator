@@ -136,6 +136,8 @@ export function buildRows(catalog, values) {
       art: { src: asset(u.imagePath), glyph: u.glyph ?? u.label[0] },
       starting: u.starting,
       onBoard: u.starting > 0,
+      ...u.stats,
+      hasStats: !!u.stats,
       sides: u.owners.map((side) => sideName.get(`${u.game}/${side}`) ?? side).join(', '),
       unit: unitOf(u),
     })),

@@ -36,7 +36,7 @@ test('a unit type is named and pictured by its first roster entry with art, and 
   const knight = units.find((u) => u.type === 'knight');
   assert.deepEqual(knight, {
     id: 'duel/knight', game: 'duel', type: 'knight', label: 'Knight',
-    imagePath: '/images/duel/knight', glyph: 'K', starting: 2, owners: ['a', 'b'],
+    imagePath: '/images/duel/knight', glyph: 'K', starting: 2, owners: ['a', 'b'], stats: null,
   });
   // Offered but nobody starts with one, and no art hook knows it: none is invented.
   assert.equal(units.find((u) => u.type === 'squire').starting, 0);
@@ -55,6 +55,15 @@ test('a type nobody starts with is pictured by the game\'s art hook (unitArt)', 
   assert.equal(squire.imagePath, '/images/duel/squire');
   assert.equal(squire.label, 'Squire');
   assert.equal(squire.starting, 0);
+});
+
+test("a unit type's stats are its game's foreignUnits profile, in the game's own numbers", () => {
+  const units = unitRecords('duel', preview(), {
+    knight: { hp: 10, attack: 4, defense: 2, range: 1, move: 2, domain: 'land', chassis: false },
+  });
+  assert.deepEqual(units.find((u) => u.type === 'knight').stats, { hp: 10, attack: 4, defense: 2, range: 1, move: 2, domain: 'land' });
+  // A type the profiles don't know has no stats, rather than zeros.
+  assert.equal(units.find((u) => u.type === 'squire').stats, null);
 });
 
 test('a game carries the counts its records drill into', () => {
