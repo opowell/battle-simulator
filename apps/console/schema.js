@@ -170,7 +170,7 @@ export function buildSchema(catalog, { Art }) {
       label: 'Units',
       count: count(catalog.units.length),
       // A unit's card is its picture and its name, like a game's; the type,
-      // the game, the stats and the starting count are the table's.
+      // the game and the stats are the table's.
       card: 'picture',
       // Pressing a unit narrows to it: its game and the sides that start with
       // it, under a card of its own (UnitSummaryCards).
@@ -189,7 +189,6 @@ export function buildSchema(catalog, { Art }) {
         unitStat('move', 'Move', 'How far it moves in a turn, in board cells', 760),
         unitStat('range', 'Range', 'How far it attacks, in board cells (1 = adjacent)', 900),
         { key: 'domain', label: 'Domain', width: '84px', hideBelow: 900 },
-        metric('starting', 'Starting', { width: '96px', hint: 'How many of it the default opening position gives all sides together', hideBelow: 900 }),
         { key: 'sides', label: 'Sides', hideBelow: 1100 },
       ],
       sorts: [
@@ -200,7 +199,6 @@ export function buildSchema(catalog, { Art }) {
         { key: 'hp', label: 'hp' },
         { key: 'move', label: 'move' },
         { key: 'range', label: 'range' },
-        { key: 'starting', label: 'starting' },
       ],
       facets: [
         byGame,
