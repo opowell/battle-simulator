@@ -8,7 +8,6 @@ A turn-based game engine for running and building strategy games in JavaScript (
 |---|---|---|
 | `chess` | Chess — plus fog of war and three (space x time) variants | [games/chess/](games/chess/README.md) |
 | `tactical` | Tactical grid combat | [games/tactical/](games/tactical/README.md) |
-| `cardbattle` | Card battle | [games/cardbattle/](games/cardbattle/README.md) |
 | `civ1` | Civilization 1 | [games/civ1/](games/civ1/README.md) |
 | `civ2` | Civilization 2 | [games/civ2/](games/civ2/README.md) |
 | `risk` | Risk | [games/risk/](games/risk/README.md) |
@@ -59,7 +58,7 @@ node demo/chess-demo.js --auto
 node demo/xcom-demo.js --auto --greedy
 ```
 
-All demos are in `demo/`: `chess`, `tactical`, `cardbattle`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `csmini`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
+All demos are in `demo/`: `chess`, `tactical`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `csmini`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
 
 ### Start the HTTP API server
 

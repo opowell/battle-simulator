@@ -321,7 +321,7 @@ export class GameEngine {
     if (this.timeType === 'continuous') return this._stepContinuous();
     // Simultaneous planning only makes sense for sequential games (exactly one
     // active player at the turn start); games that already activate several
-    // players per step (cardbattle) are natively simultaneous — leave them be.
+    // players per step are natively simultaneous — leave them be.
     // `play: 'simultaneous'` is the unified spelling of `simultaneousTurns: true`
     // (see games/spacetime.js resolveSpaceTime); both select we-go planning.
     if (this._isSimultaneous() && this._state.activePlayers.length === 1)

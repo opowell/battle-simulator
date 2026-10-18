@@ -36,7 +36,6 @@ import { makeGreedyAgent } from './agents/GreedyAgent.js';
 
 import { ChessGame }         from './games/chess/index.js';
 import { TacticalGame }      from './games/tactical/index.js';
-import { CardBattleGame }    from './games/cardbattle/index.js';
 import { Civ1Game }          from './games/civ1/index.js';
 import { Civ2Game }          from './games/civ2/index.js';
 import { RiskGame }          from './games/risk/index.js';
@@ -279,7 +278,6 @@ async function serveGameSound(gameName, name, res) {
 const GAMES = {
   chess:         { game: ChessGame,         minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }] },
   tactical:      { game: TacticalGame,      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
-  cardbattle:    { game: CardBattleGame,    minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   // Six, because that is how many seats civ1's own scenarios lay — the standard game
   // and the large exhibition both seat six. A lower cap here doesn't stop them (a
   // scenario seats the table itself, see gameDefaults.makeSlots); it only greys out

@@ -16,7 +16,6 @@ import { rosterFromState, applyRoster, rosterError } from '../engine/startingSet
 
 import { ChessGame }         from './chess/index.js';
 import { TacticalGame }      from './tactical/index.js';
-import { CardBattleGame }    from './cardbattle/index.js';
 import { Civ1Game }          from './civ1/index.js';
 import { Civ2Game }          from './civ2/index.js';
 import { RiskGame }          from './risk/index.js';
@@ -40,7 +39,6 @@ import { Memoir44Game }      from './memoir44/index.js';
 const GAMES = [
   ['chess', ChessGame, ['white', 'black']],
   ['tactical', TacticalGame, ['p1', 'p2']],
-  ['cardbattle', CardBattleGame, ['p1', 'p2']],
   ['civ1', Civ1Game, ['p1', 'p2']],
   ['civ2', Civ2Game, ['p1', 'p2']],
   ['risk', RiskGame, ['p1', 'p2', 'p3', 'p4', 'p5', 'p6']],

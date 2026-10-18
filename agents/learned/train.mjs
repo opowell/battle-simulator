@@ -48,7 +48,7 @@ const GAMES_DIR = path.join(HERE, '..', '..', 'games');
 // trained explicitly with --game.
 const ROSTER = {
   tactical: 'TacticalGame', ffta: 'FFTAGame', doom: 'DoomGame', xcom: 'XComGame',
-  cardbattle: 'CardBattleGame', mudandblood: 'MudAndBloodGame', sc1: 'Sc1Game',
+  mudandblood: 'MudAndBloodGame', sc1: 'Sc1Game',
   sc2: 'Sc2Game', cs: 'CsGame', combatmission: 'CombatMissionGame', aow: 'AowGame',
   risk: 'RiskGame', kdice: 'KDiceGame', civ1: 'Civ1Game', civ2: 'Civ2Game',
 };

@@ -13,7 +13,6 @@ import { CombatMissionGame } from '../games/combatmission/index.js';
 import { DoomGame } from '../games/doom/index.js';
 import { FFTAGame } from '../games/ffta/index.js';
 import { AowGame } from '../games/aow/index.js';
-import { CardBattleGame } from '../games/cardbattle/index.js';
 import { MudAndBloodGame } from '../games/mudandblood/index.js';
 import { RiskGame } from '../games/risk/index.js';
 import { KDiceGame } from '../games/kdice/index.js';
@@ -25,7 +24,7 @@ import { TacticalGame } from '../games/tactical/index.js';
 
 const GAMES = {
   cs: CsGame, xcom: XComGame, combatmission: CombatMissionGame, doom: DoomGame,
-  ffta: FFTAGame, aow: AowGame, cardbattle: CardBattleGame, mudandblood: MudAndBloodGame,
+  ffta: FFTAGame, aow: AowGame, mudandblood: MudAndBloodGame,
   risk: RiskGame, kdice: KDiceGame, civ1: Civ1Game, civ2: Civ2Game,
   sc1: Sc1Game, sc2: Sc2Game, tactical: TacticalGame,
 };
