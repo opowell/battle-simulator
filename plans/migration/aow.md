@@ -93,3 +93,20 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-aow](https://github.com/opowell/battle-aow), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 24 tests, its 4 golden replays among them,
+plus the app's own 2; the rollout check skipped unless `SLOW_TESTS=1`, as here)
+passes; in the Browser, driven headless, the default setup, `race` and `epic`
+draw the continuous map with its terrain shapes, forts, villages and flags, the
+Orders and Minimap panels open, and a squad's order goes through, with no
+console error or failed request. Its pack (4 units, 6 terrain types, and the
+`race` and `epic` worlds at the game's own seed) was re-exported into
+`library/aow/` first.
+
+Pre-existing, the same in the core today: the Orders panel lists no End Turn
+while a squad still has orders (after Skip Unit it reads "No actions"), so the
+headless check could not end a turn by its button.
