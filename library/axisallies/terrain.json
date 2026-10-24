@@ -1,0 +1,50 @@
+{
+  "land": {
+    "name": "Land",
+    "color": "#6b6b63",
+    "description": "A land territory: armies and planes.",
+    "cost": {
+      "land": 1,
+      "sea": null,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0
+  },
+  "industrial": {
+    "name": "Industrial land",
+    "color": "#7d7a6a",
+    "description": "A land territory with an industrial complex (in the game, where new units are placed).",
+    "cost": {
+      "land": 1,
+      "sea": null,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0
+  },
+  "sea": {
+    "name": "Sea zone",
+    "color": "#234e6e",
+    "description": "A sea zone: ships and planes.",
+    "cost": {
+      "land": null,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": false,
+      "sea": true,
+      "air": true
+    },
+    "cover": 0
+  }
+}

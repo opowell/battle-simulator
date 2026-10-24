@@ -1,12 +1,18 @@
 {
   "game": "axisallies",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "bb64f312091ad4f30970b7be13280b90ce67b23e",
+    "date": "2026-10-24T21:58:05+02:00"
   },
   "units": 10,
   "art": 10,
+  "terrain": 3,
+  "maps": 1,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "territory ownership, income (IPCs), purchases and placement at industrial complexes: the core has no economy (income is listed as features)",
+    "capturing the enemy capital to win (listed as features)",
+    "transports and carriers carrying units, amphibious assaults, submarine and bombing rules",
+    "the dice: a unit strikes the core's deterministic blow, once per member",
+    "combat and non-combat moves as separate phases"
   ]
 }
