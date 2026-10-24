@@ -98,6 +98,38 @@ test('a session that names no fog takes the game\'s default', async () => {
   }
 });
 
+// rogue and simcity seat one player; every other game needs two at least.
+test('a session has as many seats as its game\'s registry entry asks, one included', async () => {
+  const four = await import('./battleServer.js?copy=four');
+  const { ArenaGame } = await import('../../games/arena/index.js');
+  const solo = {
+    name: 'Solo',
+    createInitialState: (players) => ({ players, units: [], board: {}, turnNumber: 1, activePlayers: [players[0].id], gameSpecific: {} }),
+    getLegalActions: () => [{ type: 'end-turn' }],
+    applyActions: (state) => ({ ...state, turnNumber: state.turnNumber + 1 }),
+    getResult: (state) => (state.turnNumber > 3 ? { outcome: 'win', winnerId: state.players[0].id } : null),
+    renderState: () => '',
+  };
+  const one = [{ id: 'p1', name: 'One' }];
+  const server = four.createBattleServer({ games: {
+    solo: { game: solo, minPlayers: 1, maxPlayers: 1, defaultPlayers: one },
+    pair: { game: ArenaGame, minPlayers: 2, maxPlayers: 2, defaultPlayers: [...one, { id: 'p2', name: 'Two' }] },
+  } });
+  const http = server.listen(0);
+  try {
+    if (!http.listening) await once(http, 'listening');
+    const start = (game) => fetch(`http://localhost:${http.address().port}/sessions`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ game, players: one.map(p => ({ ...p, agent: 'random' })) }),
+    }).then(r => r.json());
+    const s = await start('solo');
+    assert.ok(s.id && !s.error, s.error);
+    assert.match((await start('pair')).error, /at least 2 players/);
+  } finally {
+    http.close();
+  }
+});
+
 test('/library serves a pack\'s pictures, and nothing else of it', async () => {
   const http = serverOne.listen(0);
   try {

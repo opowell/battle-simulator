@@ -1799,7 +1799,9 @@ async function handleCreateSession(req, res) {
   if (!entry) return err(res, 404, `Unknown game: ${gameName}. Available: ${Object.keys(GAMES).join(', ')}`);
 
   const defs = playerDefs ?? entry.defaultPlayers.map(p => ({ ...p, agent: 'human' }));
-  if (!Array.isArray(defs) || defs.length < 2) return err(res, 400, 'Need at least 2 players');
+  // A game of one seat (a roguelike, a city builder) says so in its registry entry.
+  const fewest = entry.minPlayers ?? 2;
+  if (!Array.isArray(defs) || defs.length < fewest) return err(res, 400, `Need at least ${fewest} player${fewest === 1 ? '' : 's'}`);
 
   const apiAgents = new Map();
   const players = defs.map(({ id, name, agent: agentType = 'human' }) => {
