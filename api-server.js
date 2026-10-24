@@ -15,7 +15,8 @@ import { createServer }          from 'node:http';
 import { randomUUID }            from 'node:crypto';
 import { readFile, readdir, writeFile, mkdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
-import { extname, resolve, sep, dirname } from 'node:path';
+import { extname, resolve, sep, dirname, posix } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath }         from 'node:url';
 
 
@@ -146,13 +147,63 @@ async function serveApp(appName, req, res) {
 // arbitrary source, with path-escape protection. The worker imports absolute
 // URLs like /lib/games/chess/ChessGame.js; those modules' own relative imports
 // (./board.js, ../../vendor/obscuro/src/search.js) then resolve under /lib/ too.
+//
+// An npm package imported by its bare name ('bignumber.js', from games/coord.js)
+// is the exception: a browser resolves a bare specifier only through an import
+// map, and a worker has none. So each one is rewritten to a URL under
+// /lib/node_modules/, relative to the module importing it, and that path serves
+// the package's ES module build from wherever Node itself finds the package (a
+// worktree has no node_modules of its own). Anything Node does not resolve as a
+// package — a builtin behind an isNode guard — is left as it is.
+const requireFromRoot = createRequire(resolve(ROOT_DIR, 'package.json'));
+const packageDirs = new Map();
+function packageDir(name) {
+  if (!packageDirs.has(name)) {
+    let dir = null;
+    try { dir = dirname(requireFromRoot.resolve(`${name}/package.json`)); } catch { /* not a package */ }
+    packageDirs.set(name, dir);
+  }
+  return packageDirs.get(name);
+}
+/** The file a package's bare `import` loads, relative to its directory. */
+function packageEntry(dir) {
+  const pkg = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'));
+  const dot = pkg.exports?.['.'];
+  const entry = dot?.import?.default ?? dot?.import ?? pkg.module ?? pkg.main ?? 'index.js';
+  return typeof entry === 'string' ? entry.replace(/^\.\//, '') : null;
+}
+const packageName = (spec) => spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/');
+// `from 'x'` and `import('x')` / `import 'x'`, for an x that is neither relative
+// nor absolute nor a URL or `node:` builtin (no colon).
+const BARE_IMPORT = /(\bfrom\s*|\bimport\s*\(?\s*)(['"])([^'"./][^'":]*)\2/g;
+function rewriteBareImports(source, relPath) {
+  return source.replace(BARE_IMPORT, (whole, lead, quote, spec) => {
+    const name = packageName(spec);
+    const dir = packageDir(name);
+    const file = dir && (spec.slice(name.length + 1) || packageEntry(dir));
+    if (!file) return whole;
+    const url = posix.relative(posix.dirname(relPath), `node_modules/${name}/${file}`);
+    return `${lead}${quote}${url.startsWith('.') ? url : `./${url}`}${quote}`;
+  });
+}
+
 async function serveLibModule(res, relPath) {
-  const abs = resolve(ROOT_DIR, relPath);
-  if (abs !== ROOT_DIR && !abs.startsWith(ROOT_DIR + sep)) { res.writeHead(403); return res.end('Forbidden'); }
+  let abs;
+  if (relPath.startsWith('node_modules/')) {
+    const name = packageName(relPath.slice('node_modules/'.length));
+    const dir = packageDir(name);
+    if (!dir) { res.writeHead(404); return res.end('Not found'); }
+    abs = resolve(dir, relPath.slice(`node_modules/${name}/`.length));
+    if (!abs.startsWith(dir + sep)) { res.writeHead(403); return res.end('Forbidden'); }
+  } else {
+    abs = resolve(ROOT_DIR, relPath);
+    if (abs !== ROOT_DIR && !abs.startsWith(ROOT_DIR + sep)) { res.writeHead(403); return res.end('Forbidden'); }
+  }
   const ext = extname(abs);
   if (!['.js', '.mjs', '.cjs', '.wasm'].includes(ext)) { res.writeHead(404); return res.end('Not found'); }
   try {
-    const data = await readFile(abs);
+    let data = await readFile(abs);
+    if (ext === '.js' || ext === '.mjs') data = rewriteBareImports(data.toString('utf8'), relPath);
     res.writeHead(200, {
       'Content-Type': ext === '.wasm' ? 'application/wasm' : 'text/javascript; charset=utf-8',
       'Access-Control-Allow-Origin': '*',

@@ -971,7 +971,7 @@ export const ChessGame = {
     // every world), on when hunting the next one of these: an illegal board makes
     // Stockfish return nothing, and the leaf evaluator silently guesses instead.
     const validate = (worlds, source) => {
-      if (!process.env?.OBSCURO_VALIDATE_WORLDS) return worlds;
+      if (!globalThis.process?.env?.OBSCURO_VALIDATE_WORLDS) return worlds; // no `process` in a browser
       for (const w of worlds) {
         const why = impossiblePlacement(w.board);
         if (why) console.error(`[impossible world via ${source}] ${why}`);
