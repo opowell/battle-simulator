@@ -446,6 +446,11 @@ them:
    AIs, its plugins (from the UI audit above), the `ui.*` flags it sets, its
    demos and benches. Drawn from its README, its tests and its `toGrid`.
 
+   *Done 2026-10-24:* `plans/migration/` has one for each of the 21 games
+   (`README.md` indexes them). Each has a generated part and hand-written
+   **Notes**: so far cs's sequential play stalling with AI seats, FFTA's
+   undecided battles, and what chess owns outside its folder.
+
 What happens to the unregistered `rogue` and `simcity` is a decision, not a
 step (see open decisions). Until it is made they get replays and checklists
 like every other game.

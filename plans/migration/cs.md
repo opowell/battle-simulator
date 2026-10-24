@@ -1,6 +1,133 @@
 # cs: capability checklist
 
-## Inherited from csmini (dropped 2026-10-24)
+What `cs` (CS) can do on 2026-10-24, before it moves to a repo of its own
+(plans/generic-core-and-game-repos.md, phase 0 step 3). Phase 3 step 5 checks the
+extracted game against it: its tests, its golden replays (`games/cs/golden.json`),
+and every box below in the real UI. Generated from the game definition, its
+README, its tests and its `toGrid`, then annotated by hand under **Notes**.
+
+## Registry
+
+- [ ] Seats 2–10; default table: `ct` (CT), `t` (T)
+- [ ] Game module: `games/cs/index.js`, export `CsGame`
+- [ ] Engine defaults it declares (`defaultConfig`): `{"simultaneousTurns":true}`
+
+## Setup options
+
+| | Option | Type | Default | Values |
+|---|---|---|---|---|
+| [ ] | `mapZoom` Zoom & pan controls | boolean | `true` |  |
+| [ ] | `fogOfWar` Fog of War | boolean | `true` |  |
+| [ ] | `showAnalysisPanel` Analysis Panel | boolean | `true` |  |
+
+## Scenarios
+
+| | Scenario | Name | Config |
+|---|---|---|---|
+| [ ] | `de_dust2` | Dust II | `{"mapId":"de_dust2"}` |
+| [ ] | `dust2` | Dust II (classic) | `{"mapId":"dust2"}` |
+| [ ] | `de_dust` | de_dust | `{"mapId":"de_dust"}` |
+| [ ] | `cs_siege` | cs_siege | `{"mapId":"cs_siege"}` |
+| [ ] | `cs_italy` | cs_italy | `{"mapId":"cs_italy"}` |
+| [ ] | `de_forge` | de_forge | `{"mapId":"de_forge"}` |
+| [ ] | `de_pond` | de_pond | `{"mapId":"de_pond"}` |
+| [ ] | `de_plaza` | de_plaza | `{"mapId":"de_plaza"}` |
+
+## Modes
+
+- [ ] Space: continuous (native)
+- [ ] Time: discrete (native)
+- [ ] Turns: sequential and we-go offered (the engine's switch), default we-go. Random play, 30 steps from the default setup:
+  sequential 30 plies in 30 steps, turn 1; we-go 1331 plies in 30 steps, turn 31
+- [ ] Fog: switchable, default on; `getVisibleState`, belief sampling (`sampleWorlds`)
+
+## AIs
+
+- [ ] `obscuro` AI (Obscuro/CFR) (backs the analysis panel)
+- [ ] Built in for every game: random, greedy (on its own `evaluateState`), obscuro, generic
+
+## Engine hooks it implements
+
+`getVisibleState`, `sampleWorlds`, `evaluateState`, `actionKey`, `applyStartingUnits`, `createSetupUnit`, `foreignUnits`, `beginTurn`, `isTurnEnder`, `getActionDuration`, `isActionLegal`, `getSearchActions`, `toGrid`
+
+## UI
+
+- [ ] `ui` flags: `aimedActionTypes`, `fovDegrees`, `hideGridLines`, `visionRange`
+- [ ] `toGrid` fields: `cells`, `height`, `locationType`, `los`, `shapes`, `ui`, `units`, `width`
+- Plugins to move out of the play UI:
+  - [ ] `play/cs-sound.js` (Battlefield plays weapon, step, bomb, grenade and death sounds when `game === 'cs'`)
+- Its id in the apps' code (not comments):
+  - `apps/browser/play/cs-sound.js:18: const audio = new Audio('/sounds/cs/${kind}');`
+  - `apps/browser/play/Battlefield.vue:1373: if (oldLen === undefined || props.liveState?.game !== 'cs') return;`
+
+## Demos and benches
+
+- [ ] `demo/cs-demo.js`
+- [ ] `npm run demo:cs` (`node demo/cs-demo.js`)
+- [ ] `npm run demo:cs:auto` (`node demo/cs-demo.js --auto`)
+
+## Tests
+
+- [ ] `fog.test.js`: 10 tests
+- [ ] `golden.test.js`: 10 golden replays (default, scenario:de_dust2, scenario:dust2, scenario:de_dust, scenario:cs_siege, scenario:cs_italy, scenario:de_forge, scenario:de_pond, scenario:de_plaza, fog-off)
+- [ ] `index.test.js`: 36 tests
+- [ ] `obscuro.test.js`: 18 tests
+- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+
+## README
+
+What [its README](../../games/cs/README.md) documents, each still true after the move:
+
+- [ ] Players
+- [ ] Units
+- [ ] Weapons
+- [ ] Pistols
+- [ ] SMGs
+- [ ] Shotguns
+- [ ] Heavy
+- [ ] Rifles
+- [ ] Snipers
+- [ ] Grenades
+- [ ] Equipment
+- [ ] Actions
+- [ ] Special mechanics
+- [ ] Map layout
+- [ ] Win conditions per round
+- [ ] Run
+
+## Art and other assets
+
+- [ ] `images/`: 52 files, 4.0 MB
+- [ ] `sounds/`: 12 files, 1.3 MB
+
+## What it uses from outside its folder
+
+Each becomes a `#core/…` import in phase 1, or moves with the game.
+
+- `agents/learned/leafEval.js`
+- `agents/ObscuroAgent.js`
+- `engine/foreignUnits.js`
+- `games/continuousMove.js`
+- `games/coord.js` (4 imports)
+- `games/renderOptions.js`
+- `games/terrainShapes.js` (2 imports)
+- `games/vision.js` (3 imports)
+- `vendor/obscuro/src/search.js`
+
+## Notes
+
+### Sequential play stalls (found 2026-10-24)
+
+cs defaults to we-go, but the engine's sequential switch is offered for it too,
+and there it does not work: Greedy against Greedy, sequential, never got past
+turn 1 (the engine's step limit stopped it at 12,000 plies), where the same
+match we-go finishes 8–0 in 125 turns. Probably the zero-cost-action trap the
+cs Obscuro AI hit (an action that costs no budget can be chosen forever). The
+generic AI bench therefore plays cs we-go only. Decide before extraction
+whether sequential cs is a capability to keep (then fix it) or one to remove
+from its setup form.
+
+### Inherited from csmini (dropped 2026-10-24)
 
 csmini was dropped in phase 0 because cs has everything it had and more. Its
 modes were checked against cs and Arena before it went:
@@ -9,7 +136,7 @@ modes were checked against cs and Arena before it went:
 |---|---|---|
 | discrete space, discrete time, sequential and we-go | Arena | no |
 | discrete space, continuous time, sequential and we-go | Arena | no |
-| continuous space, discrete time, sequential and we-go | **cs** | yes |
+| continuous space, discrete time, sequential and we-go | **cs** (sequential stalls with AI seats, see above) | yes |
 | continuous space, continuous time, sequential and we-go | Arena | no |
 
 Every mode has a counterpart, but only one quadrant still has csmini's
