@@ -470,9 +470,25 @@ const GROUPING = {
 
 const mean = (sum, n) => (n ? Math.round(sum / n) : null);
 
+// One recorded game as the database panel shows it (apps/browser/play's
+// DatabaseMoveList is generic, so it is told what to write): who played it, how
+// it went for the side that played this row's move, and when in the game.
+function exampleRow(game, ply) {
+  const seat = ply % 2 === 0 ? 'white' : 'black';
+  const title = `${game.white} (${game.whiteRating ?? '?'}) — ${game.black} (${game.blackRating ?? '?'})`;
+  // The stored result is the game's, in white's terms.
+  const outcome = !game.result ? '' : game.result.startsWith('1/2') ? '½'
+    : (game.result === '1-0') === (seat === 'white') ? 'W' : 'L';
+  return {
+    ...game, ply, seat, title, outcome,
+    detail: title + (game.playedAt ? ' · ' + game.playedAt : '') + (game.timeControl ? ' · ' + game.timeControl : ''),
+    when: `move ${Math.floor(ply / 2) + 1}`,
+  };
+}
+
 function summarize(moves, games, byMove) {
   const rows = [...moves.values()].map(r => ({
-    san: r.san, from: r.from, to: r.to,
+    san: r.san, label: r.san, from: r.from, to: r.to,
     games: r.games, win: r.win, draw: r.draw, loss: r.loss,
     // Whose strength these numbers came from: the players who chose this move,
     // and the players they faced.
@@ -486,7 +502,7 @@ function summarize(moves, games, byMove) {
     move: byMove.get(`${r.from}${r.to}`) ?? null,
     examples: r.examples.map((packed) => {
       const ply = packed % 128;
-      return { ...games[(packed - ply) / 128], ply, seat: ply % 2 === 0 ? 'white' : 'black' };
+      return exampleRow(games[(packed - ply) / 128], ply);
     }),
   }));
   rows.sort((a, b) => b.games - a.games || a.san.localeCompare(b.san));

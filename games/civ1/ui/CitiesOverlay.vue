@@ -4,14 +4,16 @@ import { computed } from 'vue';
 // checking on a multi-city empire otherwise means hunting each one down on the map
 // and clicking it. Lists every owned city with its production/food progress; clicking
 // a row centres the map on it and selects it (see Civ1Game.toGrid's `cities` field).
+// An `overview` plugin (apps/browser/play/plugins.js): the game screen hands it the
+// board as toGrid drew it, whose side it describes, and the legal actions on screen.
 const props = defineProps({
   show:     Boolean,
-  cities:   { type: Array, default: () => [] },
+  field:    { type: Object, default: null },
   playerId: { type: String, default: null },
 });
 const emit = defineEmits(['close', 'goto']);
 
-const myCities = computed(() => props.cities.filter(c => c.owner === props.playerId));
+const myCities = computed(() => (props.field?.cities ?? []).filter(c => c.owner === props.playerId));
 
 function goto(c) {
   // Cities render as pseudo-units with no real unitId (see App.vue's buildField) —

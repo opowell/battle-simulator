@@ -5,31 +5,37 @@ import { computed } from 'vue';
 // buttons. `civ` is the current player's economy snapshot (Civ1Game.toGrid's `civ`
 // field); taxActions/luxActions are the raw legal actions, used only to find the
 // exact action object to submit for a given target rate.
+// An `overview` plugin (apps/browser/play/plugins.js): the game screen hands it the
+// board as toGrid drew it, whose side it describes, and the legal actions on screen.
 const props = defineProps({
-  show:        Boolean,
-  civ:         { type: Object, default: null },
-  taxActions:  { type: Array, default: () => [] },
-  luxActions:  { type: Array, default: () => [] },
+  show:     Boolean,
+  field:    { type: Object, default: null },
+  playerId: { type: String, default: null },
+  actions:  { type: Array, default: () => [] },
 });
 const emit = defineEmits(['close', 'submit']);
 
-const taxRate = computed(() => props.civ?.taxRate ?? 0);
-const luxRate = computed(() => props.civ?.luxRate ?? 0);
+const civ        = computed(() => props.field?.civ?.[props.playerId] ?? null);
+const taxActions = computed(() => props.actions.filter(a => a.type === 'set-tax'));
+const luxActions = computed(() => props.actions.filter(a => a.type === 'set-luxury'));
+
+const taxRate = computed(() => civ.value?.taxRate ?? 0);
+const luxRate = computed(() => civ.value?.luxRate ?? 0);
 const sciRate = computed(() => Math.max(0, 100 - taxRate.value - luxRate.value));
-const taxMax  = computed(() => props.civ?.taxMax ?? 100);
+const taxMax  = computed(() => civ.value?.taxMax ?? 100);
 // The engine allows one tax change and one luxury change per turn (see
 // Civ1Game.js's taxSetTurn/luxSetTurn) — once used, no set-tax/set-luxury actions
 // are legal until next turn, so the matching slider goes inert. Surface that
 // instead of leaving the drag silently do nothing.
-const taxLocked = computed(() => !props.taxActions.length);
-const luxLocked = computed(() => !props.luxActions.length);
+const taxLocked = computed(() => !taxActions.value.length);
+const luxLocked = computed(() => !luxActions.value.length);
 
 function setTax(rate) {
-  const action = props.taxActions.find(a => a.taxRate === Number(rate));
+  const action = taxActions.value.find(a => a.taxRate === Number(rate));
   if (action) emit('submit', action);
 }
 function setLux(rate) {
-  const action = props.luxActions.find(a => a.luxRate === Number(rate));
+  const action = luxActions.value.find(a => a.luxRate === Number(rate));
   if (action) emit('submit', action);
 }
 </script>

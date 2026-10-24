@@ -1,9 +1,6 @@
 <script setup>
 import { computed, reactive } from 'vue';
-import RatesOverlay    from './RatesOverlay.vue';
-import CitiesOverlay   from './CitiesOverlay.vue';
-import MilitaryOverlay from './MilitaryOverlay.vue';
-import ScienceOverlay  from './ScienceOverlay.vue';
+import { gameActionLabel } from '../actionLabels.js';
 const props = defineProps({
   isDone:           Boolean,
   atLatest:         Boolean,
@@ -34,14 +31,12 @@ const props = defineProps({
   variantSpec:      { type: Object, default: null },
   variantValues:    { type: Array, default: () => [] },
   variantValue:     { type: Number, default: null },
-  // Per-owner economy snapshot (civ1 only — see Civ1Game.toGrid's `civ` field),
-  // keyed by player id. Drives the tax/luxury/science rates overlay below.
-  civ:              { type: Object, default: null },
-  // Every visible city / per-owner military roster (civ1 only — see Civ1Game.toGrid's
-  // `cities`/`military` fields). Drive the Cities/Military overlays.
-  cities:           { type: Array, default: () => [] },
-  military:         { type: Object, default: null },
-  // Which overview overlay is open ('cities'|'military'|'rates'|'science'|null).
+  // The board as toGrid drew it, which the overview screens read what they show from.
+  field:            { type: Object, default: null },
+  // The game's overview screens — its `overview` plugins (plugins.js), each
+  // { id, label, component } — one button apiece below.
+  overviews:        { type: Array, default: () => [] },
+  // Which overview screen is open (its plugin id), or null.
   // Owned by Battlefield.vue rather than a local ref, because a keyboard binding can
   // open one too (ui.keys' `panel` effect — see keyBindings.js); the toolbar buttons
   // below just ask for the same change through update:panel.
@@ -106,24 +101,14 @@ const activeMoney = computed(() => {
   return u?.money ?? null;
 });
 
-// Civ1's set-tax/set-luxury/set-research actions come one per legal target value
-// (see Civ1Game.js's getLegalActions) — a dozen-plus buttons that would drown out
-// everything else in the empire-actions list. Their overlays (Rates/Science) are
-// always-visible toolbar buttons instead (see ap-empire below), not tucked inside
-// the turn-gated action list, so these action types are filtered out of it entirely
-// rather than collapsed into a placeholder there.
-const taxActions      = computed(() => props.displayedActions.filter(a => a.type === 'set-tax'));
-const luxActions      = computed(() => props.displayedActions.filter(a => a.type === 'set-luxury'));
-const researchActions = computed(() => props.displayedActions.filter(a => a.type === 'set-research'));
 // The empire the overview screens report on: whoever the viewer is watching
 // through, falling back to the player to move (see overviewPlayerId).
 const overviewId      = computed(() => props.overviewPlayerId ?? props.pendingPlayerId);
-const myCiv           = computed(() => props.civ?.[overviewId.value] ?? null);
 
 // The overview screens' buttons — unless the game says this position has no empire
 // to show (ui.empirePanels false: civ1's battles, which are fought with the army on the
 // map and nothing behind it).
-const empireShown     = computed(() => !!props.civ && props.ui?.empirePanels !== false);
+const empireShown     = computed(() => props.overviews.length > 0 && props.ui?.empirePanels !== false);
 
 // With no seat and no overview screens to offer, an observer's panel would be an
 // empty titled box — draw nothing at all instead. A finished game still has its
@@ -132,7 +117,7 @@ const hasContent      = computed(() => !props.observing || empireShown.value || 
 
 // Rates, research and a city's production are set on screens of their own, not here
 // (unitOrders.js's onOwnScreen); a building's production is its order like any other.
-const allListActions = computed(() => aimedActions.value.filter(a => !ORDERS.onOwnScreen(a)));
+const allListActions = computed(() => aimedActions.value.filter(a => !ORDERS.onOwnScreen(a, props.ui)));
 
 // A field whose value is a LENGTH OF TIME (ui.timeEntry — chess's "hold this piece
 // where it stands", in the quadrants where time runs continuously). Time there is a
@@ -249,6 +234,9 @@ function fmtAction(action) {
   // may put a `label` on any action) — nothing here can describe "turn in these three
   // cards for six armies" from the action's fields alone.
   if (action.label) return action.label;
+  // …and the game's words for a type of its own (ui.actionLabels).
+  const own = gameActionLabel(action, props.ui);
+  if (own) return own;
   if (t === 'move') {
     if (action.__aim) return 'Move…';
     if (typeof action.from === 'string' && typeof action.to === 'string')
@@ -257,7 +245,6 @@ function fmtAction(action) {
       return `Move → (${Number(action.to.x).toFixed(2)},${Number(action.to.y).toFixed(2)})`;
     if (action.unitId) return `Move ${action.unitId}`;
   }
-  if (t === 'castle')    return action.side === 'kingside' ? 'O-O' : 'O-O-O';
   if (t === 'attack')    return `Attack ${action.targetId ?? ''}`;
   if (t === 'shoot') {
     if (action.targetId == null) return 'Shoot';
@@ -267,27 +254,17 @@ function fmtAction(action) {
   }
   if (t === 'throw')     return action.name ? `Throw ${action.name}` : 'Throw Grenade';
   if (t === 'rotate')    return 'Rotate…';
-  if (t === 'punch')     return 'Punch…';
   if (t === 'buy')       return action.name ? `Buy ${action.name}` : `Buy ${action.item ?? ''}`;
-  if (t === 'end-buy')   return 'Done Buying';
   if (t === 'queue-pop') return 'Undo last queued move';
-  if (t === 'crouch')    return 'Crouch';
-  if (t === 'stand')     return 'Stand Up';
   // A building's production order without a label of its own (SC1 gives one).
   if (t === 'set-production' && action.unitType) return `Train ${action.unitType}`;
-  // Civ1 empire/settler actions. (set-tax/set-luxury/set-research, and a city's
-  // set-production, are filtered out of this list entirely — see ORDERS.onOwnScreen — so
-  // no label is needed for them here; their overlays format their own buttons.)
-  if (t === 'change-government') return `Revolution → ${action.government}`;
-  if (t === 'launch-spaceship') return '🚀 Launch Spaceship';
+  // Settler and unit orders more than one game gives. (Actions issued from a screen of
+  // their own — ui.ownScreenActions — are filtered out of this list entirely, see
+  // ORDERS.onOwnScreen, so no label is needed for them here.)
   if (t === 'found-city')     return 'Found City';
   if (t === 'build-road')     return 'Build Road';
-  if (t === 'irrigate')       return 'Irrigate';
-  if (t === 'build-mine')     return 'Build Mine';
-  if (t === 'clear-terrain')  return 'Clear Terrain';
   if (t === 'skip-unit')      return 'Skip Unit';
   if (t === 'fortify')        return 'Fortify';
-  if (t === 'sentry')         return 'Sentry';
   if (t === 'end-turn')  return action.direction ? `End Turn · Face ${action.direction}` : 'End Turn';
   if (t === 'end-phase') return 'End Phase';
   if (t === 'pass')      return 'Pass';
@@ -320,10 +297,8 @@ function fmtAction(action) {
       </span>
     </div>
     <div v-if="empireShown" class="ap-empire">
-      <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'cities')">Cities</button>
-      <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'military')">Military</button>
-      <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'rates')">Rates</button>
-      <button class="action-btn ap-btn ap-btn--sm" @click="$emit('update:panel', 'science')">Science</button>
+      <button v-for="o in overviews" :key="o.id" class="action-btn ap-btn ap-btn--sm"
+              @click="$emit('update:panel', o.id)">{{ o.label }}</button>
     </div>
     <div v-if="isDone" class="ap-done">
       {{liveState.result?.winner
@@ -430,14 +405,10 @@ function fmtAction(action) {
          appfr pane, and a pane (container-type) is the box a position:fixed scrim
          inside it would fill. -->
     <PlayOverlay>
-      <RatesOverlay :show="panel === 'rates'" :civ="myCiv" :taxActions="taxActions" :luxActions="luxActions"
-                    @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
-      <ScienceOverlay :show="panel === 'science'" :civ="myCiv" :researchActions="researchActions"
-                    @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"/>
-      <CitiesOverlay :show="panel === 'cities'" :cities="cities" :playerId="overviewId"
-                    @close="$emit('update:panel', null)" @goto="g => $emit('goto', g)"/>
-      <MilitaryOverlay :show="panel === 'military'" :military="military" :playerId="overviewId"
-                    @close="$emit('update:panel', null)" @select-unit="id => $emit('goto-unit', id)"/>
+      <component v-for="o in (empireShown ? overviews : [])" :key="o.id" :is="o.component"
+                 :show="panel === o.id" :field="field" :playerId="overviewId" :actions="displayedActions"
+                 @close="$emit('update:panel', null)" @submit="a => $emit('submit', a)"
+                 @goto="g => $emit('goto', g)" @select-unit="id => $emit('goto-unit', id)"/>
     </PlayOverlay>
   </div>
 </template>

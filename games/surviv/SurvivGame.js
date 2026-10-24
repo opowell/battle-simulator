@@ -883,6 +883,8 @@ function survivEval(state, teamId) {
 }
 
 export const SurvivGame = {
+  // The rest of the ui flags come with every board (toGrid).
+  ui: { actionLabels: { punch: 'Punch…' } },
   evaluateState: withTeam((state, teamId) => survivEval(state, teamId)),
   gameOptions: [
     MAP_ZOOM_OPTION,

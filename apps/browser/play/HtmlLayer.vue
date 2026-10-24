@@ -170,54 +170,22 @@ const blinkTargetId   = computed(() => props.blinkUnitId);
 const viewerId = computed(() => props.revealAll
   ? props.viewerTeam
   : (props.viewerOverride ?? props.viewerTeam ?? props.field.teams?.[0]?.id ?? null));
-const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.id);
 
 // ── fog of war ────────────────────────────────────────────────────────────────
 // Two square-grid fog styles, mirroring SchematicLayer:
-//  • gridFog (chess): per-piece reach; hidden cells get a translucent veil on top.
+//  • gridFog: the cells the server says are seen; hidden cells get a translucent veil on top.
 //  • vision fog (ffta etc., via VISION): hidden tiles are painted with the fog colour
 //    and their terrain art withheld — no separate veil.
+// The server sends the cells the viewer can see (field.fogVisible) whenever the game
+// fogs by grid (ui.gridFog): a client cannot work that out from a board whose hidden
+// pieces have been stripped.
 const gridFogVisibleSet = computed(() => {
   // Reveal mode shows the true board with no fog shading at all.
   if (!props.fog || !props.field.ui?.gridFog || props.revealAll) return null;
-  // Prefer the server's authoritative set (the filtered client board strips hidden
-  // blockers and can't reproduce it).
-  if (props.field.fogVisible) return props.field.fogVisible;
-  const w = W.value, h = H.value;
-  const pDir      = viewerIsBlack.value ? 1 : -1;
-  const pStartRow = viewerIsBlack.value ? 1 : 6;
-  const visible = new Set();
-  const occ = new Set();
-  for (const u of props.units) if (!u.dead) occ.add(`${Math.floor(u.x)},${Math.floor(u.y)}`);
-  const inB = (x, y) => x >= 0 && x < w && y >= 0 && y < h;
-  const add = (x, y) => { if (inB(x, y)) visible.add(`${x},${y}`); };
-  for (const u of props.units) {
-    if (u.team !== viewerId.value || u.dead) continue;
-    const gx = Math.floor(u.x), gy = Math.floor(u.y);
-    const t = u.type; // 'k','q','r','b','n','p'
-    add(gx, gy);
-    if (t === 'p') {
-      add(gx, gy + pDir);
-      if (gy === pStartRow) add(gx, gy + pDir * 2);
-      add(gx - 1, gy + pDir); add(gx + 1, gy + pDir);
-    } else if (t === 'n') {
-      for (const [dx, dy] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) add(gx + dx, gy + dy);
-    } else if (t === 'k') {
-      for (const [dx, dy] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]) add(gx + dx, gy + dy);
-    } else {
-      const rDirs = [[0,1],[0,-1],[1,0],[-1,0]];
-      const bDirs = [[1,1],[1,-1],[-1,1],[-1,-1]];
-      const dirs = t === 'r' ? rDirs : t === 'b' ? bDirs : [...rDirs, ...bDirs];
-      for (const [dx, dy] of dirs) {
-        let cx = gx + dx, cy = gy + dy;
-        while (inB(cx, cy)) { add(cx, cy); if (occ.has(`${cx},${cy}`)) break; cx += dx; cy += dy; }
-      }
-    }
-  }
-  return visible;
+  return props.field.fogVisible ?? null;
 });
 
-// Vision fog for non-chess square grids (union of every friendly unit's field of view —
+// Vision fog for the other square grids (union of every friendly unit's field of view —
 // facing-aware, see vision.js). Continuous maps have no tiles to shade.
 const squareFogVisibleSet = computed(() => {
   if (!props.fog || props.field.ui?.gridFog || props.field.grid !== 'square') return null;
@@ -257,10 +225,10 @@ function isFogSquare(col, row) {
 }
 
 // ── fog markers (guesses on hidden cells; reveal-mode true positions) ──────────
-const MARKER_CYCLE = ['p', 'n', 'b', 'r', 'q', 'k', null];
-const enemyPrefix = computed(() => viewerIsBlack.value ? 'w' : 'b');
-function markerImg(type) { return `${basePath}/images/chess/${enemyPrefix.value}${type.toUpperCase()}`; }
-function markerSrc(m) { return imgSrc(m.img) ?? markerImg(m.type); }
+// A click on a hidden cell cycles its guess through the game's marker types
+// (ui.markerCycle), then back to none; a marker brings its own picture.
+const markerCycle = computed(() => [...(props.field.ui?.markerCycle ?? []), null]);
+function markerSrc(m) { return imgSrc(m.img); }
 
 const squareMarkerList = computed(() => {
   if (!props.fog || props.revealAll) return [];
@@ -727,9 +695,10 @@ const annoPreview = computed(() => {
 function handleCellClick(c) {
   if (dragJustEnded) return;
   // Clicking a hidden cell with nothing selected cycles a guess marker instead of moving.
-  if (!props.revealAll && !props.selectedId && isFogSquare(c.x, c.y)) {
+  if (!props.revealAll && !props.selectedId && markerCycle.value.length > 1 && isFogSquare(c.x, c.y)) {
     const current = squareMarkerList.value.find(m => m.col === c.x && m.row === c.y)?.type ?? null;
-    const next = MARKER_CYCLE[(MARKER_CYCLE.indexOf(current) + 1) % MARKER_CYCLE.length];
+    const cycle = markerCycle.value;
+    const next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
     emit('set-marker', c.x, c.y, next);
     return;
   }

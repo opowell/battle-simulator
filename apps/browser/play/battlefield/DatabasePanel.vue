@@ -120,7 +120,7 @@ const fmt = (n) => (n ?? 0).toLocaleString();
            separately — a move that scores well for 2100s against 1600s is not the
            same recommendation as one that scores well between equals. -->
       <div v-if="hovered" class="db-meta db-meta--hover">
-        <span class="db-hover-san mono">{{ hovered.san }}</span>
+        <span class="db-hover-san mono">{{ hovered.label }}</span>
         <span>· {{ fmt(hovered.games) }} {{ hovered.games === 1 ? 'game' : 'games' }}</span>
         <span v-if="hovered.avgRating">· played by {{ hovered.avgRating }}</span>
         <span v-if="hovered.avgOppRating">· against {{ hovered.avgOppRating }}</span>

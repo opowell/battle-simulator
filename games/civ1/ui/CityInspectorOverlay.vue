@@ -4,15 +4,16 @@
 // entry from Civ1Game.toGrid's `cities` field, already carrying the full per-turn
 // breakdown (computeCity(), called read-only there — see the comment by cityDetail),
 // the garrison, and the display form of every item this city may build (buildOptions).
-// `productionActions` is this city's set-production options for the current turn,
-// filtered from displayedActions the same way Rates/Science filter their own actions.
+// It is civ1's `city-screen` plugin (apps/browser/play/plugins.js): `actions` is every
+// legal action on screen, and `productionActions` this city's set-production options
+// among them, filtered the same way Rates/Science filter their own.
 //
 // The layout follows the original's: a title bar carrying the name and population and
 // the citizens, the resource boxes down the left, the city map as the centrepiece, and
 // the buildings and the production box down the right. The pieces are their own small
 // components (see ./city/) — this file is only the arrangement.
-import { ref, watch, onMounted, onUnmounted } from 'vue';
-import { useKeysLive } from '../sessionScope.js';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { useKeysLive } from 'battle-play';
 import CityRadiusMap from './city/CityRadiusMap.vue';
 import CityProductionBox from './city/CityProductionBox.vue';
 import CityIconStrip from './city/CityIconStrip.vue';
@@ -20,11 +21,14 @@ import CityIconStrip from './city/CityIconStrip.vue';
 const props = defineProps({
   show:             Boolean,
   city:             { type: Object, default: null },
-  productionActions: { type: Array, default: () => [] },
+  field:            { type: Object, default: null },
+  actions:          { type: Array, default: () => [] },
   team:             { type: Object, default: null },   // the city owner's team (colour)
   recolor:          Boolean,                           // field.ui.recolorTeamSprites
 });
 const emit = defineEmits(['close', 'submit', 'select-unit']);
+const productionActions = computed(() =>
+  props.actions.filter(a => a.type === 'set-production' && a.cityId === props.city?.id));
 const imgSrc = window.api.imgSrc;
 const teamSpriteHref = window.teamSpriteHref;
 
@@ -49,7 +53,7 @@ function onKeyDown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   const consume = () => { e.preventDefault(); e.stopPropagation(); };
   if (e.key === 'Escape' && showProdPicker.value) { showProdPicker.value = false; consume(); return; }
-  if (e.key.toLowerCase() === 'c' && props.productionActions.length) {
+  if (e.key.toLowerCase() === 'c' && productionActions.value.length) {
     showProdPicker.value = !showProdPicker.value;
     consume();
     return;
@@ -57,7 +61,7 @@ function onKeyDown(e) {
   // The picker's options are numbered on screen while it is open, so the number keys
   // pick one directly — no highlight to walk through first.
   if (showProdPicker.value && /^[1-9]$/.test(e.key)) {
-    const action = props.productionActions[Number(e.key) - 1];
+    const action = productionActions.value[Number(e.key) - 1];
     if (action) pick(action);
     consume();
   }

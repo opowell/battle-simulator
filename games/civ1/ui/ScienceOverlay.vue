@@ -5,24 +5,30 @@ import { computed } from 'vue';
 // researched and progress on the current target (civ.bulbs/researchCost — see
 // Civ1Game.toGrid's `civ` field, which pre-resolves tech ids to names since the
 // client has no access to tech.js).
+// An `overview` plugin (apps/browser/play/plugins.js): the game screen hands it the
+// board as toGrid drew it, whose side it describes, and the legal actions on screen.
 const props = defineProps({
-  show:             Boolean,
-  // civ carries researchName/researchedNames/bulbs/researchCost, plus futureTechs —
-  // the count of Future Tech completions, which never joins researchedNames because
-  // it is the one advance a civ researches more than once (see economy.js).
-  civ:              { type: Object, default: null },
-  researchActions:  { type: Array, default: () => [] },
+  show:     Boolean,
+  field:    { type: Object, default: null },
+  playerId: { type: String, default: null },
+  actions:  { type: Array, default: () => [] },
 });
 const emit = defineEmits(['close', 'submit']);
 
+// civ carries researchName/researchedNames/bulbs/researchCost, plus futureTechs —
+// the count of Future Tech completions, which never joins researchedNames because
+// it is the one advance a civ researches more than once (see economy.js).
+const civ             = computed(() => props.field?.civ?.[props.playerId] ?? null);
+const researchActions = computed(() => props.actions.filter(a => a.type === 'set-research'));
+
 const progressPct = computed(() => {
-  const c = props.civ;
+  const c = civ.value;
   if (!c?.research || !c.researchCost) return 0;
   return Math.min(100, (c.bulbs / c.researchCost) * 100);
 });
 
 function pick(tech) {
-  const action = props.researchActions.find(a => a.tech === tech);
+  const action = researchActions.value.find(a => a.tech === tech);
   if (action) emit('submit', action);
 }
 </script>

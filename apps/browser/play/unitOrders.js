@@ -53,17 +53,16 @@
     });
   }
 
-  // Issued from a screen of their own, so the Orders list leaves them out: the empire's
-  // tax/luxury/research rates (one action per legal value — a dozen-plus buttons — set
-  // on the Rates and Science screens), and a CITY's production, named by `cityId`: with
-  // several cities a flat "Build militia" would not even say which one, and the city
-  // screen, opened by clicking the city, picks them by cityId. A set-production that
-  // names a `buildingId` instead is the order of a token on the board (a barracks, a
-  // command center) with no screen of its own: it is listed, like any order, when that
-  // building is the one in hand (ordersFor).
-  const OWN_SCREEN = new Set(['set-tax', 'set-luxury', 'set-research']);
-  function onOwnScreen(action) {
-    return OWN_SCREEN.has(action.type) || (action.type === 'set-production' && action.cityId != null);
+  // Issued from a screen of their own (a game's plugin — see plugins.js), so the Orders
+  // list leaves them out: the action types the game names in ui.ownScreenActions. civ1
+  // names its empire's tax/luxury/research rates (one action per legal value — a
+  // dozen-plus buttons — set on the Rates and Science screens) and a city's production:
+  // with several cities a flat "Build militia" would not even say which one, and the
+  // city screen picks them by cityId. A game that names none lists every order, so a
+  // building's set-production (a barracks, a command center) is listed like any other
+  // when that building is the one in hand (ordersFor).
+  function onOwnScreen(action, ui) {
+    return (ui?.ownScreenActions ?? []).includes(action.type);
   }
 
   root.ORDERS = { orderOwner, ordersFor, othersHaveOrders, onOwnScreen };

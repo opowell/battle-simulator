@@ -1666,6 +1666,9 @@ async function handleGames(res) {
     // is the matching pointer for deriving legal actions client-side.
     agents: dedupeAgents([...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n, analyze, clientAnalyze }) => ({ id, name: n, analyzable: !!analyze, clientAnalyze: clientAnalyze ?? null }))]),
     clientGame: game.clientGame ?? null,
+    // What the game adds to the game screen (apps/browser/play/plugins.js): its own
+    // components and sounds, served from its folder by /play/<name>/.
+    uiPlugins: (game.uiPlugins ?? []).map(p => ({ ...p, url: `/play/${name}/${posix.normalize(p.src).replace(/^(\.\.\/)+/, '')}` })),
     // Whether this game has a database of recorded human games to look positions
     // up in, and what to call it. The query function itself is server-only (it
     // reads a corpus off disk) — the client only needs to know the panel exists.

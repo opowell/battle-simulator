@@ -434,11 +434,16 @@ export const ChessGame = {
     },
   ],
   axisLabels: { x: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] },
+  // A wooden clack as a move is given (ui/sound.js).
+  uiPlugins: [{ id: 'sound', slot: 'sound', src: 'ui/sound.js' }],
   ui: {
+    actionLabels:   { castle: { side: { kingside: 'O-O', queenside: 'O-O-O' } } },
     freeSelection:  true,   // any piece can be moved; UI should not pre-pick the "active" unit
     showHpBars:    false,   // pieces don't have HP bars
     showFacing:    false,   // pieces have no facing direction
     gridFog:        true,   // fog of war is square-grid based (not radial blob)
+    // What a click on a hidden square guesses is there, in turn (toGrid's `markers`).
+    markerCycle:    ['p', 'n', 'b', 'r', 'q', 'k'],
     allowDiagonalHopsWhileMoving: true,
     showRoster:    false,   // hide roster (pieces shown on board)
     showUnitsLost:  true,   // show captured pieces panel
@@ -1129,7 +1134,9 @@ export const ChessGame = {
       if (!pc || pc.ownerId === playerId) continue;
       const seen = observation.board?.[sq];
       if (seen && seen.ownerId === pc.ownerId && seen.type === pc.type) continue; // really on screen
-      out.push({ sq, type: SYMS[pc.type] ?? 'p', x: FILES.indexOf(sq[0]), y: 8 - parseInt(sq.slice(1), 10) });
+      const type = SYMS[pc.type] ?? 'p';
+      out.push({ sq, type, x: FILES.indexOf(sq[0]), y: 8 - parseInt(sq.slice(1), 10),
+                 imagePath: `/images/chess/${pc.ownerId === 'white' ? 'w' : 'b'}${type.toUpperCase()}` });
     }
     return out;
   },

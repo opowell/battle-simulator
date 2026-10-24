@@ -1,4 +1,6 @@
 <script setup>
+import { gameActionLabel } from '../actionLabels.js';
+
 const props = defineProps({
   log:           { type: Array, default: () => [] },
   historyLength: { type: Number, default: 0 },
@@ -7,6 +9,8 @@ const props = defineProps({
   // Moves played before the game was rebuilt under new settings mid-play: history
   // to read, below the moves since, but not a position the scrub bar can reach.
   earlierLog:    { type: Array, default: () => [] },
+  // The game's ui flags, for its own words for its own action types (ui.actionLabels).
+  ui:            { type: Object, default: null },
 });
 defineEmits(['seek']);
 
@@ -16,6 +20,8 @@ function fmtAction(action) {
   // way it does for the buttons in ActionsPanel — nothing generic here can name a
   // knight's chosen route or a piece being called off mid-journey.
   if (action.label) return action.label;
+  const own = gameActionLabel(action, props.ui);
+  if (own) return own;
   if (t === 'move') {
     if (typeof action.from === 'string' && typeof action.to === 'string')
       return action.from + ' → ' + action.to;
@@ -23,7 +29,6 @@ function fmtAction(action) {
       return `Move → (${Number(action.to.x).toFixed(2)},${Number(action.to.y).toFixed(2)})`;
     if (action.unitId) return `Move ${action.unitId}`;
   }
-  if (t === 'castle')    return action.side === 'kingside' ? 'O-O' : 'O-O-O';
   if (t === 'attack') {
     // Territory-vs-territory attacks (kdice) carry from/to ids plus, once
     // resolved, a dice-roll `result` stamped onto the action (see

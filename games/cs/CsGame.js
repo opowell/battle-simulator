@@ -1290,6 +1290,10 @@ function csSampleWorlds(observation, myTeam, n, rng = Math.random) {
 }
 
 export const CsGame = {
+  // The rest of the ui flags come with every board (toGrid).
+  ui: { actionLabels: { 'end-buy': 'Done Buying', crouch: 'Crouch', stand: 'Stand Up' } },
+  // Weapon, footstep, bomb and death sounds as the board plays a turn (ui/sound.js).
+  uiPlugins: [{ id: 'sound', slot: 'sound', src: 'ui/sound.js' }],
   // Heuristic leaf value: the full CS position score — round outcome, bomb
   // objective, material and angles (see games/cs/eval.js). This replaces the
   // generic unitStrengthEval (hp + a survival bonus), which was blind to

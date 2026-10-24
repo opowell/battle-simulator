@@ -7,7 +7,7 @@ await import('./play/gameDefaults.js')
 const { newSessionLink, newSessionRequest, parseNewSessionLink } = await import('./deeplink.js')
 
 const game = {
-  name: 'chess',
+  name: 'duel',
   defaultPlayers: [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }],
   agents: [{ id: 'obscuro' }, { id: 'random' }],
   gameOptions: [
@@ -24,13 +24,13 @@ const request = (hash) => newSessionRequest(game, parseNewSessionLink(hash))
 test('only a #/new/ link is one', () => {
   assert.equal(parseNewSessionLink('#/session/abc'), null)
   assert.equal(parseNewSessionLink('#/new/'), null)
-  assert.deepEqual({ ...parseNewSessionLink('#/new/chess/endgame?seats=human,random:Bo%2C+b'), query: undefined },
-    { game: 'chess', scenario: 'endgame', query: undefined, seats: [['human', ''], ['random', 'Bo, b']] })
+  assert.deepEqual({ ...parseNewSessionLink('#/new/duel/endgame?seats=human,random:Bo%2C+b'), query: undefined },
+    { game: 'duel', scenario: 'endgame', query: undefined, seats: [['human', ''], ['random', 'Bo, b']] })
 })
 
 test('a bare link is the one-click start: default seats and options', () => {
-  const body = request('#/new/chess')
-  assert.equal(body.game, 'chess')
+  const body = request('#/new/duel')
+  assert.equal(body.game, 'duel')
   assert.deepEqual(body.players.map((p) => p.id), ['white', 'black'])
   assert.equal(body.config.fogOfWar, false)
   assert.equal(body.config.width, 8)
@@ -38,22 +38,22 @@ test('a bare link is the one-click start: default seats and options', () => {
 })
 
 test('a scenario brings its own settings', () => {
-  const body = request('#/new/chess/endgame')
+  const body = request('#/new/duel/endgame')
   assert.equal(body.config.scenario, 'endgame')
   assert.equal(body.config.maxTurns, 40)
   assert.equal(body.config.fog, true)
 })
 
 test('seats name the agents, cpu the default AI, and a seat its name', () => {
-  const body = request('#/new/chess?seats=human:Ann,cpu,random')
+  const body = request('#/new/duel?seats=human:Ann,cpu,random')
   assert.deepEqual(body.players.map(({ id, name, agent }) => [id, name, agent]),
     [['white', 'Ann', 'human'], ['black', 'CPU 1', 'obscuro'], ['p3', 'Player 3', 'random']])
   // "You" is the human seat's name; a seat handed to an AI takes the game's own.
-  assert.deepEqual(request('#/new/chess?seats=cpu,human').players.map((p) => p.name), ['White', 'Black'])
+  assert.deepEqual(request('#/new/duel?seats=cpu,human').players.map((p) => p.name), ['White', 'Black'])
 })
 
 test('options are read by their type', () => {
-  const body = request('#/new/chess?fog=on&width=10&variant=3&maxTurns=60')
+  const body = request('#/new/duel?fog=on&width=10&variant=3&maxTurns=60')
   assert.equal(body.config.fogOfWar, true)
   assert.equal(body.config.fog, true)
   assert.equal(body.config.width, 10)
@@ -62,18 +62,18 @@ test('options are read by their type', () => {
 })
 
 test('a difficulty is a power level, or a time limit under its time key', () => {
-  assert.deepEqual(pick(request('#/new/chess?difficulty=70')), [70, null, 'power'])
-  assert.deepEqual(pick(request('#/new/chess?aiTimeMs=2000')), [null, 2000, 'time'])
+  assert.deepEqual(pick(request('#/new/duel?difficulty=70')), [70, null, 'power'])
+  assert.deepEqual(pick(request('#/new/duel?aiTimeMs=2000')), [null, 2000, 'time'])
   function pick({ config }) { return [config.difficulty, config.aiTimeMs, config.difficultyMode] }
 })
 
 test('a link naming what the game does not have is refused by name', () => {
-  assert.throws(() => request('#/new/chess?colour=red'), /no setting "colour"/)
-  assert.throws(() => request('#/new/chess?seats=human,stockfish'), /no agent "stockfish"/)
-  assert.throws(() => request('#/new/chess/nope'), /no scenario "nope"/)
-  assert.throws(() => request('#/new/chess?width=40'), /runs from 4 to 12/)
-  assert.throws(() => request('#/new/chess?fog=maybe'), /on or off/)
-  assert.throws(() => request('#/new/chess?variant=x'), /one of classic, 3/)
+  assert.throws(() => request('#/new/duel?colour=red'), /no setting "colour"/)
+  assert.throws(() => request('#/new/duel?seats=human,stockfish'), /no agent "stockfish"/)
+  assert.throws(() => request('#/new/duel/nope'), /no scenario "nope"/)
+  assert.throws(() => request('#/new/duel?width=40'), /runs from 4 to 12/)
+  assert.throws(() => request('#/new/duel?fog=maybe'), /on or off/)
+  assert.throws(() => request('#/new/duel?variant=x'), /one of classic, 3/)
 })
 
 // The setup form as it opens on a scenario (GameSetupFields), to be edited.
@@ -95,8 +95,8 @@ const roundTrip = (f) => {
 const { formRequest } = await import('./sessions.js')
 
 test('an untouched form is the bare link', () => {
-  assert.equal(roundTrip(form()), '#/new/chess')
-  assert.equal(roundTrip(form('endgame')), '#/new/chess/endgame')
+  assert.equal(roundTrip(form()), '#/new/duel')
+  assert.equal(roundTrip(form('endgame')), '#/new/duel/endgame')
 })
 
 test('a link names only what the form changed, and reads back as the form', () => {
@@ -107,7 +107,7 @@ test('a link names only what the form changed, and reads back as the form', () =
   f.maxTurns = null
   // The form keeps a seat's name when its agent changes; the link has to say it.
   assert.equal(roundTrip(f),
-    '#/new/chess/endgame?seats=human:Ann%2C%20Lee%3A%201,random:CPU%201&fogOfWar=off&width=10&variant=3&aiTimeMs=2000&delay=250&maxTurns=off')
+    '#/new/duel/endgame?seats=human:Ann%2C%20Lee%3A%201,random:CPU%201&fogOfWar=off&width=10&variant=3&aiTimeMs=2000&delay=250&maxTurns=off')
 })
 
 test('edited starting units are what a link cannot carry', () => {

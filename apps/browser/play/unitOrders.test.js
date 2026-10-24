@@ -48,13 +48,15 @@ test('it can tell when other units are still waiting on orders', () => {
   assert.equal(othersHaveOrders(actions.slice(4), null), false);
 });
 
-test('a building\'s production is its order; a city\'s is the city screen\'s', () => {
-  // SC1/SC2: the command center on the board trains SCVs — listed when it is picked up.
+test('a building\'s production is its order; one the game sets on a screen of its own is not', () => {
+  // A game with no screens of its own: the command center on the board trains SCVs —
+  // listed when it is picked up.
   assert.equal(onOwnScreen({ type: 'set-production', buildingId: 'b0', unitType: 'scv' }), false);
   assert.deepEqual(types(ordersFor(actions, 'b0').filter(a => !onOwnScreen(a))), ['set-production', 'play-card', 'end-turn']);
-  // civ1: a city's production, and the empire's rates, are set on screens of their own.
-  assert.equal(onOwnScreen({ type: 'set-production', cityId: 'c1', item: 'militia', unitId: '__player__' }), true);
-  assert.equal(onOwnScreen({ type: 'set-tax', rate: 50, unitId: '__player__' }), true);
-  assert.equal(onOwnScreen({ type: 'set-research', tech: 'bronze-working' }), true);
-  assert.equal(onOwnScreen({ type: 'end-turn', unitId: '__player__' }), false);
+  // A game whose cities and empire have screens: it names what they issue.
+  const ui = { ownScreenActions: ['set-production', 'set-tax', 'set-research'] };
+  assert.equal(onOwnScreen({ type: 'set-production', cityId: 'c1', item: 'militia', unitId: '__player__' }, ui), true);
+  assert.equal(onOwnScreen({ type: 'set-tax', rate: 50, unitId: '__player__' }, ui), true);
+  assert.equal(onOwnScreen({ type: 'set-research', tech: 'bronze-working' }, ui), true);
+  assert.equal(onOwnScreen({ type: 'end-turn', unitId: '__player__' }, ui), false);
 });

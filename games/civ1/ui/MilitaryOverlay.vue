@@ -5,14 +5,16 @@ import { computed } from 'vue';
 // can't be built from the rendered units array. Civ1Game.toGrid's `military` field
 // does the counting/summing server-side instead, where UNITS stats are available —
 // including `units`, the unit-by-unit list the roster below is built from.
+// An `overview` plugin (apps/browser/play/plugins.js): the game screen hands it the
+// board as toGrid drew it, whose side it describes, and the legal actions on screen.
 const props = defineProps({
   show:     Boolean,
-  military: { type: Object, default: null },
+  field:    { type: Object, default: null },
   playerId: { type: String, default: null },
 });
 const emit = defineEmits(['close', 'select-unit']);
 
-const mine = computed(() => props.military?.[props.playerId]
+const mine = computed(() => props.field?.military?.[props.playerId]
   ?? { total: 0, totalAttack: 0, totalDefense: 0, byType: {}, units: [] });
 const byType = computed(() => Object.entries(mine.value.byType).sort((a, b) => b[1] - a[1]));
 // Server-sorted (units still owing this turn an order first — see toGrid), so the list

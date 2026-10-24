@@ -1902,6 +1902,16 @@ export const Civ1Game = {
   // `kinematics.speed` (a unit's `moves`).
   spacetime: CIV1_SPACETIME,
   kinematics,
+  // The screens of an empire, in ui/ (see apps/browser/play/plugins.js for the slots):
+  // the four advisors, opened from the Orders panel or ui.keys' `panel` bindings below,
+  // and the city screen a selected city opens.
+  uiPlugins: [
+    { id: 'cities',   slot: 'overview',    label: 'Cities',   src: 'ui/CitiesOverlay.vue' },
+    { id: 'military', slot: 'overview',    label: 'Military', src: 'ui/MilitaryOverlay.vue' },
+    { id: 'rates',    slot: 'overview',    label: 'Rates',    src: 'ui/RatesOverlay.vue' },
+    { id: 'science',  slot: 'overview',    label: 'Science',  src: 'ui/ScienceOverlay.vue' },
+    { id: 'city',     slot: 'city-screen',                    src: 'ui/CityInspectorOverlay.vue' },
+  ],
   // mapZoom/defaultTileSize: the map runs to 100x60 tiles, far more than fits legibly on
   // the stage at once, so the zoom & pan controls are always on here (not a configurable
   // option) and the view starts one zoom step in from the original game's rough tile
@@ -1914,6 +1924,14 @@ export const Civ1Game = {
     hideGridLines: true, freeSelection: true, dragToMove: true, showFacing: false,
     blinkActiveUnit: true, allowDiagonalHopsWhileMoving: true, recolorTeamSprites: true,
     mapZoom: true, defaultTileSize: 50, moveQueue: true,
+    // Set on the screens in ui/ (uiPlugins above), so the Orders list leaves them out:
+    // the rates and research come one action per legal value, and a city's production
+    // is picked on its own screen, which says which city it is for.
+    ownScreenActions: ['set-tax', 'set-luxury', 'set-research', 'set-production'],
+    actionLabels: {
+      'change-government': 'Revolution → {government}', 'launch-spaceship': '🚀 Launch Spaceship',
+      irrigate: 'Irrigate', 'build-mine': 'Build Mine', 'clear-terrain': 'Clear Terrain', sentry: 'Sentry',
+    },
     // No tint on the squares the unit in hand can reach: the original marked none —
     // the blinking unit and the direction keys were the whole interface. The square
     // under the pointer is framed when a click there would move (HtmlLayer), and the

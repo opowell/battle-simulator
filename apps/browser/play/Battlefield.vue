@@ -27,8 +27,8 @@ import SettingsChangeNotice from './battlefield/SettingsChangeNotice.vue';
 import GameOverOverlay   from './battlefield/GameOverOverlay.vue';
 import UnitInfoOverlay   from './battlefield/UnitInfoOverlay.vue';
 import AbilityInfoOverlay from './battlefield/AbilityInfoOverlay.vue';
-import CityInspectorOverlay from './battlefield/CityInspectorOverlay.vue';
 import ObserverPerspective from './battlefield/ObserverPerspective.vue';
+import { pluginComponents, pluginModules } from './plugins.js';
 
 const props = defineProps({
   liveState:     Object,
@@ -502,7 +502,7 @@ const databaseRevision = computed(() =>
 const beliefWorld = ref(null);
 const beliefMarkers = computed(() =>
   (forking.value ? [] : (beliefWorld.value?.hidden ?? []))
-    .map(h => ({ col: h.x, row: h.y, type: h.type })));
+    .map(h => ({ col: h.x, row: h.y, type: h.type, img: h.imagePath ?? null })));
 
 // Whoever is to move at the CURRENTLY DISPLAYED ply (not necessarily the live
 // game's pending player — while browsing replay these differ). Chess strictly
@@ -1185,7 +1185,7 @@ const isDone          = computed(() => isLive.value && props.liveState.status !=
 // once closed stays closed for that session, reopened from the menu.
 // (An observer has no orders to give: their panel is the empire overview, which only
 // a game with one has — the same test ActionsPanel's hasContent makes.)
-const hasOrders = computed(() => isLive.value && (!isObserver.value || !!props.field?.civ || isDone.value));
+const hasOrders = computed(() => isLive.value && (!isObserver.value || overviewShown.value || isDone.value));
 // A game whose board carries a leaderboard (grid.standings — kdice's) shows it where
 // its orders are: docked as a third panel on a map that zooms, and otherwise in the
 // left column under the orders — a fixed board is fitted to the stage, and a docked
@@ -1206,6 +1206,18 @@ const standingsProps = computed(() => ({
   activeId: props.liveState?.status === 'active' ? (props.liveState?.pendingPlayer ?? null) : null,
 }));
 const ordersDocked = computed(() => hostPanels.value.includes('orders'));
+// What the game adds to this screen of its own (plugins.js): the overview screens the
+// Orders panel opens, the screen a selected city opens, and its sounds.
+const overviews    = computed(() => pluginComponents(props.gameDef, 'overview'));
+const overviewShown = computed(() => overviews.value.length > 0 && ui.value.empirePanels !== false);
+const cityScreens  = computed(() => pluginComponents(props.gameDef, 'city-screen'));
+const sounds = ref([]);
+watch(() => props.gameDef, async (def) => {
+  sounds.value = [];
+  const mods = await pluginModules(def, 'sound');
+  if (props.gameDef === def) sounds.value = mods;
+}, { immediate: true });
+
 // ActionsPanel's wiring, shared by its two homes (the docked panel, the left column).
 const ordersProps = computed(() => ({
   isDone: isDone.value, atLatest: atLatest.value, isPending: isPending.value,
@@ -1214,7 +1226,7 @@ const ordersProps = computed(() => ({
   ordersElsewhere: ordersElsewhere.value,
   pendingPlayerId: pendingPlayerId.value, liveState: props.liveState, units: displayUnits.value,
   awaitingStep: props.awaitingStep,
-  aiming: aiming.value, civ: props.field.civ, cities: props.field.cities, military: props.field.military,
+  aiming: aiming.value, field: props.field, overviews: overviews.value,
   panel: openPanel.value,
   observing: isObserver.value, overviewPlayerId: overviewPlayerId.value,
   variantSpec: pairVariantSpec.value, variantValues: pairVariantValues.value, variantValue: pairVariant.value,
@@ -1351,12 +1363,11 @@ function playLoseSound() {
   window.playLoseSound?.();
 }
 
-// CS weapon/action sound effects (games/cs/sounds/*.wav, see cs-sound.js). Keyed on
-// `log.length` growing — same trigger as the fieldHistory watcher above — so replay
+// A game's sound effects as the board plays a turn (its sound plugin, e.g.
+// games/cs/ui/sound.js). Keyed on `log.length` growing — same trigger as the fieldHistory watcher above — so replay
 // scrubbing (which doesn't change log.length) never re-fires a shot that already
-// played live. Weapon category comes from `field.units[].type`, the same
-// pistol/smg/shotgun/heavy/rifle/sniper/melee tag CsGame.js's toGrid already stamps
-// for the marker-shape hash — no CS-specific weapon table duplicated here.
+// played live. Which sound an entry makes is the game's sound plugin's to say
+// (plugins.js's onEntry); this only times them.
 //
 // Under simultaneous ("we-go") turns one broadcast resolves a WHOLE turn — many log
 // entries at once — and the board replays that turn tick-by-tick over ~duration of
@@ -1366,13 +1377,14 @@ function playLoseSound() {
 // to wall-clock by the same frame pacing the replay uses. Turns with no playback
 // (the instant buy turn) fire immediately.
 const REPLAY_MS_PER_FRAME = 100; // must match App.vue's replayTurn pacing
-let csSoundTimers = [];
-const clearCsSoundTimers = () => { for (const t of csSoundTimers) clearTimeout(t); csSoundTimers = []; };
+let soundTimers = [];
+const clearSoundTimers = () => { for (const t of soundTimers) clearTimeout(t); soundTimers = []; };
 
 watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
-  if (oldLen === undefined || props.liveState?.game !== 'cs') return;
+  const players = sounds.value.filter(m => typeof m.onEntry === 'function');
+  if (oldLen === undefined || !players.length) return;
   // A new turn's sounds supersede any still-pending from the turn before it.
-  clearCsSoundTimers();
+  clearSoundTimers();
 
   const log = props.liveState.log;
   const latestTurn = log[log.length - 1]?.turnNumber;
@@ -1387,22 +1399,13 @@ watch(() => props.liveState?.log?.length ?? 0, (newLen, oldLen) => {
   const totalMs = (pb?.frames?.length ?? 0) > 1 ? (pb.frames.length - 1) * REPLAY_MS_PER_FRAME / props.playbackSpeed : 0;
   const at = (t, fn) => {
     const delay = (duration > 0 && totalMs > 0) ? Math.min(1, Math.max(0, t) / duration) * totalMs : 0;
-    if (delay > 0) csSoundTimers.push(setTimeout(fn, delay)); else fn();
+    if (delay > 0) soundTimers.push(setTimeout(fn, delay)); else fn();
   };
 
   for (const entry of entries) {
-    const t0 = entry.t0 ?? 0, t1 = entry.t1 ?? t0;
-    for (const { action } of entry.playerActions ?? []) {
-      if (action.type === 'shoot')        at(t0, () => window.playCsSound?.(unitsById.get(action.unitId)?.type ?? 'rifle'));
-      else if (action.type === 'move')    at(t0, () => window.playCsSound?.('footstep'));
-      else if (action.type === 'plant')   at(t0, () => window.playCsSound?.('bombbeep'));
-      else if (action.type === 'throw') {
-        if (action.grenade === 'he')      at(t1, () => window.playCsSound?.('explosion'));
-        else if (action.grenade === 'flash') at(t1, () => window.playCsSound?.('flashbang'));
-      }
-    }
-    for (const ev of entry.events ?? []) {
-      if (ev.type === 'died' || (ev.type === 'damage' && ev.died)) at(t1, () => window.playCsSound?.('death'));
+    for (const m of players) {
+      // A sound is a nicety: a plugin that throws must not break the board.
+      try { m.onEntry({ entry, unitsById, at }); } catch (e) { console.warn('sound plugin:', e); }
     }
   }
 });
@@ -1654,10 +1657,10 @@ const planning = computed(() =>
   !isPending.value && !isDone.value && !!humanPlayerId.value && planActions.value.length > 0);
 
 // Two moves are the same move: from/to, plus whatever else distinguishes two moves
-// between the same squares (a promotion choice; a knight's chosen route in chess's
-// continuous-space variants).
+// between the same squares (the choice a `payload` carries, e.g. a promotion; a
+// chosen route, `pathId`, e.g. a knight's in chess's continuous-space variants).
 const sameMove = (a, b) => a && b && a.from === b.from && a.to === b.to
-  && (a.payload?.promote ?? null) === (b.payload?.promote ?? null)
+  && JSON.stringify(a.payload ?? null) === JSON.stringify(b.payload ?? null)
   && (a.pathId ?? null) === (b.pathId ?? null);
 // A plan travels as thin descriptors; the server matches each against the real
 // legal move at that point in the plan.
@@ -2338,10 +2341,6 @@ watch(selectedCity, (city) => {
 // the board does (see teamSprite.js) — team ids are player ids (App.vue's buildField).
 const selectedCityTeam = computed(() =>
   props.field.teams?.find(t => t.id === selectedCity.value?.owner) ?? null);
-const cityProductionActions = computed(() => {
-  if (!selectedCity.value) return [];
-  return displayedActions.value.filter(a => a.type === 'set-production' && a.cityId === selectedCity.value.id);
-});
 
 const selectedTerrain = computed(() => {
   if (selectedShape.value) {
@@ -2457,10 +2456,11 @@ function submitAction(action) {
   // Moving while browsing replay (or already inside a fork) explores a sandbox
   // instead of playing a real move — see forkPlayMove above.
   if (canExplore.value && (forking.value || !atLatest.value)) { forkPlayMove(action); return; }
-  // Lichess/chess.com-style move sound, right as the piece is released onto its new
-  // square (this is the same drag-release / click-to-move path that produced `action`
-  // above — see handleSqClick). Chess-only: window.playChessMoveSound (chess-sound.js).
-  if (action.type === 'move' && props.liveState?.game === 'chess') window.playChessMoveSound?.();
+  // The game's sound for an order, right as it is given (this is the same drag-release /
+  // click-to-move path that produced `action` above — see handleSqClick).
+  for (const m of sounds.value) {
+    try { m.onSubmit?.(action); } catch (e) { console.warn('sound plugin:', e); }
+  }
   emit('submit-action', { playerId: pendingPlayerId.value, action });
 }
 
@@ -2910,7 +2910,7 @@ onUnmounted(() => {
 
         <GameLog v-if="isLive"
           :log="logForDisplay" :historyLength="histLength" :histPos="histPos"
-          :units="displayUnits" :earlier-log="liveState?.earlierLog ?? []"
+          :units="displayUnits" :earlier-log="liveState?.earlierLog ?? []" :ui="ui"
           @seek="seekTo"/>
 
         <AiAnalysisPanel v-if="isLive && showAiAnalysis && liveState?.aiAnalysis"
@@ -2971,7 +2971,8 @@ onUnmounted(() => {
 
   <SettingsChangeNotice :live-state="liveState" :game-def="gameDef"/>
 
-  <CityInspectorOverlay :show="!!selectedCity" :city="selectedCity" :productionActions="cityProductionActions"
+  <component v-for="p in cityScreens" :key="p.id" :is="p.component"
+    :show="!!selectedCity" :city="selectedCity" :field="field" :actions="displayedActions"
     :team="selectedCityTeam" :recolor="field.ui?.recolorTeamSprites"
     @close="selectedId = null" @submit="submitAction" @select-unit="selectGarrisonUnit"/>
 

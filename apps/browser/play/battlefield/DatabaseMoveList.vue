@@ -1,11 +1,14 @@
 <script setup>
 // One row per move recorded from this position: how often it was played, how
 // those games ended for the player who played it, and (expandable) a few of the
-// actual games. Rows arrive pre-sorted by frequency from the server.
+// actual games. Rows arrive pre-sorted by frequency from the server, each saying
+// how it is written (`label`), and each example game what to call it (`title`,
+// with more in `detail`), how it went for the mover (`outcome`: W, L or ½) and
+// when (`when`) — the game's database knows its own notation; this does not.
 //
-// The win/draw/loss bar is from the MOVER's point of view, not white's — under
-// fog the database groups games by one seat's own view, so "how did it go" can
-// only mean "for that seat".
+// The win/draw/loss bar is from the MOVER's point of view — under fog the
+// database groups games by one seat's own view, so "how did it go" can only
+// mean "for that seat".
 import { ref, computed, watch } from 'vue';
 
 const props = defineProps({
@@ -31,25 +34,17 @@ watch(() => props.moves, () => { showAll.value = false; expanded.value = -1; });
 
 const pct = (n, of) => (of > 0 ? Math.round((n / of) * 100) : 0);
 const share = computed(() => (r) => pct(r.games, props.total));
-
-function outcomeFor(ex, r) {
-  // `r.examples[].seat` is the side that played this move in that game; the
-  // stored result is the game's, in white's terms.
-  if (!ex.result) return '';
-  if (ex.result.startsWith('1/2')) return '½';
-  const won = (ex.result === '1-0') === (ex.seat === 'white');
-  return won ? 'W' : 'L';
-}
+const outcomeClass = (ex) => ({ W: 'db-g-w', L: 'db-g-l', '½': 'db-g-½' })[ex.outcome] ?? '';
 </script>
 
 <template>
   <div class="db-rows">
-    <template v-for="(r, i) in shown" :key="r.san">
+    <template v-for="(r, i) in shown" :key="r.label">
       <div class="db-row" :class="{ 'db-row--hovered': i === hoveredIndex, 'db-row--unavailable': !r.move }"
            :title="r.move ? 'Click to play this move' : 'Not available in your position — this move comes from games whose hidden half differed'"
            @mouseenter="emit('hover', i)" @mouseleave="emit('hover', -1)"
            @click="r.move && emit('select', i)">
-        <span class="db-san mono">{{ r.san }}</span>
+        <span class="db-san mono">{{ r.label }}</span>
         <span class="db-n mono">{{ r.games.toLocaleString() }}</span>
         <span class="db-share mono">{{ share(r) }}%</span>
         <span class="db-bar" :title="`${r.win} won · ${r.draw} drawn · ${r.loss} lost`">
@@ -62,11 +57,9 @@ function outcomeFor(ex, r) {
       </div>
       <div v-if="expanded === i" class="db-games">
         <div v-for="ex in r.examples" :key="ex.id + ':' + ex.ply" class="db-game">
-          <span class="db-g-players"
-                :title="`${ex.white} (${ex.whiteRating ?? '?'}) — ${ex.black} (${ex.blackRating ?? '?'})${ex.playedAt ? ' · ' + ex.playedAt : ''}${ex.timeControl ? ' · ' + ex.timeControl : ''}`">
-            {{ ex.white }} ({{ ex.whiteRating ?? '?' }}) — {{ ex.black }} ({{ ex.blackRating ?? '?' }})</span>
-          <span class="db-g-res mono" :class="'db-g-' + outcomeFor(ex, r).toLowerCase()">{{ outcomeFor(ex, r) }}</span>
-          <span class="db-g-meta mono">move {{ Math.floor(ex.ply / 2) + 1 }}</span>
+          <span class="db-g-players" :title="ex.detail ?? ex.title">{{ ex.title }}</span>
+          <span class="db-g-res mono" :class="outcomeClass(ex)">{{ ex.outcome }}</span>
+          <span class="db-g-meta mono">{{ ex.when }}</span>
         </div>
         <div v-if="r.games > r.examples.length" class="db-game db-game--more">
           + {{ (r.games - r.examples.length).toLocaleString() }} more

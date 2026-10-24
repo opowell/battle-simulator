@@ -66,7 +66,6 @@ const imgSrc = window.api.imgSrc;
 const viewerId = computed(() => props.revealAll
   ? props.viewerTeam
   : (props.viewerOverride ?? props.viewerTeam ?? props.field.teams?.[0]?.id ?? null));
-const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.id);
 
 // Which unit should blink when `ui.blinkActiveUnit` is set: decided by Battlefield.vue,
 // since the blink means "waiting on your order" and only a unit the player on the clock
@@ -352,53 +351,14 @@ function unitR(u) {
 // Grid-based fog of war: compute per-square visibility from friendly pieces.
 // Used when field.ui.gridFog is true. Piece types are lowercase glyph letters: k/q/r/b/n/p.
 // Friendly pieces move up the board — decreasing y (y = 8 - rank).
+// The server sends the cells the viewer can see (field.fogVisible) whenever the game
+// fogs by grid (ui.gridFog): the client cannot reproduce it from the filtered board,
+// where hidden enemies (which block sliders and occupy push squares) have been
+// stripped and would wrongly read as empty + visible.
 const gridFogVisibleSet = computed(() => {
   // Reveal mode shows the true board with no fog shading at all.
   if (!props.fog || !props.field.ui?.gridFog || props.revealAll) return null;
-  // Prefer the server's authoritative visibility set: the client cannot reproduce it from
-  // the filtered board, where hidden enemies (which block sliders and occupy push squares)
-  // have been stripped and would wrongly read as empty + visible (e.g. a hidden pawn on e5).
-  if (props.field.fogVisible) return props.field.fogVisible;
-  const W = props.field.world.w, H = props.field.world.h;
-  // Pawns advance toward rank 8 (lower y) for white, toward rank 1 (higher y) for black.
-  const pDir     = viewerIsBlack.value ? 1 : -1;
-  const pStartRow = viewerIsBlack.value ? 1 : 6;
-  const visible = new Set();
-  const occ = new Set();
-  for (const u of props.units)
-    if (!u.dead) occ.add(`${Math.floor(u.x)},${Math.floor(u.y)}`);
-  const inB = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
-  const add  = (x, y) => { if (inB(x, y)) visible.add(`${x},${y}`); };
-  for (const u of props.units) {
-    if (u.team !== viewerId.value || u.dead) continue;
-    const gx = Math.floor(u.x), gy = Math.floor(u.y);
-    const t = u.type; // 'k','q','r','b','n','p'
-    add(gx, gy);
-    if (t === 'p') {
-      add(gx, gy + pDir);                       // push forward
-      if (gy === pStartRow) add(gx, gy + pDir * 2); // double push from starting rank
-      add(gx - 1, gy + pDir); add(gx + 1, gy + pDir); // diagonal attacks
-    } else if (t === 'n') {
-      for (const [dx, dy] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])
-        add(gx + dx, gy + dy);
-    } else if (t === 'k') {
-      for (const [dx, dy] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])
-        add(gx + dx, gy + dy);
-    } else {
-      const rDirs = [[0,1],[0,-1],[1,0],[-1,0]];
-      const bDirs = [[1,1],[1,-1],[-1,1],[-1,-1]];
-      const dirs = t === 'r' ? rDirs : t === 'b' ? bDirs : [...rDirs, ...bDirs];
-      for (const [dx, dy] of dirs) {
-        let cx = gx + dx, cy = gy + dy;
-        while (inB(cx, cy)) {
-          add(cx, cy);
-          if (occ.has(`${cx},${cy}`)) break; // see blocker but not beyond
-          cx += dx; cy += dy;
-        }
-      }
-    }
-  }
-  return visible;
+  return props.field.fogVisible ?? null;
 });
 
 const fogSquares = computed(() => {
@@ -612,11 +572,9 @@ function markerR(u) { return Math.max(2, unitR(u) * 0.3); }
 function markerSpec(u) { return markerGlyph(markerShapeFor(u.type), markerR(u)); }
 
 // ── square markers (user annotations on unseen squares) ──────────────────────
-const MARKER_CYCLE = ['p', 'n', 'b', 'r', 'q', 'k', null];
-// Enemy piece colour from the viewer's perspective, so manual markers use the
-// opponent's actual sprite set rather than always assuming the enemy is black.
-const enemyPrefix = computed(() => viewerIsBlack.value ? 'w' : 'b');
-function markerImg(type) { return `${window.api.basePath}/images/chess/${enemyPrefix.value}${type.toUpperCase()}`; }
+// A click on a hidden cell cycles its guess through the game's marker types
+// (ui.markerCycle), then back to none; a marker brings its own picture.
+const markerCycle = computed(() => [...(props.field.ui?.markerCycle ?? []), null]);
 
 function isFogSquare(col, row) {
   if (gridFogVisibleSet.value) return !gridFogVisibleSet.value.has(`${col},${row}`);
@@ -773,10 +731,10 @@ function handleBoardClick(e) {
   const y = (e.clientY - rect.top  - props.fit.y(0)) / props.fit.s;
   const col = Math.floor(x), row = Math.floor(y);
   if (col >= 0 && col < props.field.world.w && row >= 0 && row < props.field.world.h) {
-    if (!props.revealAll && !props.selectedId && isFogSquare(col, row)) {
+    if (!props.revealAll && !props.selectedId && markerCycle.value.length > 1 && isFogSquare(col, row)) {
       const current = squareMarkerList.value.find(m => m.col === col && m.row === row)?.type ?? null;
-      const idx = MARKER_CYCLE.indexOf(current);
-      const next = MARKER_CYCLE[(idx + 1) % MARKER_CYCLE.length];
+      const cycle = markerCycle.value;
+      const next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
       emit('set-marker', col, row, next);
       return;
     }
@@ -1142,7 +1100,7 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
       <image v-for="m in displayMarkers" :key="'sm'+m.col+','+m.row"
              :x="fit.x(m.col) + fit.len(0.1)" :y="fit.y(m.row) + fit.len(0.1)"
              :width="fit.len(0.8)" :height="fit.len(0.8)"
-             :href="imgSrc(m.img) ?? markerImg(m.type)"
+             :href="imgSrc(m.img)"
              opacity="0.55"
              class="sl-noevents"/>
 

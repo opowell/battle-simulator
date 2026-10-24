@@ -148,7 +148,7 @@ test('civ1: a garrisoned city square is drawn as the city, not as its garrison',
   assert.equal(cell.fixture, true, 'the square is a fixture — the art is the city\'s, not the unit\'s');
 });
 
-// The city screen (apps/browser/play/battlefield/CityInspectorOverlay.vue) draws pictures —
+// The city screen (games/civ1/ui/CityInspectorOverlay.vue) draws pictures —
 // of the garrison, and of every item the city could build — but apps/browser/play has no
 // access to UNITS/IMPROVEMENTS/WONDERS, so all of that has to ride the grid payload.
 test('civ1: a city carries what its city screen draws — population, garrison, build options', () => {

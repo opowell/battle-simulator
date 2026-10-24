@@ -44,7 +44,8 @@ body { background: #0f1216; color-scheme: dark; }
 <!-- The game screen's plain scripts, which hang what they offer off window: the
      board's drawing and geometry (data.js, vision.js, …), the API client the session
      view talks through (api.js — window.api), the seating and scenario rules every
-     form here starts a session by (gameDefaults.js), and the sounds. -->
+     form here starts a session by (gameDefaults.js), and the sounds. A game's own
+     sounds are a plugin of its own (play/plugins.js). -->
 <script src="./play/data.js"></script>
 <script src="./play/vision.js"></script>
 <script src="./play/keyBindings.js"></script>
@@ -57,9 +58,7 @@ body { background: #0f1216; color-scheme: dark; }
 <script src="./play/gameDefaults.js"></script>
 <script src="./play/teamSprite.js"></script>
 <script src="./play/sound.js"></script>
-<script src="./play/cs-sound.js"></script>
 <script src="./play/confetti.js"></script>
-<script src="./play/chess-sound.js"></script>
 </head>
 <body>
 <div id="app"><p id="boot">Loading…</p></div>
@@ -69,10 +68,13 @@ import * as Vue from 'vue'
 import * as appfr from 'header-content-layout'
 import { loadModule } from './vendor/vue3-sfc-loader.esm.js'
 import { installPlay } from './play/install.js'
+import * as play from './play/sessionScope.js'
 
 const options = {
   // The shell must run on this very Vue, not a second copy fetched by the loader.
-  moduleCache: { vue: Vue, 'header-content-layout': appfr },
+  // 'battle-play' is what a game's UI plugin may import from the game screen
+  // (play/plugins.js): it lives in the game's folder, not beside these files.
+  moduleCache: { vue: Vue, 'header-content-layout': appfr, 'battle-play': play },
   async getFile(url) {
     const response = await fetch(url, { cache: 'no-cache' })
     if (!response.ok) throw new Error(`${response.status} ${url}`)
@@ -92,6 +94,9 @@ const options = {
     return new URL(relPath, refPath ?? document.baseURI).href
   },
 }
+
+// A game's UI plugins (play/plugins.js) are compiled by the same loader.
+window.loadPlayModule = (url) => loadModule(url, options)
 
 try {
   const App = await loadModule(new URL('./App.vue', document.baseURI).href, options)
