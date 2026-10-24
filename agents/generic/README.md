@@ -82,10 +82,15 @@ Options: `{ beam: 4, depth: 4, timeMs: 250, expand: 48, aggression: 1, minGain: 
 for options). Games are played in seat-swapped pairs, at 150 ms per decision,
 with a 40-turn limit.
 
-See the results table in the commit that added this, or rerun it: Arena in all
-eight modes against random and against Greedy on the same evaluation, Tactical
-against Greedy on Tactical's own evaluator, and CS-mini against Greedy on
-CS-mini's.
+2026-10-24, wins–losses–draws:
+
+| Game | Opponent | Modes | W–L–D |
+|---|---|---|---|
+| Arena | Greedy on the same generic evaluation | all 8, 8 games each | 64–0–0 |
+| Arena, fog | random | all 8, 8 games each | 61–0–3 |
+| Arena | itself | all 8, 2 games each | 7–8–1 |
+| Tactical | Greedy on Tactical's own evaluator | sequential + we-go | 35–3–2 |
+| CS-mini | Greedy on CS-mini's own evaluator | sequential + we-go | 1–19–0 |
 
 **Where it is weak:** games decided by mechanics that aren't unit numbers. CS-mini
 turns on facing, vision cones and reloading. The generic AI sees those only
