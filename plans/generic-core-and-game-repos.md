@@ -401,19 +401,17 @@ memoir44 and others, whatever the audit finds) are **private**, as fog-chess is.
 ### Phase 0: pin down "current capabilities"
 
 "Migrated with their current capabilities" needs a definition we can check
-against, per game, before anything moves:
+against, per game, before anything moves. The steps are in the order to do
+them:
 
-1. **A capability checklist per game** (`plans/migration/<game>.md`): its
-   scenarios, setup options, which space/time/turn/fog modes it supports, its
-   AIs, its plugins (from the UI audit above), the `ui.*` flags it sets, its
-   demos and benches. Drawn from its README, its tests and its `toGrid`.
-2. **Golden replays**: for each game and scenario, a seeded run (`rng` config,
+1. **Golden replays**: for each game and scenario, a seeded run (`rng` config,
    RandomAgent, a fixed turn count) hashing the final state and the log. Commit
    the hashes. A migrated game must reproduce them exactly, which catches every
    silent rules change the move causes.
-3. Decide what happens to the unregistered `rogue` and `simcity` (see open
-   decisions).
-4. **Drop tactical and csmini**, after moving what the core leans on them for.
+   They come first because they are the safety net for everything after,
+   including step 2: dropping two games must leave every other game's replays
+   unchanged.
+2. **Drop tactical and csmini**, after moving what the core leans on them for.
    They are its test fixtures, so they can't simply be deleted:
 
    | Uses | Replace with |
@@ -431,7 +429,16 @@ against, per game, before anything moves:
    Before deleting either, check that nothing it does is missing from its
    replacement. Most importantly, every csmini mode (all four space × time
    quadrants, sequential and we-go) must have a counterpart in cs or Arena.
-   Where one is missing, note it in cs's checklist rather than keep csmini.
+   Where one is missing, note it in `plans/migration/cs.md`, which starts cs's
+   checklist (step 3), rather than keep csmini.
+3. **A capability checklist per game** (`plans/migration/<game>.md`): its
+   scenarios, setup options, which space/time/turn/fog modes it supports, its
+   AIs, its plugins (from the UI audit above), the `ui.*` flags it sets, its
+   demos and benches. Drawn from its README, its tests and its `toGrid`.
+
+What happens to the unregistered `rogue` and `simcity` is a decision, not a
+step (see open decisions). Until it is made they get replays and checklists
+like every other game.
 
 ### Phase 1: decouple inside this repo
 
