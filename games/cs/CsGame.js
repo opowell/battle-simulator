@@ -24,7 +24,7 @@ import { makePos, parsePos, num, posToWire } from '#core/kit/coord.js';
 import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
 
 
-const MOVE_RANGE     = 8; // per-turn move allowance (budget, not a single-move cap) — see perTurn.moveAllowance; doubled alongside the 3x map/vision resize (2026-07-17)
+export const MOVE_RANGE     = 8; // per-turn move allowance (budget, not a single-move cap) — see perTurn.moveAllowance; doubled alongside the 3x map/vision resize (2026-07-17)
 // Smallest move that actually counts as moving. A unit's move budget is a float64 that shrinks
 // by the exact (continuous) distance travelled, so it routinely lands on a tiny positive residue
 // (e.g. 1e-16) after a near-full move. Without a floor, that residue is still "> 0", so the unit
@@ -70,10 +70,10 @@ const ROTATE_COST = 1;  // flat moveAllowance tax for a 'rotate' action (turn in
 // frozen, matches unable to finish. Taxing it bounds stance changes per turn the
 // same way every other repeatable action is bounded.
 const STANCE_COST = 1;
-const SLOT_MOVE_MULT = { melee: 1.25, pistol: 1.0, primary: 0.7 };
+export const SLOT_MOVE_MULT = { melee: 1.25, pistol: 1.0, primary: 0.7 };
 // Which loadout slot a WEAPONS category belongs in — every non-melee, non-pistol category
 // (smg/shotgun/rifle/heavy/sniper) shares the single 'primary' slot.
-const WEAPON_SLOT = category => category === 'pistol' ? 'pistol' : category === 'melee' ? 'melee' : 'primary';
+export const WEAPON_SLOT = category => category === 'pistol' ? 'pistol' : category === 'melee' ? 'melee' : 'primary';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -176,12 +176,12 @@ function spawnUnits(map) {
 // Weapon/equipment icons (see counterstrike.fandom.com's "List of weapons" and "List
 // of equipment") — every WEAPONS/GRENADES key plus armor/helmet/defusekit has a
 // same-named file in games/cs/images/weapons/.
-const WEAPON_ICON = w => `/images/cs/weapons/${WEAPONS[w]?.sprite ?? w}`;
+export const WEAPON_ICON = w => `/images/cs/weapons/${WEAPONS[w]?.sprite ?? w}`;
 
-// ── Its units, as its pack in the core's library reads them (foreignUnits below) ──
+// ── Its units, as its pack in the core's library reads them (pack.js) ──
 // A player's kind is the kind of weapon it has drawn; each kind is read as the
 // first weapon of it (the knife, the pistol, the MAC-10, …).
-const KIND_WEAPON = {};
+export const KIND_WEAPON = {};
 for (const [id, w] of Object.entries(WEAPONS)) KIND_WEAPON[w.category] ??= id;
 
 /** A player's move budget for a turn with `slot` drawn. */
@@ -1350,19 +1350,6 @@ export const CsGame = {
     const was = new Map((state.gameSpecific.roster ?? []).map(u => [u.id, u]));
     const roster = state.units.map(u => (midGame && was.get(u.id)) || u);
     return { ...state, gameSpecific: { ...state.gameSpecific, roster } };
-  },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
-  // conversion factor is the rifleman: 100 hp, an M4A4 (33 a hit, 9 squares),
-  // walking at a rifle's pace. Kevlar is bought, not brought, so a player has no
-  // defense of its own (`fold`): it reads as the standard.
-  foreignUnits: {
-    scale: { hp: 100, attack: WEAPONS.m4a4.damage, defense: 1, range: WEAPONS.m4a4.range, move: MOVE_RANGE * SLOT_MOVE_MULT.primary },
-    fold: { defense: 'hp' },
-    profiles: () => Object.fromEntries(Object.entries(KIND_WEAPON).map(([kind, w]) => [kind, {
-      hp: 100, attack: WEAPONS[w].damage, range: WEAPONS[w].range, move: MOVE_RANGE * SLOT_MOVE_MULT[WEAPON_SLOT(kind)], domain: 'land',
-    }])),
-    art: (kind) => ({ imagePath: KIND_WEAPON[kind] ? WEAPON_ICON(KIND_WEAPON[kind]) : null, glyph: 'P', name: `${kind} player` }),
   },
   actionKey:        csActionKey,
   getLegalActions:  withTeam(getLegalActions),
