@@ -48,6 +48,31 @@ test('/lib serves a game module with its #core imports rewritten to URLs', async
   }
 });
 
+// A game's defaultConfig is what a session that names nothing plays, as a game
+// fought under fog by default would be: an API-made session skips the setup
+// form's gameOptions.
+test('a session that names no fog takes the game\'s default', async () => {
+  const three = await import('./battleServer.js?copy=three');
+  const { ArenaGame } = await import('../../games/arena/index.js');
+  const foggy = { ...ArenaGame, defaultConfig: { ...ArenaGame.defaultConfig, fogOfWar: true } };
+  const seats = [{ id: 'p1', name: 'One' }, { id: 'p2', name: 'Two' }];
+  const server = three.createBattleServer({ games: { foggy: { game: foggy, minPlayers: 2, maxPlayers: 2, defaultPlayers: seats } } });
+  const http = server.listen(0);
+  try {
+    if (!http.listening) await once(http, 'listening');
+    const base = `http://localhost:${http.address().port}`;
+    const start = (config) => fetch(`${base}/sessions`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ game: 'foggy', players: seats.map(p => ({ ...p, agent: 'human' })), ...(config ? { config } : {}) }),
+    }).then(r => r.json());
+    const fogOf = async (s) => (await (await fetch(`${base}/sessions/${s.id}`)).json()).fog;
+    assert.equal(await fogOf(await start()), true);
+    assert.equal(await fogOf(await start({ fog: false })), false, 'a request still wins');
+  } finally {
+    http.close();
+  }
+});
+
 test('/library serves a pack\'s pictures, and nothing else of it', async () => {
   const http = serverOne.listen(0);
   try {
