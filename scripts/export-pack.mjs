@@ -5,9 +5,10 @@
 //
 //   node scripts/export-pack.mjs <game-dir> [--out <library-dir>]
 //
-// <game-dir> is the game's folder (games/civ1 here, apps/civ1/game in its own
-// repo): its index.js must export the game definition, whose foreignUnits says
-// how its units read in the common vocabulary (src/engine/foreignUnits.js).
+// <game-dir> is the game's folder (games/civ1 here, apps/civ1/games/civ1 in its
+// own repo): its index.js must export the game definition, and how its units read
+// in the common vocabulary (src/engine/foreignUnits.js) is its pack.js's `pack`
+// — or, for a game that hasn't left yet, its definition's foreignUnits.
 //
 //   units.json  the conversion factor (scale), the general adjustment factor, and
 //               every unit type in the common vocabulary, with how it looks for
@@ -68,8 +69,12 @@ function period(list) {
 async function main() {
   const { dir, out } = parseArgs(process.argv);
   const name = path.basename(dir);
-  const game = await gameIn(dir);
-  const fu = game.foreignUnits;
+  const declared = await gameIn(dir);
+  // A game in a repo of its own no longer declares foreignUnits (it fields only
+  // its own units); what it lends the library is in its pack.js instead.
+  const packFile = path.join(dir, 'pack.js');
+  const fu = existsSync(packFile) ? (await import(pathToFileURL(packFile).href)).pack : declared.foreignUnits;
+  const game = { ...declared, foreignUnits: fu };
   if (typeof fu?.profiles !== 'function' || !fu.scale) {
     console.error(`${name}: no foreignUnits profiles and scale — nothing to export`);
     process.exit(1);

@@ -1,6 +1,10 @@
 // Writes every game's golden replays: games/<game>/golden.json.
 //
-//   node scripts/golden.mjs [game ...] [--check]
+//   node scripts/golden.mjs [game ...] [--check] [--registry <games.json>]
+//
+// --registry names the games.json to read (this repo's games/games.json by
+// default), and the games are the folders beside it: a game in a repo of its own
+// runs this from its vendored core with its own registry.
 //
 // A game gets one case per way it can be set up from the setup form: its default
 // settings, each of its scenarios, every space × time × turns combination it
@@ -21,19 +25,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runGolden } from '../src/engine/golden.js'
-import { GAMES } from '../games/registry.js'
-import { RogueGame } from '../games/rogue/index.js'
-import { SimCityGame } from '../games/simcity/index.js'
+import { loadRegistry } from '../src/server/registry.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const gamesDir = path.join(projectRoot, 'games')
-
-// Not in the server's registry, but still games to carry over (see the plan's
-// open decisions), seated as their own tests seat them.
-const UNREGISTERED = {
-  rogue:   { game: RogueGame,   defaultPlayers: [{ id: 'p1', name: 'Rogue' }] },
-  simcity: { game: SimCityGame, defaultPlayers: [{ id: 'mayor', name: 'Mayor' }] },
-}
+const args = process.argv.slice(2)
+const registryAt = args.indexOf('--registry')
+const registryFile = registryAt >= 0 ? path.resolve(args.splice(registryAt, 2)[1]) : path.join(projectRoot, 'games', 'games.json')
+const gamesDir = path.dirname(registryFile)
+const GAMES = await loadRegistry(registryFile)
 
 // Engine steps per case. A step is one ply in sequential play, one we-go round,
 // or one continuous-time window, so a game whose plies are cheap runs longer.
@@ -124,9 +123,8 @@ async function moduleOf(name, game) {
   throw new Error(`${name}: no module in games/${name}/ exports its game definition`)
 }
 
-const args = process.argv.slice(2)
 const check = args.includes('--check')
-const all = { ...GAMES, ...UNREGISTERED }
+const all = GAMES
 const names = args.filter(a => !a.startsWith('--'))
 for (const n of names) if (!all[n]) { console.error(`Unknown game: ${n}`); process.exit(2) }
 
