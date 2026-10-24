@@ -44,7 +44,8 @@ const decimalStat = (value) => {
   while (d % 5 === 0) d /= 5
   return d === 1 ? String(value) : stat(value)
 }
-const unitStat = (key, label, hint, hideBelow, format = stat) => metric(key, label, { format, width: '84px', hint, hideBelow })
+// `cardLabel` puts the stat on the unit's picture card too, as `A 4`.
+const unitStat = (key, label, cardLabel, hint, hideBelow, format = stat) => metric(key, label, { format, width: '84px', cardLabel, hint, hideBelow })
 
 const kb = (value) => (value == null ? '' : `${Math.max(1, Math.round(Number(value) / 1024))} KB`)
 const count = (n) => n.toLocaleString('en')
@@ -180,8 +181,9 @@ export function buildSchema(catalog, { Art }) {
       key: 'units',
       label: 'Units',
       count: count(catalog.units.length),
-      // A unit's card is its picture and its name, like a game's; the game and
-      // the stats are the table's.
+      // A unit's card is its picture and its name, like a game's, with its
+      // stats under the name (A 4 · D 1 · HP 1 · M 1 · R 1); the game is the
+      // table's.
       card: 'picture',
       // Pressing a unit narrows to it: its game and the sides that start with
       // it, under a card of its own (UnitSummaryCards).
@@ -193,11 +195,11 @@ export function buildSchema(catalog, { Art }) {
         art,
         identity('Unit', { scope: true }),
         gameColumn,
-        unitStat('attack', 'Attack', 'How hard it hits, in its own game\'s numbers', 620),
-        unitStat('defense', 'Defense', 'How well it resists being hit, in its own game\'s numbers', 620),
-        unitStat('hp', 'HP', 'How much punishment it takes before it dies', 760),
-        unitStat('move', 'Move', 'How far it moves in a turn, in board cells', 760, decimalStat),
-        unitStat('range', 'Range', 'How far it attacks, in board cells (1 = adjacent)', 900),
+        unitStat('attack', 'Attack', 'A', 'How hard it hits, in its own game\'s numbers', 620),
+        unitStat('defense', 'Defense', 'D', 'How well it resists being hit, in its own game\'s numbers', 620),
+        unitStat('hp', 'HP', 'HP', 'How much punishment it takes before it dies', 760),
+        unitStat('move', 'Move', 'M', 'How far it moves in a turn, in board cells', 760, decimalStat),
+        unitStat('range', 'Range', 'R', 'How far it attacks, in board cells (1 = adjacent)', 900),
         { key: 'domain', label: 'Domain', width: '84px', hideBelow: 900 },
       ],
       sorts: [
