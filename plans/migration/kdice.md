@@ -85,3 +85,18 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 - Absorbing a unit (foreign units) loses dice past the reserve cap (32 by
   default): a unit worth 50 dice can land as fewer. Documented in
   `absorbUnits`; mixing leaves the game in phase 1 anyway.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-kdice](https://github.com/opowell/battle-kdice), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 48 tests, its 2 golden replays among them,
+plus the app's own 4; the slow rollout skipped) passes; `npm run demo:kdice:auto`
+plays to a win and `demo/kdice-bench.mjs` runs. In the Browser, driven headless,
+the default table of seven draws the grown map with its dice, pips and
+leaderboard, and a turn ends and comes back, with no console error or failed
+request (its preview pictures are served). Played by clicking the board, an
+attack throws its dice on screen (`DiceRollOverlay`) and flashes both
+territories. Its pack was re-exported into `library/kdice/` first: the die, a
+land terrain, and three of its grown maps (dealt for two, four and seven from
+fixed seeds), each territory's dice one counted group (`stacking: 'count'`).
