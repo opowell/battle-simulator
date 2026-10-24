@@ -1,0 +1,18 @@
+{
+  "id": "mixed-world",
+  "name": "Mixed: a world war of everything (regions)",
+  "description": "Risk's world map from the library, as regions: knights, marines, a queen and barbarians out of North America against a baron, a muton, a paladin and a tank out of Asia.",
+  "map": "risk/world",
+  "units": [
+    { "game": "civ1", "type": "knights", "seat": 0, "at": "alaska" },
+    { "game": "sc1", "type": "marine", "seat": 0, "at": "northwest_territory" },
+    { "game": "chess", "type": "queen", "seat": 0, "at": "greenland" },
+    { "game": "aow", "type": "barbarian", "seat": 0, "at": "alberta" },
+    { "game": "aow", "type": "archer", "seat": 0, "at": "ontario" },
+    { "game": "doom", "type": "baron", "seat": 1, "at": "middle_east" },
+    { "game": "xcom", "type": "muton", "seat": 1, "at": "afghanistan" },
+    { "game": "ffta", "type": "paladin", "seat": 1, "at": "ural" },
+    { "game": "memoir44", "type": "armor", "seat": 1, "at": "siberia" },
+    { "game": "sc2", "type": "marine", "seat": 1, "at": "yakutsk" }
+  ]
+}

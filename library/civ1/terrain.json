@@ -1,0 +1,178 @@
+{
+  "ocean": {
+    "name": "Ocean",
+    "color": "#2f5f9e",
+    "description": "Ocean: costs 1 to enter.",
+    "cost": {
+      "land": 1,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": false,
+      "sea": true,
+      "air": true
+    },
+    "cover": 0
+  },
+  "arctic": {
+    "name": "Arctic",
+    "color": "#e8eef2",
+    "description": "Arctic: costs 2 to enter.",
+    "cost": {
+      "land": 2,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0
+  },
+  "tundra": {
+    "name": "Tundra",
+    "color": "#9aa58f",
+    "description": "Tundra: costs 1 to enter.",
+    "cost": {
+      "land": 1,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0
+  },
+  "desert": {
+    "name": "Desert",
+    "color": "#d8c27a",
+    "description": "Desert: costs 1 to enter.",
+    "cost": {
+      "land": 1,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0
+  },
+  "plains": {
+    "name": "Plains",
+    "color": "#b9b25c",
+    "description": "Plains: costs 1 to enter.",
+    "cost": {
+      "land": 1,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0
+  },
+  "grassland": {
+    "name": "Grassland",
+    "color": "#6fa64a",
+    "description": "Grassland: costs 1 to enter.",
+    "cost": {
+      "land": 1,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0
+  },
+  "forest": {
+    "name": "Forest",
+    "color": "#2f6b34",
+    "description": "Forest: costs 2 to enter, +50% defence.",
+    "cost": {
+      "land": 2,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50
+  },
+  "hills": {
+    "name": "Hills",
+    "color": "#9a8150",
+    "description": "Hills: costs 2 to enter, +100% defence.",
+    "cost": {
+      "land": 2,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 100
+  },
+  "mountains": {
+    "name": "Mountains",
+    "color": "#7d746a",
+    "description": "Mountains: costs 3 to enter, +200% defence.",
+    "cost": {
+      "land": 3,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 200
+  },
+  "swamp": {
+    "name": "Swamp",
+    "color": "#4f6b55",
+    "description": "Swamp: costs 2 to enter, +50% defence.",
+    "cost": {
+      "land": 2,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50
+  },
+  "jungle": {
+    "name": "Jungle",
+    "color": "#3f7a3a",
+    "description": "Jungle: costs 2 to enter, +50% defence.",
+    "cost": {
+      "land": 2,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50
+  }
+}

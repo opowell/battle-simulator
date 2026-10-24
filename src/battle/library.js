@@ -11,14 +11,19 @@ const maps = new Map();   // 'game/map' → { game, id, name, description, terra
 export function registerMaps(packs) {
   maps.clear();
   for (const [game, p] of Object.entries(packs ?? {})) {
-    for (const [id, m] of Object.entries(p.maps ?? {})) maps.set(`${game}/${id}`, { ...m, game, id, title: p.title ?? game, terrain: p.terrain ?? {} });
+    for (const [id, m] of Object.entries(p.maps ?? {})) maps.set(`${game}/${id}`, { ...m, game, id, title: p.title ?? game, terrain: p.terrain ?? {}, scale: p.scale ?? null });
   }
 }
 
 /** Every library map, as [key ('civ1/earth'), map]. */
 export const libraryMaps = () => [...maps.entries()];
 
-/** The spec a library map is played as: its board, its terrain, its starts. */
+/**
+ * The spec a library map is played as: its board, its terrain, and the units it
+ * opens with — its own game's, from the library. Distances are its game's:
+ * `scale` is how far one of that game's cells reaches, so every unit's range and
+ * move convert into this map's cells.
+ */
 export function librarySpec(id) {
   const key = String(id).replace(/^library:/, '');
   const m = maps.get(key);
@@ -29,7 +34,9 @@ export function librarySpec(id) {
     description: m.description ?? '',
     terrain: m.terrain,
     board: m.board,
-    ...(m.units ? { units: m.units } : {}),
+    ...(m.scale ? { scale: { range: m.scale.range, move: m.scale.move } } : {}),
+    ...(m.features ? { features: m.features } : {}),
+    ...(m.units ? { units: m.units.map(u => ({ game: m.game, ...u })) } : {}),
     ...(m.armies ? { armies: m.armies } : {}),
     ...(m.victory ? { victory: m.victory } : {}),
     ...(m.modes ? { modes: m.modes } : {}),

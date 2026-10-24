@@ -3,8 +3,8 @@
 // an example. What a game needs from the core it asks for through the game
 // definition (its ui.* flags, uiPlugins, …), never by the core knowing its name.
 //
-// Arena is the exception: it is the core's own ruleset, on its way into src/
-// (phase 2 of plans/generic-core-and-game-repos.md).
+// Arena is the exception: it is the core's own scenarios (its rules are
+// src/battle), and the mixed ones name the library's games.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';

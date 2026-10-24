@@ -1,0 +1,9 @@
+{
+  "territory": {
+    "name": "Territory",
+    "color": "#c9b98f",
+    "description": "A Risk territory.",
+    "cost": 1,
+    "cover": 0
+  }
+}

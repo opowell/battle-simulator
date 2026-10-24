@@ -457,6 +457,11 @@ function tileColor(tile) {
   return tile.color;
 }
 
+// On a hex board a square named by [col, row] (a legal move, the last move) is the
+// tile whose cell carries that col/row — tile x/y are its centre in world units.
+const hexByColRow = computed(() => new Map((props.field.tiles ?? []).filter(t => t.col != null).map(t => [`${t.col},${t.row}`, t])));
+const hexesAt = (squares) => (squares ?? []).map(([c, r]) => hexByColRow.value.get(`${c},${r}`)).filter(Boolean);
+
 // Hex polygon points for a pointy-top hex tile centered at (tile.x, tile.y),
 // sized by field.hexSize (world units) — see src/kit/hexagon.js's
 // hexCorners, mirrored here so the renderer doesn't need a server round-trip
@@ -1118,8 +1123,12 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
             fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2" stroke-dasharray="4,3"
             class="sl-noevents"/>
 
-      <!-- Last move highlights -->
-      <rect v-for="([lc, lr], i) in lastMoveSquares" :key="'lmv'+i"
+      <!-- Last move highlights (on a hex board, the hex of that col/row) -->
+      <template v-if="field.grid === 'hexagon'">
+        <polygon v-for="(t, i) in hexesAt(lastMoveSquares)" :key="'lmv'+i" :points="hexPoints(t)"
+                 fill="rgba(242,180,65,0.35)" class="sl-noevents"/>
+      </template>
+      <rect v-else v-for="([lc, lr], i) in lastMoveSquares" :key="'lmv'+i"
             :x="fit.x(lc)" :y="fit.y(lr)"
             :width="fit.len(1)" :height="fit.len(1)"
             fill="rgba(242,180,65,0.35)"
@@ -1137,6 +1146,11 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                 :cx="fit.x(legalMoveCircle.cx)" :cy="fit.y(legalMoveCircle.cy)" :r="fit.len(legalMoveCircle.r)"
                 fill="rgba(66,198,230,0.22)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
                 class="sl-clickable"/>
+        <template v-else-if="field.grid === 'hexagon'">
+          <polygon v-for="(t, i) in hexesAt(legalSquares)" :key="'lm'+i" :points="hexPoints(t)"
+                   fill="rgba(66,198,230,0.28)" stroke="rgba(66,198,230,0.7)" stroke-width="1.5"
+                   class="sl-noevents"/>
+        </template>
         <rect v-else-if="!field.ui?.aimedActionTypes?.includes('move')" v-for="([lc, lr], i) in legalSquares" :key="'lm'+i"
               :x="fit.x(lc)" :y="fit.y(lr)"
               :width="fit.len(1)" :height="fit.len(1)"

@@ -23,7 +23,8 @@
 //            the time, 'extend' it, 'stack' up to `max`, or 'ignore');
 //            `mods` change numbers while it lasts ({ speed: '*3/2' }); `tick`
 //            effects happen at the end of every window; `blocks` stops 'move'
-//            or 'act'; `tags` are granted while it lasts.
+//            or 'act'; `tags` are granted while it lasts. `value` tells the
+//            generic AI what it is worth beyond what its mods do to the numbers.
 //
 // A unit only carries the fields its ruleset uses, so a battle that declares
 // nothing plays exactly as Arena's numbers-only units always have.

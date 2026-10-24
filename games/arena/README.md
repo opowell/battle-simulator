@@ -1,8 +1,12 @@
 # Arena
 
-The generic battle: a board of terrain cells and armies of units that are
-nothing but numbers. It runs in every corner of (space × time × play), and it is
-played by the generic AI ([src/agents/generic/](../../agents/generic/README.md)) —
+The core's own battle: a BattleGame ([src/battle/](../../src/battle/README.md)) and
+its scenarios. The original Arena is its default: a board of terrain cells and
+armies of units that are nothing but numbers. Every other scenario is a battle
+spec ([specs/](specs/)) showing off part of the core model, and the library's maps
+are scenarios too, where the units of every game mix. Everything runs in every
+corner of (space × time × play) its board allows, with fog on or off, and is
+played by the generic AI ([src/agents/generic/](../../src/agents/generic/README.md)):
 Arena has no evaluator of its own on purpose.
 
 ## Units
@@ -43,7 +47,7 @@ deterministic, always an integer.
 | water | — | — | no | no |
 | rock | — | — | no | yes |
 
-Costs and sight lines are computed exactly ([geometry.js](geometry.js)): a
+Costs and sight lines are computed exactly ([src/battle/geometry.js](../../src/battle/geometry.js)): a
 segment is walked cell by cell and the length it spends in each cell is measured,
 not sampled.
 
@@ -94,10 +98,35 @@ never `units`, so a side hidden by fog is not mistaken for a dead one.
 | `open-field` | 12×8 of open ground |
 | `real-time` | the skirmish in continuous space and time, simultaneous |
 
+The reference specs, none with names or art from another game:
+
+| Id | Shows |
+|---|---|
+| `magic` | MP pools, statuses (haste, slow, poison, stop, regen, shell, blind), an area spell, heals, a cleanse, a teleport, a push; lose your knight (`royal`) and you lose |
+| `scifi` | energy and absorbing shields, cloaking and a detector's sight, a scanner sweep, air units over water and rock, a ground-only gun, a siege-mode transform, high ground and concealing craters; the courier must `reach` the far edge, the defence must `survive` 20 turns |
+| `hex` | a hex board with a two-level hill, facing with flank and rear arcs, bowmen with a 180° cone, horses that can't climb two levels; `hold` the summit for three turns |
+| `regions` | twelve territories, armies as counts (`stacking: 'count'`) that merge; `points` after 12 turns, two a turn for each city held |
+| `close-quarters` | a shape board: a building of walls, doors and windows, crates, rubble; vision cones, facing, and ammo that must be reloaded |
+
+With the library loaded (the server does), four **mixed** scenarios put units of
+several games on library maps: a square (`mixed-two-rivers`, civ1's), a hex
+(`mixed-encounter`, Memoir '44's), a regions board (`mixed-world`, Risk's) and a
+shape map (`mixed-dust2`, cs's). Every library map is offered as a scenario of
+its own too (`library:<game>/<map>`), with its game's own units at its own
+starts. A library map plays in its game's distances: a unit's range and move
+convert into that game's cells (its pack's `scale`). It plays as its terrain,
+not as its game; each pack's `pack.json` says what it leaves out.
+
 ## Hooks it implements for the generic AI
 
-- `unitAttributes(state, unit)`: the unit's numbers, plus in continuous time what
-  it is in the middle of (`heading`, `striking`), so a position right after an
-  order is judged by what the order will do.
+- `unitAttributes(state, unit)`: the unit's numbers as its statuses leave them,
+  its facing and cone, a `worthBonus` for its pools and statuses, and in
+  continuous time what it is in the middle of (`heading`, `striking`), so a
+  position right after an order is judged by what the order will do.
+- `unitPoint(state, unit)`: where it stands, on a plane where neighbouring cells
+  are 1 apart (hex and regions boards).
 - `nativelySimultaneous(state)`: true in continuous time, so the engine never
   wraps Arena's own clock in we-go planning.
+
+Specs may name functions in [hooks.js](hooks.js) with `{ fn }`; none of the
+reference scenarios needs one.

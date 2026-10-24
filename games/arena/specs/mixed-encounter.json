@@ -1,0 +1,20 @@
+{
+  "id": "mixed-encounter",
+  "name": "Mixed: ancients against moderns (hex)",
+  "description": "A hex board from the library (Memoir '44's Encounter): legions, a catapult, a knight, a rook, an archer and a heavy trooper against riflemen, a machine gun, a Sherman, a marauder, a chess knight and a black mage.",
+  "map": "memoir44/encounter",
+  "units": [
+    { "game": "civ1", "type": "legion", "seat": 0, "at": [2, 0] },
+    { "game": "civ1", "type": "catapult", "seat": 0, "at": [6, 1] },
+    { "game": "aow", "type": "knight", "seat": 0, "at": [4, 1] },
+    { "game": "chess", "type": "rook", "seat": 0, "at": [8, 1] },
+    { "game": "ffta", "type": "archer", "seat": 0, "at": [6, 0] },
+    { "game": "xcom", "type": "heavy", "seat": 0, "at": [10, 0] },
+    { "game": "mudandblood", "type": "rifleman", "seat": 1, "at": [10, 8] },
+    { "game": "mudandblood", "type": "mg42", "seat": 1, "at": [6, 8] },
+    { "game": "combatmission", "type": "sherman", "seat": 1, "at": [8, 7] },
+    { "game": "sc2", "type": "marauder", "seat": 1, "at": [4, 7] },
+    { "game": "chess", "type": "knight", "seat": 1, "at": [6, 7] },
+    { "game": "ffta", "type": "blackMage", "seat": 1, "at": [2, 8] }
+  ]
+}

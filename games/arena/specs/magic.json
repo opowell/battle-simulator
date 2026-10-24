@@ -5,13 +5,13 @@
   "attributes": {
     "mp": { "kind": "pool", "name": "MP", "max": 20, "regen": 4 },
     "leader": { "kind": "tag" },
-    "haste": { "kind": "status", "name": "Haste", "turns": 3, "stack": "refresh", "mods": { "speed": "*3/2", "rate": "+1" }, "value": 0.25 },
-    "slow": { "kind": "status", "name": "Slow", "turns": 2, "mods": { "speed": "*1/2" }, "harmful": true, "value": -0.15 },
+    "haste": { "kind": "status", "name": "Haste", "turns": 3, "stack": "refresh", "mods": { "speed": "*3/2", "rate": "+1" } },
+    "slow": { "kind": "status", "name": "Slow", "turns": 2, "mods": { "speed": "*1/2" }, "harmful": true },
     "poison": { "kind": "status", "name": "Poison", "turns": 3, "stack": "stack", "max": 3, "tick": [{ "damage": { "amount": 2 } }], "harmful": true },
     "stop": { "kind": "status", "name": "Stop", "turns": 1, "blocks": ["move", "act"], "harmful": true },
     "regen": { "kind": "status", "name": "Regen", "turns": 3, "tick": [{ "heal": { "amount": 2 } }] },
-    "shell": { "kind": "status", "name": "Shell", "turns": 2, "mods": { "defense": "+3" }, "value": 0.15 },
-    "blind": { "kind": "status", "name": "Blind", "turns": 2, "mods": { "vision": "=1", "range": "=1" }, "harmful": true, "value": -0.2 }
+    "shell": { "kind": "status", "name": "Shell", "turns": 2, "mods": { "defense": "+3" } },
+    "blind": { "kind": "status", "name": "Blind", "turns": 2, "mods": { "vision": "=1", "range": "=1" }, "harmful": true }
   },
   "abilities": {
     "fire": { "name": "Fireball", "cost": { "mp": 8 }, "range": 4, "targets": "ground", "area": { "radius": 1 }, "affects": "enemy",

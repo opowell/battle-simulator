@@ -1,12 +1,16 @@
 {
   "game": "cs",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "32c34c0446bd212a7c6490841b4026670d1cccdb",
+    "date": "2026-10-24T13:17:27+02:00"
   },
   "units": 7,
   "art": 7,
+  "terrain": 4,
+  "maps": 8,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "the bomb, rounds, money and buying: the core has no objectives of cs's kind (bombsites are kept as map features)",
+    "ovals, drawn as 16-sided polygons",
+    "decorative shapes (wall tops, floor slabs) that carry no rules"
   ]
 }

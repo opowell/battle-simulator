@@ -33,11 +33,13 @@
 // strikes; an attacker with none counts its geometric reach at NOT_READY. So
 // reloading, or turning to face the enemy, is worth what it makes possible.
 //
-// Facing (when the game says how its units face): a blow from the flank or rear
-// meets the defender's arc modifier, and an attacker whose vision cone does not
-// hold its target must turn first, so its threat counts at NOT_READY. What a unit
-// carries beyond its numbers (pools, statuses) scales its worth by the game's
-// `worthBonus`.
+// Facing (when the game says how its units face): an attacker whose vision cone
+// does not hold its target must turn first, so its threat counts at NOT_READY.
+// Defense arcs are left out on purpose: counting a blow from behind at the rear
+// modifier rates flanking positions as if the defender would not turn before it
+// is struck, and measured clearly worse (hex scenario, 24 games against the AI
+// without it: 6–12 with arcs, 13–4 without). What a unit carries beyond its
+// numbers (pools, statuses) scales its worth by the game's `worthBonus`.
 //
 // The weights depend on the play mode. Sequential: after my turn the enemy moves
 // first, so its pressure is nearly certain and mine is only a prospect (they can
@@ -79,19 +81,11 @@ export const defaultDamageScale = (sc) => (0.7 * sc.hp) / sc.attack;
 
 export function strikeDamage(a, d, k) {
   if (!(a.attack > 0)) return 0;
-  const arc = a.point && d.point ? arcModifier(d, a.point) : 0;
-  return (k * a.attack * a.attack) / (a.attack + Math.max(d.defense, 0) * (1 + arc / 100));
+  return (k * a.attack * a.attack) / (a.attack + Math.max(d.defense, 0));
 }
 
 const bearing = (p, q) => ((Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI + 360) % 360;
 const angleBetween = (a, b) => { const x = Math.abs(a - b) % 360; return x > 180 ? 360 - x : x; };
-
-// The defense modifier (percent) of the side of `d` a blow from point `from` lands on.
-function arcModifier(d, from) {
-  if (d.facing == null || !d.arcs || (from.x === d.point.x && from.y === d.point.y)) return 0;
-  const off = angleBetween(d.facing, bearing(d.point, from));
-  return (off <= 60 + 1e-6 ? d.arcs.front : off >= 120 - 1e-6 ? d.arcs.rear : d.arcs.flank) ?? 0;
-}
 
 // Can `a` strike at `d` without turning first?
 const inCone = (a, d) => a.facing == null || a.fov >= 360 || !a.point || !d.point

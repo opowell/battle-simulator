@@ -1,0 +1,32 @@
+{
+  "floor": {
+    "name": "Floor",
+    "color": "#c8c0a8",
+    "description": "Open ground.",
+    "cost": 1,
+    "cover": 0
+  },
+  "bombsite": {
+    "name": "Bombsite",
+    "color": "#d9b25f",
+    "description": "Where the bomb is planted, in cs.",
+    "cost": 1,
+    "cover": 0
+  },
+  "wall": {
+    "name": "Wall",
+    "color": "#2a2d33",
+    "description": "Impassable; blocks sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "low-wall": {
+    "name": "Low wall",
+    "color": "#8a7a54",
+    "description": "Waist-high cover or a window: blocks movement, not sight.",
+    "cost": 1,
+    "passable": false,
+    "cover": 0
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "mixed-dust2",
+  "name": "Mixed: marines and demons on de_dust2",
+  "description": "A shape map from the library (cs's de_dust2) and units of four games: StarCraft marines, a Doom marine, an X-COM sniper and a Surviv shotgunner against zerglings, hydralisks, an imp and a demon.",
+  "map": "cs/de_dust2",
+  "units": [
+    { "game": "sc1", "type": "marine", "seat": 0, "at": [5, 31] },
+    { "game": "sc1", "type": "marine", "seat": 0, "at": [9, 31] },
+    { "game": "doom", "type": "doomguy", "seat": 0, "at": [13, 31] },
+    { "game": "xcom", "type": "sniper", "seat": 0, "at": [7, 35] },
+    { "game": "surviv", "type": "shotgun", "seat": 0, "at": [11, 35] },
+    { "game": "sc1", "type": "zergling", "seat": 1, "at": [61, 31] },
+    { "game": "sc1", "type": "zergling", "seat": 1, "at": [57, 31] },
+    { "game": "sc1", "type": "hydralisk", "seat": 1, "at": [53, 31] },
+    { "game": "doom", "type": "imp", "seat": 1, "at": [59, 35] },
+    { "game": "doom", "type": "demon", "seat": 1, "at": [55, 35] }
+  ]
+}

@@ -56,6 +56,7 @@ import { makeUnit, dress, freshPerTurn, addStatus, adjustPool, regenOf, withUnit
 import { abilityActions, abilityLegal, abilityOf, damageOf, dealDamage, applyOtherEffects, affected, canUseNow, canTarget, canTargetPoint, abilitiesOf } from './abilities.js';
 import { judgeNow, judgeWindow, resultOf, keepsVerdict } from './victory.js';
 import { callHook } from './world.js';
+import { mintForeign } from '../engine/foreignUnits.js';
 
 /** Body radius in continuous space: two units stand at least 2R apart. */
 export const UNIT_R = 0.35;
@@ -313,15 +314,19 @@ function defaultUnits(state, playerIds, w, h, layout) {
   return units;
 }
 
-// A spec's own placements: [{ type, seat, at: [x, y] | regionId, facing }].
-function placedUnits(state, playerIds, list) {
+// A spec's own placements: [{ type, seat, at: [x, y] | regionId, facing }]. An
+// entry naming a `game` is a unit of that game, from the library, built by
+// `foreign` (see makeBattleGame).
+function placedUnits(state, playerIds, list, foreign) {
   const n = {};
   const B = boardIn(state);
   return list.filter(e => playerIds[e.seat ?? 0] != null).map(e => {
     const pid = playerIds[e.seat ?? 0];
     n[pid] = (n[pid] ?? 0) + 1;
     const at = typeof e.at === 'string' ? B.anchorOf(e.at) : { x: e.at[0], y: e.at[1] };
-    const u = makeUnit(state, { id: e.id ?? `${pid}-${n[pid]}`, ownerId: pid, type: e.type, position: at, facing: e.facing ?? SEAT_FACING[(e.seat ?? 0) % 4] });
+    const id = e.id ?? `${pid}-${n[pid]}`;
+    const facing = e.facing ?? SEAT_FACING[(e.seat ?? 0) % 4];
+    const u = e.game ? foreign({ id, ownerId: pid, type: e.type, game: e.game, position: at, facing }) : makeUnit(state, { id, ownerId: pid, type: e.type, position: at, facing });
     return e.hp != null ? { ...u, hp: Math.min(u.maxHp, e.hp) } : u;
   });
 }
@@ -957,14 +962,17 @@ function toGrid(state) {
     showUnitsLost: true,
   };
   if (B.topology === 'hex' || B.topology === 'regions') return hexGrid(state, B, unitOut, ui, clock);
+  const terr = rulesOf(state).terrain;
+  // A shape board is drawn as its ground with the shapes over it, so every cell
+  // carries the ground's colour (the board draws one backdrop of it).
+  const ground = B.topology === 'shapes' ? terr[board.ground]?.color : null;
   const cells = [];
   for (let y = 0; y < board.height; y++) {
     for (let x = 0; x < board.width; x++) {
       const t = B.terrainAt(x, y);
-      cells.push({ x, y, color: t.color, terrain: { name: t.name, description: t.description } });
+      cells.push({ x, y, color: ground ?? t.color, terrain: { name: t.name, description: t.description } });
     }
   }
-  const terr = rulesOf(state).terrain;
   const grid = {
     width: board.width, height: board.height,
     boardType: 'grid',
@@ -1010,6 +1018,14 @@ function ghosts(state, pidIdx) {
   return out;
 }
 
+// A region's colour: its terrain's, a shade lighter or darker by its place in the
+// list, so neighbouring regions of one terrain still read as two.
+function tint(hex, i) {
+  const f = [0, 0.1, -0.08, 0.05, -0.12][i % 5];
+  const c = [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16));
+  return '#' + c.map(v => Math.round(f > 0 ? v + (255 - v) * f : v * (1 + f)).toString(16).padStart(2, '0')).join('');
+}
+
 // Hex and regions boards: a hex per cell in pixel space, units on their cells.
 const HEX = 26;
 function hexGrid(state, B, unitOut, ui, clock) {
@@ -1024,6 +1040,7 @@ function hexGrid(state, B, unitOut, ui, clock) {
   }
   const cells = [];
   const regions = B.topology === 'regions';
+  const regionIndex = new Map(Object.keys(B.regions ?? {}).map((id, i) => [id, i]));
   const coords = regions ? Object.values(B.regions).flatMap(r => r.cells) : B.cells().map(c => [c.x, c.y]);
   for (const [x, y] of coords) {
     const rid = regions ? B.cellRegion(x, y) : null;
@@ -1032,9 +1049,13 @@ function hexGrid(state, B, unitOut, ui, clock) {
     const top = here[0];
     const p = px(x, y);
     const elev = B.elevated ? B.elevAt({ x, y }) : 0;
+    const drawn = top ? unitOut(top) : null;
+    // A region's units stand on its anchor hex, and that is the hex a move into the
+    // region is clicked on (the board marks it as a legal destination).
     cells.push({
       x: p.x, y: p.y, col: x, row: y,
-      color: t?.color ?? '#888',
+      color: regions ? tint(t?.color ?? '#888888', regionIndex.get(rid)) : t?.color ?? '#888',
+      ...(drawn?.facing != null ? { facing: drawn.facing, ...(drawn.fov ? { fov: drawn.fov } : {}) } : {}),
       owner: top ? pidIdx[top.ownerId] ?? 0 : 0,
       glyph: top ? glyphOf(state, top) + (here.length > 1 ? `${here.length}` : '') : '',
       ...(top ? { unitId: top.id, unitName: here.map(u => unitOut(u).unitName).join(' · '), hp: here.reduce((a, u) => a + u.hp, 0), maxHp: here.reduce((a, u) => a + u.maxHp, 0) } : {}),
@@ -1050,22 +1071,24 @@ function hexGrid(state, B, unitOut, ui, clock) {
     cells,
     units: live(state).map(unitOut),
     ...(clock != null ? { clock } : {}),
-    ui: { ...ui, showFacing: ui.showFacing && !regions },
+    // Hexes draw their own outlines: no square grid or pixel ruler over them.
+    ui: { ...ui, showFacing: ui.showFacing && !regions, hideGridLines: true, showRuler: false },
   };
   if (regions) {
     // One outline per region where it borders another, as territory maps draw.
     const borders = [];
-    for (const c of cells) {
+    for (const [i, c] of cells.entries()) {
+      const [cx, cy] = coords[i];
       for (const [dx, dy, a0, a1] of [[1, 0, -30, 30], [0, 1, 30, 90], [-1, 1, 90, 150]]) {
-        const nx = dx === 0 || dx === -1 ? (c.row & 1 ? c.col + dx + 1 : c.col + dx) : c.col + dx;
-        const ny = c.row + dy;
-        const o = dy === 0 ? B.cellRegion(c.col + 1, c.row) : B.cellRegion(nx, ny);
+        const nx = dx === 0 || dx === -1 ? (cy & 1 ? cx + dx + 1 : cx + dx) : cx + dx;
+        const ny = cy + dy;
+        const o = dy === 0 ? B.cellRegion(cx + 1, cy) : B.cellRegion(nx, ny);
         if (o === c.region) continue;
         const k = (deg) => [c.x + HEX * Math.cos((deg * Math.PI) / 180), c.y + HEX * Math.sin((deg * Math.PI) / 180)];
         borders.push({ p1: k(a0), p2: k(a1), aId: c.region, bId: o, aOwner: 0, bOwner: 0 });
       }
     }
-    grid.borders = borders;
+    grid.territoryBorders = borders;
   }
   return grid;
 }
@@ -1098,13 +1121,41 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
   function sessionSpec(config) {
     const want = config.spec;
     if (want == null) return null;
-    if (typeof want === 'object') return resolveSpec(want, base);
+    if (typeof want === 'object') return resolveSpec(onMap(want), base);
     if (!resolved.has(want)) {
       const raw = specs[want] ?? findSpec?.(want);
       if (!raw) throw new Error(`${name}: no spec "${want}"`);
-      resolved.set(want, resolveSpec(raw, base));
+      resolved.set(want, resolveSpec(onMap(raw), base));
     }
     return resolved.get(want);
+  }
+
+  // A spec that names a library `map` plays on that map (its board, terrain and
+  // distances), with whatever else it says over it.
+  function onMap(raw) {
+    if (!raw.map) return raw;
+    const m = findSpec?.(`library:${raw.map}`);
+    if (!m) throw new Error(`${name}: no library map "${raw.map}"`);
+    return { ...m, ...raw, terrain: { ...m.terrain, ...(raw.terrain ?? {}) } };
+  }
+
+  // The host a library unit is converted into: this game, with distances in the
+  // map's own cells when the map comes from another game (spec.scale).
+  const hosts = new Map();
+  function hostFor(scale) {
+    if (!scale || !game.foreignUnits?.scale) return game;
+    const key = `${scale.range}/${scale.move}`;
+    if (!hosts.has(key)) hosts.set(key, { ...game, foreignUnits: { ...game.foreignUnits, scale: { ...game.foreignUnits.scale, range: scale.range, move: scale.move } } });
+    return hosts.get(key);
+  }
+
+  // One unit of another game for a spec's placements, built as foreignUnits.js
+  // builds one for a roster.
+  function foreignUnit(state, sp, { id, ownerId, type, game: from, position, facing }) {
+    const host = hostFor(sp.scale);
+    const u = mintForeign(host, state, { ownerId, type, game: from, position }, id,
+      (_spec, chassis) => ({ ...makeUnit(state, { id, ownerId, type: chassis, position, facing }), perTurn: null }));
+    return { ...u, position: { x: position.x, y: position.y } };
   }
 
   function createInitialState(players, config = {}) {
@@ -1141,7 +1192,7 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
     const layout = config.armies ?? sp.armies ?? BASE_SPEC.armies;
     state = {
       ...state,
-      units: config.units ?? (sp.units && !config.armies ? placedUnits(state, ids, sp.units) : defaultUnits(state, ids, board.width, board.height, layout)),
+      units: config.units ?? (sp.units && !config.armies ? placedUnits(state, ids, sp.units, (e) => foreignUnit(state, sp, e)) : defaultUnits(state, ids, board.width, board.height, layout)),
     };
     let settled = settle(state);
     if (keepsVerdict(settled)) settled = judgeNow(settled);
@@ -1240,15 +1291,19 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
 }
 
 // What a unit carries beyond the core numbers is worth to the generic AI, as a
-// share of its own worth: each pool by how full it is (a declared `value`, else
-// a little — what it can still buy), each status by its declared `value`, or
-// what its tick will do to the unit's hit points, or −0.3 if it stops the unit.
+// share of its own worth: each pool by how full it is — its declared `value`,
+// else, for one that absorbs damage, what it soaks as hit points would, else only
+// a tie-breaker (what a pool buys shows up when the search spends it, and valuing
+// it more makes the AI hoard it) — and each status by its declared `value`, or
+// what its tick will do to the unit's hit points over the windows it has left,
+// or −0.1 a window it stops the unit for. A status's modifiers need no value of
+// their own: the stats the AI reads already carry them.
 export function unitWorthBonus(state, u) {
   const attrs = rulesOf(state).attrs;
   let b = 0;
   for (const [k, p] of Object.entries(u.pools ?? {})) {
     if (!(p.max > 0)) continue;
-    const w = attrs[k]?.value ?? (attrs[k]?.absorbs ? 0.5 * (p.max / Math.max(1, u.maxHp)) : 0.15);
+    const w = attrs[k]?.value ?? (attrs[k]?.absorbs ? 0.5 * (p.max / Math.max(1, u.maxHp)) : 0.02);
     b += w * (p.value / p.max);
   }
   for (const s of statusesOf(u)) {
@@ -1256,7 +1311,7 @@ export function unitWorthBonus(state, u) {
     if (d.value != null) { b += d.value * (s.stacks ?? 1); continue; }
     const tick = (d.tick ?? []).reduce((a, e) => a + (e.damage ? -(e.damage.amount ?? 1) : e.heal ? e.heal.amount ?? 1 : 0), 0);
     if (tick) b += (tick * Math.min(s.left, 3) * (s.stacks ?? 1)) / Math.max(1, u.maxHp);
-    if (d.blocks?.length) b -= 0.3 * d.blocks.length;
+    if (d.blocks?.length) b -= 0.1 * Math.min(s.left, 3);
   }
   return b;
 }

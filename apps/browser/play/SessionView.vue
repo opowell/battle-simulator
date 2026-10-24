@@ -1120,6 +1120,9 @@ function buildField(g, s) {
       // territory maps — see src/kit/hexagon.js and KDiceGame.toGrid).
       owner: c.owner ?? null,
       territoryId: c.territoryId ?? null,
+      // A hex board's cell coordinates, when its toGrid gives them (the cell's x/y are
+      // pixels there): what a click on the hex resolves to (Battlefield's nearestHexCell).
+      col: c.col ?? null, row: c.row ?? null,
     }));
 
   return {

@@ -2,8 +2,10 @@
 // every unit in it can be fielded by the core's own ruleset: Arena takes it in,
 // draws it as itself, and plays a few turns with it.
 //
-// Terrain types and maps join the packs with the core's board format (phase 2 of
-// plans/generic-core-and-game-repos.md); until then pack.json says they are left out.
+// A pack may also carry its game's terrain types and maps in the core's board
+// format (scripts/export/<game>.mjs): every map must load as a battle, field its
+// own game's units, and play in every mode; every unit must be able to stand on
+// every kind of map; and the mixed scenarios put several games' units on them.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -13,6 +15,9 @@ import { readLibrary, loadLibrary } from './server/library.js';
 import { STATS, foreignCatalog, dressGrid, originOf } from './engine/foreignUnits.js';
 import { setupPreview, rosterFromState, cellMapper } from './engine/startingSetup.js';
 import { GameEngine } from './engine/GameEngine.js';
+import { RandomAgent } from './agents/RandomAgent.js';
+import { librarySpec } from './battle/library.js';
+import { resolveSpec, checkSpec } from './battle/spec.js';
 import { ArenaGame } from '../games/arena/index.js';
 
 const LIBRARY = fileURLToPath(new URL('../library', import.meta.url));
@@ -105,3 +110,64 @@ for (const [index, [name, { units: pack }]] of Object.entries(packs).entries()) 
     }
   });
 }
+
+// ── Terrain and maps ────────────────────────────────────────────────────────
+
+const maps = Object.entries(packs).flatMap(([name, p]) => Object.keys(p.maps).map(id => [name, id, p]));
+
+test('the library has a square, a hex, a regions and a shape map', () => {
+  const kinds = new Set(maps.map(([, id, p]) => p.maps[id].board.topology));
+  for (const k of ['square', 'hex', 'regions', 'shapes']) assert.ok(kinds.has(k), `no ${k} map`);
+});
+
+for (const [name, id, p] of maps) {
+  test(`${name}/${id}: a whole map — its terrain known, its units its game's, and it plays in every mode`, async () => {
+    const m = p.maps[id];
+    assert.ok(p.terrain, `${name}: maps but no terrain.json`);
+    assert.equal(p.pack.maps, Object.keys(p.maps).length);
+    const spec = resolveSpec(librarySpec(`${name}/${id}`));
+    assert.deepEqual(checkSpec(spec), [], `${name}/${id}`);
+    for (const u of m.units ?? []) assert.ok(p.units.units[u.type], `${name}/${id}: no ${u.type} in ${name}'s pack`);
+    for (const space of ['discrete', 'continuous']) for (const time of ['discrete', 'continuous']) {
+      const engine = new GameEngine(ArenaGame, players.map(pl => ({ ...pl, agent: RandomAgent })), { spec: `library:${name}/${id}`, space, time, maxTurns: 3, stepLimit: 60 });
+      await engine.run();
+      assert.ok(engine.state.units.every(u => !u.alive || originOf(u)?.game === name), 'its own game\'s units');
+      for (const pl of players) ArenaGame.toGrid(ArenaGame.getVisibleState(engine.state, pl.id));
+    }
+  });
+}
+
+test('every unit of every game can stand and fight on each kind of map', async () => {
+  const onMap = { square: 'civ1/two-rivers', hex: 'memoir44/encounter', regions: 'risk/world', shapes: 'cs/de_dust2' };
+  for (const [kind, key] of Object.entries(onMap)) {
+    const lib = librarySpec(key);
+    const starts = lib.units;
+    for (const [name, { units: pack }] of Object.entries(packs)) {
+      // The map's own opening, with every unit of `name` standing in for the first side's.
+      const own = starts.filter(u => u.seat === 0);
+      const units = [
+        ...Object.keys(pack.units).map((type, i) => ({ game: name, type, seat: 0, at: own[i % own.length].at })),
+        ...starts.filter(u => u.seat === 1),
+      ];
+      let s;
+      try { s = ArenaGame.createInitialState(players, { spec: { map: key, units, board: { ...lib.board, stacking: 'stack' } } }); } catch (e) { assert.fail(`${name} on ${kind}: ${e.message}`); }
+      assert.equal(s.units.filter(u => originOf(u)?.game === name && u.ownerId === 'p1').length, Object.keys(pack.units).length);
+      assert.ok(Array.isArray(ArenaGame.getLegalActions(s, 'p1')));
+    }
+  }
+});
+
+test('the mixed scenarios are offered with the library, and play', async () => {
+  const mixed = ArenaGame.scenarios.filter(s => s.group === 'Mixed');
+  assert.equal(mixed.length, 4);
+  const kinds = new Set();
+  for (const sc of mixed) {
+    const engine = new GameEngine(ArenaGame, players.map(pl => ({ ...pl, agent: RandomAgent })), { ...sc.config, maxTurns: 4 });
+    await engine.run();
+    kinds.add(engine.state.board.topology ?? 'square');
+    const games = new Set(engine.state.units.map(u => originOf(u)?.game));
+    assert.ok(games.size >= 2, `${sc.id}: units of one game only`);
+  }
+  assert.deepEqual([...kinds].sort(), ['hex', 'regions', 'shapes', 'square']);
+  assert.ok(ArenaGame.scenarios.filter(s => s.id.startsWith('library:')).length === maps.length, 'every library map is a scenario');
+});

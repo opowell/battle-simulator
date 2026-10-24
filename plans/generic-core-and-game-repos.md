@@ -539,25 +539,83 @@ eight modes:
 
 1. The spec format and a loader. Arena's presets and terrain become its first
    spec.
+
+   *Done 2026-10-24:* `src/battle/` (README there). `makeBattleGame({ name, spec,
+   specs, scenarios, hooks })`; `config.spec` names a spec or is one; the resolved
+   spec rides in `gameSpecific.rules`, absent for a game's default, so Arena's own
+   scenarios replay byte for byte against their old goldens. `checkSpec` refuses a
+   broken spec at session start. Arena (`games/arena`) is now a BattleGame and its
+   scenarios; its rules left `games/arena` for `src/battle`.
 2. Orientation: `facing`, `fov`, defense arcs, turn cost. This includes the
    continuous-time `face` task and vision cones in fog.
+
+   *Done 2026-10-24:* facing in degrees (screen y down); a move faces the way it
+   went, a strike its target; a `face` action once a turn in discrete time
+   (`turnCost` a facing step), a task in continuous time; cones gate sight beyond
+   arm's length and every strike; arcs modify defense in the damage formula.
 3. Declared attributes: `number`, `pool` (with `absorbs`), `tag`, `status`.
+
+   *Done 2026-10-24:* `src/battle/units.js`. Statuses have exact modifiers
+   (floored to whole stats), ticks, blocks, granted tags and four stacking rules;
+   pools regenerate at each window's end (the clock stops at window boundaries
+   only when a ruleset has anything periodic).
 4. Abilities and the effect vocabulary, exact formulas, the `fn` escape hatch.
+
+   *Done 2026-10-24:* `src/battle/abilities.js`, `src/battle/exact.js` (BigInt
+   rationals; a written 0.1 is a tenth). A unit type reshapes its attack with
+   `strike` (not `attack`, which is the stat). No hit chances: battles stay
+   deterministic.
 5. Board topologies: hex, regions, elevation, per-class terrain costs, stacking
    modes.
+
+   *Done 2026-10-24:* `src/battle/board.js`: square (8 or 4 neighbours, `wrap`),
+   hex (odd-r offset, as memoir44), regions (units stand on a region's anchor
+   cell, so a position is still `{x, y}`), and `shapes` (convex shapes, walls,
+   windows: cs's maps), which plays continuous or discrete. Hex and regions are
+   discrete space only. Sight over elevation is geometric (the line's height
+   against the ground's). Movement classes are the library's `land`/`sea`/`air`.
 6. Victory objectives.
+
+   *Done 2026-10-24:* `src/battle/victory.js`: eliminate, royal, hold, reach,
+   survive, points, `fn`, judged on the full state into `gameSpecific`.
 7. The generic AI: abilities through its existing simulation, pool and status
    valuation, facing. Measure as the README does, in seat-swapped pairs.
+
+   *Done 2026-10-24:* see `src/agents/generic/README.md` (Measured). It reads
+   facing, cones and a game's `worthBonus`; keeps abilities in its deeper search;
+   and widens its beam while time is left. Two traps found by measuring: a
+   status's declared value on top of its modifiers counted it twice, and a
+   defense-arc term in the evaluation (rating flanks as if the defender won't
+   turn) lost the hex scenario 6–12. Both are out.
 8. Reference scenarios that use each feature, with no names or art from other
    games: a magic skirmish (mp, statuses, area spells), a sci-fi one (energy,
    shields, cloak and detection, air and ground), a hex one, a regions one, and
    a **close-quarters** one (vision cones, facing, an `ammo` pool with a
    reload). That last one inherits csmini's job as the generic AI's measured
    weak spot, and moves into the bench in place of cs.
+
+   *Done 2026-10-24:* `games/arena/specs/` (magic, scifi, hex, regions,
+   close-quarters), each tested in all sixteen space × time × play × fog
+   combinations its board allows (`games/arena/scenarios.test.js`) and given
+   golden replays. The bench plays them (`--game=close-quarters`), and cs left it.
 9. **Mixed** scenarios: units from several games on library maps (a square
    grid, a hex board, a regions board and a shape map at least), so the library
    is tested in play and not only by its schema test. The scenario picker
    offers every library map, and the units editor every library unit.
+
+   *Done 2026-10-24:* `scripts/export/<game>.mjs` maps a game's terrain and maps
+   into the core's format; `export-pack.mjs` writes `terrain.json` and `maps/`
+   where a mapping exists. Four so far, one per board kind: civ1 (square, its nine
+   fixed maps), memoir44 (hex), risk (regions) and cs (shapes, its eight maps);
+   every other pack's `pack.json` says it has none yet, which phase 3's re-export
+   fills in. Every library map is a scenario (`library:<game>/<map>`) with its
+   game's own units, in that game's distances (its pack's scale converts range
+   and move); four mixed scenarios put several games' units on one map of each
+   kind. `src/library.test.js` plays every map in every mode, stands every unit of
+   every pack on each kind of map, and plays the mixed scenarios. The Browser
+   draws hex and regions boards and moves on them by click (a generic fix: a hex
+   click now resolves to its cell, and a `{col, row}` target is read as well as
+   `{x, y}` — memoir44's form, though its play wasn't checked in the browser).
 
 ### Phase 3: extract the games, one by one
 

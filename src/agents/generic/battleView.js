@@ -30,7 +30,8 @@
 //
 // Beyond the core numbers, unitAttributes may say how a unit faces — `facing`
 // (degrees, 0 = +x, screen y down), its vision cone `fov` and its defense `arcs`
-// ({ front, flank, rear }, percent) — and what what it carries is worth:
+// ({ front, flank, rear }, percent; read, though the evaluation leaves them out —
+// see evaluate.js) — and what everything it carries is worth:
 // `worthBonus`, a share of its own worth (a full mana pool, a buff; negative for
 // a debuff), which the game works out from its declarations.
 // ---------------------------------------------------------------------------

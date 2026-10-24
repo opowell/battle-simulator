@@ -152,7 +152,7 @@ export function checkSpec(spec, hooks = {}) {
     if (v.fn != null) fnOk('victory', v);
     else if (!VICTORY.has(v.type)) errs.push(`victory: "${v.type}" is not one of ${[...VICTORY].join(', ')}`);
   }
-  for (const [i, u] of (spec.units ?? []).entries()) if (!types[u.type]) errs.push(`units[${i}]: no unit type "${u.type}"`);
+  for (const [i, u] of (spec.units ?? []).entries()) if (!u.game && !types[u.type]) errs.push(`units[${i}]: no unit type "${u.type}"`);
   for (const army of spec.armies ?? []) for (const t of army) if (!types[t]) errs.push(`armies: no unit type "${t}"`);
   return errs;
 

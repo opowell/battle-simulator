@@ -165,11 +165,11 @@
       "turn": 11,
       "result": null,
       "hashes": {
-        "initial": "42db008c5527d2df",
-        "state": "46f5269284d01364",
+        "initial": "4c88fc2fd96ee855",
+        "state": "1d20a47b9f21957b",
         "log": "60a3f3088014e0e7",
         "grid": "3161fb154846fa00",
-        "visible": "f8d3c6eaf0088fe4"
+        "visible": "eed4433bd583c9a0"
       }
     },
     {
@@ -234,7 +234,7 @@
         "initial": "09385e9d80d5af09",
         "state": "c266021d80d4671c",
         "log": "e03d94db7bd4f804",
-        "grid": "c4f983a6dc6c6d10",
+        "grid": "0a7c3095c345b4ec",
         "visible": "af58e943306fde9f"
       }
     },
@@ -271,7 +271,7 @@
         "initial": "4a1040b9d8b52f9b",
         "state": "f8f6a4738586bd90",
         "log": "a65187cbaeaafb1d",
-        "grid": "476eb84c4c971b46",
+        "grid": "bc34416a73a65f0b",
         "visible": "030d35a4f8076526"
       }
     },
@@ -304,7 +304,7 @@
         "initial": "62c5f6e4eba1b4b8",
         "state": "91222d733e0dc456",
         "log": "9c115a2082b3c5f6",
-        "grid": "1207ea7e26269b46",
+        "grid": "8018b371999af40a",
         "visible": "c7ae5d56fbf1a84b"
       }
     },

@@ -13,12 +13,14 @@
 //               every unit type in the common vocabulary, with how it looks for
 //               each seat — its picture copied into art/
 //   art/        those pictures, one copy each
+//   terrain.json, maps/<id>.json
+//               its terrain types and maps in the core's board format
+//               (src/battle/spec.js, board.js), each map with the units it opens
+//               with — written by the game's own mapping, scripts/export/<game>.mjs,
+//               where it has one yet
 //   pack.json   which commit of the game it came from, and what it leaves out
-//
-// Terrain types and maps are not exported yet: they need the core's board
-// format (phase 2), and pack.json says so.
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gameImageFiles } from '../src/server/gameImages.js';
@@ -118,18 +120,29 @@ async function main() {
     units,
   };
   writeFileSync(path.join(packDir, 'units.json'), JSON.stringify(pack, null, 2) + '\n');
+
+  // Its terrain and maps, through the game's mapping into the core's board format.
+  const mapping = path.join(ROOT, 'scripts', 'export', `${name}.mjs`);
+  let boards = null;
+  if (existsSync(mapping)) {
+    boards = await (await import(pathToFileURL(mapping).href)).default(dir);
+    writeFileSync(path.join(packDir, 'terrain.json'), JSON.stringify(boards.terrain, null, 2) + '\n');
+    mkdirSync(path.join(packDir, 'maps'), { recursive: true });
+    for (const [id, m] of Object.entries(boards.maps)) writeFileSync(path.join(packDir, 'maps', `${id}.json`), JSON.stringify(m) + '\n');
+  }
   writeFileSync(path.join(packDir, 'pack.json'), JSON.stringify({
     game: name,
     from: provenance(dir),
     units: Object.keys(units).length,
     art: [...copied.values()].filter(Boolean).length,
+    ...(boards ? { terrain: Object.keys(boards.terrain).length, maps: Object.keys(boards.maps).length } : {}),
     // What the core can't carry of this game, and what is not exported yet.
     omitted: [
       ...(missing.length ? [`pictures not found: ${missing.join(', ')}`] : []),
-      'terrain types and maps: not exported until the core has its board format (phase 2)',
+      ...(boards ? boards.omitted ?? [] : ['terrain types and maps: no mapping into the core\'s board format yet (scripts/export/<game>.mjs)']),
     ],
   }, null, 2) + '\n');
-  console.log(`${name}: ${Object.keys(units).length} units, ${[...copied.values()].filter(Boolean).length} pictures → ${path.relative(process.cwd(), packDir)}`);
+  console.log(`${name}: ${Object.keys(units).length} units, ${[...copied.values()].filter(Boolean).length} pictures${boards ? `, ${Object.keys(boards.terrain).length} terrain types, ${Object.keys(boards.maps).length} maps` : ''} → ${path.relative(process.cwd(), packDir)}`);
   if (missing.length) console.log(`  not found: ${missing.join(', ')}`);
 }
 

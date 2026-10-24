@@ -1,0 +1,197 @@
+{
+  "grass": {
+    "name": "Open ground",
+    "color": "#8fae5d",
+    "description": "",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "forest": {
+    "name": "Forest",
+    "color": "#2f6b34",
+    "description": "",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50,
+    "blocksSight": true
+  },
+  "hedgerow": {
+    "name": "Hedgerow",
+    "color": "#4f7a3a",
+    "description": "",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50,
+    "blocksSight": true
+  },
+  "town": {
+    "name": "Town",
+    "color": "#a8a29a",
+    "description": "",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50,
+    "blocksSight": true
+  },
+  "hill": {
+    "name": "Hill",
+    "color": "#b08d57",
+    "description": "",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50,
+    "blocksSight": true,
+    "elevation": 1
+  },
+  "sandbags": {
+    "name": "Sandbags",
+    "color": "#c9b979",
+    "description": "",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50,
+    "blocksSight": false
+  },
+  "bunker": {
+    "name": "Bunker",
+    "color": "#7a7268",
+    "description": "",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50,
+    "blocksSight": false
+  },
+  "river": {
+    "name": "River",
+    "color": "#3d78c4",
+    "description": "",
+    "cost": {
+      "land": null,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": false,
+      "sea": true,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "bridge": {
+    "name": "Bridge",
+    "color": "#9c6b3f",
+    "description": "",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "beach": {
+    "name": "Beach",
+    "color": "#e2d4a0",
+    "description": "",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "ocean": {
+    "name": "Ocean",
+    "color": "#245b9c",
+    "description": "",
+    "cost": {
+      "land": null,
+      "sea": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": false,
+      "sea": true,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "open": {
+    "name": "Open ground",
+    "color": "#8fae5d",
+    "description": "",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  }
+}

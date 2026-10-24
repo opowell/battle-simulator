@@ -1635,9 +1635,12 @@ const displayLog = computed(() => {
 // its entries align 1:1 with reveal plies — clicking one seeks to that ply (and flips fog).
 const logForDisplay = computed(() => revealAll.value ? props.revealLog : displayLog.value);
 
+// A position given as {x, y}, or as {col, row} (a hex board's offset coordinates).
+const gridPair = (p) => (p?.x != null ? [p.x, p.y] : p?.col != null ? [p.col, p.row] : null);
+
 function actionGridCoord(action, field) {
-  if (field === 'to')   return action.gridTo   ?? (action.to?.x   != null ? [action.to.x,   action.to.y]   : null);
-  if (field === 'from') return action.gridFrom ?? (action.from?.x != null ? [action.from.x, action.from.y] : null);
+  if (field === 'to')   return action.gridTo   ?? gridPair(action.to);
+  if (field === 'from') return action.gridFrom ?? gridPair(action.from);
   return null;
 }
 
@@ -1799,6 +1802,23 @@ function nearestTerritoryUnitId(x, y) {
   const reach = displayField.value?.hexSize;
   if (reach != null && bestD > reach ** 2) return null;
   return best?.territoryId ?? null;
+}
+
+// A hex board reports a click as a world point (SchematicLayer has no integer col/row
+// there). The hex it falls in is the one whose centre is nearest — within a hex's
+// reach, or the click is off the board — and its own col/row, when the game's toGrid
+// gives its cells one, is what a move's grid coordinates are matched against.
+function nearestHexCell(x, y) {
+  const tiles = displayField.value?.tiles ?? [];
+  let best = null, bestD = Infinity;
+  for (const t of tiles) {
+    if (t.col == null) continue;
+    const d = (t.x - x) ** 2 + (t.y - y) ** 2;
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  const reach = displayField.value?.hexSize;
+  if (!best || (reach != null && bestD > reach ** 2)) return null;
+  return best;
 }
 
 // Some games offer the same pair action at several strengths, differing in one numeric
@@ -2005,6 +2025,10 @@ function handleTokenSelect(id) {
 function handleSqClick(col, row, x, y, mods) {
   if (placingUnit.value && gamePanels.value?.place(col, row)) return;
   if (props.field.ui?.territoryClick) { handleTerritoryClick(x, y, mods ?? {}); return; }
+  if (col == null && props.field.grid === 'hexagon' && x != null) {
+    const hex = nearestHexCell(x, y);
+    if (hex) { col = hex.col; row = hex.row; }
+  }
   if (inspectTerrain.value) {
     // Armed via the "Inspect terrain…" toggle: clicks look up terrain info instead of
     // clearing the selection like a normal click would. Stays armed across clicks so

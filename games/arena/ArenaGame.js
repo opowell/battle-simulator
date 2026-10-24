@@ -20,8 +20,8 @@ import { makeBattleGame, MAX_WAIT, UNIT_R, TURN_DURATION, ATTACK_TIME, MIN_WAIT 
 import { BASE_UNIT_TYPES, STAT_KEYS } from '#core/battle/spec.js';
 import { strikeDamage as damage, seenBy as seen, gapBetween as between, pointOf as point } from '#core/battle/world.js';
 import { whole } from '#core/engine/foreignUnits.js';
-import { libraryScenarios, librarySpec } from '#core/battle/library.js';
-import { SPECS, SPEC_SCENARIOS } from './specs/index.js';
+import { libraryScenarios, librarySpec, libraryMaps } from '#core/battle/library.js';
+import { SPECS, SPEC_SCENARIOS, MIXED_SPECS, MIXED_SCENARIOS } from './specs/index.js';
 import * as hooks from './hooks.js';
 
 export const UNIT_TYPES = BASE_UNIT_TYPES;
@@ -38,9 +38,10 @@ const freshBudget = (u, stats) => (u.perTurn ? { ...u.perTurn, moveLeft: stats.s
 
 export const ArenaGame = makeBattleGame({
   name: 'Arena',
-  specs: SPECS,
+  specs: { ...SPECS, ...MIXED_SPECS },
   hooks,
-  scenarios: () => [...BASE_SCENARIOS, ...SPEC_SCENARIOS, ...libraryScenarios()],
+  // The library's maps, and the mixed scenarios on them, once the library is loaded.
+  scenarios: () => [...BASE_SCENARIOS, ...SPEC_SCENARIOS, ...(libraryMaps().length ? MIXED_SCENARIOS : []), ...libraryScenarios()],
   findSpec: librarySpec,
   extend: {
     // Units from every game in the library (src/engine/foreignUnits.js): Arena, the

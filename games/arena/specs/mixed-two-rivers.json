@@ -1,0 +1,18 @@
+{
+  "id": "mixed-two-rivers",
+  "name": "Mixed: siege tanks at the fords (square)",
+  "description": "A square map from the library (civ1's Two Rivers): siege tanks, goliaths, a vulture and a battlecruiser against a chess army.",
+  "map": "civ1/two-rivers",
+  "units": [
+    { "game": "sc1", "type": "siege-tank", "seat": 0, "at": [3, 4] },
+    { "game": "sc1", "type": "goliath", "seat": 0, "at": [4, 2] },
+    { "game": "sc1", "type": "goliath", "seat": 0, "at": [4, 8] },
+    { "game": "sc1", "type": "vulture", "seat": 0, "at": [5, 5] },
+    { "game": "sc1", "type": "battlecruiser", "seat": 0, "at": [3, 6] },
+    { "game": "chess", "type": "queen", "seat": 1, "at": [11, 3] },
+    { "game": "chess", "type": "rook", "seat": 1, "at": [11, 7] },
+    { "game": "chess", "type": "bishop", "seat": 1, "at": [12, 4] },
+    { "game": "chess", "type": "knight", "seat": 1, "at": [13, 5] },
+    { "game": "chess", "type": "king", "seat": 1, "at": [13, 6] }
+  ]
+}
