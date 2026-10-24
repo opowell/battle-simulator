@@ -1,15 +1,17 @@
 {
   "game": "risk",
   "from": {
-    "commit": "32c34c0446bd212a7c6490841b4026670d1cccdb",
-    "date": "2026-10-24T13:17:27+02:00"
+    "commit": "b24e0ae32a344cf7121fad7d13d300469b317190",
+    "date": "2026-10-24T21:46:25+02:00"
   },
   "units": 3,
   "art": 0,
-  "terrain": 1,
+  "terrain": 6,
   "maps": 1,
   "omitted": [
-    "armies, reinforcements and cards: the core fields units, not counts dealt each turn",
-    "continent bonuses"
+    "reinforcements and cards: the core has no armies dealt each turn",
+    "continent bonuses (listed as features, not played)",
+    "the dice: an army strikes the core's deterministic blow, once per member",
+    "the full table of six: the map is dealt for two"
   ]
 }

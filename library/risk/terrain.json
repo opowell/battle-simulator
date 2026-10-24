@@ -1,9 +1,44 @@
 {
-  "territory": {
-    "name": "Territory",
-    "color": "#c9b98f",
-    "description": "A Risk territory.",
+  "northAmerica": {
+    "name": "North America",
+    "color": "#685b27",
     "cost": 1,
-    "cover": 0
+    "cover": 0,
+    "description": "A territory of North America (holding all of it is worth 5 armies a turn in Risk)."
+  },
+  "southAmerica": {
+    "name": "South America",
+    "color": "#6d2c35",
+    "cost": 1,
+    "cover": 0,
+    "description": "A territory of South America (holding all of it is worth 2 armies a turn in Risk)."
+  },
+  "europe": {
+    "name": "Europe",
+    "color": "#2c4f6d",
+    "cost": 1,
+    "cover": 0,
+    "description": "A territory of Europe (holding all of it is worth 5 armies a turn in Risk)."
+  },
+  "africa": {
+    "name": "Africa",
+    "color": "#554230",
+    "cost": 1,
+    "cover": 0,
+    "description": "A territory of Africa (holding all of it is worth 3 armies a turn in Risk)."
+  },
+  "asia": {
+    "name": "Asia",
+    "color": "#2e563c",
+    "cost": 1,
+    "cover": 0,
+    "description": "A territory of Asia (holding all of it is worth 7 armies a turn in Risk)."
+  },
+  "australia": {
+    "name": "Australia",
+    "color": "#5d3767",
+    "cost": 1,
+    "cover": 0,
+    "description": "A territory of Australia (holding all of it is worth 2 armies a turn in Risk)."
   }
 }

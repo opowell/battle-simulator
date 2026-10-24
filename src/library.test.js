@@ -19,6 +19,7 @@ import { RandomAgent } from './agents/RandomAgent.js';
 import { librarySpec } from './battle/library.js';
 import { resolveSpec, checkSpec } from './battle/spec.js';
 import { ArenaGame } from '../games/arena/index.js';
+import { membersOf } from './battle/world.js';
 
 const LIBRARY = fileURLToPath(new URL('../library', import.meta.url));
 const packs = readLibrary(LIBRARY);
@@ -136,6 +137,19 @@ for (const [name, id, p] of maps) {
     }
   });
 }
+
+test('a counted map fields each group as many strong as it says, a member its own game\'s unit', () => {
+  // Risk's armies: one group of infantry a territory, a member an army — not a
+  // member the size of whatever chassis the infantry plays as.
+  const lib = librarySpec('risk/world');
+  assert.equal(lib.board.stacking, 'count');
+  const s = ArenaGame.createInitialState(players, { spec: 'library:risk/world' });
+  assert.equal(s.units.length, lib.units.length);
+  for (const [seat, pl] of players.entries()) {
+    const armies = lib.units.filter(u => u.seat === seat).reduce((n, u) => n + u.count, 0);
+    assert.equal(s.units.filter(u => u.ownerId === pl.id).reduce((n, u) => n + membersOf(u), 0), armies, pl.id);
+  }
+});
 
 test('every unit of every game can stand and fight on each kind of map', async () => {
   const onMap = { square: 'civ1/two-rivers', hex: 'memoir44/encounter', regions: 'risk/world', shapes: 'cs/de_dust2' };
