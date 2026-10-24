@@ -29,3 +29,12 @@
   - territories should only change color after battle has taken place.
   - AI: too many suicidal attacks, learn to store up.
   - store dice when all territories full (up to 64? check original game).
+
+
+- SC1:
+  - workers: when selected, right-click on resource to start gathering there.
+  - scale of all units and buildings: match original game.
+  - with simultaneous move on, units should have orders queued, that only execute once turn is ended. units should not move immediately after being given an order.
+  - game settings: time discrete/continuous should be known.
+  - default time = continuous.
+  - default fog = on.
