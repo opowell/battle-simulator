@@ -103,3 +103,29 @@ Owns the StarCraft code sc2 shares since phase 1: `starcraftSprite.js` and
 `starcraftMap.js` had nothing generic in them, so they moved here from
 `games/`, and sc2 imports them from this folder (the plan's open decision 2
 recommends vendoring sc1 into sc2).
+
+## Moved (2026-10-24)
+
+To [opowell/battle-sc1](https://github.com/opowell/battle-sc1), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 55 tests, its 4 golden replays among them,
+plus the app's own 4; the slow rollout skipped) passes; `demo/sc1-demo.js --auto
+--greedy` plays to its step limit. In the Browser, driven headless, the default
+setup and `tvz`, `pvt` and `zvp` draw Aiur Crossing from its shapes with each
+race's main base, workers and fighters in their map art (`/images/sc1/…`
+served), the minimap and Orders panels docked, and a turn ends, the AI plays and
+turn 2 comes back with the base's training orders, with no console error or
+failed request. Its `ui` flags (`recolorTeamSprites`, `hideGridLines`,
+`showFacing`, `showRightSidebar`, `boxSelect`, `help`) are served as before; it
+has no UI plugins or sounds. Its pack was re-exported into `library/sc1/` first:
+its 26 units unchanged, plus its 6 terrain types priced for ground units and air
+(the core's land and air; minerals and geysers stop only ground units, rock and
+cliffs both) and Aiur Crossing under each of the three scenarios (48×40, the
+plateau a level of elevation reached by ramps, `climb: 0`), with the workers and
+fighters each race opens with, each on a square of its own, and the main bases
+as map features. Creep, buildings and the economy are listed as omitted.
+
+Pre-existing, not changed by the move: the map sprites keep their magenta
+team-colour ramp untinted, in the core as well. sc2 still imports
+`starcraftMap.js` and `starcraftSprite.js` from `games/sc1/` here, so the two
+leave the core together; sc2's repo vendors battle-sc1 for them.
