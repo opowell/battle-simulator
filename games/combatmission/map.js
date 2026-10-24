@@ -53,7 +53,7 @@ export function createMap() {
 // tile grid. Each shape's `kind` decides how it rasterizes onto the tile grid (for
 // movement/LOS) and how the client draws it as a layered SVG. See src/kit/terrainShapes.js.
 
-const CM_SHAPE_STYLES = {
+export const CM_SHAPE_STYLES = {
   building: { tile: TERRAIN.WALL,  render: { fill: '#5a5045', stroke: '#6b5f50' }, name: 'Building', description: 'Impassable, blocks line of sight.' },
   wall:     { tile: TERRAIN.WALL,  render: { fill: '#5a5045', stroke: '#6b5f50' }, name: 'Building', description: 'Impassable, blocks line of sight.' },
   woods:    { tile: TERRAIN.TREE,  render: { fill: '#2f5c2f', stroke: '#3f6f3f' }, name: 'Woods',    description: 'Passable but slow; blocks LOS, +20% cover.' },
