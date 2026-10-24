@@ -4,7 +4,6 @@ import { resolveBattle } from './combat.js';
 import { getAxisAlliesBelief } from './belief.js';
 import { sidesEval } from '#core/kit/evalHelpers.js';
 import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
-import { tableUnits } from '#core/engine/foreignUnits.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -560,13 +559,13 @@ function summarizeUnits(units) {
 // territory — normal in this game — can be spread out as a small cluster instead of
 // only one unit per cell.
 
-const MAP_WIDTH = 16;
-const MAP_HEIGHT = 8;
+export const MAP_WIDTH = 16;
+export const MAP_HEIGHT = 8;
 
 // { x, y, w, h } — top-left + size, roughly matching real-world relative position.
 // Not to scale; just enough for the territories to read left-to-right sensibly and
 // not overlap under normal garrison sizes.
-const TERRITORY_LAYOUT = {
+export const TERRITORY_LAYOUT = {
   'western-usa':       { x: 0.0,  y: 4.0, w: 1.3, h: 0.9 },
   'eastern-usa':        { x: 1.6,  y: 4.0, w: 1.3, h: 0.9 },
   'sz-north-atlantic':  { x: 3.2,  y: 3.9, w: 1.7, h: 1.1 },
@@ -611,7 +610,7 @@ function territoryFill(t, owner) {
 // Side-panel portraits (single sprite frame each, sourced from
 // axisandallies.fandom.com — classic plastic-piece style icons, neutral colour
 // since this game doesn't do team sprite recolouring).
-const UNIT_PORTRAITS = new Set([
+export const UNIT_PORTRAITS = new Set([
   'infantry', 'artillery', 'tank', 'fighter', 'bomber',
   'battleship', 'carrier', 'destroyer', 'submarine', 'transport',
 ]);
@@ -784,16 +783,5 @@ export const AxisAlliesGame = {
       : (mine.find(u => (UNITS[u.type]?.domain === 'sea' ? 'sea' : 'land') === domain) ?? mine[0])?.territory;
     return territory ? makeUnit(id, ownerId, type, territory) : null;
   },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
-  // conversion factor is the infantryman: 1 hp, attacking on a 1 and defending on
-  // a 2 (what a d6 must roll at or under to hit), 1 territory a turn. A battle is
-  // fought within one territory, so every unit's range is that territory.
-  foreignUnits: tableUnits({
-    table: UNITS,
-    scale: { hp: 1, attack: 1, defense: 2, range: 1, move: 1 },
-    read: (e) => ({ hp: e.hp, attack: e.attack, defense: e.defense, range: 1, move: e.moves, domain: e.domain }),
-    art: (type) => ({ imagePath: UNIT_PORTRAITS.has(type) ? `/images/axisallies/units/${type}` : null, glyph: type[0].toUpperCase(), name: type }),
-  }),
   sampleWorlds,
 };
