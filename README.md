@@ -7,7 +7,6 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | Key | Game | Docs |
 |---|---|---|
 | `chess` | Chess — plus fog of war and three (space x time) variants | [games/chess/](games/chess/README.md) |
-| `tactical` | Tactical grid combat | [games/tactical/](games/tactical/README.md) |
 | `civ1` | Civilization 1 | [games/civ1/](games/civ1/README.md) |
 | `civ2` | Civilization 2 | [games/civ2/](games/civ2/README.md) |
 | `risk` | Risk | [games/risk/](games/risk/README.md) |
@@ -16,7 +15,6 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | `xcom` | XCOM | [games/xcom/](games/xcom/README.md) |
 | `aow` | The Ancient Art of War | [games/aow/](games/aow/README.md) |
 | `cs` | Counter-Strike | [games/cs/](games/cs/README.md) |
-| `csmini` | Counter-Strike (simplified 2v2) | [games/csmini/](games/csmini/README.md) |
 | `ffta` | Final Fantasy Tactics Advance | [games/ffta/](games/ffta/README.md) |
 | `sc1` | StarCraft 1 | [games/sc1/](games/sc1/README.md) |
 | `sc2` | StarCraft 2 | [games/sc2/](games/sc2/README.md) |
@@ -59,7 +57,7 @@ node demo/chess-demo.js --auto
 node demo/xcom-demo.js --auto --greedy
 ```
 
-All demos are in `demo/`: `chess`, `tactical`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `csmini`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
+All demos are in `demo/`: `chess`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
 
 ### Start the HTTP API server
 

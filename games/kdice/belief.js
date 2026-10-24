@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Fog-of-war belief tracking for KDice — a stateful information-set tracker,
-// sibling of tactical/belief.js and mudandblood/belief.js, but adapted to a
+// sibling of xcom/belief.js and mudandblood/belief.js, but adapted to a
 // hex TERRITORY GRAPH rather than a grid of moving units.
 //
 // KDice has no units: a territory's owner and dice count ARE the hidden state,

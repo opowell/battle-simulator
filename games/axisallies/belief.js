@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Fog-of-war belief tracking for Axis & Allies — a stateful information-set
-// tracker, sibling of tactical/belief.js (grid) and sc1/belief.js (dynamic
+// tracker, sibling of xcom/belief.js (grid) and sc1/belief.js (dynamic
 // registration of units placed mid-game via production).
 //
 // Axis & Allies has no hidden ownership — territory control is always public,
@@ -12,7 +12,7 @@
 // Instead of a tile grid, the possible-location set for each unseen enemy
 // unit is a set of territory ids reached by BFS over the ADJACENCY graph,
 // hopping `unit.moves` edges per elapsed turn (always over- rather than
-// under-estimate reach, mirroring tactical/sc1).
+// under-estimate reach, mirroring xcom/sc1).
 //
 //   1. expand   — an unseen enemy may have moved a full turn (moves hops),
 //                 so grow its possible-territory set by one such move.

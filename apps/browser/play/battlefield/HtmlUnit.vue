@@ -52,7 +52,7 @@ function tweenStyle(t) {
 
 // What a token says: the game's own label if it gave one (a quantity, like Risk's army
 // count — a token reading "10" must not come out as "1"), else the glyph from a numbered
-// sprite composite (see e.g. CsMiniGame.js's spriteLayers — SchematicLayer's SVG renderer
+// sprite composite (a `spriteLayers` text layer — SchematicLayer's SVG renderer
 // draws that text layer directly), else the initial of the unit's name, so a piece reads
 // as "K" and not "King". Same order as SchematicLayer's tokenText.
 function unitLabel(unit) {

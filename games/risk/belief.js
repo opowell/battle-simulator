@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Fog-of-war belief tracking for Risk — a stateful information-set tracker,
-// sibling of chess/belief.js, cs/belief.js and tactical/belief.js, but for a
+// sibling of chess/belief.js, cs/belief.js and xcom/belief.js, but for a
 // different flavour of hidden information: a HAND OF CARDS rather than hidden
 // unit positions.
 //

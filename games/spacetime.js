@@ -8,7 +8,7 @@
 // module how movement behaves there.
 //
 // The single spec quantity is a unit's SPEED: the distance it covers in one full
-// turn window at 1× (csmini's "move range 3", civ1's unit `moves`). Everything
+// turn window at 1× (Arena's unit `speed`, civ1's unit `moves`). Everything
 // else in each quadrant is derived from that one number:
 //
 //                        DISCRETE TIME                  CONTINUOUS TIME

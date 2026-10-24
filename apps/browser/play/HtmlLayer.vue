@@ -84,7 +84,7 @@ const H = computed(() => props.field.world.h);
 // once panning brings the seam into view this renders extra copies of the columns nearest
 // it on both sides (wrapPad below) instead of leaving blank stage past column 0 / W-1.
 const wrap = computed(() => !!props.field.world.wrap);
-// Continuously-positioned units (field.positioned, e.g. csmini): NOT filed into a grid
+// Continuously-positioned units (field.positioned, e.g. Arena): NOT filed into a grid
 // cell — drawn as absolutely-placed HTML tokens at their exact point (see absUnits), so
 // they sit and slide anywhere on the grid, with facing shown via CSS rotate.
 const positioned = computed(() => !!props.field.positioned);
@@ -175,7 +175,7 @@ const viewerIsBlack = computed(() => viewerId.value === props.field.teams?.[1]?.
 // ── fog of war ────────────────────────────────────────────────────────────────
 // Two square-grid fog styles, mirroring SchematicLayer:
 //  • gridFog (chess): per-piece reach; hidden cells get a translucent veil on top.
-//  • vision fog (tactical etc., via VISION): hidden tiles are painted with the fog colour
+//  • vision fog (ffta etc., via VISION): hidden tiles are painted with the fog colour
 //    and their terrain art withheld — no separate veil.
 const gridFogVisibleSet = computed(() => {
   // Reveal mode shows the true board with no fog shading at all.
@@ -810,7 +810,7 @@ function handleUnitClick(e, u) {
       </div>
     </div>
 
-    <!-- Positioned units (field.positioned, e.g. csmini): absolutely-placed HTML tokens at
+    <!-- Positioned units (field.positioned, e.g. Arena): absolutely-placed HTML tokens at
          their exact continuous point — which already carries any playback slide — each with
          a CSS-rotated facing arrow. The token itself is the same HtmlUnit as the cell games,
          mousedown included: with ui.dragToMove on, handleUnitClick deliberately does

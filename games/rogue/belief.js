@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Fog-of-war belief tracking for Rogue — a stateful information-set tracker,
-// sibling of games/tactical/belief.js and games/xcom/belief.js.
+// sibling of games/xcom/belief.js.
 //
 // Rogue is single-player: the only real agent is the hero (players[0]); every
 // monster is owned by 'dungeon' and moves automatically inside applyActions.
@@ -13,12 +13,12 @@
 // forced leaf — no opponent-reply search needed).
 //
 // A monster is "visible" to the hero if it is within VISION (Chebyshev) and
-// has line-of-sight (map.js's hasLOS), mirroring xcom/tactical's pattern.
+// has line-of-sight (map.js's hasLOS), mirroring xcom's pattern.
 // The one Rogue-specific wrinkle: 'phantom' monsters (specialAbility
 // 'invisible') are hidden unless adjacent, matching the existing render rule
 // in map.js's renderMap (`ability === 'invisible' && !seeInvisible && dist > 1`).
 //
-// Per-turn belief update, mirroring xcom/tactical:
+// Per-turn belief update, mirroring xcom:
 //   1. expand   — an unseen-but-known monster may have taken one monster turn
 //                 of movement (monsters here move exactly one tile per hero
 //                 action, see RogueGame.js's runMonsters), so grow its
@@ -32,7 +32,7 @@
 //                 see below) a coarse allowance for monsters the hero simply
 //                 hasn't encountered yet this floor.
 //
-// Residual limitation (same spirit as tactical/belief.js's header note): once
+// Residual limitation (in the spirit of the other grid trackers'): once
 // a monster has been sighted at least once we track its specific id and a
 // bounded possible-tile set precisely. But monsters never yet seen on the
 // current floor are not individually identified — spawnMonsters()'s own

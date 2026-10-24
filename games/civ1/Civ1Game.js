@@ -2244,7 +2244,6 @@ export const Civ1Game = {
   // twenty-two real seconds a turn, which is where "watching a game is very slow"
   // came from. A quarter-rate makes a turn ~5s at 1x and a fraction of a second at
   // the top of the speed control, without touching what an action COSTS the game.
-  // (csmini sets this above 1 for the opposite reason — see CsMiniGame.js.)
   replayPaceMultiplier: 0.25,
 
   toGrid(state) {

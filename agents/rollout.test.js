@@ -20,13 +20,12 @@ import { Civ1Game } from '../games/civ1/index.js';
 import { Civ2Game } from '../games/civ2/index.js';
 import { Sc1Game } from '../games/sc1/index.js';
 import { Sc2Game } from '../games/sc2/index.js';
-import { TacticalGame } from '../games/tactical/index.js';
 
 const GAMES = {
   cs: CsGame, xcom: XComGame, combatmission: CombatMissionGame, doom: DoomGame,
   ffta: FFTAGame, aow: AowGame, mudandblood: MudAndBloodGame,
   risk: RiskGame, kdice: KDiceGame, civ1: Civ1Game, civ2: Civ2Game,
-  sc1: Sc1Game, sc2: Sc2Game, tactical: TacticalGame,
+  sc1: Sc1Game, sc2: Sc2Game,
 };
 
 for (const [name, game] of Object.entries(GAMES)) {

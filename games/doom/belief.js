@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Fog-of-war belief tracking for Doom — a stateful information-set tracker,
-// sibling of chess/cs/tactical/xcom belief.js. Team-based (marine / demon), so
+// sibling of chess/cs/xcom belief.js. Team-based (marine / demon), so
 // it is driven through DoomGame's withTeam adapter and keyed per team.
 //
 // Under fog getVisibleState reveals only our own team plus enemies within

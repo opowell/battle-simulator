@@ -222,7 +222,7 @@ test('multiple activePlayers all act in one step', async () => {
 
 // ---------------------------------------------------------------------------
 // Simultaneous ("we-go") mode: a tiny 1-D board game — units move ±1 along a
-// 4-square line, one move per unit per turn, explicit end-turn like tactical.
+// 4-square line, one move per unit per turn, explicit end-turn like most grid games.
 // ---------------------------------------------------------------------------
 
 const MiniGame = {

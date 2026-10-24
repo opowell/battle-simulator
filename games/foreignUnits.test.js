@@ -21,7 +21,6 @@ import { setupPreview, rosterFromState, cellMapper } from '../engine/startingSet
 import { GameEngine } from '../engine/GameEngine.js';
 
 import { ChessGame }         from './chess/index.js';
-import { TacticalGame }      from './tactical/index.js';
 import { Civ1Game }          from './civ1/index.js';
 import { Civ2Game }          from './civ2/index.js';
 import { RiskGame }          from './risk/index.js';
@@ -30,7 +29,6 @@ import { CombatMissionGame } from './combatmission/index.js';
 import { XComGame }          from './xcom/index.js';
 import { AowGame }           from './aow/index.js';
 import { CsGame }            from './cs/index.js';
-import { CsMiniGame }        from './csmini/index.js';
 import { FFTAGame }          from './ffta/index.js';
 import { Sc1Game }           from './sc1/index.js';
 import { Sc2Game }           from './sc2/index.js';
@@ -45,7 +43,6 @@ import { ArenaGame }         from './arena/index.js';
 // Seat ids as api-server.js's registry deals them.
 const GAMES = [
   ['chess', ChessGame, ['white', 'black']],
-  ['tactical', TacticalGame, ['p1', 'p2']],
   ['civ1', Civ1Game, ['p1', 'p2']],
   ['civ2', Civ2Game, ['p1', 'p2']],
   ['risk', RiskGame, ['p1', 'p2', 'p3']],
@@ -54,7 +51,6 @@ const GAMES = [
   ['xcom', XComGame, ['xcom', 'aliens']],
   ['aow', AowGame, ['p1', 'p2']],
   ['cs', CsGame, ['ct', 't']],
-  ['csmini', CsMiniGame, ['ct', 't']],
   ['ffta', FFTAGame, ['p1', 'p2']],
   ['sc1', Sc1Game, ['p1', 'p2']],
   ['sc2', Sc2Game, ['p1', 'p2']],
@@ -171,7 +167,13 @@ for (const [hostIndex, [name, game, ids]] of GAMES.entries()) {
         const worth = Math.max(1, Math.round(pick.plays[ownerId].stats.hp));
         // The same seed deals the same map (KDice rolls its own from the session's rng).
         const before = piecesOf(game.createInitialState(players, { ...preview.config, rng: rngFrom(seed) }), ownerId);
-        assert.equal(piecesOf(engine.state, ownerId), before + worth, `${label}: not laid down as ${worth} pieces`);
+        // Unless its reserve fills up: KDice keeps what doesn't fit on the board in a
+        // reserve with a cap (stockMax), and dice past the cap are lost.
+        const after = piecesOf(engine.state, ownerId);
+        const gs = engine.state.gameSpecific ?? {};
+        const full = gs.stockMax != null && gs.stock?.[ownerId] === gs.stockMax;
+        assert.ok(after === before + worth || (full && after < before + worth),
+          `${label}: not laid down as ${worth} pieces (${after - before})`);
         assert.ok(!engine.state.units.some(originOf), `${label}: still a unit after being laid down`);
         for (const p of engine.players) p.agent = keenOn(null, rng);
         try {

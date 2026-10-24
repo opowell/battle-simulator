@@ -33,7 +33,7 @@ material  − threat weight · what the enemy could do to me next turn
 ```
 
 All in units of the battle's own mean stats, so the same weights read chess
-pieces, Tactical mages and Arena archers. Pressure is a greedy assignment of
+pieces, FFTA black mages and Arena archers. Pressure is a greedy assignment of
 attackers to targets within `speed + range`, with damage already assigned
 counted so no unit is killed twice. The weights follow the play mode:
 sequential means the enemy answers first, while simultaneous and real-time
@@ -80,7 +80,8 @@ Options: `{ beam: 4, depth: 4, timeMs: 250, expand: 48, aggression: 1, minGain: 
 
 `npm run bench:generic` (see [demo/generic-ai-bench.mjs](../../demo/generic-ai-bench.mjs)
 for options). Games are played in seat-swapped pairs, at 150 ms per decision,
-with a 40-turn limit.
+with a turn limit of 40 (Arena), 100 (FFTA) or 60 (cs, whose matches are cut to
+first-to-two-rounds).
 
 2026-10-24, wins–losses–draws:
 
@@ -89,11 +90,19 @@ with a 40-turn limit.
 | Arena | Greedy on the same generic evaluation | all 8, 8 games each | 64–0–0 |
 | Arena, fog | random | all 8, 8 games each | 61–0–3 |
 | Arena | itself | all 8, 2 games each | 7–8–1 |
-| Tactical | Greedy on Tactical's own evaluator | sequential + we-go | 35–3–2 |
-| CS-mini | Greedy on CS-mini's own evaluator | sequential + we-go | 1–19–0 |
+| FFTA | Greedy on FFTA's own evaluator | sequential, 20 games | 0–0–20 |
+| FFTA | Greedy on FFTA's own evaluator | we-go, 12 games | 0–1–11 |
+| cs | Greedy on cs's own evaluator | we-go, 20 matches | 0–20–0 |
 
-**Where it is weak:** games decided by mechanics that aren't unit numbers. CS-mini
-turns on facing, vision cones and reloading. The generic AI sees those only
-through the legal list, and loses to Greedy playing CS-mini's hand-written
-evaluator. Objectives other than killing (cities, flags, checkmate) count only
-when they end the game within its search.
+The FFTA and cs rows were measured with up to ten games running at once, which
+leaves a time-budgeted agent less search per decision than a quiet machine
+would. Tactical (35–3–2) and CS-mini (1–19–0), which these rows replace, are gone.
+
+**Where it is weak:** games decided by mechanics that aren't unit numbers. cs
+turns on facing, vision cones, reloading and the bomb. The generic AI sees those
+only through the legal list, and loses every match to Greedy playing cs's
+hand-written evaluator. In FFTA neither side finishes the other within 100
+turns, so the comparison against a hand-written evaluator is no longer
+decisive there; Greedy against itself doesn't finish sequential FFTA in 300.
+Objectives other than killing (cities, flags, checkmate) count only when they
+end the game within its search.

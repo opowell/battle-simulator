@@ -985,7 +985,7 @@ watch(() => props.liveState?.id, (id) => {
 // the board; where it can't, SVG is the only option (see useHtmlRenderer below).
 // A GRID board: the terrain is a grid of square cells (boardType 'grid'), as opposed to
 // positioned shapes. This is a BOARD-type property (drives the minimap and grid-concept
-// features) — independent of how UNITS move. csmini is a grid board even in continuous
+// features) — independent of how UNITS move. Arena is a grid board even in continuous
 // space. Hexes and isometric boards are their own thing.
 const isGridBoard = computed(() =>
   !ui.value.isometric
@@ -994,7 +994,7 @@ const isGridBoard = computed(() =>
   && (displayField.value?.tiles?.length ?? 0) > 0
   && !(displayField.value?.shapes?.length));
 // A grid board ALWAYS renders in HTML (HtmlLayer): the terrain is an HTML/CSS grid, and
-// units — even continuously-positioned ones (field.positioned, e.g. csmini) — are drawn
+// units — even continuously-positioned ones (field.positioned, e.g. Arena) — are drawn
 // as absolutely-placed HTML tokens sliding to exact points, with facing via CSS rotate.
 // Only the vision cone, which has no HTML equivalent, is an SVG overlay inside HtmlLayer.
 // SchematicLayer's whole-board SVG is reserved for boards HTML genuinely can't draw

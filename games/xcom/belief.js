@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Fog-of-war belief tracking for X-Com — a stateful information-set tracker,
-// sibling of chess/belief.js, cs/belief.js and tactical/belief.js.
+// sibling of chess/belief.js and cs/belief.js.
 //
 // Under fog getVisibleState reveals only our own units plus enemies within
 // VISION *and* line of sight. This maintains, per enemy unit, the set of tiles

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ObscuroAgent } from './ObscuroAgent.js';
 import { RandomAgent } from './RandomAgent.js';
 import { ChessGame } from '../games/chess/index.js';
-import { TacticalGame } from '../games/tactical/index.js';
+import { ArenaGame } from '../games/arena/index.js';
 import { GameEngine } from '../engine/index.js';
 
 const unit = (id, ownerId, type, position) => ({ id, ownerId, type, position, alive: true });
@@ -100,27 +100,28 @@ test('generic obscuro: a full fog chess game completes', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Generality: the SAME agent drives a completely different game (Tactical),
-// using only its evaluateState hook, and beats nothing-but-legality.
+// Generality: the SAME agent drives a completely different game (Arena). Arena
+// has no evaluateState, so the search judges by terminals alone — the contract
+// is all it needs to play legally.
 // ---------------------------------------------------------------------------
 
-test('generic obscuro: runs on Tactical and returns a legal action', async () => {
+test('generic obscuro: runs on Arena and returns a legal action', async () => {
   const players = [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
-  const state = TacticalGame.createInitialState(players, {});
-  const legal = TacticalGame.getLegalActions(state, 'p1');
-  const agent = new ObscuroAgent(TacticalGame, { rng: () => 0.5 });
+  const state = ArenaGame.createInitialState(players, {});
+  const legal = ArenaGame.getLegalActions(state, 'p1');
+  const agent = new ObscuroAgent(ArenaGame, { rng: () => 0.5 });
   const action = await agent.chooseAction(state, legal);
-  assert.ok(legal.includes(action), 'chosen Tactical action must be one of the legal actions');
+  assert.ok(legal.includes(action), 'chosen Arena action must be one of the legal actions');
 });
 
-test('generic obscuro: a Tactical game vs RandomAgent completes', async () => {
+test('generic obscuro: an Arena game vs RandomAgent completes', async () => {
   const players = [
-    { id: 'p1', name: 'P1', agent: new ObscuroAgent(TacticalGame, { rows: 5, cols: 5, iters: 60 }) },
+    { id: 'p1', name: 'P1', agent: new ObscuroAgent(ArenaGame, { rows: 5, cols: 5, iters: 60 }) },
     { id: 'p2', name: 'P2', agent: RandomAgent },
   ];
-  const engine = new GameEngine(TacticalGame, players, { maxTurns: 20 });
+  const engine = new GameEngine(ArenaGame, players, { maxTurns: 20 });
   const { result } = await engine.run();
-  assert.ok(result && typeof result.outcome === 'string', 'tactical game should produce a result');
+  assert.ok(result && typeof result.outcome === 'string', 'arena game should produce a result');
 });
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@
 // facet matching. One departure: the scope terms appfr writes when narrowing to
 // a game, a scenario or a unit are `game:"cs"`, `scenario:"cs/dust2"` and
 // `unit:"units:cs/awp"`, and `:` is
-// containment, which would also take in csmini. A join key is matched EXACTLY
+// containment, which would also take in any id containing `cs`. A join key is matched EXACTLY
 // here — it names one record, never a family of them — under appfr's other
 // rules for a field: `-game:x` (a ⌘-press) leaves x out, and several positive
 // terms on one key in a group are any-of. A row without the key never matches a

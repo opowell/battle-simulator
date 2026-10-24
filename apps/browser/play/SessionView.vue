@@ -240,7 +240,7 @@ function triggerTerritoryFx(territoryId, blinks, holdOwner, holdToken = null, op
 // players can re-watch the resolved turn as often as they like.
 const REPLAY_MS_PER_FRAME = 100; // 61 frames ≈ 6s per replay (default re-watch speed)
 // Wall-clock ms per unit of game-time when an observer plays a turn back at its
-// natural pace (liveState.stepSimTime). 1000 = real time: a csmini 5-second turn
+// natural pace (liveState.stepSimTime). 1000 = real time: a 5-second turn
 // takes 5 seconds on screen instead of finishing instantly.
 const MS_PER_SIM_SECOND = 1000;
 const replayAnim = ref(null);    // { frames, idx } while replaying
@@ -316,7 +316,7 @@ function maybeAckAdvance() {
   if (animating()) return;        // still playing the shown step — wait for it
   // Hold the step on screen for its full game-time (stepSimTime) at real speed, so
   // a turn plays at its natural pace even when the animation itself is brief (a
-  // one-cell hop is ~0.2s but a csmini action is a whole in-game second). The
+  // one-cell hop is ~0.2s but a civ1 action is a whole in-game second). The
   // footer's speed multiplier scales this hold like every other playback it
   // drives: it is the only thing pacing a watched civ1 game (one second per unit
   // action, ~8,300 of them in a 300-turn game), so without it the control leaves
@@ -960,7 +960,7 @@ function buildField(g, s) {
   //     positioned shapes ('continuous', games with a `shapes` array like cs/doom).
   //   • spaceType — how UNITS are placed: snapped to cells ('discrete') vs free
   //     points ('continuous').
-  // These are independent: csmini is a GRID board (square cells) whose units may move
+  // These are independent: Arena is a GRID board (square cells) whose units may move
   // in continuous space. `positioned` is whether the game supplies a separate
   // positioned unit channel (g.units) instead of embedding units in cells — those
   // need SchematicLayer's absolute placement, so the HTML cell renderer skips them.
@@ -980,7 +980,7 @@ function buildField(g, s) {
   // point, so it renders directly with no cell-centre offset either.
   const cellCenterOffset = (locationType === 'continuous' || g.grid === 'hexagon') ? 0 : 0.5;
   // A positioned game (its units come through the parallel g.units channel) that is
-  // nonetheless a DISCRETE square-grid board (csmini in discrete space) locates units by
+  // nonetheless a DISCRETE square-grid board (Arena in discrete space) locates units by
   // an integer cell index too, so it needs the same cell-centre offset as an embedded-cell
   // grid game — otherwise the token sits on the cell's top-left corner. Continuous-space
   // positioned games carry exact points and get no offset.

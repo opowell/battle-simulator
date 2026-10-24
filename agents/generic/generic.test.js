@@ -5,8 +5,6 @@ import { RandomAgent } from '../RandomAgent.js';
 import { makeGenericAgent, whoAmI, genericEvaluateState } from './GenericAgent.js';
 import { readBattle, unitView } from './battleView.js';
 import { ArenaGame, UNIT_TYPES } from '../../games/arena/index.js';
-import { TacticalGame } from '../../games/tactical/index.js';
-import { CsMiniGame } from '../../games/csmini/index.js';
 import { ChessGame } from '../../games/chess/index.js';
 
 const PLAYERS = [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
@@ -26,16 +24,18 @@ test('reads unit numbers from the game contract, unit fields, type tables or alg
   const archer = a.units.find(u => u.type === 'archer');
   assert.deepEqual([archer.attack, archer.defense, archer.range, archer.speed], [4, 2, 4, 3]);
 
-  const t = readBattle(TacticalGame, TacticalGame.createInitialState(PLAYERS, {}));
-  const mage = t.units.find(u => u.type === 'mage');
-  assert.deepEqual([mage.hp, mage.attack, mage.range], [15, 15, 2]);
+  // A game with no unit contract: the numbers come from the unit's own fields, under
+  // the usual names, or from the game's per-type table.
+  const fields = readBattle({}, { units: [{ id: 'u', ownerId: 'p1', type: 'mage', position: { x: 1, y: 2 }, hp: 15, attrs: { atk: 15, attackRange: 2, moveRange: 2 } }] });
+  assert.deepEqual([fields.units[0].hp, fields.units[0].attack, fields.units[0].range, fields.units[0].speed], [15, 15, 2, 2]);
+  const table = readBattle({ unitStats: () => ({ mage: { hp: 15, attack: 15, defense: 1, range: 2, move: 2 } }) },
+    { units: [{ id: 'u', ownerId: 'p1', type: 'mage', position: { x: 1, y: 2 } }] });
+  assert.deepEqual([table.units[0].hp, table.units[0].attack, table.units[0].defense, table.units[0].range], [15, 15, 1, 2]);
 
   const c = ChessGame.createInitialState([{ id: 'white' }, { id: 'black' }], {});
   const pieces = readBattle(ChessGame, c).units;
   assert.ok(pieces.length === 32 && pieces.every(u => u.point && u.point.x >= 0 && u.point.x < 8));
 
-  const m = readBattle(CsMiniGame, CsMiniGame.createInitialState([{ id: 'ct' }, { id: 't' }], {}));
-  assert.ok(m.units.every(u => u.hp === 5 && u.range === 5 && u.speed === 3));
   assert.equal(readBattle(ArenaGame, ArenaGame.createInitialState(PLAYERS, { space: 'continuous' })).metric, 'euclid');
 });
 
@@ -113,10 +113,10 @@ test('beats a random player in every (space × time × play) mode of Arena', asy
   assert.ok(wins >= 6, `won ${wins} of 8`);
 });
 
-test('plays games it was not written for, legally', async () => {
-  for (const [game, ids] of [[TacticalGame, ['p1', 'p2']], [CsMiniGame, ['ct', 't']]]) {
-    const players = ids.map(id => ({ id, name: id, agent: makeGenericAgent(game, { timeMs: 20 }) }));
-    const { result } = await new GameEngine(game, players, { maxTurns: 6 }).run();
+test('plays every Arena scenario, and a game it was not written for, legally', async () => {
+  for (const { config } of ArenaGame.scenarios) {
+    const players = PLAYERS.map(p => ({ ...p, agent: makeGenericAgent(ArenaGame, { timeMs: 20 }) }));
+    const { result } = await new GameEngine(ArenaGame, players, { ...config, maxTurns: 6 }).run();
     assert.ok(result);
   }
   const chess = ChessGame.createInitialState([{ id: 'white' }, { id: 'black' }], {});

@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Fog-of-war belief tracking for Civ1 — a stateful information-set tracker,
-// sibling of tactical/belief.js and sc1/belief.js.
+// sibling of xcom/belief.js and sc1/belief.js.
 //
 // Under fog getVisibleState hands the agent only its own units/cities plus
 // enemies within VISION. This tracks:

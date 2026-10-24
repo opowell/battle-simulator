@@ -15,7 +15,6 @@ import assert from 'node:assert/strict';
 import { rosterFromState, applyRoster, rosterError } from '../engine/startingSetup.js';
 
 import { ChessGame }         from './chess/index.js';
-import { TacticalGame }      from './tactical/index.js';
 import { Civ1Game }          from './civ1/index.js';
 import { Civ2Game }          from './civ2/index.js';
 import { RiskGame }          from './risk/index.js';
@@ -24,7 +23,6 @@ import { CombatMissionGame } from './combatmission/index.js';
 import { XComGame }          from './xcom/index.js';
 import { AowGame }           from './aow/index.js';
 import { CsGame }            from './cs/index.js';
-import { CsMiniGame }        from './csmini/index.js';
 import { FFTAGame }          from './ffta/index.js';
 import { Sc1Game }           from './sc1/index.js';
 import { Sc2Game }           from './sc2/index.js';
@@ -39,7 +37,6 @@ import { ArenaGame }         from './arena/index.js';
 // Seat ids as api-server.js's registry deals them.
 const GAMES = [
   ['chess', ChessGame, ['white', 'black']],
-  ['tactical', TacticalGame, ['p1', 'p2']],
   ['civ1', Civ1Game, ['p1', 'p2']],
   ['civ2', Civ2Game, ['p1', 'p2']],
   ['risk', RiskGame, ['p1', 'p2', 'p3', 'p4', 'p5', 'p6']],
@@ -48,7 +45,6 @@ const GAMES = [
   ['xcom', XComGame, ['xcom', 'aliens']],
   ['aow', AowGame, ['p1', 'p2']],
   ['cs', CsGame, ['ct', 't']],
-  ['csmini', CsMiniGame, ['ct', 't']],
   ['ffta', FFTAGame, ['p1', 'p2']],
   ['sc1', Sc1Game, ['p1', 'p2']],
   ['sc2', Sc2Game, ['p1', 'p2']],

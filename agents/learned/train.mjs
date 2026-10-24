@@ -3,7 +3,7 @@
 // Standalone trainer for learned leaf evaluation (agents/LEARNED-EVAL-PLAN.md).
 // Regenerates value models for any or all games with NO other tooling:
 //
-//   node agents/learned/train.mjs --game tactical
+//   node agents/learned/train.mjs --game ffta
 //   node agents/learned/train.mjs --all                # every non-deferred game
 //   node agents/learned/train.mjs --all --force        # retrain even if a model exists
 //
@@ -47,7 +47,7 @@ const GAMES_DIR = path.join(HERE, '..', '..', 'games');
 // truncation-dominated labels — see the plan) are skipped by --all but can be
 // trained explicitly with --game.
 const ROSTER = {
-  tactical: 'TacticalGame', ffta: 'FFTAGame', doom: 'DoomGame', xcom: 'XComGame',
+  ffta: 'FFTAGame', doom: 'DoomGame', xcom: 'XComGame',
   mudandblood: 'MudAndBloodGame', sc1: 'Sc1Game',
   sc2: 'Sc2Game', cs: 'CsGame', combatmission: 'CombatMissionGame', aow: 'AowGame',
   risk: 'RiskGame', kdice: 'KDiceGame', civ1: 'Civ1Game', civ2: 'Civ2Game',

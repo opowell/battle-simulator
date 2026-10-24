@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Fog-of-war belief tracking for Final Fantasy Tactics Advance — a stateful
-// information-set tracker, sibling of tactical/belief.js and aow/belief.js.
+// information-set tracker, sibling of xcom/belief.js and aow/belief.js.
 //
 // Under fog getVisibleState hands the agent only its own units plus enemies
 // within VISION. This maintains, per enemy unit, the set of tiles it could

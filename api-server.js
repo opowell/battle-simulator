@@ -37,7 +37,6 @@ import { makeGreedyAgent } from './agents/GreedyAgent.js';
 import { makeGenericAgent } from './agents/generic/GenericAgent.js';
 
 import { ChessGame }         from './games/chess/index.js';
-import { TacticalGame }      from './games/tactical/index.js';
 import { Civ1Game }          from './games/civ1/index.js';
 import { Civ2Game }          from './games/civ2/index.js';
 import { RiskGame }          from './games/risk/index.js';
@@ -46,7 +45,6 @@ import { CombatMissionGame } from './games/combatmission/index.js';
 import { XComGame }          from './games/xcom/index.js';
 import { AowGame }           from './games/aow/index.js';
 import { CsGame }            from './games/cs/index.js';
-import { CsMiniGame }        from './games/csmini/index.js';
 import { FFTAGame }          from './games/ffta/index.js';
 import { Sc1Game }           from './games/sc1/index.js';
 import { Sc2Game }           from './games/sc2/index.js';
@@ -338,7 +336,6 @@ async function serveGameSound(gameName, name, res) {
 
 const GAMES = {
   chess:         { game: ChessGame,         minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }] },
-  tactical:      { game: TacticalGame,      minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   // Six, because that is how many seats civ1's own scenarios lay — the standard game
   // and the large exhibition both seat six. A lower cap here doesn't stop them (a
   // scenario seats the table itself, see gameDefaults.makeSlots); it only greys out
@@ -355,7 +352,6 @@ const GAMES = {
   xcom:          { game: XComGame,          minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }] },
   aow:           { game: AowGame,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   cs:            { game: CsGame,            minPlayers: 2, maxPlayers: 10, defaultPlayers: [{ id: 'ct', name: 'CT' }, { id: 't', name: 'T' }] },
-  csmini:        { game: CsMiniGame,        minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'ct', name: 'CT' }, { id: 't', name: 'T' }] },
   ffta:          { game: FFTAGame,          minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   sc1:           { game: Sc1Game,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
   sc2:           { game: Sc2Game,           minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
@@ -888,7 +884,7 @@ class Session {
       done = r.done;
       steps++;
       // How much game-time this update represents, so an observer can play it back
-      // at real sim-speed (e.g. csmini's 5-second turn takes 5 seconds on screen)
+      // at real sim-speed (e.g. a 5-second turn takes 5 seconds on screen)
       // instead of instantly. A we-go round carries its own resolved duration; a
       // single sequential action is priced by the game's getActionDuration on the
       // PRE-step state (post-step the unit has already moved, so distance — and
@@ -1441,7 +1437,7 @@ class Session {
       seq: this._seq,
       awaitingAdvance: this._awaitingAdvance,
       // Game-time this step spans (game units), scaled by the game's own replay
-      // pace preference (default 1×, e.g. csmini slows its watch-pace down without
+      // pace preference (default 1×, e.g. civ1 speeds its watch-pace up without
       // changing the true sim-time actions cost). The observer plays it back over
       // that long in real time so a turn unfolds at its (scaled) natural pace.
       stepSimTime: this._stepSimTime == null ? null

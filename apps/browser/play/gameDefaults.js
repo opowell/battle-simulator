@@ -11,8 +11,8 @@ function defaultCpuAgent(g) {
 }
 
 function makeSlots(g, n, players) {
-  // A game may prefer specific per-slot agents (g.uiDefaults.players) — e.g. csmini
-  // defaults to two AIs watched by an observer, rather than "you vs one CPU". A
+  // A game may prefer specific per-slot agents (g.uiDefaults.players) — e.g. kdice
+  // seats you and six of its own AIs, rather than "you vs one CPU". A
   // chosen scenario may override that again with its own `config.players`, which
   // is what `players` carries in; either way each entry only has to name the parts
   // it cares about (name, agent), and the rest falls back to the generic seating.
@@ -43,7 +43,7 @@ function initGameOpts(g) {
     }
   }
   // A game may override specific engine/game option defaults (g.uiDefaults.config) —
-  // e.g. csmini turns on observers and simultaneous turns by default.
+  // e.g. observers or simultaneous turns on by default.
   Object.assign(opts, g?.uiDefaults?.config ?? {});
   return opts;
 }

@@ -411,6 +411,11 @@ them:
    They come first because they are the safety net for everything after,
    including step 2: dropping two games must leave every other game's replays
    unchanged.
+
+   *Done 2026-10-24:* `engine/golden.js` runs and hashes a case,
+   `scripts/golden.mjs` writes `games/<game>/golden.json` (every scenario, every
+   space × time × turns mode a game offers, fog flipped), and each game's
+   `golden.test.js` checks it in a process of its own.
 2. **Drop tactical and csmini**, after moving what the core leans on them for.
    They are its test fixtures, so they can't simply be deleted:
 
@@ -431,6 +436,11 @@ them:
    quadrants, sequential and we-go) must have a counterpart in cs or Arena.
    Where one is missing, note it in `plans/migration/cs.md`, which starts cs's
    checklist (step 3), rather than keep csmini.
+
+   *Done 2026-10-24.* Every other game's replays were unchanged. The bench now
+   measures FFTA and cs in their place (see `agents/generic/README.md`), and
+   csmini's one gap, facing and reloading outside cs's quadrant, is in
+   `plans/migration/cs.md`.
 3. **A capability checklist per game** (`plans/migration/<game>.md`): its
    scenarios, setup options, which space/time/turn/fog modes it supports, its
    AIs, its plugins (from the UI audit above), the `ui.*` flags it sets, its

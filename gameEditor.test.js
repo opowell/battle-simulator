@@ -32,8 +32,8 @@ test('updating one game rewrites only that line', () => {
 test("the block's comments and computed values survive an edit elsewhere in it", () => {
   const comments = original.match(/^ {2}\/\/.*$/gm) ?? [];
   assert.ok(comments.length > 0, 'this test needs the registry to carry comments');
-  const tactical = parseRegistry(original).tactical;
-  const out = setRegistryEntry(original, 'tactical', { ...tactical, minPlayers: 3 });
+  const arena = parseRegistry(original).arena;
+  const out = setRegistryEntry(original, 'arena', { ...arena, minPlayers: 3 });
   for (const c of comments) assert.ok(out.includes(c), `lost: ${c}`);
   assert.match(out, /risk: .*Array\.from\(/);
 });
