@@ -8,6 +8,8 @@
 import { onMounted, ref } from 'vue'
 import { api } from '../api.js'
 import { analysisBoardRequest, formRequest } from '../sessions.js'
+import { newSessionLink } from '../deeplink.js'
+import { playUrl } from '../api.js'
 import { useSessionOpener } from '../opener.js'
 import GamePage from '../play/GamePage.vue'
 
@@ -24,6 +26,12 @@ onMounted(async () => {
     if (!game.value) error.value = `No game called ${props.gameName}`
   } catch (e) { error.value = e.message }
 })
+
+/** The form as a link that starts the same session (deeplink.js). */
+function linkFor(form) {
+  const { hash, omitted } = newSessionLink(game.value, form)
+  return { href: playUrl.start(hash), omitted }
+}
 
 const opener = useSessionOpener()
 const busy = ref(false)
@@ -52,6 +60,7 @@ async function start(body) {
       :game="game"
       :scenario="scenario"
       :disabled="busy || !game"
+      :link-for="linkFor"
       @back="emit('close')"
       @create="(form) => start(formRequest(game, form))"
       @analysis-board="(form) => start(analysisBoardRequest(game, form))"

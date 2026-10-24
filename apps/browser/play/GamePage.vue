@@ -9,6 +9,9 @@ const props = defineProps({
   game:     { type: Object,  default: null }, // null while the game list loads
   disabled: { type: Boolean, default: false },
   scenario: { type: String,  default: '' },   // the one to open on, if the game has it; else its first
+  // The form as a link that starts the same session: cfg → { href, omitted } —
+  // `omitted`, what the link cannot carry. No Copy link button without one.
+  linkFor:  { type: Function, default: null },
 });
 defineEmits(['back', 'create', 'analysis-board']);
 
@@ -22,6 +25,29 @@ watch(() => props.game, (g) => {
   const scenarios = g?.scenarios ?? [];
   scenKey.value = (scenarios.find((s) => s.id === props.scenario) ?? scenarios[0])?.id ?? '';
 }, { immediate: true });
+
+const link = computed(() => (props.linkFor && cfg.value ? props.linkFor(cfg.value) : null));
+const linkTitle = computed(() => {
+  const what = 'Copy a link that starts a session set up like this';
+  const left = link.value?.omitted ?? [];
+  return left.length ? `${what} — except ${left.join(', ')}, which a link cannot carry` : what;
+});
+
+// The button says what happened for a moment, then goes back to what it does.
+const copied = ref('');
+let copiedTimer = null;
+async function copyLink(event) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return; // a plain link's own ways
+  event.preventDefault();
+  try {
+    await navigator.clipboard.writeText(link.value.href);
+    copied.value = 'Copied';
+  } catch {
+    copied.value = 'Copy failed';
+  }
+  clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => { copied.value = ''; }, 1600);
+}
 
 const playersLabel = computed(() => {
   const g = props.game;
@@ -63,6 +89,11 @@ const playersLabel = computed(() => {
           <GameSetupFields :game="game" :scenario="scenKey" @update:config="cfg = $event"/>
         </div>
         <div class="gp-actions">
+          <!-- A link, so it can be dragged, or copied from the context menu, too. -->
+          <a v-if="link" class="btn btn-ghost gp-action gp-link" :href="link.href" :title="linkTitle" @click="copyLink">
+            <BsIcon :name="copied === 'Copied' ? 'check' : 'link'" :size="14" color="var(--dim)"/>
+            {{copied || 'Copy link'}}<span v-if="link.omitted.length && !copied" class="gp-link-warn">*</span>
+          </a>
           <!-- A board with no opponent: you move every side, nothing is hidden
                from you, and (where the game has one) the database is open. -->
           <button class="btn gp-action" :disabled="disabled || !cfg" @click="$emit('analysis-board', cfg)"
@@ -103,6 +134,8 @@ const playersLabel = computed(() => {
 .gp-actions{flex:none;display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--line)}
 .gp-action{justify-content:center;padding:11px 18px}
 .gp-start{min-width:180px}
+.gp-link{margin-right:auto;text-decoration:none}
+.gp-link-warn{color:var(--warn)}
 
 /* Too narrow for two columns: stack them and let the page scroll instead. */
 @media (max-width: 900px) {

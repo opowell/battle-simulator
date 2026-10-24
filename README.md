@@ -147,8 +147,12 @@ Left bare it is the scenario's one-click start. `seats` names one agent per seat
 is one of the game's options by id (`fog` is short for `fogOfWar`, and an AI
 difficulty's time key, `aiTimeMs`, sets a per-move time instead of a power level).
 A key, agent or scenario the game does not have is refused by name rather than
-ignored. `#/session/<id>` and `#/game/<name>` open an existing session and a
-game's setup page.
+ignored (`maxTurns=off` turns off a scenario's own limit). `#/session/<id>` and
+`#/game/<name>` open an existing session and a game's setup page.
+
+The setup page's **Copy link** writes one from the form as it stands, naming only
+what differs from the defaults. Edited starting units can't go in a link; when the
+form has them, the button wears a `*` and its tooltip says so.
 
 The data comes from one endpoint, `GET /catalog` (`catalog.js`), which derives
 it all generically: units come from the same `setupPreview` the setup screen

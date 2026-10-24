@@ -44,6 +44,8 @@ export const api = {
 export const playUrl = {
   session: (id) => `${basePath}/#/session/${encodeURIComponent(id)}`,
   game: (name) => `${basePath}/#/game/${encodeURIComponent(name)}`,
+  /** Absolute, to be pasted anywhere: a deeplink.js `#/new/…` hash, which starts a session. */
+  start: (hash) => `${window.location.origin}${basePath}/${hash}`,
 }
 
 /** A path the server hands out (`/images/…`), under this page's mount prefix. */
