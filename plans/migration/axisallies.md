@@ -88,3 +88,23 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-axisallies](https://github.com/opowell/battle-axisallies),
+built by `scripts/extract-game.mjs` and pinned to the core at the commit it left
+from. Checked there: `npm test` (the game's 19 tests, its 3 golden replays among
+them, plus the app's own 4) passes; `npm run demo:axisallies:auto` plays to a win
+(the Axis take Moscow). In the Browser, driven headless, the default setup and
+`wwii-1942` draw the map with all 66 pieces and their portraits in the roster,
+with no console error or failed request; played through the Orders panel, the
+human seat goes purchase → combat move → non-combat move → mobilize, the AI
+plays its turn, and turn 2 comes back. Its pack was re-exported into
+`library/axisallies/` first: its 10 units unchanged, plus land, industrial land
+and sea zones as terrain and the 1942 map as 26 regions (the game's boxes and
+ovals rasterised), each side's pieces of a type in a territory one counted
+group (`stacking: 'count'`), capitals and income as features.
+
+The AI's turn took about half a minute. Pre-existing (the core's screenshot is
+the same): the territories' boxes barely show under the piece clusters at the
+default zoom.
