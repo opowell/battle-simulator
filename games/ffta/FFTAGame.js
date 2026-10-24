@@ -903,7 +903,7 @@ function sampleWorlds(observation, playerId, n, rng = Math.random) {
   return belief.sample(observation, n, rng, createUnit);
 }
 
-const JOB_LABELS = {
+export const JOB_LABELS = {
   soldier: 'Soldier', whiteMage: 'White Mage', blackMage: 'Black Mage',
   archer: 'Archer', thief: 'Thief', fighter: 'Fighter',
   paladin: 'Paladin', ninja: 'Ninja', dragoon: 'Dragoon',
@@ -997,20 +997,6 @@ export const FFTAGame = {
   ],
   createSetupUnit(_state, { id, ownerId, type, position }) {
     return JOB_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
-  },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
-  // conversion factor is the soldier: 28 hp, 10 attack, 8 defense, a sword's reach,
-  // 3 squares. A job's attack is the stronger of its weapon and its magic, its range
-  // the farthest its abilities strike.
-  foreignUnits: {
-    scale: { hp: 28, attack: 10, defense: 8, range: 1, move: 3 },
-    profiles: () => Object.fromEntries(Object.entries(JOB_DEFS).map(([job, d]) => [job, {
-      hp: d.stats.hp, attack: Math.max(d.stats.atk, d.stats.mag), defense: d.stats.def,
-      range: Math.max(1, ...d.abilities.map(k => (ABILITIES[k]?.target === 'enemy' ? ABILITIES[k].range ?? 0 : 0))),
-      move: d.moveRange, domain: 'land',
-    }])),
-    art: (job) => ({ imagePath: JOB_DEFS[job] ? `/images/ffta/${job}/portrait` : null, glyph: JOB_DEFS[job]?.symbol, name: JOB_LABELS[job] ?? job }),
   },
   createInitialState,
   getLegalActions,
