@@ -1,0 +1,52 @@
+{
+  "floor": {
+    "name": "Floor",
+    "color": "#8a9c70",
+    "description": "Height 0.",
+    "cost": 1,
+    "passable": true,
+    "cover": 0,
+    "blocksSight": false
+  },
+  "elevated": {
+    "name": "Elevated Ground",
+    "color": "#a07858",
+    "description": "Height 1: a level more to climb onto.",
+    "cost": 1,
+    "passable": true,
+    "cover": 0,
+    "blocksSight": false,
+    "elevation": 1
+  },
+  "elevated-high": {
+    "name": "High Ground",
+    "color": "#b89060",
+    "description": "Height 2: a level more to climb onto from height 1.",
+    "cost": 1,
+    "passable": true,
+    "cover": 0,
+    "blocksSight": false,
+    "elevation": 2
+  },
+  "wall": {
+    "name": "Wall",
+    "color": "#2a2018",
+    "description": "Impassable.",
+    "cost": {
+      "land": null,
+      "air": null
+    },
+    "passable": false,
+    "cover": 0,
+    "blocksSight": false
+  },
+  "open": {
+    "name": "Floor",
+    "color": "#8a9c70",
+    "description": "Height 0.",
+    "cost": 1,
+    "passable": true,
+    "cover": 0,
+    "blocksSight": false
+  }
+}
