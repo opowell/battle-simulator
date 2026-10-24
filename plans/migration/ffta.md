@@ -106,3 +106,30 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
   where the same pairing we-go ends in 149. Neither side closes in.
 - The generic AI against Greedy (2026-10-24, 100-turn limit): 0–0–20
   sequential, 0–1–11 we-go. Almost nothing is decided in 100 turns.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-ffta](https://github.com/opowell/battle-ffta), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 66 tests, its 11 golden replays among them,
+plus the app's own 4; the slow rollout skipped) passes; `npm run demo:ffta:greedy`
+plays to a win. In the Browser, driven headless, the default setup and all nine
+scenarios draw the isometric board from its terrain textures with every job's
+directional sprite and portrait (`/images/ffta/…` served), with no console error
+or failed request; in seven a turn ends and the AI plays, while in
+`bangaaWarband` and `grandMelee` the AI's unit has the first CT turn, so the
+check found no End Turn to press. Its `ui` flags (`isometric`, `combatFx`,
+`moveAnimation: hop`, `strictActiveUnit`, `showFacing: false`, `moveQueue`) are
+served as before; it has no UI plugins or sounds. Its pack was re-exported into
+`library/ffta/` first: its 29 jobs unchanged, plus its 4 terrain types (the
+heights as the core's elevation, a step up costing a level more, as in the game)
+and its nine scenarios, each the one 12×10 board walked four ways, with the jobs
+it deals and the way each starts facing.
+
+Pre-existing, not changed by the move: battles seldom finish (see Notes), and
+the server logs Obscuro's warning that FFTA's information-set identity names
+static terrain. What it leaves behind in the core: `demo/generic-ai-bench.mjs`
+imports `games/ffta/index.js` at the top, so the whole bench fails to load once
+ffta is gone, not just `--game=ffta`; `src/agents/learned/train.mjs` names ffta
+only in a usage comment; Arena's `mixed-encounter` and `mixed-world` field ffta
+units from `library/ffta/`, which stays.
