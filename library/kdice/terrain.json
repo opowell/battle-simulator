@@ -1,0 +1,9 @@
+{
+  "land": {
+    "name": "Land",
+    "color": "#c9c2a0",
+    "description": "A KDice territory.",
+    "cost": 1,
+    "cover": 0
+  }
+}

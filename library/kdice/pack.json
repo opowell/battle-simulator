@@ -1,12 +1,16 @@
 {
   "game": "kdice",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "ff1541acefbb09ec30c37c73f18245638eb5f23c",
+    "date": "2026-10-24T21:50:36+02:00"
   },
   "units": 1,
   "art": 0,
+  "terrain": 1,
+  "maps": 3,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "the map generator: these are a few of its maps, from fixed seeds",
+    "the dice: a die strikes the core's deterministic blow, once per member",
+    "the eight-dice cap, the reserve and the dice earned for the largest connected group"
   ]
 }
