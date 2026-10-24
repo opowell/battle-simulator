@@ -79,3 +79,23 @@ Nothing.
 - Its item ids came from a module counter that never reset, so a game's state
   depended on how many games the process had dealt before. Fixed in phase 0
   (`resetItemIds`, as aow and memoir44 already did) so its replays reproduce.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-rogue](https://github.com/opowell/battle-rogue), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+There it is registered (`games/games.json`: one seat, `p1` "Rogue", as its
+golden replays seat it). It lends no units, so it has no pack in `library/`.
+Checked there: `npm test` (the game's 28 tests, its 2 golden replays among them,
+plus the app's own 4) passes; in the Browser, driven headless, the default
+setup draws the dungeon with the monsters' sprites, and a turn ends and comes
+back as the hero's (turn 2), with no console error or failed request.
+
+Fixed in the core for it: the server refused any session of fewer than two
+seats, whatever the registry said, so a one-seat game could not start
+(`src/server/battleServer.js`, tested in `battleServer.test.js`).
+
+As seen there, with no baseline (it was never playable in the core's Browser):
+the roster lists everything on the board under "You", the dungeon's monsters
+and the items on the floor (by raw ids, `u_27_5`) as well as the hero, since
+the monsters' side (`dungeon`) is not a seat.
