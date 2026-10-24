@@ -23,7 +23,6 @@ import {
 } from './barbarians.js';
 import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '#core/kit/moveQueue.js';
 import * as ST from '#core/kit/spacetime.js';
-import { tableUnits } from '#core/engine/foreignUnits.js';
 
 
 const BASE = '/images/civ1';
@@ -2217,17 +2216,6 @@ export const Civ1Game = {
   createSetupUnit(state, { id, ownerId, type, position }) {
     return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0);
   },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
-  // conversion factor is an ancient line unit — 10 hp, attack and defence 2, one
-  // move. Every attack is made on the next square: a melee reach, which the common
-  // vocabulary counts as a quarter of a standard rifle's.
-  foreignUnits: tableUnits({
-    table: UNITS,
-    scale: { hp: 10, attack: 2, defense: 2, range: 4, move: 1 },
-    read: (e) => ({ hp: e.hp, attack: e.attack, defense: e.defense, range: 1, move: e.moves, domain: e.domain }),
-    art: (type) => ({ imagePath: `${BASE}/units/${type}`, glyph: type[0].toUpperCase(), name: type }),
-  }),
   // What each seat has SEEN is seeded from where its units stand, so a moved,
   // added or deleted starting unit changes the hole it opens in the fog.
   // An opening is explored from scratch; units added to a game in progress only
