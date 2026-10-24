@@ -53,7 +53,7 @@ const now = () => (typeof performance !== 'undefined' ? performance.now() : Date
 function compact(a) {
   if (!a || typeof a !== 'object') return { type: String(a) };
   const c = { type: a.type ?? null };
-  for (const k of ['unitId', 'from', 'to', 'targetId', 'duration']) if (a[k] != null) c[k] = a[k];
+  for (const k of ['unitId', 'from', 'to', 'targetId', 'duration', 'ability', 'at', 'facing']) if (a[k] != null) c[k] = a[k];
   return c;
 }
 
@@ -107,25 +107,35 @@ export class GenericAgent {
       if (this._open(g, child, me, a)) frontier.push({ first: i, seq: [a], state: child, value });
     });
 
-    // Deeper: extend the best few sequences with the turn's further actions.
-    for (let d = 2; d <= depth && frontier.length && now() < deadline; d++) {
-      frontier.sort((x, y) => y.value - x.value);
-      const next = [];
-      for (const node of frontier.slice(0, beam)) {
-        if (now() >= deadline) break;
-        const kids = this._prune(this._candidates(g, node.state, me, null), expand);
-        for (const a of kids) {
+    // Deeper: extend the best few sequences with the turn's further actions —
+    // and while time is left and some level had more sequences than the beam
+    // kept, search again with the beam twice as wide (many tied first moves
+    // can otherwise crowd out the one whose follow-up wins).
+    const root = frontier;
+    for (let width = beam; ; width *= 2) {
+      let cut = false;
+      frontier = root;
+      for (let d = 2; d <= depth && frontier.length && now() < deadline; d++) {
+        frontier.sort((x, y) => y.value - x.value);
+        if (frontier.length > width) cut = true;
+        const next = [];
+        for (const node of frontier.slice(0, width)) {
           if (now() >= deadline) break;
-          const child = this._apply(g, node.state, me, a);
-          if (!child) continue;
-          considered++;
-          const value = this._value(g, node.state, child, me, a, ctx, d);
-          const seq = [...node.seq, a];
-          note(node.first, value, seq);
-          if (this._open(g, child, me, a)) next.push({ first: node.first, seq, state: child, value });
+          const kids = this._prune(this._candidates(g, node.state, me, null), expand);
+          for (const a of kids) {
+            if (now() >= deadline) break;
+            const child = this._apply(g, node.state, me, a);
+            if (!child) continue;
+            considered++;
+            const value = this._value(g, node.state, child, me, a, ctx, d);
+            const seq = [...node.seq, a];
+            note(node.first, value, seq);
+            if (this._open(g, child, me, a)) next.push({ first: node.first, seq, state: child, value });
+          }
         }
+        frontier = next;
       }
-      frontier = next;
+      if (!cut || now() >= deadline) break;
     }
 
     let pick = null, top = -Infinity;
@@ -163,12 +173,13 @@ export class GenericAgent {
     try { return g.getLegalActions(state, me) ?? []; } catch { return []; }
   }
 
-  // Deeper levels try a subset: every strike and turn-ender, then the rest in a
-  // random order — the beam's job is to find the follow-up, not to re-sweep.
+  // Deeper levels try a subset: every strike, ability and turn-ender, then the
+  // rest in a random order — the beam's job is to find the follow-up, not to
+  // re-sweep.
   _prune(actions, cap) {
     if (actions.length <= cap) return actions;
     const keep = [], rest = [];
-    for (const a of actions) (a?.targetId != null || a?.type === 'end-turn' ? keep : rest).push(a);
+    for (const a of actions) (a?.targetId != null || a?.type === 'end-turn' || a?.type === 'ability' ? keep : rest).push(a);
     for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(this.rng() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
     return [...keep, ...rest].slice(0, Math.max(cap, keep.length));
   }

@@ -119,3 +119,43 @@ test('plays every Arena scenario legally', async () => {
     assert.ok(result);
   }
 });
+
+// ── Battles with more than numbers (src/battle) ─────────────────────────────
+
+const SOLDIER = { hp: 10, attack: 6, defense: 4, range: 4, speed: 3, rate: 1, vision: 6 };
+const battle = (spec, config = {}) => ArenaGame.createInitialState(PLAYERS, { spec: { board: { topology: 'square', width: 10, height: 6, generator: 'open' }, ...spec }, ...config });
+
+test('reloads an empty gun when there is someone to shoot', () => {
+  const s = battle({
+    attributes: { ammo: { kind: 'pool', max: 2, value: 0.3 } },
+    abilities: { reload: { targets: 'self', effects: [{ modify: { attr: 'ammo', by: 99 } }] } },
+    unitTypes: { rifle: { ...SOLDIER, pools: { ammo: { max: 2, start: 'empty' } }, strike: { cost: { ammo: 1 } }, abilities: ['reload'] } },
+    units: [{ type: 'rifle', seat: 0, at: [2, 2] }, { type: 'rifle', seat: 1, at: [5, 2] }],
+  });
+  const agent = makeGenericAgent(ArenaGame, { timeMs: 200, rng: () => 0.5 });
+  const a = decide(agent, s, 'p1');
+  assert.ok(a.ability === 'reload' || agent.lastAnalysis.plan.some(x => x.type === 'ability'), JSON.stringify(agent.lastAnalysis.plan));
+});
+
+test('turns to face an enemy behind it, then strikes', () => {
+  const s = battle({
+    orientation: { fov: 90, arcs: { front: 0, flank: -25, rear: -50 }, turnCost: 1 },
+    unitTypes: { man: { ...SOLDIER, range: 1, speed: 4 } },
+    units: [{ type: 'man', seat: 0, at: [4, 2], facing: 0 }, { type: 'man', seat: 1, at: [3, 2], facing: 0, hp: 3 }],
+  });
+  const agent = makeGenericAgent(ArenaGame, { timeMs: 300, rng: () => 0.5 });
+  decide(agent, s, 'p1');
+  const plan = agent.lastAnalysis.plan.map(x => x.type);
+  assert.ok(plan.includes('attack'), plan.join(' '));
+});
+
+test('casts the area spell that hits two where a blow would hit one', () => {
+  const s = battle({
+    abilities: { blast: { range: 4, targets: 'ground', area: { radius: 1 }, effects: [{ damage: { amount: 4 } }] } },
+    unitTypes: { mage: { ...SOLDIER, attack: 2, abilities: ['blast'] }, imp: { ...SOLDIER, hp: 4, attack: 1, range: 1 } },
+    units: [{ type: 'mage', seat: 0, at: [1, 2] }, { type: 'imp', seat: 1, at: [4, 2] }, { type: 'imp', seat: 1, at: [5, 2] }],
+  });
+  const agent = makeGenericAgent(ArenaGame, { timeMs: 200, rng: () => 0.5 });
+  const a = decide(agent, s, 'p1');
+  assert.equal(a.ability, 'blast');
+});

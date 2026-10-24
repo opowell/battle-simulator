@@ -33,6 +33,12 @@
 // strikes; an attacker with none counts its geometric reach at NOT_READY. So
 // reloading, or turning to face the enemy, is worth what it makes possible.
 //
+// Facing (when the game says how its units face): a blow from the flank or rear
+// meets the defender's arc modifier, and an attacker whose vision cone does not
+// hold its target must turn first, so its threat counts at NOT_READY. What a unit
+// carries beyond its numbers (pools, statuses) scales its worth by the game's
+// `worthBonus`.
+//
 // The weights depend on the play mode. Sequential: after my turn the enemy moves
 // first, so its pressure is nearly certain and mine is only a prospect (they can
 // step away). Simultaneous (we-go, or a shared clock): both land together.
@@ -59,7 +65,7 @@ export function baseWorth(u, sc) {
   const def = u.defense / sc.defense;
   const reach = 1 + 0.25 * Math.log2(1 + u.range / sc.range);
   const mobility = 1 + 0.1 * Math.log2(1 + u.speed / sc.speed);
-  return Math.max(hp * (0.5 * atk + 0.5 * def) * reach * mobility, 1e-6);
+  return Math.max(hp * (0.5 * atk + 0.5 * def) * reach * mobility * Math.max(0.1, 1 + (u.worthBonus ?? 0)), 1e-6);
 }
 
 /** Worth of unit `u` were it at `hp` hit points. */
@@ -73,8 +79,23 @@ export const defaultDamageScale = (sc) => (0.7 * sc.hp) / sc.attack;
 
 export function strikeDamage(a, d, k) {
   if (!(a.attack > 0)) return 0;
-  return (k * a.attack * a.attack) / (a.attack + Math.max(d.defense, 0));
+  const arc = a.point && d.point ? arcModifier(d, a.point) : 0;
+  return (k * a.attack * a.attack) / (a.attack + Math.max(d.defense, 0) * (1 + arc / 100));
 }
+
+const bearing = (p, q) => ((Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI + 360) % 360;
+const angleBetween = (a, b) => { const x = Math.abs(a - b) % 360; return x > 180 ? 360 - x : x; };
+
+// The defense modifier (percent) of the side of `d` a blow from point `from` lands on.
+function arcModifier(d, from) {
+  if (d.facing == null || !d.arcs || (from.x === d.point.x && from.y === d.point.y)) return 0;
+  const off = angleBetween(d.facing, bearing(d.point, from));
+  return (off <= 60 + 1e-6 ? d.arcs.front : off >= 120 - 1e-6 ? d.arcs.rear : d.arcs.flank) ?? 0;
+}
+
+// Can `a` strike at `d` without turning first?
+const inCone = (a, d) => a.facing == null || a.fov >= 360 || !a.point || !d.point
+  || angleBetween(a.facing, bearing(a.point, d.point)) <= a.fov / 2 + 1e-6;
 
 // Greedy one-turn assignment of attackers to targets; returns the total worth
 // the attackers could take off the defenders.
@@ -93,7 +114,7 @@ function pressure(attackers, defenders, metric, sc, k, ready = null) {
       const left = d.hp - (assigned.get(d.id) ?? 0);
       if (left <= 0) continue;
       const dmg = Math.min(left, strikeDamage(a, d, k) * Math.max(1, a.rate));
-      const sure = now ? 1 : ready ? NOT_READY : dist <= a.range + 1e-9 ? 1 : MOVE_DISCOUNT;
+      const sure = now ? 1 : ready || !inCone(a, d) ? NOT_READY : dist <= a.range + 1e-9 ? 1 : MOVE_DISCOUNT;
       const v = (worthAt(d, left, sc) - worthAt(d, left - dmg, sc)) * sure;
       if (v > best) { best = v; bestId = d.id; bestDmg = dmg; }
     }

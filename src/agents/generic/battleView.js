@@ -27,6 +27,12 @@
 // `heading` (the point a move order is taking it to) and `striking` (the id of
 // the unit a strike in progress will land on) — and the unit is then judged
 // where it is going, with its strike as good as landed.
+//
+// Beyond the core numbers, unitAttributes may say how a unit faces — `facing`
+// (degrees, 0 = +x, screen y down), its vision cone `fov` and its defense `arcs`
+// ({ front, flank, rear }, percent) — and what what it carries is worth:
+// `worthBonus`, a share of its own worth (a full mana pool, a buff; negative for
+// a debuff), which the game works out from its declarations.
 // ---------------------------------------------------------------------------
 
 const tables = new WeakMap();
@@ -100,6 +106,10 @@ export function unitView(game, state, u) {
     speed: Math.max(speed, 0),
     rate: Math.max(read(STAT_NAMES.rate) ?? 1, 0),
     vision: read(STAT_NAMES.vision) ?? range + speed,
+    facing: finite(hook.facing) ? num(hook.facing) : null,
+    fov: finite(hook.fov) ? num(hook.fov) : 360,
+    arcs: hook.arcs ?? null,
+    worthBonus: finite(hook.worthBonus) ? num(hook.worthBonus) : 0,
   };
 }
 
