@@ -653,6 +653,36 @@ For each game:
 Up to three games can be extracted at once by sub-agents, each in its own
 worktree (the *max three sub-agents* feedback).
 
+*How, as built (2026-10-24, proven on xcom):*
+
+- **The layout.** A game repo's JAS app is `apps/<game>/`, and the game is
+  `apps/<game>/games/<game>/` beside its one-line `games.json`: the same
+  `gamesDir/<name>` shape as here, so `createBattleServer` needed no change.
+- **Steps 1 and 4's pack.** `scripts/export/<game>.mjs` maps the game's terrain
+  and maps into the core's format. The game's `foreignUnits` declaration moves
+  out of its definition into `games/<game>/pack.js` (`export const pack`): the
+  game no longer declares it, but `export-pack.mjs` reads `pack.js`, so the
+  game's repo can still re-export (`npm run export-pack -- --out <core>/library`).
+  The units must re-export byte for byte. Commit the game's change before
+  exporting, so the pack's provenance names a clean commit.
+- **Steps 2 to 4.** `scripts/extract-game.mjs <game> --to <dir>` makes the repo:
+  history by `git filter-repo` (`games/<game>/`, its demos and benches, its
+  checklist as `plans/capabilities.md`), the core and JAS as submodules cloned
+  from local copies and pointed at GitHub, `server.js`, start scripts on the
+  game's own port, hooks, `npm test` (the game's tests plus `test/server.test.js`,
+  which checks the app serves it), and `npm run golden`, which re-records through
+  the vendored `scripts/golden.mjs --registry`. bignumber.js is committed, so
+  nothing needs installing.
+- **Step 5.** `npm test` in the new repo, then `./start.sh` and a headless
+  Playwright pass over every scenario through the Browser's `#/new/<game>/<id>`
+  links: the battlefield draws, a turn ends, nothing errors or 404s. The result
+  goes in the checklist's **Moved** section.
+- **Step 6.** `scripts/remove-game.mjs <game> --repo opowell/battle-<game>`.
+- Game repos are made locally (`/Users/op/repos/battle-<game>`), pinned to the
+  core commit they left from; creating them on GitHub and pushing is a separate,
+  explicit step. When every game has left, each repo's pin is bumped to the
+  core without games and its tests run again.
+
 ### Phase 4: clean up the core
 
 1. Drop `vendor/obscuro-chess` and anything else only a game used.

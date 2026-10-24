@@ -25,6 +25,7 @@
 // and fog-chess's JAS), then pointed at their GitHub URLs, so nothing is fetched.
 import { execFileSync } from 'node:child_process';
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -60,7 +61,10 @@ function parseArgs(argv) {
   return o;
 }
 
-const run = (cwd, cmd, ...args) => execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+// git-filter-repo, where `pip3 install --user git-filter-repo` puts it on a Mac,
+// if it isn't on the PATH already.
+const env = { ...process.env, PATH: `${process.env.PATH}:${homedir()}/Library/Python/3.9/bin` };
+const run = (cwd, cmd, ...args) => execFileSync(cmd, args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const git = (cwd, ...args) => run(cwd, 'git', '-c', 'protocol.file.allow=always', ...args);
 const write = (file, text, mode) => {
   mkdirSync(path.dirname(file), { recursive: true });
