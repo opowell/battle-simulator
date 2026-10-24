@@ -1,0 +1,58 @@
+{
+  "id": "scifi",
+  "name": "Sci-fi extraction",
+  "description": "Get the courier to the far edge, or hold out for 20 turns: energy, shields, cloaking and detection, air and ground.",
+  "terrain": {
+    "plateau": { "name": "Plateau", "cost": { "land": 2, "air": 1 }, "cover": 25, "elevation": 1, "color": "#9a8f6a", "description": "High ground: costs double to climb; sees over low cover; +25% cover." },
+    "crater": { "name": "Crater", "cost": { "land": 2, "air": 1 }, "cover": 25, "concealment": 2, "color": "#6f6a5e", "description": "A unit inside is seen only from 2 squares or closer." }
+  },
+  "attributes": {
+    "energy": { "kind": "pool", "name": "Energy", "max": 20, "regen": 2, "start": 10 },
+    "shields": { "kind": "pool", "name": "Shields", "absorbs": true, "regen": 2 },
+    "courier": { "kind": "tag" },
+    "sieged": { "kind": "tag" }
+  },
+  "abilities": {
+    "cloak": { "name": "Cloak", "cost": { "energy": 10 }, "targets": "self", "effects": [{ "conceal": { "turns": 3 } }] },
+    "scan": { "name": "Scanner sweep", "cost": { "energy": 8 }, "range": 9, "targets": "ground", "los": false, "area": { "radius": 2 }, "affects": "enemy", "effects": [{ "reveal": { "turns": 2 } }] },
+    "patch": { "name": "Field medic", "cost": { "energy": 5 }, "range": 1, "targets": "ally", "effects": [{ "heal": { "amount": 5 } }] },
+    "siege": { "name": "Siege mode", "targets": "self", "effects": [{ "transform": { "into": "siege-tank" } }] },
+    "unsiege": { "name": "Mobile mode", "targets": "self", "effects": [{ "transform": { "into": "tank" } }] }
+  },
+  "unitTypes": {
+    "trooper": { "name": "Trooper", "glyph": "T", "hp": 10, "attack": 4, "defense": 3, "range": 4, "speed": 3, "rate": 1, "vision": 5, "pools": { "shields": 2 } },
+    "medic": { "name": "Medic", "glyph": "M", "hp": 9, "attack": 1, "defense": 3, "range": 1, "speed": 3, "rate": 1, "vision": 5, "pools": { "energy": { "max": 30, "start": 20 } }, "abilities": ["patch"] },
+    "tank": { "name": "Tank", "glyph": "K", "hp": 18, "attack": 6, "defense": 5, "range": 5, "speed": 3, "rate": 1, "vision": 5, "pools": { "shields": 6 }, "strike": { "filter": { "not": "air" } }, "abilities": ["siege"] },
+    "siege-tank": { "name": "Siege tank", "glyph": "S", "hp": 18, "attack": 10, "defense": 6, "range": 8, "speed": 0, "rate": 1, "vision": 5, "tags": ["sieged"], "pools": { "shields": 6 }, "strike": { "filter": { "not": "air" }, "minRange": 2 }, "abilities": ["unsiege"] },
+    "fighter": { "name": "Fighter", "glyph": "F", "domain": "air", "hp": 10, "attack": 5, "defense": 2, "range": 3, "speed": 6, "rate": 1, "vision": 6, "pools": { "shields": 4 } },
+    "spectre": { "name": "Spectre", "glyph": "G", "hp": 8, "attack": 5, "defense": 2, "range": 4, "speed": 4, "rate": 1, "vision": 6, "pools": { "energy": { "max": 25, "start": 15 } }, "abilities": ["cloak"] },
+    "drone": { "name": "Detector drone", "glyph": "D", "domain": "air", "hp": 6, "attack": 0, "defense": 2, "range": 1, "speed": 5, "rate": 1, "vision": 7, "tags": ["detector"], "strike": false, "pools": { "energy": { "max": 24, "start": 16 } }, "abilities": ["scan"] },
+    "courier": { "name": "Courier", "glyph": "C", "hp": 12, "attack": 1, "defense": 3, "range": 1, "speed": 3, "rate": 1, "vision": 5, "tags": ["courier"], "pools": { "shields": 4 } }
+  },
+  "board": {
+    "topology": "square", "width": 14, "height": 10,
+    "legend": { "p": "plateau", "o": "crater" },
+    "rows": [
+      "..............",
+      "...##.........",
+      "...##....pp...",
+      "......~~...o..",
+      "..o...~~......",
+      "......~~...o..",
+      "..o...~~......",
+      "...pp....##...",
+      ".........##...",
+      ".............."
+    ]
+  },
+  "armies": [
+    ["trooper", "courier", "medic", "tank", "drone", "spectre", "trooper"],
+    ["trooper", "trooper", "tank", "fighter", "spectre", "drone"]
+  ],
+  "victory": [
+    { "type": "reach", "side": 0, "tag": "courier", "cells": [[13, 0], [13, 1], [13, 2], [13, 3], [13, 4], [13, 5], [13, 6], [13, 7], [13, 8], [13, 9]] },
+    { "type": "royal", "tag": "courier" },
+    { "type": "survive", "side": 1, "windows": 20 },
+    { "type": "eliminate" }
+  ]
+}

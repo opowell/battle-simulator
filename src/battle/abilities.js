@@ -12,8 +12,8 @@
 //     windup: 0.5,                            // continuous time: windows until it lands
 //     effects: [{ damage: { power: 1.1, type: 'fire' } }, { status: { id: 'blind', turns: 2 } }] }
 //
-// A unit type may also reshape its own attack (`attack: { cost: { ammo: 1 } }`)
-// or have none (`attack: false`). Using any ability spends one of the unit's
+// A unit type may also reshape its own attack (`strike: { cost: { ammo: 1 } }`)
+// or have none (`strike: false`). Using any ability spends one of the unit's
 // strikes for the window (`rate`), plus its cost.
 //
 // The effect vocabulary is closed — damage, heal, modify, status, cleanse, move,
@@ -36,7 +36,7 @@ export function abilitiesOf(state, u) {
   const r = rulesOf(state);
   const t = typeOf(state, u);
   const out = [];
-  if (t.attack !== false) out.push(t.attack && typeof t.attack === 'object' ? { ...ATTACK, ...t.attack, id: 'attack' } : ATTACK);
+  if (t.strike !== false) out.push(t.strike && typeof t.strike === 'object' ? { ...ATTACK, ...t.strike, id: 'attack' } : ATTACK);
   for (const id of t.abilities ?? []) if (r.abilities[id]) out.push({ ...r.abilities[id], id });
   return out;
 }
@@ -182,13 +182,17 @@ export function affected(state, u, ab, target, point) {
 
 /**
  * In a stack (stacking 'stack'), a blow aimed at any unit lands on the stack's
- * best defender — the one with the most defense × hit points.
+ * best defender — the one with the most defense, then the most hit points.
  */
 export function defenderFor(state, t) {
   if (rulesOf(state).stacking !== 'stack') return t;
   const here = state.units.filter(x => x.alive && x.ownerId === t.ownerId && x.position.x === t.position.x && x.position.y === t.position.y);
   let best = t;
-  for (const x of here) if (stat(state, x, 'defense') * x.hp > stat(state, best, 'defense') * best.hp) best = x;
+  const rank = (x) => [stat(state, x, 'defense'), x.hp];
+  for (const x of here) {
+    const [d, h] = rank(x), [bd, bh] = rank(best);
+    if (d > bd || (d === bd && h > bh)) best = x;
+  }
   return best;
 }
 

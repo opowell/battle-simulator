@@ -1,0 +1,29 @@
+{
+  "id": "hex",
+  "name": "Hill fight (hex)",
+  "description": "A hex field with a two-level hill in the middle: hold its summit for three turns, or rout the other side. Units face, and are weaker struck from the flank or rear.",
+  "orientation": { "fov": 360, "arcs": { "front": 0, "flank": -25, "rear": -50 }, "turnCost": 1 },
+  "unitTypes": {
+    "spear": { "name": "Spearmen", "glyph": "S", "hp": 12, "attack": 4, "defense": 5, "range": 1, "speed": 2, "rate": 1, "vision": 4 },
+    "bow": { "name": "Bowmen", "glyph": "B", "hp": 8, "attack": 4, "defense": 2, "range": 3, "speed": 2, "rate": 1, "vision": 5, "facing": { "fov": 180 } },
+    "horse": { "name": "Horse", "glyph": "H", "hp": 10, "attack": 5, "defense": 3, "range": 1, "speed": 4, "rate": 1, "vision": 5, "jump": 1 },
+    "general": { "name": "General", "glyph": "G", "hp": 14, "attack": 5, "defense": 5, "range": 1, "speed": 3, "rate": 1, "vision": 6 }
+  },
+  "board": {
+    "topology": "hex", "width": 13, "height": 9,
+    "rows": [
+      ".............",
+      "..ff.....~~..",
+      "..ff.........",
+      ".....hhh.....",
+      "....hhhhh....",
+      ".....hhh.....",
+      ".........ff..",
+      "..~~.....ff..",
+      "............."
+    ],
+    "elevation": { "5,3": 1, "6,3": 1, "7,3": 1, "4,4": 1, "5,4": 1, "6,4": 2, "7,4": 1, "8,4": 1, "5,5": 1, "6,5": 1, "7,5": 1 }
+  },
+  "armies": [["spear", "bow", "general", "horse", "spear", "bow"]],
+  "victory": [{ "type": "hold", "cells": [[6, 4]], "windows": 3 }, { "type": "eliminate" }]
+}

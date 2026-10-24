@@ -1,0 +1,52 @@
+{
+  "id": "close-quarters",
+  "name": "Close quarters",
+  "description": "Two squads and a building of walls, doors and windows. Each soldier sees only what is in front of it, is weaker struck from behind, and must stop to reload.",
+  "terrain": {
+    "floor": { "name": "Floor", "cost": 1, "cover": 0, "color": "#a9a59c", "description": "Inside the building." },
+    "crate": { "name": "Crates", "cost": 1, "passable": false, "blocksSight": true, "color": "#7a5a34", "description": "Impassable; blocks sight." },
+    "rubble": { "name": "Rubble", "cost": 2, "cover": 25, "color": "#8b8378", "description": "Costs double; +25% defense." }
+  },
+  "attributes": {
+    "ammo": { "kind": "pool", "name": "Ammo", "max": 6, "regen": 0, "value": 0.3 }
+  },
+  "abilities": {
+    "reload": { "name": "Reload", "targets": "self", "windup": 1, "effects": [{ "modify": { "attr": "ammo", "by": 99 } }] }
+  },
+  "orientation": { "fov": 100, "arcs": { "front": 0, "flank": -25, "rear": -50 }, "turnCost": 1 },
+  "unitTypes": {
+    "pointman": { "name": "Pointman", "glyph": "P", "hp": 10, "attack": 4, "defense": 3, "range": 3, "speed": 4, "rate": 2, "vision": 6, "facing": { "fov": 120 },
+      "pools": { "ammo": 8 }, "strike": { "cost": { "ammo": 1 } }, "abilities": ["reload"] },
+    "rifleman": { "name": "Rifleman", "glyph": "R", "hp": 10, "attack": 5, "defense": 3, "range": 7, "speed": 3, "rate": 1, "vision": 8, "facing": { "fov": 90 },
+      "pools": { "ammo": 5 }, "strike": { "cost": { "ammo": 1 } }, "abilities": ["reload"] },
+    "breacher": { "name": "Breacher", "glyph": "B", "hp": 12, "attack": 8, "defense": 4, "range": 2, "speed": 3, "rate": 1, "vision": 5, "facing": { "fov": 120 },
+      "pools": { "ammo": 2 }, "strike": { "cost": { "ammo": 1 } }, "abilities": ["reload"] }
+  },
+  "board": {
+    "topology": "shapes", "width": 20, "height": 12, "ground": "open",
+    "shapes": [
+      { "x": 6, "y": 2, "w": 8, "h": 8, "terrain": "floor" },
+      { "x": 3, "y": 2, "w": 1, "h": 1, "terrain": "crate" },
+      { "x": 3, "y": 8, "w": 1, "h": 2, "terrain": "crate" },
+      { "x": 16, "y": 2, "w": 1, "h": 2, "terrain": "crate" },
+      { "x": 16, "y": 9, "w": 1, "h": 1, "terrain": "crate" },
+      { "points": [{ "x": 2, "y": 5 }, { "x": 4, "y": 4.5 }, { "x": 4.5, "y": 6.5 }, { "x": 2.5, "y": 7 }], "terrain": "rubble" },
+      { "points": [{ "x": 18, "y": 7 }, { "x": 16, "y": 7.5 }, { "x": 15.5, "y": 5.5 }, { "x": 17.5, "y": 5 }], "terrain": "rubble" },
+      { "x": 11, "y": 7, "w": 1, "h": 1, "terrain": "crate" },
+      { "x": 8, "y": 4, "w": 1, "h": 1, "terrain": "crate" }
+    ],
+    "walls": [
+      { "x0": 6, "y0": 2, "x1": 7, "y1": 2 }, { "x0": 7, "y0": 2, "x1": 8, "y1": 2, "window": true }, { "x0": 8, "y0": 2, "x1": 9, "y1": 2 },
+      { "x0": 11, "y0": 2, "x1": 12, "y1": 2 }, { "x0": 12, "y0": 2, "x1": 13, "y1": 2, "window": true }, { "x0": 13, "y0": 2, "x1": 14, "y1": 2 },
+      { "x0": 6, "y0": 10, "x1": 7, "y1": 10 }, { "x0": 7, "y0": 10, "x1": 8, "y1": 10, "window": true }, { "x0": 8, "y0": 10, "x1": 9, "y1": 10 },
+      { "x0": 11, "y0": 10, "x1": 12, "y1": 10 }, { "x0": 12, "y0": 10, "x1": 13, "y1": 10, "window": true }, { "x0": 13, "y0": 10, "x1": 14, "y1": 10 },
+      { "x0": 6, "y0": 2, "x1": 6, "y1": 3 }, { "x0": 6, "y0": 3, "x1": 6, "y1": 4, "window": true }, { "x0": 6, "y0": 4, "x1": 6, "y1": 5 },
+      { "x0": 6, "y0": 7, "x1": 6, "y1": 8 }, { "x0": 6, "y0": 8, "x1": 6, "y1": 9, "window": true }, { "x0": 6, "y0": 9, "x1": 6, "y1": 10 },
+      { "x0": 14, "y0": 2, "x1": 14, "y1": 3 }, { "x0": 14, "y0": 3, "x1": 14, "y1": 4, "window": true }, { "x0": 14, "y0": 4, "x1": 14, "y1": 5 },
+      { "x0": 14, "y0": 7, "x1": 14, "y1": 8 }, { "x0": 14, "y0": 8, "x1": 14, "y1": 9, "window": true }, { "x0": 14, "y0": 9, "x1": 14, "y1": 10 },
+      { "x0": 10, "y0": 2, "x1": 10, "y1": 5 }, { "x0": 10, "y0": 7, "x1": 10, "y1": 10 }
+    ]
+  },
+  "armies": [["pointman", "rifleman", "breacher", "rifleman", "pointman"]],
+  "victory": [{ "type": "eliminate" }]
+}

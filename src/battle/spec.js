@@ -15,7 +15,7 @@
 //   unitTypes   { type: { name, glyph, hp, attack, defense, range, speed, rate,
 //                         vision, domain, facing: { fov, arcs, turnCost },
 //                         attrs, pools, tags, resist, abilities: [ids],
-//                         attack: false | { …overrides of the default attack },
+//                         strike: false | { …overrides of the default attack },
 //                         jump, points, value } }
 //   formulas    { damage: 'expression' | { fn } }                         see exact.js
 //   board       { topology: 'square' | 'hex' | 'regions' | 'shapes', width,
@@ -101,6 +101,11 @@ export function resolveSpec(spec = {}, base = BASE_SPEC) {
   const out = { ...base, ...spec };
   out.terrain = Object.fromEntries(Object.entries({ ...(base.terrain ?? BASE_TERRAIN), ...(spec.terrain ?? {}) }).map(([k, t]) => [k, reviveTerrain(t)]));
   out.board = { ...(spec.board ?? base.board ?? BASE_SPEC.board) };
+  // A spec with units of its own fields those, not the base's armies.
+  if (!spec.armies && (spec.units || spec.unitTypes)) {
+    if (spec.units) delete out.armies;
+    else out.armies = [Object.keys(spec.unitTypes)];
+  }
   return out;
 }
 
@@ -133,7 +138,7 @@ export function checkSpec(spec, hooks = {}) {
     for (const a of t.abilities ?? []) if (!abilities[a]) errs.push(`unitTypes.${type}.abilities: no ability "${a}"`);
     for (const k of Object.keys(t.pools ?? {})) if (attrs[k]?.kind !== 'pool') errs.push(`unitTypes.${type}.pools.${k}: not a declared pool`);
     for (const k of Object.keys(t.attrs ?? {})) if (attrs[k]?.kind !== 'number') errs.push(`unitTypes.${type}.attrs.${k}: not a declared number`);
-    if (t.attack && typeof t.attack === 'object') checkAbility(`unitTypes.${type}.attack`, t.attack, true);
+    if (t.strike && typeof t.strike === 'object') checkAbility(`unitTypes.${type}.strike`, t.strike, true);
   }
   const dmg = spec.formulas?.damage;
   if (typeof dmg === 'string') { try { checkFormula(dmg); } catch (e) { errs.push(`formulas.damage: ${e.message}`); } } else fnOk('formulas.damage', dmg);

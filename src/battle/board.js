@@ -22,8 +22,10 @@
 //             space is native; discrete space plays on the plane's unit cells,
 //             each the terrain at its centre, a step blocked by a wall across it.
 //
-// Every board may carry `elevation` (per cell, or per region). Higher ground
-// sees over sight-blockers lower than both ends of a line; climbing costs extra.
+// Every board may carry `elevation` (per cell, or per region). A sight line
+// runs straight from one end's height to the other's; ground blocks it where it
+// rises above the line, a sight-blocking terrain standing one level higher than
+// its ground. So high ground sees over a wall below it. Climbing costs extra.
 //
 // Movement classes: a unit's `domain` (land, sea, air, or a game's own) prices
 // terrain — a terrain's `cost` and `passable` are a number/boolean for all, or
@@ -84,6 +86,10 @@ export function hexLine(a, b) {
   return out;
 }
 
+// Does ground of elevation `e` (a level higher where its terrain blocks sight)
+// rise above a sight line passing over it at height `h`?
+const overTop = (t, e, h) => e + (t.blocksSight ? 1 : 0) > h + 1e-9;
+
 // ── Shapes ───────────────────────────────────────────────────────────────────
 
 function polyOf(s) {
@@ -119,10 +125,15 @@ function polyCuts(P, x0, y0, x1, y1) {
   return out;
 }
 
+// Do segments ab and cd meet — touching counts, so nothing slips through the
+// point where two walls join?
 function segmentsCross(a, b, c, d) {
   const o = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
   const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d);
-  return ((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) && ((d3 > EPS && d4 < -EPS) || (d3 < -EPS && d4 > EPS));
+  if (((d1 > EPS && d2 < -EPS) || (d1 < -EPS && d2 > EPS)) && ((d3 > EPS && d4 < -EPS) || (d3 < -EPS && d4 > EPS))) return true;
+  const on = (p, q, r) => Math.min(p.x, q.x) - EPS <= r.x && r.x <= Math.max(p.x, q.x) + EPS && Math.min(p.y, q.y) - EPS <= r.y && r.y <= Math.max(p.y, q.y) + EPS;
+  return (Math.abs(d1) <= EPS && on(c, d, a)) || (Math.abs(d2) <= EPS && on(c, d, b))
+    || (Math.abs(d3) <= EPS && on(a, b, c)) || (Math.abs(d4) <= EPS && on(a, b, d));
 }
 
 // ── The board ────────────────────────────────────────────────────────────────
@@ -194,8 +205,9 @@ function build(board, terrain) {
         const t = B.terrainAt(cx, cy);
         if (!t) return false;
         if (!elev) { if (t.blocksSight) return false; continue; }
-        const e = B.elevAt({ x: cx, y: cy });
-        if ((t.blocksSight && e >= Math.min(ea, eb)) || e > Math.max(ea, eb)) return false;
+        const c = { x: cx + 0.5, y: cy + 0.5 };
+        const f = Math.hypot(c.x - a.x, c.y - a.y) / (Math.hypot(bb.x - a.x, bb.y - a.y) || 1);
+        if (overTop(t, B.elevAt({ x: cx, y: cy }), ea + (eb - ea) * f)) return false;
       }
       return true;
     };
@@ -215,8 +227,8 @@ function build(board, terrain) {
       for (let i = 1; i < line.length - 1; i++) {
         const t = B.terrainAt(line[i].x, line[i].y);
         if (!t) return false;
-        const e = elev ? B.elevAt(line[i]) : 0;
-        if ((t.blocksSight && e >= Math.min(ea, eb)) || e > Math.max(ea, eb)) return false;
+        if (!elev) { if (t.blocksSight) return false; continue; }
+        if (overTop(t, B.elevAt(line[i]), ea + ((eb - ea) * i) / (line.length - 1))) return false;
       }
       return true;
     };
@@ -345,8 +357,7 @@ function buildShapes(B, board, type, elev) {
       // The ends' own ground never blocks: a unit sees out of whatever it stands in.
       if (p.t0 <= EPS || p.t1 >= 1 - EPS) continue;
       if (!p.t) return false;
-      const e = p.t.elevation ?? 0;
-      if ((p.t.blocksSight && e >= Math.min(ea, eb)) || e > Math.max(ea, eb)) return false;
+      if (overTop(p.t, p.t.elevation ?? 0, ea + (eb - ea) * (p.t0 + p.t1) / 2)) return false;
     }
     return true;
   };

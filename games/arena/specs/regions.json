@@ -1,0 +1,44 @@
+{
+  "id": "regions",
+  "name": "Three cities (regions)",
+  "description": "Twelve territories and three cities. Armies are counts that merge where they meet. After 12 turns, the side with the most points wins: a point a surviving army, two a turn for each city held.",
+  "terrain": {
+    "city": { "name": "City", "cost": 1, "cover": 50, "color": "#b9a27f", "description": "Walls: +50% defense; worth 2 points a turn to whoever holds it." }
+  },
+  "unitTypes": {
+    "legion": { "name": "Legion", "glyph": "L", "hp": 4, "attack": 2, "defense": 2, "range": 1, "speed": 1, "rate": 1, "vision": 2, "count": 3 },
+    "riders": { "name": "Riders", "glyph": "R", "hp": 4, "attack": 3, "defense": 1, "range": 1, "speed": 2, "rate": 1, "vision": 3, "count": 2 },
+    "slingers": { "name": "Slingers", "glyph": "S", "hp": 3, "attack": 2, "defense": 1, "range": 2, "speed": 1, "rate": 1, "vision": 3, "count": 2 }
+  },
+  "board": {
+    "topology": "regions", "layout": "hex", "stacking": "count",
+    "regions": {
+      "westmarch": {"name": "Westmarch", "terrain": "city", "anchor": [1, 1], "cells": [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [2, 2], [3, 2], [2, 3]]},
+      "highfold": {"name": "Highfold", "terrain": "hill", "anchor": [5, 0], "cells": [[4, 0], [5, 0], [6, 0], [7, 0], [4, 1], [5, 1], [6, 1], [6, 2]]},
+      "northgate": {"name": "Northgate", "terrain": "open", "anchor": [9, 1], "cells": [[8, 0], [9, 0], [10, 0], [11, 0], [7, 1], [8, 1], [9, 1], [10, 1], [11, 1], [9, 2], [10, 2], [11, 2]]},
+      "fenwick": {"name": "Fenwick", "terrain": "forest", "anchor": [1, 4], "cells": [[0, 3], [1, 3], [0, 4], [1, 4], [2, 4], [3, 4], [0, 5], [1, 5], [0, 6]]},
+      "oldmill": {"name": "Old Mill", "terrain": "open", "anchor": [4, 3], "cells": [[4, 2], [5, 2], [3, 3], [4, 3], [5, 3], [4, 4], [5, 4], [3, 5]]},
+      "stonecross": {"name": "Stonecross", "terrain": "city", "anchor": [7, 3], "cells": [[7, 2], [8, 2], [6, 3], [7, 3], [8, 3], [7, 4], [8, 4]]},
+      "eastreach": {"name": "Eastreach", "terrain": "city", "anchor": [10, 4], "cells": [[9, 3], [10, 3], [11, 3], [9, 4], [10, 4], [11, 4], [9, 5], [10, 5], [11, 5], [10, 6]]},
+      "lowmoor": {"name": "Lowmoor", "terrain": "open", "anchor": [2, 6], "cells": [[2, 5], [1, 6], [2, 6], [3, 6], [0, 7], [1, 7], [2, 7], [3, 7]]},
+      "lakeside": {"name": "Lakeside", "terrain": "open", "anchor": [5, 6], "cells": [[4, 5], [5, 5], [4, 6], [5, 6], [6, 6], [4, 7], [5, 7], [6, 7]]},
+      "redcliff": {"name": "Redcliff", "terrain": "hill", "anchor": [8, 6], "cells": [[7, 5], [8, 5], [7, 6], [8, 6], [9, 6], [7, 7], [8, 7], [9, 7]]},
+      "southfork": {"name": "Southfork", "terrain": "forest", "anchor": [11, 7], "cells": [[11, 6], [10, 7], [11, 7]]},
+      "greywater": {"name": "Greywater", "terrain": "water", "anchor": [6, 5], "cells": [[6, 4], [6, 5]]}
+    }
+  },
+  "units": [
+    { "type": "legion", "seat": 0, "at": "westmarch" },
+    { "type": "legion", "seat": 0, "at": "fenwick" },
+    { "type": "riders", "seat": 0, "at": "lowmoor" },
+    { "type": "slingers", "seat": 0, "at": "westmarch" },
+    { "type": "legion", "seat": 1, "at": "eastreach" },
+    { "type": "legion", "seat": 1, "at": "northgate" },
+    { "type": "riders", "seat": 1, "at": "southfork" },
+    { "type": "slingers", "seat": 1, "at": "eastreach" }
+  ],
+  "victory": [
+    { "type": "points", "windows": 12, "hold": { "regions": ["westmarch", "stonecross", "eastreach"], "per": 2 } },
+    { "type": "eliminate" }
+  ]
+}

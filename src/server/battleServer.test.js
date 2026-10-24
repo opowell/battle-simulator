@@ -42,7 +42,7 @@ test('/lib serves a game module with its #core imports rewritten to URLs', async
     assert.equal(res.status, 200);
     const source = await res.text();
     assert.doesNotMatch(source, /from\s*['"]#/);
-    assert.match(source, /from\s*['"]\.\.\/\.\.\/src\/kit\//);
+    assert.match(source, /from\s*['"]\.\.\/\.\.\/src\/battle\//);
   } finally {
     http.close();
   }

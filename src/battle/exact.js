@@ -41,10 +41,12 @@ export function rat(x) {
   const v = Number(x);
   if (!Number.isFinite(v)) throw new Error(`exact: not a finite number: ${x}`);
   if (Number.isInteger(v)) return { n: BigInt(v), d: 1n };
-  // Doubling a double is exact, so this ends with the number's own binary fraction.
-  let m = v, d = 1n;
-  while (!Number.isInteger(m)) { m *= 2; d *= 2n; }
-  return norm(BigInt(m), d);
+  // A number is the decimal it prints as: a spec's 1.1 is 11/10, not the double
+  // nearest it — which is what its author wrote.
+  const m = /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/.exec(String(v));
+  const frac = m[3] ?? '', exp = Number(m[4] ?? 0) - frac.length;
+  const n = BigInt(m[2] + frac) * (m[1] ? -1n : 1n);
+  return exp >= 0 ? { n: n * 10n ** BigInt(exp), d: 1n } : norm(n, 10n ** BigInt(-exp));
 }
 
 const add = (a, b) => norm(a.n * b.d + b.n * a.d, a.d * b.d);

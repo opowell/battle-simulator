@@ -126,15 +126,13 @@ export const kinematics = {
   occupied: (x, y, unit, state) => claims(state, unit.id).some(({ p }) => Math.hypot(p.x - x, p.y - y) < 2 * UNIT_R - EPS),
 };
 
-// May `unit` stop on cell c? One unit a cell; in a stack, friends share; a
-// counted group may only join a group of its own type.
+// May `unit` stop on cell c? One unit a cell, unless the ruleset stacks: then
+// friends share (and a counted group joins one of its own type, mergeGroups).
 function cellFree(state, unit, c) {
   const mode = rulesOf(state).stacking;
   const here = claims(state, unit.id).filter(({ p }) => p.x === c.x && p.y === c.y).map(({ u }) => u);
   if (mode === 'one') return !here.length;
-  if (here.some(u => u.ownerId !== unit.ownerId)) return false;
-  if (mode === 'count') return here.every(u => u.type === unit.type && !u.task);
-  return true;
+  return !here.some(u => u.ownerId !== unit.ownerId);
 }
 
 /** How far `unit` may still travel on one order. */
@@ -207,11 +205,11 @@ const snap = (state, deg) => {
   return ((Math.round(deg / step) * step) % 360 + 360) % 360;
 };
 
-/** The facing a move leaves a unit with: the direction of its last step. */
+/** The facing a move leaves a unit with: the way it went, start to end. */
 function facingAfter(state, u, path) {
   if (u.facing == null || path.length < 2) return u.facing;
   const B = boardIn(state);
-  const a = path[path.length - 2], b = path[path.length - 1];
+  const a = path[0], b = path[path.length - 1];
   const pa = isContinuousSpace(state) ? a : B.centre(a), pb = isContinuousSpace(state) ? b : B.centre(b);
   return snap(state, bearing(pa, B.near?.(pa, pb) ?? pb));
 }
@@ -277,12 +275,13 @@ function buildBoard(b, config) {
   const width = config.width ?? b.width ?? 14, height = config.height ?? b.height ?? 10;
   let terrain;
   if (config.terrain) terrain = config.terrain;
-  else if (config.map === 'open' || b.generator === 'open') terrain = {};
+  else if (config.map === 'open') terrain = {};
   else if (b.rows) {
     terrain = {};
     const legend = { ...LEGEND, ...(b.legend ?? {}) };
     b.rows.forEach((row, y) => [...row].forEach((ch, x) => { const k = legend[ch] ?? 'open'; if (k !== 'open') terrain[`${x},${y}`] = k; }));
   } else if (b.terrain) terrain = b.terrain;
+  else if (b.generator === 'open') terrain = {};
   else terrain = riverTerrain(width, height);
   return {
     ...(topology !== 'square' ? { topology } : {}),
@@ -1198,8 +1197,10 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
       if (bonus) out.worthBonus = bonus;
       return out;
     },
-    // The board point a unit stands on, for the generic AI's distances.
-    unitPoint: (state, u) => pointOf(state, u),
+    // The point a unit stands on, for the generic AI's distances: its cell on a
+    // square grid (whose metric it then reads as Chebyshev), else a point on the
+    // plane where neighbouring cells are 1 apart.
+    unitPoint: (state, u) => (isContinuousSpace(state) || ['square', 'shapes'].includes(boardIn(state).topology) ? { x: u.position.x, y: u.position.y } : pointOf(state, u)),
     unitStats() {
       return Object.fromEntries(Object.entries(rulesOf({ gameName: name, gameSpecific: {} }).types).map(([k, t]) =>
         [k, { hp: t.hp, attack: t.attack, defense: t.defense, range: t.range, move: t.speed, domain: t.domain ?? 'land' }]));

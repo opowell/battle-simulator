@@ -1,0 +1,56 @@
+{
+  "id": "magic",
+  "name": "Magic skirmish",
+  "description": "Blades and spellcasters: mana, statuses and area spells on a wooded field. Lose your knight and you lose the battle.",
+  "attributes": {
+    "mp": { "kind": "pool", "name": "MP", "max": 20, "regen": 4 },
+    "leader": { "kind": "tag" },
+    "haste": { "kind": "status", "name": "Haste", "turns": 3, "stack": "refresh", "mods": { "speed": "*3/2", "rate": "+1" }, "value": 0.25 },
+    "slow": { "kind": "status", "name": "Slow", "turns": 2, "mods": { "speed": "*1/2" }, "harmful": true, "value": -0.15 },
+    "poison": { "kind": "status", "name": "Poison", "turns": 3, "stack": "stack", "max": 3, "tick": [{ "damage": { "amount": 2 } }], "harmful": true },
+    "stop": { "kind": "status", "name": "Stop", "turns": 1, "blocks": ["move", "act"], "harmful": true },
+    "regen": { "kind": "status", "name": "Regen", "turns": 3, "tick": [{ "heal": { "amount": 2 } }] },
+    "shell": { "kind": "status", "name": "Shell", "turns": 2, "mods": { "defense": "+3" }, "value": 0.15 },
+    "blind": { "kind": "status", "name": "Blind", "turns": 2, "mods": { "vision": "=1", "range": "=1" }, "harmful": true, "value": -0.2 }
+  },
+  "abilities": {
+    "fire": { "name": "Fireball", "cost": { "mp": 8 }, "range": 4, "targets": "ground", "area": { "radius": 1 }, "affects": "enemy",
+      "effects": [{ "damage": { "power": 1, "type": "fire" } }] },
+    "frost": { "name": "Frost", "cost": { "mp": 6 }, "range": 4, "targets": "enemy",
+      "effects": [{ "damage": { "power": 0.75, "type": "ice" } }, { "status": { "id": "slow" } }] },
+    "cure": { "name": "Cure", "cost": { "mp": 6 }, "range": 3, "targets": "ally", "effects": [{ "heal": { "amount": 6 } }] },
+    "regen": { "name": "Regen", "cost": { "mp": 5 }, "range": 3, "targets": "ally", "effects": [{ "status": { "id": "regen" } }] },
+    "esuna": { "name": "Esuna", "cost": { "mp": 4 }, "range": 3, "targets": "ally", "effects": [{ "cleanse": {} }] },
+    "shell": { "name": "Shell", "cost": { "mp": 4 }, "range": 3, "targets": "ally", "effects": [{ "status": { "id": "shell" } }] },
+    "haste": { "name": "Haste", "cost": { "mp": 8 }, "range": 3, "targets": "ally", "effects": [{ "status": { "id": "haste" } }] },
+    "stop": { "name": "Stop", "cost": { "mp": 12 }, "cooldown": 2, "range": 3, "targets": "enemy", "effects": [{ "status": { "id": "stop" } }] },
+    "blink": { "name": "Blink", "cost": { "mp": 5 }, "range": 4, "targets": "ground", "los": false, "effects": [{ "move": { "kind": "teleport" } }] },
+    "venom": { "name": "Venom strike", "range": 1, "targets": "enemy", "effects": [{ "damage": { "power": 0.5 } }, { "status": { "id": "poison" } }] },
+    "shove": { "name": "Shield bash", "range": 1, "targets": "enemy", "effects": [{ "damage": { "power": 0.5 } }, { "move": { "kind": "push", "distance": 2 } }] },
+    "dazzle": { "name": "Dazzling shot", "cooldown": 2, "range": 5, "targets": "enemy", "effects": [{ "damage": { "power": 0.5 } }, { "status": { "id": "blind" } }] }
+  },
+  "unitTypes": {
+    "knight": { "name": "Knight", "glyph": "K", "hp": 18, "attack": 6, "defense": 6, "range": 1, "speed": 3, "rate": 1, "vision": 4, "tags": ["leader"], "abilities": ["shove"] },
+    "pyromancer": { "name": "Pyromancer", "glyph": "P", "hp": 9, "attack": 5, "defense": 2, "range": 1, "speed": 3, "rate": 1, "vision": 5, "pools": { "mp": 24 }, "resist": { "fire": 50 }, "abilities": ["fire", "frost"] },
+    "healer": { "name": "Healer", "glyph": "H", "hp": 10, "attack": 2, "defense": 3, "range": 1, "speed": 3, "rate": 1, "vision": 5, "pools": { "mp": 24 }, "abilities": ["cure", "regen", "esuna", "shell"] },
+    "chronomancer": { "name": "Chronomancer", "glyph": "C", "hp": 9, "attack": 3, "defense": 2, "range": 1, "speed": 3, "rate": 1, "vision": 5, "pools": { "mp": 26 }, "abilities": ["haste", "stop", "blink"] },
+    "rogue": { "name": "Rogue", "glyph": "R", "hp": 11, "attack": 4, "defense": 3, "range": 1, "speed": 5, "rate": 1, "vision": 6, "abilities": ["venom"] },
+    "ranger": { "name": "Ranger", "glyph": "A", "hp": 10, "attack": 4, "defense": 3, "range": 5, "speed": 3, "rate": 1, "vision": 6, "abilities": ["dazzle"] }
+  },
+  "board": {
+    "topology": "square", "width": 12, "height": 9,
+    "rows": [
+      "............",
+      "..f.....h...",
+      "..ff....hh..",
+      "............",
+      "....~~~~....",
+      "............",
+      "..hh....ff..",
+      "...h.....f..",
+      "............"
+    ]
+  },
+  "armies": [["knight", "pyromancer", "healer", "chronomancer", "rogue", "ranger"]],
+  "victory": [{ "type": "eliminate" }, { "type": "royal", "tag": "leader" }]
+}

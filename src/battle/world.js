@@ -61,7 +61,7 @@ export function compile(spec, hooks = {}) {
     // in windows.
     periodic: kinds('status').length > 0 || kinds('pool').some(id => (attrs[id].regen ?? 0) !== 0 || Object.values(types).some(t => t.pools?.[id]?.regen))
       || Object.values(spec.abilities ?? {}).some(a => a.cooldown > 0)
-      || Object.values(types).some(t => t.attack?.cooldown > 0)
+      || Object.values(types).some(t => t.strike?.cooldown > 0)
       || (spec.victory ?? []).some(v => ['hold', 'survive', 'points'].includes(v.type) || v.fn),
   };
   byHooks.set(hooks, r);
