@@ -17,6 +17,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "discrete",
         "time": "discrete"
       },
@@ -48,6 +49,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "discrete",
         "time": "discrete"
       },
@@ -79,6 +81,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "discrete",
         "time": "discrete",
         "width": 12,
@@ -117,6 +120,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "continuous",
         "time": "continuous",
         "simultaneousTurns": true
@@ -136,6 +140,175 @@
       }
     },
     {
+      "id": "scenario:magic",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "fogMemory": false,
+        "space": "discrete",
+        "time": "discrete",
+        "spec": "magic"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 11,
+      "result": null,
+      "hashes": {
+        "initial": "42db008c5527d2df",
+        "state": "46f5269284d01364",
+        "log": "60a3f3088014e0e7",
+        "grid": "3161fb154846fa00",
+        "visible": "f8d3c6eaf0088fe4"
+      }
+    },
+    {
+      "id": "scenario:scifi",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "fogMemory": false,
+        "space": "discrete",
+        "time": "discrete",
+        "spec": "scifi"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 13,
+      "result": null,
+      "hashes": {
+        "initial": "9aa65cb6bd0b714b",
+        "state": "446105418b83e7a6",
+        "log": "b6efb7c98e16ee4a",
+        "grid": "0a414ed4a877b89c",
+        "visible": "e4250843b76551cb"
+      }
+    },
+    {
+      "id": "scenario:hex",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "fogMemory": false,
+        "space": "discrete",
+        "time": "discrete",
+        "spec": "hex"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 14,
+      "result": null,
+      "hashes": {
+        "initial": "09385e9d80d5af09",
+        "state": "c266021d80d4671c",
+        "log": "e03d94db7bd4f804",
+        "grid": "c4f983a6dc6c6d10",
+        "visible": "af58e943306fde9f"
+      }
+    },
+    {
+      "id": "scenario:regions",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "fogMemory": false,
+        "space": "discrete",
+        "time": "discrete",
+        "spec": "regions"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 88,
+      "plies": 88,
+      "turn": 12,
+      "result": {
+        "outcome": "win",
+        "winnerId": "p2",
+        "reason": "elimination"
+      },
+      "hashes": {
+        "initial": "4a1040b9d8b52f9b",
+        "state": "f8f6a4738586bd90",
+        "log": "a65187cbaeaafb1d",
+        "grid": "476eb84c4c971b46",
+        "visible": "030d35a4f8076526"
+      }
+    },
+    {
+      "id": "scenario:close-quarters",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "fogMemory": false,
+        "space": "discrete",
+        "time": "discrete",
+        "spec": "close-quarters"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 11,
+      "result": null,
+      "hashes": {
+        "initial": "62c5f6e4eba1b4b8",
+        "state": "91222d733e0dc456",
+        "log": "9c115a2082b3c5f6",
+        "grid": "1207ea7e26269b46",
+        "visible": "c7ae5d56fbf1a84b"
+      }
+    },
+    {
       "id": "mode:discrete-discrete-sequential",
       "players": [
         {
@@ -149,6 +322,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "discrete",
         "time": "discrete",
         "simultaneousTurns": false
@@ -181,6 +355,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "discrete",
         "time": "discrete",
         "simultaneousTurns": true
@@ -217,6 +392,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "discrete",
         "time": "continuous",
         "simultaneousTurns": false
@@ -249,6 +425,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "discrete",
         "time": "continuous",
         "simultaneousTurns": true
@@ -281,6 +458,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "continuous",
         "time": "discrete",
         "simultaneousTurns": false
@@ -313,6 +491,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "continuous",
         "time": "discrete",
         "simultaneousTurns": true
@@ -349,6 +528,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "continuous",
         "time": "continuous",
         "simultaneousTurns": false
@@ -381,6 +561,7 @@
       ],
       "config": {
         "fogOfWar": false,
+        "fogMemory": false,
         "space": "continuous",
         "time": "continuous",
         "simultaneousTurns": true
@@ -413,6 +594,7 @@
       ],
       "config": {
         "fogOfWar": true,
+        "fogMemory": false,
         "space": "discrete",
         "time": "discrete"
       },
