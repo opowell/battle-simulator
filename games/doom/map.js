@@ -121,7 +121,7 @@ const isFloorCell = (x, y) => MAP_TILES[k(x, y)] === 'floor';
 // visibly sit on top of the slime rather than the slime being carved into a ring around
 // them (see RENDER_SHAPES). For movement/DECOR_KINDS purposes a pool still only "claims"
 // the un-floored cells inside it, so the platform/causeway/ledges stay walkable.
-const NUKAGE = [
+export const NUKAGE = [
   { shape: 'rect', x: 12, y: 10, w: 13, h: 6 }, // courtyard moat
   { shape: 'oval', x: 10, y: 16, w: 3, h: 3 },  // channel pool, west
   { shape: 'oval', x: 23, y: 16, w: 3, h: 3 },  // channel pool, east
