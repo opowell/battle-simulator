@@ -1,12 +1,17 @@
 {
   "game": "surviv",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "6400a8d0d112637f042c967c50ddd32a1d42cab8",
+    "date": "2026-10-24T19:12:17+02:00"
   },
   "units": 6,
   "art": 5,
+  "terrain": 10,
+  "maps": 1,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "loot (weapons, grenades, vests, helmets): kept as map features, but the core has no items; every player starts with fists, as in surviv",
+    "crates and barrels break in surviv: here they stand for good",
+    "ovals (trees, ponds, barrels, bushes), drawn as 16-sided polygons",
+    "where a bush overlaps a forest's rim it is walked and seen through here; surviv lets the forest block sight there"
   ]
 }

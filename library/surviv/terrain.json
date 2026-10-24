@@ -1,0 +1,78 @@
+{
+  "grass": {
+    "name": "Grass",
+    "color": "#5a9450",
+    "description": "Open ground.",
+    "cost": 1,
+    "cover": 0
+  },
+  "edge": {
+    "name": "Edge",
+    "color": "#24402a",
+    "description": "The edge of the map: impassable.",
+    "cost": 1,
+    "passable": false
+  },
+  "forest": {
+    "name": "Forest",
+    "color": "#2c5f3a",
+    "description": "Dense trees: impassable, blocks sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "water": {
+    "name": "Water",
+    "color": "#2f7fae",
+    "description": "Impassable, blocks sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "building": {
+    "name": "Building",
+    "color": "#7a6a55",
+    "description": "Impassable, blocks sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "crate": {
+    "name": "Crates",
+    "color": "#8a6a3f",
+    "description": "Hard cover: impassable, blocks sight (breakable in surviv).",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "barrel": {
+    "name": "Barrel",
+    "color": "#a44a3a",
+    "description": "Hard cover: impassable, blocks sight (breakable in surviv).",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "bush": {
+    "name": "Bush",
+    "color": "#3c7a44",
+    "description": "Walkable; hides anyone in it from enemies beyond spotting range.",
+    "cost": 1,
+    "cover": 0,
+    "concealment": 1.6
+  },
+  "red-spawn": {
+    "name": "Red spawn",
+    "color": "#a0705a",
+    "description": "Red team's starting area.",
+    "cost": 1,
+    "cover": 0
+  },
+  "blue-spawn": {
+    "name": "Blue spawn",
+    "color": "#5a7fa0",
+    "description": "Blue team's starting area.",
+    "cost": 1,
+    "cover": 0
+  }
+}
