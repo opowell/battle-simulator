@@ -136,6 +136,20 @@ that game, and a number on a game row (Sessions 3, Units 6) opens exactly those
 records. The query lives in the URL, so any view is a link. An opened record
 becomes a tab beside the browser.
 
+A link can also **start** a session and open it (`apps/console/deeplink.js`):
+
+```
+/ui/console/#/new/<game>[/<scenario>]?seats=human,cpu&fog=on&difficulty=40&maxTurns=80
+```
+
+Left bare it is the scenario's one-click start. `seats` names one agent per seat
+(`cpu` is the game's default AI; `agent:Name` names the seat too); any other key
+is one of the game's options by id (`fog` is short for `fogOfWar`, and an AI
+difficulty's time key, `aiTimeMs`, sets a per-move time instead of a power level).
+A key, agent or scenario the game does not have is refused by name rather than
+ignored. `#/session/<id>` and `#/game/<name>` open an existing session and a
+game's setup page.
+
 The data comes from one endpoint, `GET /catalog` (`catalog.js`), which derives
 it all generically: units come from the same `setupPreview` the setup screen
 uses, so no game needs code for the console. Edits to a game's definition or
