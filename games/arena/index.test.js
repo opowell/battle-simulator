@@ -3,8 +3,17 @@ import assert from 'node:assert/strict';
 import { GameEngine } from '#core/engine/index.js';
 import { RandomAgent } from '#core/agents/RandomAgent.js';
 import { ArenaGame, UNIT_TYPES } from './index.js';
-import { segmentCells, segmentCost, lineOfSight } from './geometry.js';
+import { segmentCells } from '#core/battle/geometry.js';
+import { boardOf } from '#core/battle/board.js';
+import { segmentCost as costOf } from '#core/battle/BattleGame.js';
+import { resolveSpec } from '#core/battle/spec.js';
 import { strikeDamage, MAX_WAIT } from './ArenaGame.js';
+
+// The board's questions about a bare board under Arena's terrain, for a land unit.
+const { terrain } = resolveSpec({});
+const bare = (board) => ({ gameName: 'Arena', board, gameSpecific: { spacetime: { space: 'continuous' } } });
+const segmentCost = (board, x0, y0, x1, y1) => costOf(bare(board), { domain: 'land' }, x0, y0, x1, y1);
+const lineOfSight = (board, ax, ay, bx, by) => boardOf(board, terrain).sight({ x: ax, y: ay }, { x: bx, y: by });
 
 const PLAYERS = [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 
