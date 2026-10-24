@@ -1,12 +1,18 @@
 {
   "game": "sc2",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "46b5eb687ba8147747ba4dac6330e842a63ea848",
+    "date": "2026-10-24T22:39:51+02:00"
   },
   "units": 42,
   "art": 42,
+  "terrain": 6,
+  "maps": 3,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "buildings, workers' mining and production: the core has no economy (each main base is kept as a map feature)",
+    "mineral and gas amounts: a field or geyser is only ground that ground units cannot walk",
+    "creep",
+    "shields, armour and splash as their own rules: the pack reads shields as hp and armour as defence",
+    "high ground: SC2 has ranged attackers below it miss 30% of shots; the core gives the higher defender cover instead, and its elevation blocks sight across the plateau where SC2's sight (three squares, Chebyshev) has no line of sight at all"
   ]
 }
