@@ -1,0 +1,162 @@
+{
+  "plains": {
+    "name": "Plains",
+    "color": "#3a6e28",
+    "description": "Open ground. No effect.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "forest": {
+    "name": "Forest",
+    "color": "#1e4010",
+    "description": "Slows movement; cover from heavy fire.",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "hills": {
+    "name": "Hills",
+    "color": "#7a6040",
+    "description": "Slows movement; cover from heavy fire.",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "water": {
+    "name": "Water",
+    "color": "#0e3d5c",
+    "description": "Slows units and drowns them over time.",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "mountains": {
+    "name": "Mountains",
+    "color": "#50504a",
+    "description": "Impassable.",
+    "cost": {
+      "land": null,
+      "air": 1
+    },
+    "passable": {
+      "land": false,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "sand": {
+    "name": "Sand",
+    "color": "#b09050",
+    "description": "Slows light units.",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "city": {
+    "name": "City",
+    "color": "#3a6e28",
+    "description": "Earns gold for its owner; captured by standing on it.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "capital": {
+    "name": "Capital",
+    "color": "#3a6e28",
+    "description": "A side's capital: lose it and the war is lost.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "bridge": {
+    "name": "Bridge",
+    "color": "#5a4a30",
+    "description": "Fast crossing over water.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "open": {
+    "name": "Plains",
+    "color": "#3a6e28",
+    "description": "Open ground. No effect.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  }
+}
