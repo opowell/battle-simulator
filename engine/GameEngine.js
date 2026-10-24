@@ -324,7 +324,12 @@ export class GameEngine {
     // players per step are natively simultaneous — leave them be.
     // `play: 'simultaneous'` is the unified spelling of `simultaneousTurns: true`
     // (see games/spacetime.js resolveSpaceTime); both select we-go planning.
-    if (this._isSimultaneous() && this._state.activePlayers.length === 1)
+    // A game that runs its own clock says so with `nativelySimultaneous(state)`:
+    // it already decides which seats are on move at each instant, all of them at
+    // once when play is simultaneous, so an instant where only one seat has a
+    // decision is not the start of a we-go round (games/arena does this).
+    if (this._isSimultaneous() && this._state.activePlayers.length === 1
+        && !this.game.nativelySimultaneous?.(this._state))
       return this._stepSimultaneous();
     return this._stepDiscrete();
   }

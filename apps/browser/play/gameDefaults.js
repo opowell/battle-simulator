@@ -3,6 +3,10 @@
 
 function defaultCpuAgent(g) {
   const ids = (g?.agents ?? []).map(a => a.id);
+  // A game may name the AI it is best played against (Arena: the generic AI,
+  // since it has no evaluator of its own for Obscuro to search with).
+  const preferred = g?.uiDefaults?.cpuAgent;
+  if (preferred && ids.includes(preferred)) return preferred;
   return ids.includes('obscuro') ? 'obscuro' : (ids[0] ?? 'random');
 }
 

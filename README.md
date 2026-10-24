@@ -22,6 +22,7 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | `sc2` | StarCraft 2 | [games/sc2/](games/sc2/README.md) |
 | `doom` | Doom | [games/doom/](games/doom/README.md) |
 | `memoir44` | Memoir '44 | [games/memoir44/](games/memoir44/README.md) |
+| `arena` | The generic battle: terrain and units that are only numbers, in all eight (space × time × play) modes | [games/arena/](games/arena/README.md) |
 
 ## Quick start
 
@@ -238,6 +239,24 @@ const agent = new ApiAgent('p1');
 agent.submit(action);  // unblocks the engine
 agent.abort('reason'); // rejects pending promise
 ```
+
+### GenericAgent
+
+The generic AI. It plays any battle from the units' numbers alone (attack,
+defense, range, speed, hit points), never calling a game's `evaluateState`. It
+runs in discrete or continuous space and time, sequentially or simultaneously.
+It plans its whole turn with a beam search over its own actions, judges
+positions by material, exposure, threat and initiative, remembers enemies lost
+under fog, and calibrates itself to each game's damage scale.
+
+```js
+import { makeGenericAgent } from './agents/generic/GenericAgent.js';
+{ id: 'p2', name: 'CPU', agent: makeGenericAgent(MyGame) }
+```
+
+Offered for every game as **AI (generic tactics)**. It is
+[Arena](games/arena/README.md)'s default opponent. How it works, and what it has
+been measured against: [agents/generic/](agents/generic/README.md).
 
 ### ObscuroAgent
 

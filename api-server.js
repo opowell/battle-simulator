@@ -34,6 +34,7 @@ import { RandomAgent } from './agents/index.js';
 import { ApiAgent } from './agents/ApiAgent.js';
 import { ObscuroAgent } from './agents/ObscuroAgent.js';
 import { makeGreedyAgent } from './agents/GreedyAgent.js';
+import { makeGenericAgent } from './agents/generic/GenericAgent.js';
 
 import { ChessGame }         from './games/chess/index.js';
 import { TacticalGame }      from './games/tactical/index.js';
@@ -55,6 +56,7 @@ import { KDiceGame }        from './games/kdice/index.js';
 import { WarodDotsGame }   from './games/warofdots/WarodDotsGame.js';
 import { SurvivGame }        from './games/surviv/index.js';
 import { Memoir44Game }      from './games/memoir44/index.js';
+import { ArenaGame }         from './games/arena/index.js';
 
 // ---------------------------------------------------------------------------
 // Static file serving — /ui/<name>/* → apps/<name>/
@@ -364,6 +366,7 @@ const GAMES = {
   warofdots:     { game: WarodDotsGame,     minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'player', name: 'You' }, { id: 'ai', name: 'AI' }] },
   surviv:        { game: SurvivGame,        minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'blue', name: 'Blue' }, { id: 'red', name: 'Red' }] },
   memoir44:      { game: Memoir44Game,      minPlayers: 2, maxPlayers: 2,  defaultPlayers: [{ id: 'allies', name: 'Allies' }, { id: 'axis', name: 'Axis' }] },
+  arena:         { game: ArenaGame,         minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
 };
 
 // Every game may field units of the others (engine/foreignUnits.js) — those that
@@ -1608,12 +1611,15 @@ function route(req) {
 // ---------------------------------------------------------------------------
 
 // Available for every game. 'greedy' is the generic low-memory/high-performance
-// 1-ply heuristic agent (agents/GreedyAgent.js); 'obscuro' is the generic
-// equilibrium/CFR agent (agents/ObscuroAgent.js). A game may override either by
+// 1-ply heuristic agent (agents/GreedyAgent.js); 'generic' searches its own turn
+// and judges positions from unit numbers alone, so it needs no evaluateState
+// (agents/generic/); 'obscuro' is the generic equilibrium/CFR agent
+// (agents/ObscuroAgent.js). A game may override either by
 // declaring an entry with the same id in its own `agents` array (chess does).
 const BUILTIN_AGENTS = [
   { id: 'random', name: 'AI (random)' },
   { id: 'greedy', name: 'AI (greedy heuristic)' },
+  { id: 'generic', name: 'AI (generic tactics)' },
   { id: 'obscuro', name: 'AI (Obscuro/CFR)' },
 ];
 
@@ -1816,6 +1822,8 @@ function makeSeatAgent(game, agentType = 'human') {
   if (gameAgent) return gameAgent.agent;
   // Generic 1-ply heuristic agent — low-memory, fast, runs for any game.
   if (agentType === 'greedy') return makeGreedyAgent(game);
+  // Generic turn-planning agent — reads any game as units with numbers.
+  if (agentType === 'generic') return makeGenericAgent(game);
   // Generic equilibrium agent — runs for any game the engine can drive.
   if (agentType === 'obscuro') return new ObscuroAgent(game);
   return null;

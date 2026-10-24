@@ -34,6 +34,7 @@ import { KDiceGame }         from './kdice/index.js';
 import { WarodDotsGame }     from './warofdots/WarodDotsGame.js';
 import { SurvivGame }        from './surviv/index.js';
 import { Memoir44Game }      from './memoir44/index.js';
+import { ArenaGame }         from './arena/index.js';
 
 // Seat ids as api-server.js's registry deals them.
 const GAMES = [
@@ -57,6 +58,7 @@ const GAMES = [
   ['warofdots', WarodDotsGame, ['player', 'ai']],
   ['surviv', SurvivGame, ['blue', 'red']],
   ['memoir44', Memoir44Game, ['allies', 'axis']],
+  ['arena', ArenaGame, ['p1', 'p2']],
 ];
 
 const seats = (ids) => ids.map(id => ({ id, name: id }));

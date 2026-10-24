@@ -168,6 +168,29 @@
  *   Called when a setup screen asks for the opening position to lay units out on,
  *   so the session that is finally created gets the same world.
  *
+ * --- The generic unit contract ----------------------------------------------
+ * The generic AI (agents/generic) plays any game by reading its units as numbers.
+ * It finds them without help in most games (a unit's own fields, the game's
+ * unitStats table, its foreignUnits profiles); these two hooks are for a game
+ * that wants to say exactly.
+ *
+ * @property {(state: GameState, unit: Unit) => object} [unitAttributes]
+ *   Optional. What `unit` is, in numbers: { hp, maxHp, attack, defense, range,
+ *   speed, rate, vision }, any of them left out — plus, in a game where orders take
+ *   time, what it is in the middle of: `heading` (the {x, y} a move order is taking
+ *   it to) and `striking` (the id of the unit a strike under way will land on), so
+ *   a position right after an order is judged by what the order will do.
+ *
+ * @property {(state: GameState, unit: Unit) => {x: number, y: number} | null} [unitPoint]
+ *   Optional. The plane point `unit` stands on, for a game whose positions are not
+ *   {x, y} / {col, row} / an algebraic square.
+ *
+ * @property {(state: GameState) => boolean} [nativelySimultaneous]
+ *   Optional. True while the game runs its own clock and itself decides which seats
+ *   are on move at each instant — all of them at once when play is simultaneous.
+ *   The engine then never wraps it in we-go planning, even at an instant where only
+ *   one seat has a decision (games/arena in continuous time).
+ *
  * @property {(state: GameState, action: Action) => number} [getActionDuration]
  *   Optional. Continuous-time mode only. Returns the sim-time (in seconds) for
  *   this action to complete — e.g. travelTime for a move, reloadTime for an attack.

@@ -19,6 +19,7 @@
     "demo:chess:melee": "node demo/chess-demo.js --auto --scenario=melee",
     "demo:chess:sliding": "node demo/chess-demo.js --auto --scenario=sliding",
     "demo:tactical:auto": "node demo/tactical-demo.js --auto",
+    "bench:generic": "node demo/generic-ai-bench.mjs",
     "demo:civ1": "node demo/civ1-demo.js",
     "demo:civ1:auto": "node demo/civ1-demo.js --auto",
     "demo:civ1:greedy": "node demo/civ1-demo.js --auto --greedy",
@@ -57,7 +58,7 @@
     "demo:kdice:3p": "node demo/kdice-demo.js --auto --players=3",
     "demo:kdice:4p": "node demo/kdice-demo.js --auto --players=4",
     "build-release": "node scripts/build-release.mjs",
-    "test": "node --test $(find games engine apps -name '*.test.js') $(find . -maxdepth 1 -name '*.test.js')",
+    "test": "node --test $(find games engine apps agents/generic -name '*.test.js') $(find . -maxdepth 1 -name '*.test.js')",
     "kill:port:3333": "lsof -i tcp:3333 | awk 'NR!=1 {print $2}' | xargs kill -9"
   },
   "dependencies": {
