@@ -1,0 +1,50 @@
+{
+  "floor": {
+    "name": "Floor",
+    "color": "#9a8c7a",
+    "description": "Open floor. No effect.",
+    "cost": 1,
+    "passable": true,
+    "cover": 0,
+    "blocksSight": false
+  },
+  "wall": {
+    "name": "Wall",
+    "color": "#2a2018",
+    "description": "Impassable; blocks sight and shots.",
+    "cost": {
+      "land": null,
+      "air": null
+    },
+    "passable": false,
+    "cover": 0,
+    "blocksSight": true
+  },
+  "cover-low": {
+    "name": "Low cover",
+    "color": "#c8943a",
+    "description": "+20% defence to a unit behind it.",
+    "cost": 1,
+    "passable": true,
+    "cover": 20,
+    "blocksSight": false
+  },
+  "cover-high": {
+    "name": "High cover",
+    "color": "#8a5a18",
+    "description": "+40% defence to a unit behind it.",
+    "cost": 1,
+    "passable": true,
+    "cover": 40,
+    "blocksSight": false
+  },
+  "open": {
+    "name": "Floor",
+    "color": "#9a8c7a",
+    "description": "Open floor. No effect.",
+    "cost": 1,
+    "passable": true,
+    "cover": 0,
+    "blocksSight": false
+  }
+}
