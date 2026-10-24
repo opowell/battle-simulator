@@ -16,9 +16,15 @@ onBeforeUnmount(() => { if (slots.get(props.sessionId) === box.value) slots.dele
 </script>
 
 <template>
-  <div ref="box" class="sp" />
+  <div class="sp">
+    <div ref="box" class="sp__board" />
+  </div>
 </template>
 
 <style scoped>
-.sp { width: 100%; height: 100%; background: var(--dc-bg-0); }
+/* The board is drawn in a layer over the whole window, so over this window's
+   own resize grips too, which reach 5px in from its left, right and bottom
+   edges. The box it is laid over stops short of them. */
+.sp { width: 100%; height: 100%; box-sizing: border-box; padding: 0 5px 5px; background: var(--dc-bg-0); }
+.sp__board { width: 100%; height: 100%; }
 </style>

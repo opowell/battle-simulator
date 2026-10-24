@@ -127,7 +127,7 @@ function titleOf(item) {
 }
 
 const panels = computed(() => [
-  { id: 'browse', title: 'Browse', fixed: true, closable: false },
+  { id: 'browse', title: 'Browse', closable: false },
   ...opened.value.map((item) => ({ id: item.id, ...titleOf(item), closable: true })),
 ])
 
