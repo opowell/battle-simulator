@@ -1,0 +1,57 @@
+{
+  "game": "simcity",
+  "module": "./index.js",
+  "export": "SimCityGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "mayor",
+          "name": "Mayor"
+        }
+      ],
+      "config": {
+        "fogOfWar": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 9,
+      "result": null,
+      "hashes": {
+        "initial": "ce0904662949c82b",
+        "state": "5c70aabcb55664c4",
+        "log": "4c154f815b23195c",
+        "grid": "74234e98afe7498f",
+        "visible": "a390b00e951be0f1"
+      }
+    },
+    {
+      "id": "fog-on",
+      "players": [
+        {
+          "id": "mayor",
+          "name": "Mayor"
+        }
+      ],
+      "config": {
+        "fogOfWar": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 9,
+      "result": null,
+      "hashes": {
+        "initial": "d9602aeb9aefb36d",
+        "state": "671a78e7b5c8ce5c",
+        "log": "4c154f815b23195c",
+        "grid": "74234e98afe7498f",
+        "visible": "02d40eb4b23aad21"
+      }
+    }
+  ]
+}

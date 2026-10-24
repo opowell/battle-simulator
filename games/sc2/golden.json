@@ -1,0 +1,124 @@
+{
+  "game": "sc2",
+  "module": "./index.js",
+  "export": "Sc2Game",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {},
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 7,
+      "result": null,
+      "hashes": {
+        "initial": "d81809f2abea76de",
+        "state": "35047fedcd723bc7",
+        "log": "cd946f9687afdc16",
+        "grid": "aef963fd296e64c2",
+        "visible": "666f4f20f54c2308"
+      }
+    },
+    {
+      "id": "scenario:tvz",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "race1": "terran",
+        "race2": "zerg"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 7,
+      "result": null,
+      "hashes": {
+        "initial": "d81809f2abea76de",
+        "state": "35047fedcd723bc7",
+        "log": "cd946f9687afdc16",
+        "grid": "aef963fd296e64c2",
+        "visible": "666f4f20f54c2308"
+      }
+    },
+    {
+      "id": "scenario:pvt",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "race1": "protoss",
+        "race2": "terran"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 8,
+      "result": null,
+      "hashes": {
+        "initial": "54f91551f7d6db34",
+        "state": "5fbb96ee4b094387",
+        "log": "d17621041bdca567",
+        "grid": "5368fd23d318adc7",
+        "visible": "380b40c5596701f7"
+      }
+    },
+    {
+      "id": "scenario:zvp",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "race1": "zerg",
+        "race2": "protoss"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 7,
+      "result": null,
+      "hashes": {
+        "initial": "5b463f75632f59e9",
+        "state": "8b836985ac812665",
+        "log": "5852fa40f69601b7",
+        "grid": "c68f86a9b3e45081",
+        "visible": "a77ca2d2fae83e2a"
+      }
+    }
+  ]
+}

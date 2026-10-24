@@ -1,0 +1,94 @@
+{
+  "game": "xcom",
+  "module": "./index.js",
+  "export": "XComGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "xcom",
+          "name": "XCOM"
+        },
+        {
+          "id": "aliens",
+          "name": "Aliens"
+        }
+      ],
+      "config": {
+        "fogOfWar": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 14,
+      "result": null,
+      "hashes": {
+        "initial": "412d82648ca44d60",
+        "state": "c6937d06ceeb6a2d",
+        "log": "2b73a2aebae62b80",
+        "grid": "d3cbc96aec562ab4",
+        "visible": "5233d43cfa165eef"
+      }
+    },
+    {
+      "id": "scenario:ufo-crash",
+      "players": [
+        {
+          "id": "xcom",
+          "name": "XCOM"
+        },
+        {
+          "id": "aliens",
+          "name": "Aliens"
+        }
+      ],
+      "config": {
+        "fogOfWar": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 14,
+      "result": null,
+      "hashes": {
+        "initial": "412d82648ca44d60",
+        "state": "c6937d06ceeb6a2d",
+        "log": "2b73a2aebae62b80",
+        "grid": "d3cbc96aec562ab4",
+        "visible": "5233d43cfa165eef"
+      }
+    },
+    {
+      "id": "fog-on",
+      "players": [
+        {
+          "id": "xcom",
+          "name": "XCOM"
+        },
+        {
+          "id": "aliens",
+          "name": "Aliens"
+        }
+      ],
+      "config": {
+        "fogOfWar": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 14,
+      "result": null,
+      "hashes": {
+        "initial": "9da2f6b1d4b1cde0",
+        "state": "34ef25ba9441bcc9",
+        "log": "2b73a2aebae62b80",
+        "grid": "d3cbc96aec562ab4",
+        "visible": "79d44cf829cc0d6e"
+      }
+    }
+  ]
+}

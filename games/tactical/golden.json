@@ -1,0 +1,174 @@
+{
+  "game": "tactical",
+  "module": "./index.js",
+  "export": "TacticalGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 118,
+      "plies": 118,
+      "turn": 17,
+      "result": {
+        "outcome": "win",
+        "winnerId": "p2",
+        "reason": "all-enemies-eliminated"
+      },
+      "hashes": {
+        "initial": "d136176de2d9c178",
+        "state": "f841f60f1db13b03",
+        "log": "385c65ecca4421a6",
+        "grid": "29d8dfb0d977b374",
+        "visible": "cddfa4f3bb004bac"
+      }
+    },
+    {
+      "id": "scenario:skirmish",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 118,
+      "plies": 118,
+      "turn": 17,
+      "result": {
+        "outcome": "win",
+        "winnerId": "p2",
+        "reason": "all-enemies-eliminated"
+      },
+      "hashes": {
+        "initial": "d136176de2d9c178",
+        "state": "f841f60f1db13b03",
+        "log": "385c65ecca4421a6",
+        "grid": "29d8dfb0d977b374",
+        "visible": "cddfa4f3bb004bac"
+      }
+    },
+    {
+      "id": "scenario:assault",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "width": 12,
+        "height": 10,
+        "terrain": {}
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 194,
+      "plies": 194,
+      "turn": 32,
+      "result": {
+        "outcome": "win",
+        "winnerId": "p1",
+        "reason": "all-enemies-eliminated"
+      },
+      "hashes": {
+        "initial": "83cfad861ec284af",
+        "state": "f284822f8569a72b",
+        "log": "1a84b66a911b7b32",
+        "grid": "a016b193d075319d",
+        "visible": "7a4f135fff603cd7"
+      }
+    },
+    {
+      "id": "scenario:grand-battle",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "width": 16,
+        "height": 12,
+        "terrain": {}
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 28,
+      "result": null,
+      "hashes": {
+        "initial": "eec594fa9f4aeec4",
+        "state": "975f5f55fa60ff11",
+        "log": "c32909dc42c31a70",
+        "grid": "181ec2ef955b60a1",
+        "visible": "c3d1ba7bc662b3d0"
+      }
+    },
+    {
+      "id": "fog-on",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 118,
+      "plies": 118,
+      "turn": 17,
+      "result": {
+        "outcome": "win",
+        "winnerId": "p2",
+        "reason": "all-enemies-eliminated"
+      },
+      "hashes": {
+        "initial": "f51835152b711458",
+        "state": "c71d1be7a2fee537",
+        "log": "385c65ecca4421a6",
+        "grid": "29d8dfb0d977b374",
+        "visible": "d7a45255469edff5"
+      }
+    }
+  ]
+}

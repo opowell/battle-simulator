@@ -1,0 +1,103 @@
+{
+  "game": "civ2",
+  "module": "./index.js",
+  "export": "Civ2Game",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "width": 50,
+        "height": 30,
+        "seed": ""
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 22,
+      "result": null,
+      "hashes": {
+        "initial": "380da4368e49df6d",
+        "state": "1dc334ab1487e26c",
+        "log": "bcc748dbff47fe41",
+        "grid": "9275c944e85a7d2e",
+        "visible": "2ecf69ae578d39ef"
+      }
+    },
+    {
+      "id": "scenario:standard",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "width": 50,
+        "height": 30,
+        "seed": ""
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 22,
+      "result": null,
+      "hashes": {
+        "initial": "380da4368e49df6d",
+        "state": "1dc334ab1487e26c",
+        "log": "bcc748dbff47fe41",
+        "grid": "9275c944e85a7d2e",
+        "visible": "2ecf69ae578d39ef"
+      }
+    },
+    {
+      "id": "fog-off",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "width": 50,
+        "height": 30,
+        "seed": ""
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 22,
+      "result": null,
+      "hashes": {
+        "initial": "fc618007607657d9",
+        "state": "0ab4a0f2f57a8685",
+        "log": "bcc748dbff47fe41",
+        "grid": "9275c944e85a7d2e",
+        "visible": "f37019775646bfdf"
+      }
+    }
+  ]
+}

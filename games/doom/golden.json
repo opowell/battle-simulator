@@ -1,0 +1,97 @@
+{
+  "game": "doom",
+  "module": "./index.js",
+  "export": "DoomGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "marine",
+          "name": "Marine"
+        },
+        {
+          "id": "demons",
+          "name": "Demons"
+        }
+      ],
+      "config": {
+        "mapZoom": true,
+        "fogOfWar": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 7,
+      "result": null,
+      "hashes": {
+        "initial": "a15f69a690a337cf",
+        "state": "a90d642f715276a5",
+        "log": "76b946ef2d13cc39",
+        "grid": "9f0085a1a76e9fd5",
+        "visible": "a3746d339eb7c20b"
+      }
+    },
+    {
+      "id": "scenario:e1m1",
+      "players": [
+        {
+          "id": "marine",
+          "name": "Marine"
+        },
+        {
+          "id": "demons",
+          "name": "Demons"
+        }
+      ],
+      "config": {
+        "mapZoom": true,
+        "fogOfWar": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 7,
+      "result": null,
+      "hashes": {
+        "initial": "a15f69a690a337cf",
+        "state": "a90d642f715276a5",
+        "log": "76b946ef2d13cc39",
+        "grid": "9f0085a1a76e9fd5",
+        "visible": "a3746d339eb7c20b"
+      }
+    },
+    {
+      "id": "fog-off",
+      "players": [
+        {
+          "id": "marine",
+          "name": "Marine"
+        },
+        {
+          "id": "demons",
+          "name": "Demons"
+        }
+      ],
+      "config": {
+        "mapZoom": true,
+        "fogOfWar": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 6,
+      "result": null,
+      "hashes": {
+        "initial": "73449a7e9c85ab2d",
+        "state": "0da52590ed3e4fb9",
+        "log": "fe3af62d7bba4980",
+        "grid": "f6467038ca831e11",
+        "visible": "ed82f7dd0c24259d"
+      }
+    }
+  ]
+}

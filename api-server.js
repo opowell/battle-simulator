@@ -373,6 +373,9 @@ const GAMES = {
 // declare `foreignUnits` lend theirs and take the others' in.
 registerGames(GAMES);
 
+// For scripts that need every registered game's seating (scripts/golden.mjs).
+export { GAMES };
+
 // ---------------------------------------------------------------------------
 // Session management
 // ---------------------------------------------------------------------------

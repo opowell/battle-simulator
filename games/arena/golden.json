@@ -1,0 +1,434 @@
+{
+  "game": "arena",
+  "module": "./index.js",
+  "export": "ArenaGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "discrete",
+        "time": "discrete"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 20,
+      "result": null,
+      "hashes": {
+        "initial": "c8f3860bc924b675",
+        "state": "97bfb4f882c41932",
+        "log": "1df0ade1a318a50c",
+        "grid": "a6c20117b689ad2d",
+        "visible": "5939c7fe8934f1bc"
+      }
+    },
+    {
+      "id": "scenario:skirmish",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "discrete",
+        "time": "discrete"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 20,
+      "result": null,
+      "hashes": {
+        "initial": "c8f3860bc924b675",
+        "state": "97bfb4f882c41932",
+        "log": "1df0ade1a318a50c",
+        "grid": "a6c20117b689ad2d",
+        "visible": "5939c7fe8934f1bc"
+      }
+    },
+    {
+      "id": "scenario:open-field",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "discrete",
+        "time": "discrete",
+        "width": 12,
+        "height": 8,
+        "map": "open"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 96,
+      "plies": 96,
+      "turn": 8,
+      "result": {
+        "outcome": "win",
+        "winnerId": "p2",
+        "reason": "elimination"
+      },
+      "hashes": {
+        "initial": "ba86dd82ab39f0b9",
+        "state": "d6f80c056ccd4080",
+        "log": "e8b591065e564c97",
+        "grid": "4a4234e1d7ac05b5",
+        "visible": "848b51a632d32431"
+      }
+    },
+    {
+      "id": "scenario:real-time",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "continuous",
+        "time": "continuous",
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 12,
+      "result": null,
+      "hashes": {
+        "initial": "a03b702e2257bc21",
+        "state": "e29ef53f463c2a3b",
+        "log": "fb600aee44d43b99",
+        "grid": "b05d1cfa22ab5f34",
+        "visible": "4b79c7e1f8654b7b"
+      }
+    },
+    {
+      "id": "mode:discrete-discrete-sequential",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "discrete",
+        "time": "discrete",
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 20,
+      "result": null,
+      "hashes": {
+        "initial": "c8f3860bc924b675",
+        "state": "97bfb4f882c41932",
+        "log": "1df0ade1a318a50c",
+        "grid": "a6c20117b689ad2d",
+        "visible": "5939c7fe8934f1bc"
+      }
+    },
+    {
+      "id": "mode:discrete-discrete-simultaneous",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "discrete",
+        "time": "discrete",
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 28,
+      "plies": 306,
+      "turn": 28,
+      "result": {
+        "outcome": "win",
+        "winnerId": "p1",
+        "reason": "elimination"
+      },
+      "hashes": {
+        "initial": "cde0ab0a29686415",
+        "state": "c28690956a38e008",
+        "log": "560db9889d361d3a",
+        "grid": "3aa8dff447178879",
+        "visible": "1e8ffa1e82e9fc17"
+      }
+    },
+    {
+      "id": "mode:discrete-continuous-sequential",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "discrete",
+        "time": "continuous",
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 14,
+      "result": null,
+      "hashes": {
+        "initial": "034845f9fcc122a0",
+        "state": "85bc31b34e47fc51",
+        "log": "cbd5b20e7697ff37",
+        "grid": "181c4e71d2847372",
+        "visible": "9c2d35b3a094a2ee"
+      }
+    },
+    {
+      "id": "mode:discrete-continuous-simultaneous",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "discrete",
+        "time": "continuous",
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 19,
+      "result": null,
+      "hashes": {
+        "initial": "52331a77aa096e5f",
+        "state": "d417a37aa59d3f77",
+        "log": "09b751793c69cc2c",
+        "grid": "e8414de7e3ef1237",
+        "visible": "adcb786df739d1a3"
+      }
+    },
+    {
+      "id": "mode:continuous-discrete-sequential",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "continuous",
+        "time": "discrete",
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 19,
+      "result": null,
+      "hashes": {
+        "initial": "9a4c04966866950e",
+        "state": "6338ee857a48ac52",
+        "log": "5b058a818a5380f6",
+        "grid": "ac76a6aae82b2310",
+        "visible": "70f1ea6f6ed3d137"
+      }
+    },
+    {
+      "id": "mode:continuous-discrete-simultaneous",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "continuous",
+        "time": "discrete",
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 97,
+      "plies": 734,
+      "turn": 95,
+      "result": {
+        "outcome": "win",
+        "winnerId": "p2",
+        "reason": "elimination"
+      },
+      "hashes": {
+        "initial": "dfd2dfc3af15b213",
+        "state": "9ca68498b450778d",
+        "log": "03b449492a839be3",
+        "grid": "5a30d618c66943c0",
+        "visible": "26e71f3e35f9687a"
+      }
+    },
+    {
+      "id": "mode:continuous-continuous-sequential",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "continuous",
+        "time": "continuous",
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 11,
+      "result": null,
+      "hashes": {
+        "initial": "781fa0ff8181c896",
+        "state": "3ea3f900ca8fea11",
+        "log": "bb7cec30bcdb5f8c",
+        "grid": "8e8736d11967a924",
+        "visible": "e698678f47d88ed2"
+      }
+    },
+    {
+      "id": "mode:continuous-continuous-simultaneous",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "continuous",
+        "time": "continuous",
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 12,
+      "result": null,
+      "hashes": {
+        "initial": "a03b702e2257bc21",
+        "state": "e29ef53f463c2a3b",
+        "log": "fb600aee44d43b99",
+        "grid": "b05d1cfa22ab5f34",
+        "visible": "4b79c7e1f8654b7b"
+      }
+    },
+    {
+      "id": "fog-on",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "discrete",
+        "time": "discrete"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 21,
+      "result": null,
+      "hashes": {
+        "initial": "e8a860a3cf96f61f",
+        "state": "2985d082a3ed1daf",
+        "log": "db49fa27c32eeaf6",
+        "grid": "df2f3c1e9964060d",
+        "visible": "80e2bb909479cd87"
+      }
+    }
+  ]
+}

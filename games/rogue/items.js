@@ -1,5 +1,8 @@
 let _nextId = 0;
 const nid = () => `item-${_nextId++}`;
+// Called once per new game, so a game's item ids don't depend on how many games
+// this process has dealt out before it (aow's resetSquadIds does the same).
+export function resetItemIds() { _nextId = 0; }
 
 // ── Item definitions ──────────────────────────────────────────────────────────
 

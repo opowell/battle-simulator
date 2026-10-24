@@ -1,7 +1,7 @@
 import { generateFloor, MAP_W, MAP_H } from './dungeon.js';
 import { isWalkable, manhattan, hasLOS, stepToward, stepRandom, randomFloorPos, renderMap } from './map.js';
 import { createHero, createMonster, spawnMonsters, MONSTER_DEFS } from './units.js';
-import { spawnItems, applyPickup, useInventoryItem, dropInventoryItem, generateDisguiseMap, getDisplayName, ITEM_DEFS } from './items.js';
+import { spawnItems, resetItemIds, applyPickup, useInventoryItem, dropInventoryItem, generateDisguiseMap, getDisplayName, ITEM_DEFS } from './items.js';
 import { heroAttack, monsterAttack } from './combat.js';
 import { VISION, isMonsterVisible, getRogueBelief } from './belief.js';
 
@@ -460,6 +460,7 @@ function createInitialState(players, config = {}) {
   const playerId    = players[0].id;
   const amuletLevel = config.amuletLevel ?? AMULET_LEVEL_DEFAULT;
   const rng         = config.rng ?? Math.random.bind(Math);
+  resetItemIds();
 
   const floor   = generateFloor(rng, 1);
   const heroPos = floor.heroPos;

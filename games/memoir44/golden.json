@@ -1,0 +1,96 @@
+{
+  "game": "memoir44",
+  "module": "./index.js",
+  "export": "Memoir44Game",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "allies",
+          "name": "Allies"
+        },
+        {
+          "id": "axis",
+          "name": "Axis"
+        }
+      ],
+      "config": {
+        "mapZoom": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 21,
+      "result": null,
+      "hashes": {
+        "initial": "3f6e20ac5fee5868",
+        "state": "4cded644baba94be",
+        "log": "b6baeabcaf260e7b",
+        "grid": "c5d22ed04aec092a",
+        "visible": "192ac60c8fe61489"
+      }
+    },
+    {
+      "id": "scenario:encounter",
+      "players": [
+        {
+          "id": "allies",
+          "name": "Allies"
+        },
+        {
+          "id": "axis",
+          "name": "Axis"
+        }
+      ],
+      "config": {
+        "mapZoom": true,
+        "scenario": "encounter"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 21,
+      "result": null,
+      "hashes": {
+        "initial": "3f6e20ac5fee5868",
+        "state": "4cded644baba94be",
+        "log": "b6baeabcaf260e7b",
+        "grid": "c5d22ed04aec092a",
+        "visible": "192ac60c8fe61489"
+      }
+    },
+    {
+      "id": "scenario:pegasus-bridge",
+      "players": [
+        {
+          "id": "allies",
+          "name": "Allies"
+        },
+        {
+          "id": "axis",
+          "name": "Axis"
+        }
+      ],
+      "config": {
+        "mapZoom": true,
+        "scenario": "pegasus-bridge"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 21,
+      "result": null,
+      "hashes": {
+        "initial": "312f7f7ce21558d0",
+        "state": "149febcacfdca97c",
+        "log": "755828ce26154afd",
+        "grid": "4a7413a03df07f5a",
+        "visible": "192ac60c8fe61489"
+      }
+    }
+  ]
+}

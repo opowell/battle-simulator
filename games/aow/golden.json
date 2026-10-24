@@ -1,0 +1,129 @@
+{
+  "game": "aow",
+  "module": "./index.js",
+  "export": "AowGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "mapZoom": true,
+        "fogOfWar": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 22,
+      "result": null,
+      "hashes": {
+        "initial": "cdc1dffe6905b4a2",
+        "state": "500110dc112f90aa",
+        "log": "811dee5e8f83ea9f",
+        "grid": "ee668773dc699a00",
+        "visible": "6cbe0fefb8be49a2"
+      }
+    },
+    {
+      "id": "scenario:race",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "mapZoom": true,
+        "fogOfWar": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 22,
+      "result": null,
+      "hashes": {
+        "initial": "cdc1dffe6905b4a2",
+        "state": "500110dc112f90aa",
+        "log": "811dee5e8f83ea9f",
+        "grid": "ee668773dc699a00",
+        "visible": "6cbe0fefb8be49a2"
+      }
+    },
+    {
+      "id": "scenario:epic",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "mapZoom": true,
+        "fogOfWar": false,
+        "width": 34,
+        "height": 20
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 22,
+      "result": null,
+      "hashes": {
+        "initial": "3507ac6293164ea4",
+        "state": "66925ae2c76d7975",
+        "log": "35106d92212c4bc3",
+        "grid": "3280ded443c283f4",
+        "visible": "cc2f4b8cc52f37d7"
+      }
+    },
+    {
+      "id": "fog-on",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        }
+      ],
+      "config": {
+        "mapZoom": true,
+        "fogOfWar": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 22,
+      "result": null,
+      "hashes": {
+        "initial": "3a04dc529c565f52",
+        "state": "3b0daa0aa40430c5",
+        "log": "811dee5e8f83ea9f",
+        "grid": "ee668773dc699a00",
+        "visible": "e2941fb1af491d2b"
+      }
+    }
+  ]
+}

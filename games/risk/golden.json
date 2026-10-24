@@ -1,0 +1,105 @@
+{
+  "game": "risk",
+  "module": "./index.js",
+  "export": "RiskGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        },
+        {
+          "id": "p3",
+          "name": "Player 3"
+        },
+        {
+          "id": "p4",
+          "name": "Player 4"
+        },
+        {
+          "id": "p5",
+          "name": "Player 5"
+        },
+        {
+          "id": "p6",
+          "name": "Player 6"
+        }
+      ],
+      "config": {
+        "cardSetValues": "fixed",
+        "fortifyMoves": "one",
+        "reinforcePlacement": "selected",
+        "autoOccupy": true,
+        "postCaptureFortify": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 4,
+      "result": null,
+      "hashes": {
+        "initial": "1de4994a5b770bad",
+        "state": "f541233d8ff0a974",
+        "log": "fa6722d647bc9234",
+        "grid": "334105b2bb489b1f",
+        "visible": "5df247c7a31d81de"
+      }
+    },
+    {
+      "id": "scenario:world-domination",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Player 1"
+        },
+        {
+          "id": "p2",
+          "name": "Player 2"
+        },
+        {
+          "id": "p3",
+          "name": "Player 3"
+        },
+        {
+          "id": "p4",
+          "name": "Player 4"
+        },
+        {
+          "id": "p5",
+          "name": "Player 5"
+        },
+        {
+          "id": "p6",
+          "name": "Player 6"
+        }
+      ],
+      "config": {
+        "cardSetValues": "fixed",
+        "fortifyMoves": "one",
+        "reinforcePlacement": "selected",
+        "autoOccupy": true,
+        "postCaptureFortify": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 4,
+      "result": null,
+      "hashes": {
+        "initial": "1de4994a5b770bad",
+        "state": "f541233d8ff0a974",
+        "log": "fa6722d647bc9234",
+        "grid": "334105b2bb489b1f",
+        "visible": "5df247c7a31d81de"
+      }
+    }
+  ]
+}

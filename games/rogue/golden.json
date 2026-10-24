@@ -1,0 +1,57 @@
+{
+  "game": "rogue",
+  "module": "./index.js",
+  "export": "RogueGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Rogue"
+        }
+      ],
+      "config": {
+        "fogOfWar": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 201,
+      "result": null,
+      "hashes": {
+        "initial": "17687860268c7891",
+        "state": "1078d58e26ad3d52",
+        "log": "11060dd290b13911",
+        "grid": "f18ca89f462383f0",
+        "visible": "ea6581b81fd77b1f"
+      }
+    },
+    {
+      "id": "fog-on",
+      "players": [
+        {
+          "id": "p1",
+          "name": "Rogue"
+        }
+      ],
+      "config": {
+        "fogOfWar": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 201,
+      "result": null,
+      "hashes": {
+        "initial": "2cb1f176b3568c85",
+        "state": "d68d02fd5d4207a3",
+        "log": "11060dd290b13911",
+        "grid": "f18ca89f462383f0",
+        "visible": "cca24dfe179d3e17"
+      }
+    }
+  ]
+}

@@ -1,0 +1,349 @@
+{
+  "game": "csmini",
+  "module": "./index.js",
+  "export": "CsMiniGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "continuous",
+        "time": "continuous",
+        "allowObservers": true,
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 2021,
+      "turn": 201,
+      "result": null,
+      "hashes": {
+        "initial": "6c92fe849d65a9ad",
+        "state": "f74f0c758296a8e0",
+        "log": "88484c9349c73614",
+        "grid": "65484f1cfe0aa7a1",
+        "visible": "94730652e499efb8"
+      }
+    },
+    {
+      "id": "mode:discrete-discrete-sequential",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "discrete",
+        "time": "discrete",
+        "allowObservers": true,
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 11,
+      "result": null,
+      "hashes": {
+        "initial": "f5d1fb45874d406c",
+        "state": "050469eb7af82274",
+        "log": "5fb9d5b6fb86a518",
+        "grid": "134b5df780bde865",
+        "visible": "51cd9358acc7b82c"
+      }
+    },
+    {
+      "id": "mode:discrete-discrete-simultaneous",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "discrete",
+        "time": "discrete",
+        "allowObservers": true,
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 123,
+      "plies": 1460,
+      "turn": 123,
+      "result": {
+        "outcome": "win",
+        "winnerId": "ct",
+        "reason": "t-eliminated"
+      },
+      "hashes": {
+        "initial": "72757df76709d573",
+        "state": "94cfc220809cd0e5",
+        "log": "869ddd3afd5a2ec4",
+        "grid": "2d4703076dc38470",
+        "visible": "701362694b009bac"
+      }
+    },
+    {
+      "id": "mode:discrete-continuous-sequential",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "discrete",
+        "time": "continuous",
+        "allowObservers": true,
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 12,
+      "result": null,
+      "hashes": {
+        "initial": "69b3995a62d721d0",
+        "state": "7a4d7d584a8ee45d",
+        "log": "e786d3df38963744",
+        "grid": "e1ec27130b2166d1",
+        "visible": "eafe3ef395044268"
+      }
+    },
+    {
+      "id": "mode:discrete-continuous-simultaneous",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "discrete",
+        "time": "continuous",
+        "allowObservers": true,
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 101,
+      "plies": 1286,
+      "turn": 101,
+      "result": {
+        "outcome": "win",
+        "winnerId": "t",
+        "reason": "ct-eliminated"
+      },
+      "hashes": {
+        "initial": "0ea30932704192cb",
+        "state": "7652963b69cb5abf",
+        "log": "e95b7916ac8d3599",
+        "grid": "357ef7278385231b",
+        "visible": "6dff80dbb83d3d7e"
+      }
+    },
+    {
+      "id": "mode:continuous-discrete-sequential",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "continuous",
+        "time": "discrete",
+        "allowObservers": true,
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 12,
+      "result": null,
+      "hashes": {
+        "initial": "3d4f5f66769c6ded",
+        "state": "afdc60da5871c9c2",
+        "log": "e2ca28d4d454aa0d",
+        "grid": "f3268aada5ef152d",
+        "visible": "78845b753b9e328d"
+      }
+    },
+    {
+      "id": "mode:continuous-discrete-simultaneous",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "continuous",
+        "time": "discrete",
+        "allowObservers": true,
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 188,
+      "plies": 1959,
+      "turn": 188,
+      "result": {
+        "outcome": "win",
+        "winnerId": "t",
+        "reason": "ct-eliminated"
+      },
+      "hashes": {
+        "initial": "357e059551dd3881",
+        "state": "7479eb46da96e2af",
+        "log": "0c9fa8e909b5b15c",
+        "grid": "33d0a47077408b62",
+        "visible": "27075d6942581f13"
+      }
+    },
+    {
+      "id": "mode:continuous-continuous-sequential",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "continuous",
+        "time": "continuous",
+        "allowObservers": true,
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 17,
+      "result": null,
+      "hashes": {
+        "initial": "240eb6158dec0883",
+        "state": "39729fb7d6e69b15",
+        "log": "59738b6c6551d553",
+        "grid": "1424d8155a3acb20",
+        "visible": "f0aaf52553ac3629"
+      }
+    },
+    {
+      "id": "mode:continuous-continuous-simultaneous",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": true,
+        "space": "continuous",
+        "time": "continuous",
+        "allowObservers": true,
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 2021,
+      "turn": 201,
+      "result": null,
+      "hashes": {
+        "initial": "6c92fe849d65a9ad",
+        "state": "f74f0c758296a8e0",
+        "log": "88484c9349c73614",
+        "grid": "65484f1cfe0aa7a1",
+        "visible": "94730652e499efb8"
+      }
+    },
+    {
+      "id": "fog-off",
+      "players": [
+        {
+          "id": "ct",
+          "name": "CT"
+        },
+        {
+          "id": "t",
+          "name": "T"
+        }
+      ],
+      "config": {
+        "fogOfWar": false,
+        "space": "continuous",
+        "time": "continuous",
+        "allowObservers": true,
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 2021,
+      "turn": 201,
+      "result": null,
+      "hashes": {
+        "initial": "5961637c8ea0de63",
+        "state": "409d156019480371",
+        "log": "88484c9349c73614",
+        "grid": "65484f1cfe0aa7a1",
+        "visible": "96c23e99f3bd0ffd"
+      }
+    }
+  ]
+}

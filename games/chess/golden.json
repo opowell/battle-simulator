@@ -1,0 +1,597 @@
+{
+  "game": "chess",
+  "module": "./index.js",
+  "export": "ChessGame",
+  "cases": [
+    {
+      "id": "default",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "discrete",
+        "time": "discrete",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 101,
+      "result": null,
+      "hashes": {
+        "initial": "d44f419ab2583c8d",
+        "state": "f263b615107f38df",
+        "log": "858beb5ac75964e6",
+        "grid": "29630ddfb5dcb14d",
+        "visible": "f54357e9575372c7"
+      }
+    },
+    {
+      "id": "scenario:standard",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "discrete",
+        "time": "discrete",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 101,
+      "result": null,
+      "hashes": {
+        "initial": "d44f419ab2583c8d",
+        "state": "f263b615107f38df",
+        "log": "858beb5ac75964e6",
+        "grid": "29630ddfb5dcb14d",
+        "visible": "f54357e9575372c7"
+      }
+    },
+    {
+      "id": "scenario:fog",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "discrete",
+        "time": "discrete",
+        "fogOfWar": true,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 60,
+      "plies": 60,
+      "turn": 31,
+      "result": {
+        "outcome": "win",
+        "winnerId": "black",
+        "reason": "king-captured"
+      },
+      "hashes": {
+        "initial": "eadea6c4974d9391",
+        "state": "eef3c43ae886588a",
+        "log": "933c09263e9d3741",
+        "grid": "448f510e192e806f",
+        "visible": "a9f437e8dcc74110"
+      }
+    },
+    {
+      "id": "scenario:clockwork",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "discrete",
+        "time": "continuous",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": false,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "maxTurns": 300
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 1,
+      "result": null,
+      "hashes": {
+        "initial": "bba49457cf956508",
+        "state": "c36d8f8a4db86073",
+        "log": "d2bb8db7ff757f59",
+        "grid": "97a5522f0ce1640f",
+        "visible": "4e102463bdf5c26c"
+      }
+    },
+    {
+      "id": "scenario:melee",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "continuous",
+        "time": "continuous",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": false,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "maxTurns": 300
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 2,
+      "result": null,
+      "hashes": {
+        "initial": "a5b4b39ae2c24a3f",
+        "state": "f63e96d4e545ad26",
+        "log": "9761d7d510c4a231",
+        "grid": "81bb5d12e0739f72",
+        "visible": "8331900d3ab46afe"
+      }
+    },
+    {
+      "id": "scenario:sliding",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "continuous",
+        "time": "discrete",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": false,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "maxTurns": 200
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 88,
+      "plies": 88,
+      "turn": 45,
+      "result": {
+        "outcome": "win",
+        "winnerId": "black",
+        "reason": "king-destroyed"
+      },
+      "hashes": {
+        "initial": "bcdf9353ff12d6a1",
+        "state": "14fc046364ed4deb",
+        "log": "2b3918f7f48573f3",
+        "grid": "87e781a72a5a3342",
+        "visible": "8af2be12796f0644"
+      }
+    },
+    {
+      "id": "mode:discrete-discrete-sequential",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "discrete",
+        "time": "discrete",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 101,
+      "result": null,
+      "hashes": {
+        "initial": "d44f419ab2583c8d",
+        "state": "f263b615107f38df",
+        "log": "858beb5ac75964e6",
+        "grid": "29630ddfb5dcb14d",
+        "visible": "f54357e9575372c7"
+      }
+    },
+    {
+      "id": "mode:discrete-discrete-simultaneous",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "discrete",
+        "time": "discrete",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 43,
+      "plies": 85,
+      "turn": 43,
+      "result": {
+        "outcome": "win",
+        "winnerId": "white",
+        "reason": "checkmate"
+      },
+      "hashes": {
+        "initial": "d44f419ab2583c8d",
+        "state": "d446175794c96c2f",
+        "log": "1e6c9e24e5a96646",
+        "grid": "bd304099563c4c8d",
+        "visible": "84d9bbdd2c10ab66"
+      }
+    },
+    {
+      "id": "mode:discrete-continuous-sequential",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "discrete",
+        "time": "continuous",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 1,
+      "result": null,
+      "hashes": {
+        "initial": "bba49457cf956508",
+        "state": "c36d8f8a4db86073",
+        "log": "d2bb8db7ff757f59",
+        "grid": "97a5522f0ce1640f",
+        "visible": "4e102463bdf5c26c"
+      }
+    },
+    {
+      "id": "mode:discrete-continuous-simultaneous",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "discrete",
+        "time": "continuous",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 4204,
+      "turn": 17,
+      "result": null,
+      "hashes": {
+        "initial": "bba49457cf956508",
+        "state": "85cd1edfa621da74",
+        "log": "28722a0ed392e124",
+        "grid": "876a575e97c9006f",
+        "visible": "8f8322bd3a737f60"
+      }
+    },
+    {
+      "id": "mode:continuous-discrete-sequential",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "continuous",
+        "time": "discrete",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 88,
+      "plies": 88,
+      "turn": 45,
+      "result": {
+        "outcome": "win",
+        "winnerId": "black",
+        "reason": "king-destroyed"
+      },
+      "hashes": {
+        "initial": "bcdf9353ff12d6a1",
+        "state": "14fc046364ed4deb",
+        "log": "2b3918f7f48573f3",
+        "grid": "87e781a72a5a3342",
+        "visible": "8af2be12796f0644"
+      }
+    },
+    {
+      "id": "mode:continuous-discrete-simultaneous",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "continuous",
+        "time": "discrete",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 44,
+      "plies": 88,
+      "turn": 45,
+      "result": {
+        "outcome": "win",
+        "winnerId": "black",
+        "reason": "king-destroyed"
+      },
+      "hashes": {
+        "initial": "bcdf9353ff12d6a1",
+        "state": "ef7a181f83bcfc61",
+        "log": "cf6e3db1f4a33a1b",
+        "grid": "06919d302b522a7f",
+        "visible": "4c74ccbafb9638f9"
+      }
+    },
+    {
+      "id": "mode:continuous-continuous-sequential",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "continuous",
+        "time": "continuous",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "simultaneousTurns": false
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 200,
+      "turn": 2,
+      "result": null,
+      "hashes": {
+        "initial": "a5b4b39ae2c24a3f",
+        "state": "f63e96d4e545ad26",
+        "log": "9761d7d510c4a231",
+        "grid": "81bb5d12e0739f72",
+        "visible": "8331900d3ab46afe"
+      }
+    },
+    {
+      "id": "mode:continuous-continuous-simultaneous",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "continuous",
+        "time": "continuous",
+        "fogOfWar": false,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power",
+        "simultaneousTurns": true
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 200,
+      "plies": 5275,
+      "turn": 43,
+      "result": null,
+      "hashes": {
+        "initial": "a5b4b39ae2c24a3f",
+        "state": "4aa63ef416b0f5ae",
+        "log": "9feb292f01c1cbce",
+        "grid": "303b47acb8a453ee",
+        "visible": "3a8895b25ce7dec7"
+      }
+    },
+    {
+      "id": "fog-on",
+      "players": [
+        {
+          "id": "white",
+          "name": "White"
+        },
+        {
+          "id": "black",
+          "name": "Black"
+        }
+      ],
+      "config": {
+        "space": "discrete",
+        "time": "discrete",
+        "fogOfWar": true,
+        "debugAI": false,
+        "initialMarkers": false,
+        "showAnalysisPanel": true,
+        "difficulty": 25,
+        "aiTimeMs": null,
+        "difficultyMode": "power"
+      },
+      "seed": 1,
+      "steps": 200,
+      "ran": 60,
+      "plies": 60,
+      "turn": 31,
+      "result": {
+        "outcome": "win",
+        "winnerId": "black",
+        "reason": "king-captured"
+      },
+      "hashes": {
+        "initial": "eadea6c4974d9391",
+        "state": "eef3c43ae886588a",
+        "log": "933c09263e9d3741",
+        "grid": "448f510e192e806f",
+        "visible": "a9f437e8dcc74110"
+      }
+    }
+  ]
+}
