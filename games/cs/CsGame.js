@@ -22,7 +22,6 @@ import { isClearOfUnits, latticeActions } from '#core/kit/continuousMove.js';
 import { filterVisibleUnits, orientToEnemies } from '#core/kit/vision.js';
 import { makePos, parsePos, num, posToWire } from '#core/kit/coord.js';
 import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
-import { lend, whole } from '#core/engine/foreignUnits.js';
 
 
 const MOVE_RANGE     = 8; // per-turn move allowance (budget, not a single-move cap) — see perTurn.moveAllowance; doubled alongside the 3x map/vision resize (2026-07-17)
@@ -179,25 +178,14 @@ function spawnUnits(map) {
 // same-named file in games/cs/images/weapons/.
 const WEAPON_ICON = w => `/images/cs/weapons/${WEAPONS[w]?.sprite ?? w}`;
 
-// ── Units from other games (src/engine/foreignUnits.js) ──────────────────────────
+// ── Its units, as its pack in the core's library reads them (foreignUnits below) ──
 // A player's kind is the kind of weapon it has drawn; each kind is read as the
-// first weapon of it (the knife, the pistol, the MAC-10, …). A unit from another
-// game is a player of the nearest kind carrying a weapon of its own in that kind's
-// slot — that kind's first weapon, with the unit's punch and reach — and walking
-// at its own pace with it drawn.
+// first weapon of it (the knife, the pistol, the MAC-10, …).
 const KIND_WEAPON = {};
 for (const [id, w] of Object.entries(WEAPONS)) KIND_WEAPON[w.category] ??= id;
-const round1 = (v) => Math.max(0.5, Math.round(v * 10) / 10);
 
-function foreignWeapon(kind, stats, spec) {
-  const base = KIND_WEAPON[kind];
-  return lend(WEAPONS, `${spec.from}:${spec.type}@${kind}`, () => ({
-    ...WEAPONS[base], damage: whole(stats.attack), range: round1(stats.range), cost: 0, sprite: base, foreign: true,
-  }));
-}
-
-/** A unit's move budget for a turn with `slot` drawn: its own pace (a foreign unit's) or a player's. */
-const paceOf = (u, slot = u.active) => (u.moveRange ?? MOVE_RANGE) * SLOT_MOVE_MULT[slot] * (u.crouched ? CROUCH_MOVE_MULT : 1);
+/** A player's move budget for a turn with `slot` drawn. */
+const paceOf = (u, slot = u.active) => MOVE_RANGE * SLOT_MOVE_MULT[slot] * (u.crouched ? CROUCH_MOVE_MULT : 1);
 
 // ── Map sprite: body + hands + held weapon, all flat-color primitives — surviv.io's look
 // (see apps/browser/play/SchematicLayer.vue's generic `unit.spriteLayers` renderer, whose `shape:
@@ -589,8 +577,7 @@ function startNewRound(state, roundWinner) {
     roundWinner === team ? WIN_REWARD : lossReward(gs.consecutiveLosses[team]);
   const prevMoney = new Map(state.units.map(u => [u.id, u.money]));
   // Everyone respawns as the round's opening roster dealt them — the map's two
-  // teams, or whatever a customised roster (units from other games among them) put
-  // in their place.
+  // teams, or whatever a customised roster put in their place.
   const units = (gs.roster ?? spawnUnits(gs.map)).map(u => ({
     ...u,
     money: Math.min(MAX_MONEY, (prevMoney.get(u.id) ?? STARTING_MONEY) + roundReward(u.ownerId)),
@@ -1364,28 +1351,17 @@ export const CsGame = {
     const roster = state.units.map(u => (midGame && was.get(u.id)) || u);
     return { ...state, gameSpecific: { ...state.gameSpecific, roster } };
   },
-  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
-  // rifleman: 100 hp, an M4A4 (33 a hit, 9 squares), walking at a rifle's pace.
-  // Kevlar is bought, not brought, so a unit's defense rides in its hp.
+  // Its units in the common vocabulary, which its pack in the core's library is
+  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
+  // conversion factor is the rifleman: 100 hp, an M4A4 (33 a hit, 9 squares),
+  // walking at a rifle's pace. Kevlar is bought, not brought, so a player has no
+  // defense of its own (`fold`): it reads as the standard.
   foreignUnits: {
     scale: { hp: 100, attack: WEAPONS.m4a4.damage, defense: 1, range: WEAPONS.m4a4.range, move: MOVE_RANGE * SLOT_MOVE_MULT.primary },
     fold: { defense: 'hp' },
     profiles: () => Object.fromEntries(Object.entries(KIND_WEAPON).map(([kind, w]) => [kind, {
       hp: 100, attack: WEAPONS[w].damage, range: WEAPONS[w].range, move: MOVE_RANGE * SLOT_MOVE_MULT[WEAPON_SLOT(kind)], domain: 'land',
     }])),
-    adopt: (u, s, spec) => {
-      const slot = WEAPON_SLOT(u.type);
-      const weapon = foreignWeapon(u.type, s, spec);
-      const hp = whole(s.hp);
-      const moved = { ...u, moveRange: s.move / SLOT_MOVE_MULT[slot] };
-      return {
-        ...moved, hp, maxHp: hp, active: slot,
-        weapons: { ...u.weapons, [slot]: weapon },
-        ammo: slot === 'melee' ? u.ammo : { ...u.ammo, [slot]: fullAmmo(weapon) },
-        perTurn: { ...u.perTurn, moveAllowance: paceOf(moved, slot) },
-      };
-    },
-    realize: (_kind, s) => ({ hp: whole(s.hp), attack: whole(s.attack), defense: s.defense, range: round1(s.range), move: s.move }),
     art: (kind) => ({ imagePath: KIND_WEAPON[kind] ? WEAPON_ICON(KIND_WEAPON[kind]) : null, glyph: 'P', name: `${kind} player` }),
   },
   actionKey:        csActionKey,

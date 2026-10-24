@@ -1,0 +1,73 @@
+{
+  "game": "aow",
+  "title": "AncientArtOfWar",
+  "scale": {
+    "hp": 10,
+    "attack": 3,
+    "defense": 1,
+    "range": 1,
+    "move": 3.4
+  },
+  "units": {
+    "knight": {
+      "hp": 10,
+      "attack": 4,
+      "defense": 1,
+      "range": 1,
+      "move": 2.4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "K",
+          "name": "Knight"
+        }
+      ]
+    },
+    "barbarian": {
+      "hp": 10,
+      "attack": 3,
+      "defense": 1,
+      "range": 1,
+      "move": 4.2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "B",
+          "name": "Barbarian"
+        }
+      ]
+    },
+    "archer": {
+      "hp": 10,
+      "attack": 3,
+      "defense": 1,
+      "range": 1,
+      "move": 3.4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "A",
+          "name": "Archer"
+        }
+      ]
+    },
+    "spy": {
+      "hp": 10,
+      "attack": 0,
+      "defense": 1,
+      "range": 1,
+      "move": 5,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "S",
+          "name": "Spy"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "game": "axisallies",
+  "title": "AxisAllies",
+  "scale": {
+    "hp": 1,
+    "attack": 1,
+    "defense": 2,
+    "range": 1,
+    "move": 1
+  },
+  "units": {
+    "infantry": {
+      "hp": 1,
+      "attack": 1,
+      "defense": 2,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/infantry.png",
+          "glyph": "I",
+          "name": "infantry"
+        }
+      ]
+    },
+    "artillery": {
+      "hp": 1,
+      "attack": 2,
+      "defense": 2,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/artillery.png",
+          "glyph": "A",
+          "name": "artillery"
+        }
+      ]
+    },
+    "tank": {
+      "hp": 1,
+      "attack": 3,
+      "defense": 3,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/tank.png",
+          "glyph": "T",
+          "name": "tank"
+        }
+      ]
+    },
+    "fighter": {
+      "hp": 1,
+      "attack": 3,
+      "defense": 4,
+      "range": 1,
+      "move": 4,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/fighter.png",
+          "glyph": "F",
+          "name": "fighter"
+        }
+      ]
+    },
+    "bomber": {
+      "hp": 1,
+      "attack": 4,
+      "defense": 1,
+      "range": 1,
+      "move": 6,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/bomber.png",
+          "glyph": "B",
+          "name": "bomber"
+        }
+      ]
+    },
+    "battleship": {
+      "hp": 2,
+      "attack": 4,
+      "defense": 4,
+      "range": 1,
+      "move": 2,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/battleship.png",
+          "glyph": "B",
+          "name": "battleship"
+        }
+      ]
+    },
+    "carrier": {
+      "hp": 2,
+      "attack": 1,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/carrier.png",
+          "glyph": "C",
+          "name": "carrier"
+        }
+      ]
+    },
+    "destroyer": {
+      "hp": 1,
+      "attack": 2,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/destroyer.png",
+          "glyph": "D",
+          "name": "destroyer"
+        }
+      ]
+    },
+    "submarine": {
+      "hp": 1,
+      "attack": 2,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/submarine.png",
+          "glyph": "S",
+          "name": "submarine"
+        }
+      ]
+    },
+    "transport": {
+      "hp": 1,
+      "attack": 0,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/axisallies/art/units/transport.png",
+          "glyph": "T",
+          "name": "transport"
+        }
+      ]
+    }
+  }
+}

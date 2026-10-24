@@ -44,7 +44,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 
 - [ ] `ui` flags: `hideGridLines`
 - [ ] `toGrid` fields: `cells`, `height`, `locationType`, `shapes`, `ui`, `units`, `width`
-- Plugins to move out of the play UI: none found
+- UI plugins: none (`src/gate.test.js` keeps game ids and imports out of the play UI)
 
 ## Demos and benches
 
@@ -57,7 +57,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 - [ ] `fog.test.js`: 5 tests
 - [ ] `golden.test.js`: 3 golden replays (default, scenario:wwii-1942, fog-on)
 - [ ] `index.test.js`: 9 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -79,11 +79,11 @@ What [its README](../../games/axisallies/README.md) documents, each still true a
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `engine/foreignUnits.js`
-- `games/evalHelpers.js`
-- `games/renderOptions.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/evalHelpers.js`
+- `src/kit/renderOptions.js`
 
 ## Notes
 

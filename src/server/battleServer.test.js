@@ -47,3 +47,17 @@ test('/lib serves a game module with its #core imports rewritten to URLs', async
     http.close();
   }
 });
+
+test('/library serves a pack\'s pictures, and nothing else of it', async () => {
+  const http = serverOne.listen(0);
+  try {
+    if (!http.listening) await once(http, 'listening');
+    const base = `http://localhost:${http.address().port}/library/civ1`;
+    const art = await fetch(`${base}/art/units/settlers.png`);
+    assert.equal(art.status, 200);
+    assert.equal(art.headers.get('content-type'), 'image/png');
+    assert.equal((await fetch(`${base}/units.json`)).status, 404);
+  } finally {
+    http.close();
+  }
+});

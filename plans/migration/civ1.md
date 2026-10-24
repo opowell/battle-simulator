@@ -68,10 +68,10 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 
 - [ ] `ui` flags: `allowDiagonalHopsWhileMoving`, `autoAdvanceUnit`, `autoEndTurn`, `battleAnimation`, `blinkActiveUnit`, `defaultTileSize`, `dragToMove`, `freeSelection`, `hideGridLines`, `hideMoveTargets`, `hideSelectedVision`, `keys`, `mapZoom`, `moveAnimation`, `moveQueue`, `persistentFog`, `recolorTeamSprites`, `showFacing`, `showHpBars`, `showRightSidebar`, `showRuler`, `teamColors`, `unitStacks`, `visionRange`
 - [ ] `toGrid` fields: `arrivals`, `battles`, `cells`, `cities`, `civ`, `extraTeams`, `height`, `military`, `statusChips`, `turnLabel`, `ui`, `width`, `wrap`, `zones`
-- Plugins to move out of the play UI:
-  - [ ] `CitiesOverlay`, `CityInspectorOverlay` and `city/CityProductionBox` (its `toGrid` sends `cities`)
-  - [ ] `RatesOverlay` and `ScienceOverlay` (`civ` in `toGrid`, `set-tax`/`set-research` actions)
-  - [ ] `MilitaryOverlay` (`military` in `toGrid`)
+- UI plugins, moved out of the play UI in phase 1 (`uiPlugins`, `games/civ1/ui/`):
+  - [ ] `CitiesOverlay`, `MilitaryOverlay`, `RatesOverlay`, `ScienceOverlay` (slot `overview`), reading `cities`, `military` and `civ` off its `toGrid`
+  - [ ] `CityInspectorOverlay` with `city/*` (slot `city-screen`), opened by a city in `cities`
+  - [ ] `ui.ownScreenActions` (rates, research and production are set on those screens) and `ui.actionLabels`
 
 ## Demos and benches
 
@@ -112,7 +112,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 - [ ] `units.test.js`: 4 tests
 - [ ] `wonders.test.js`: 7 tests
 - [ ] `zoc.test.js`: 18 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -151,14 +151,14 @@ What [its README](../../games/civ1/README.md) documents, each still true after t
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `agents/learned/leafEval.js`
-- `agents/ObscuroAgent.js`
-- `engine/foreignUnits.js`
-- `games/evalHelpers.js`
-- `games/moveQueue.js`
-- `games/spacetime.js`
+- `src/agents/learned/leafEval.js`
+- `src/agents/ObscuroAgent.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/evalHelpers.js`
+- `src/kit/moveQueue.js`
+- `src/kit/spacetime.js`
 
 ## Notes
 

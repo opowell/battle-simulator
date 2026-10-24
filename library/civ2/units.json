@@ -1,0 +1,778 @@
+{
+  "game": "civ2",
+  "title": "Civ2",
+  "scale": {
+    "hp": 10,
+    "attack": 2,
+    "defense": 2,
+    "range": 4,
+    "move": 1
+  },
+  "units": {
+    "settlers": {
+      "hp": 20,
+      "attack": 0,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/settlers.png",
+          "glyph": "S",
+          "name": "settlers"
+        }
+      ]
+    },
+    "workers": {
+      "hp": 10,
+      "attack": 0,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "W",
+          "name": "workers"
+        }
+      ]
+    },
+    "engineers": {
+      "hp": 20,
+      "attack": 0,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/engineers.png",
+          "glyph": "E",
+          "name": "engineers"
+        }
+      ]
+    },
+    "diplomat": {
+      "hp": 10,
+      "attack": 0,
+      "defense": 0,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/diplomat.png",
+          "glyph": "D",
+          "name": "diplomat"
+        }
+      ]
+    },
+    "spy": {
+      "hp": 10,
+      "attack": 0,
+      "defense": 0,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/spy.png",
+          "glyph": "S",
+          "name": "spy"
+        }
+      ]
+    },
+    "explorer": {
+      "hp": 10,
+      "attack": 0,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/explorer.png",
+          "glyph": "E",
+          "name": "explorer"
+        }
+      ]
+    },
+    "warriors": {
+      "hp": 10,
+      "attack": 1,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/warriors.png",
+          "glyph": "W",
+          "name": "warriors"
+        }
+      ]
+    },
+    "phalanx": {
+      "hp": 10,
+      "attack": 1,
+      "defense": 2,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/phalanx.png",
+          "glyph": "P",
+          "name": "phalanx"
+        }
+      ]
+    },
+    "archers": {
+      "hp": 10,
+      "attack": 3,
+      "defense": 2,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/archers.png",
+          "glyph": "A",
+          "name": "archers"
+        }
+      ]
+    },
+    "legion": {
+      "hp": 10,
+      "attack": 3,
+      "defense": 3,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/legion.png",
+          "glyph": "L",
+          "name": "legion"
+        }
+      ]
+    },
+    "catapult": {
+      "hp": 10,
+      "attack": 6,
+      "defense": 4,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/catapult.png",
+          "glyph": "C",
+          "name": "catapult"
+        }
+      ]
+    },
+    "horsemen": {
+      "hp": 10,
+      "attack": 2,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/horsemen.png",
+          "glyph": "H",
+          "name": "horsemen"
+        }
+      ]
+    },
+    "chariot": {
+      "hp": 10,
+      "attack": 3,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/chariot.png",
+          "glyph": "C",
+          "name": "chariot"
+        }
+      ]
+    },
+    "pikemen": {
+      "hp": 10,
+      "attack": 1,
+      "defense": 2,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/pikemen.png",
+          "glyph": "P",
+          "name": "pikemen"
+        }
+      ]
+    },
+    "knights": {
+      "hp": 10,
+      "attack": 5,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/knights.png",
+          "glyph": "K",
+          "name": "knights"
+        }
+      ]
+    },
+    "crusaders": {
+      "hp": 10,
+      "attack": 5,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/crusaders.png",
+          "glyph": "C",
+          "name": "crusaders"
+        }
+      ]
+    },
+    "musketeers": {
+      "hp": 20,
+      "attack": 2,
+      "defense": 3,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/musketeers.png",
+          "glyph": "M",
+          "name": "musketeers"
+        }
+      ]
+    },
+    "cannon": {
+      "hp": 20,
+      "attack": 7,
+      "defense": 2,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/cannon.png",
+          "glyph": "C",
+          "name": "cannon"
+        }
+      ]
+    },
+    "dragoons": {
+      "hp": 20,
+      "attack": 5,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/dragoons.png",
+          "glyph": "D",
+          "name": "dragoons"
+        }
+      ]
+    },
+    "riflemen": {
+      "hp": 20,
+      "attack": 3,
+      "defense": 5,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/riflemen.png",
+          "glyph": "R",
+          "name": "riflemen"
+        }
+      ]
+    },
+    "cavalry": {
+      "hp": 20,
+      "attack": 8,
+      "defense": 3,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/cavalry.png",
+          "glyph": "C",
+          "name": "cavalry"
+        }
+      ]
+    },
+    "artillery": {
+      "hp": 20,
+      "attack": 12,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/artillery.png",
+          "glyph": "A",
+          "name": "artillery"
+        }
+      ]
+    },
+    "infantry": {
+      "hp": 20,
+      "attack": 5,
+      "defense": 5,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "I",
+          "name": "infantry"
+        }
+      ]
+    },
+    "mech-infantry": {
+      "hp": 30,
+      "attack": 6,
+      "defense": 6,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/mech_infantry.png",
+          "glyph": "M",
+          "name": "mech-infantry"
+        }
+      ]
+    },
+    "armor": {
+      "hp": 30,
+      "attack": 10,
+      "defense": 5,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/armor.png",
+          "glyph": "A",
+          "name": "armor"
+        }
+      ]
+    },
+    "howitzer": {
+      "hp": 30,
+      "attack": 12,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/howitzer.png",
+          "glyph": "H",
+          "name": "howitzer"
+        }
+      ]
+    },
+    "partisans": {
+      "hp": 20,
+      "attack": 4,
+      "defense": 4,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/partisans.png",
+          "glyph": "P",
+          "name": "partisans"
+        }
+      ]
+    },
+    "fanatics": {
+      "hp": 20,
+      "attack": 5,
+      "defense": 5,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/fanatics.png",
+          "glyph": "F",
+          "name": "fanatics"
+        }
+      ]
+    },
+    "marines": {
+      "hp": 30,
+      "attack": 8,
+      "defense": 5,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/marines.png",
+          "glyph": "M",
+          "name": "marines"
+        }
+      ]
+    },
+    "paratroopers": {
+      "hp": 30,
+      "attack": 6,
+      "defense": 4,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/paratroopers.png",
+          "glyph": "P",
+          "name": "paratroopers"
+        }
+      ]
+    },
+    "alpine-troops": {
+      "hp": 30,
+      "attack": 6,
+      "defense": 6,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/alpine_troops.png",
+          "glyph": "A",
+          "name": "alpine-troops"
+        }
+      ]
+    },
+    "fighter": {
+      "hp": 20,
+      "attack": 4,
+      "defense": 2,
+      "range": 1,
+      "move": 10,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/fighter.png",
+          "glyph": "F",
+          "name": "fighter"
+        }
+      ]
+    },
+    "bomber": {
+      "hp": 20,
+      "attack": 12,
+      "defense": 1,
+      "range": 1,
+      "move": 8,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/bomber.png",
+          "glyph": "B",
+          "name": "bomber"
+        }
+      ]
+    },
+    "helicopter": {
+      "hp": 20,
+      "attack": 6,
+      "defense": 3,
+      "range": 1,
+      "move": 6,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/helicopter.png",
+          "glyph": "H",
+          "name": "helicopter"
+        }
+      ]
+    },
+    "stealth-fighter": {
+      "hp": 20,
+      "attack": 8,
+      "defense": 4,
+      "range": 1,
+      "move": 14,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/stealth_fighter.png",
+          "glyph": "S",
+          "name": "stealth-fighter"
+        }
+      ]
+    },
+    "stealth-bomber": {
+      "hp": 20,
+      "attack": 14,
+      "defense": 3,
+      "range": 1,
+      "move": 12,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/stealth_bomber.png",
+          "glyph": "S",
+          "name": "stealth-bomber"
+        }
+      ]
+    },
+    "awacs": {
+      "hp": 20,
+      "attack": 0,
+      "defense": 1,
+      "range": 1,
+      "move": 11,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "A",
+          "name": "awacs"
+        }
+      ]
+    },
+    "cruise-missile": {
+      "hp": 10,
+      "attack": 18,
+      "defense": 0,
+      "range": 1,
+      "move": 12,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/cruise_missile.png",
+          "glyph": "C",
+          "name": "cruise-missile"
+        }
+      ]
+    },
+    "nuclear-missile": {
+      "hp": 10,
+      "attack": 99,
+      "defense": 0,
+      "range": 1,
+      "move": 16,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/nuclear_missile.png",
+          "glyph": "N",
+          "name": "nuclear-missile"
+        }
+      ]
+    },
+    "trireme": {
+      "hp": 10,
+      "attack": 1,
+      "defense": 1,
+      "range": 1,
+      "move": 3,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/trireme.png",
+          "glyph": "T",
+          "name": "trireme"
+        }
+      ]
+    },
+    "caravel": {
+      "hp": 10,
+      "attack": 2,
+      "defense": 1,
+      "range": 1,
+      "move": 3,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/caravel.png",
+          "glyph": "C",
+          "name": "caravel"
+        }
+      ]
+    },
+    "galleon": {
+      "hp": 20,
+      "attack": 0,
+      "defense": 2,
+      "range": 1,
+      "move": 4,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/galleon.png",
+          "glyph": "G",
+          "name": "galleon"
+        }
+      ]
+    },
+    "frigate": {
+      "hp": 20,
+      "attack": 4,
+      "defense": 2,
+      "range": 1,
+      "move": 3,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/frigate.png",
+          "glyph": "F",
+          "name": "frigate"
+        }
+      ]
+    },
+    "ironclad": {
+      "hp": 20,
+      "attack": 4,
+      "defense": 4,
+      "range": 1,
+      "move": 4,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/ironclad.png",
+          "glyph": "I",
+          "name": "ironclad"
+        }
+      ]
+    },
+    "destroyer": {
+      "hp": 30,
+      "attack": 4,
+      "defense": 4,
+      "range": 1,
+      "move": 6,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/destroyer.png",
+          "glyph": "D",
+          "name": "destroyer"
+        }
+      ]
+    },
+    "cruiser": {
+      "hp": 30,
+      "attack": 6,
+      "defense": 6,
+      "range": 1,
+      "move": 6,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/cruiser.png",
+          "glyph": "C",
+          "name": "cruiser"
+        }
+      ]
+    },
+    "battleship": {
+      "hp": 40,
+      "attack": 12,
+      "defense": 12,
+      "range": 1,
+      "move": 4,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/battleship.png",
+          "glyph": "B",
+          "name": "battleship"
+        }
+      ]
+    },
+    "carrier": {
+      "hp": 40,
+      "attack": 1,
+      "defense": 12,
+      "range": 1,
+      "move": 5,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/carrier.png",
+          "glyph": "C",
+          "name": "carrier"
+        }
+      ]
+    },
+    "submarine": {
+      "hp": 20,
+      "attack": 8,
+      "defense": 2,
+      "range": 1,
+      "move": 3,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/submarine.png",
+          "glyph": "S",
+          "name": "submarine"
+        }
+      ]
+    },
+    "transport": {
+      "hp": 20,
+      "attack": 0,
+      "defense": 3,
+      "range": 1,
+      "move": 4,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/transport.png",
+          "glyph": "T",
+          "name": "transport"
+        }
+      ]
+    },
+    "aegis-cruiser": {
+      "hp": 30,
+      "attack": 8,
+      "defense": 8,
+      "range": 1,
+      "move": 6,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ2/art/units/aegis_cruiser.png",
+          "glyph": "A",
+          "name": "aegis-cruiser"
+        }
+      ]
+    }
+  }
+}

@@ -119,11 +119,13 @@
  *   already in the opening position.
  *
  * @property {object} [foreignUnits]
- *   Optional. Units from OTHER games in this one's sessions, and this game's units
- *   in theirs (src/engine/foreignUnits.js has the whole story). A roster entry then
- *   names its game beside its type — { ownerId, type: 'marine', game: 'sc1', position }
- *   — and the unit plays under the session's rules as the nearest of this game's
- *   own types (its chassis), with its stats converted, drawn as itself. Fields:
+ *   Optional. This game's units in the common vocabulary, which its pack in the
+ *   core's library is exported from (scripts/export-pack.mjs), and — for a core
+ *   ruleset only, a HOST — how it fields the library's units (src/engine/
+ *   foreignUnits.js has the whole story). In a host's session a roster entry may
+ *   name its game beside its type — { ownerId, type: 'marine', game: 'sc1', position }
+ *   — and the unit plays under the session's rules as the nearest of the host's own
+ *   types (its chassis), with its stats converted, drawn as itself. Fields:
  *     scale       the CONVERSION FACTOR: what one point of each common stat (hp,
  *                 attack, defense, range, move) is worth in this game's own numbers —
  *                 in practice, its standard line infantryman. All five, always. A stat
@@ -131,30 +133,26 @@
  *     factor      the GENERAL ADJUSTMENT FACTOR (default 1): how strong this game's
  *                 units count against every other game's. Its hp, attack and defense
  *                 are compared `factor` times over — a game with factor 2 lends units
- *                 twice as strong, and takes units in at half. Range and move are
- *                 board distances, which `scale` alone compares.
+ *                 twice as strong. Range and move are board distances, which `scale`
+ *                 alone compares.
  *     fold        { defense: 'hp' } for a stat the rules can't set unit by unit (no
- *                 armour, or only two settings of it): a foreign unit keeps its
- *                 chassis's, and carries the rest of its own in the other stat. A
- *                 profile may leave a folded stat out; it reads as one point.
- *     absorb      true for a game that counts its pieces rather than fielding units
- *                 (Risk's armies, KDice's dice): a unit laid out there becomes its
- *                 hp's worth of them, in the game's own applyStartingUnits.
- *     profiles()  { type: { hp, attack, defense, range, move, domain, chassis?, owners? } }
- *                 every type it lends out or can carry a foreign unit as, in its own
- *                 numbers — every unit has all five stats (games/foreignUnits.test.js
- *                 holds every game to it); `chassis: false` keeps a type back (a
- *                 settler's specials would come with it), `owners` limits it to the
- *                 sides that can play it.
+ *                 armour, or only two settings of it): a profile may leave it out, and
+ *                 it reads as one point; a host's foreign unit keeps its chassis's and
+ *                 carries the rest of its own in the other stat.
+ *     profiles()  { type: { hp, attack, defense, range, move, domain, chassis? } }
+ *                 every type it lends out (and a host: can carry a foreign unit as), in
+ *                 its own numbers — every unit has all five stats (src/library.test.js
+ *                 holds every pack to it); `chassis: false` keeps a host's type back.
  *     art(type, seat)   { imagePath, glyph, name } — how its unit looks on another board.
+ *   A host also has:
+ *     host: true
  *     table + write(entry, stats)   for rules that read stats from a type table: the
  *                 foreign type is registered there (non-enumerably) as the chassis's
- *                 entry with the converted stats written in. tableUnits() builds all
- *                 of the above from the table and a read/write pair.
+ *                 entry with the converted stats written in. tableUnits() builds the
+ *                 lending fields from the table and a read, and these from a write.
  *     adopt(unit, stats)   for rules that read stats off the unit (attrs): writes them.
  *     realize(chassis, stats)   what a unit given `stats` really ends up with, for
  *                 showing (tableUnits derives it).
- *   Every registered game declares it: every game's units go into every other.
  *
  * @property {() => object} [unitStats]
  *   Optional. { type: { hp, attack, defense, range, move, domain } } in this game's

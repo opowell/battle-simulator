@@ -18,7 +18,6 @@ import { orientToEnemies } from '#core/kit/vision.js';
 import { segmentClearOf, nearestPointOnShape } from '#core/kit/terrainShapes.js';
 import { makePos, parsePos, num, posToWire } from '#core/kit/coord.js';
 import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
-import { lend, whole } from '#core/engine/foreignUnits.js';
 
 const MOVE_EPS = 0.05; // see games/cs/CsGame.js's identical constant for why this floor exists
 const ROTATE_COST = 1; // flat moveAllowance tax for a 'rotate' action (turn in place, no move)
@@ -50,21 +49,11 @@ function makeUnit(id, ownerId, pos) {
   };
 }
 
-// ── Units from other games (src/engine/foreignUnits.js) ──────────────────────────
+// ── Its units, as its pack in the core's library reads them (foreignUnits below) ──
 // A player's kind is the kind of weapon it holds; each kind is read as the first
-// weapon of it (fists, the Colt, the Vector, …). A unit from another game is a
-// player of the nearest kind carrying a weapon of its own — that kind's, with the
-// unit's punch and reach — which it never trades for loot.
+// weapon of it (fists, the Colt, the Vector, …).
 const KIND_WEAPON = {};
 for (const [id, w] of Object.entries(WEAPONS)) KIND_WEAPON[w.category] ??= id;
-const round1 = (v) => Math.max(0.5, Math.round(v * 10) / 10);
-
-function foreignWeapon(kind, stats, spec) {
-  const base = KIND_WEAPON[kind];
-  return lend(WEAPONS, `${spec.from}:${spec.type}@${kind}`, () => ({
-    ...WEAPONS[base], damage: whole(stats.attack), range: round1(stats.range), sprite: base, foreign: true,
-  }));
-}
 
 function spawnUnits(map) {
   return orientToEnemies([
@@ -147,7 +136,6 @@ function applyLoot(units, unitId, loot) {
     if (loot.kind === 'weapon') {
       const newTier = WEAPONS[loot.item].tier ?? 0;
       const curTier = WEAPONS[u.weapon].tier ?? 0;
-      if (WEAPONS[u.weapon].foreign) return u; // a unit from another game keeps its own arms
       if (newTier <= curTier) return u; // never downgrades a held weapon
       return { ...u, weapon: loot.item, type: WEAPONS[loot.item].category, ammo: fullAmmo(loot.item) };
     }
@@ -571,7 +559,7 @@ function applyActions(state, playerActions, rng = Math.random) {
 
   if (action.type === 'end-turn') {
     const otherTeam = playerId === 'red' ? 'blue' : 'red';
-    units = units.map(u => u.ownerId !== playerId ? u : { ...u, perTurn: { hasActed: false, moveAllowance: u.moveRange ?? MOVE_RANGE } });
+    units = units.map(u => u.ownerId !== playerId ? u : { ...u, perTurn: { hasActed: false, moveAllowance: MOVE_RANGE } });
     return {
       ...state, units,
       activePlayers: [gs.teamPlayerMap[otherTeam]],
@@ -903,21 +891,17 @@ export const SurvivGame = {
     if (!weapon || !at) return null;
     return { ...makeUnit(id, ownerId, at), type, weapon, ammo: fullAmmo(weapon), facing: mate?.facing ?? 0 };
   },
-  // The conversion factor is the rifleman (the FAMAS: 24 a hit, 8 squares) with
-  // his 100 hp and 4 squares a turn. Vests and helmets come off the ground, not
-  // with a unit, so a unit's defense rides in its hp.
+  // Its units in the common vocabulary, which its pack in the core's library is
+  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
+  // conversion factor is the rifleman (the FAMAS: 24 a hit, 8 squares) with his 100
+  // hp and 4 squares a turn. Vests and helmets come off the ground, not with a unit,
+  // so a player has no defense of its own (`fold`): it reads as the standard.
   foreignUnits: {
     scale: { hp: STARTING_HP, attack: WEAPONS.famas.damage, defense: 1, range: WEAPONS.famas.range, move: MOVE_RANGE },
     fold: { defense: 'hp' },
     profiles: () => Object.fromEntries(Object.entries(KIND_WEAPON).map(([kind, w]) => [kind, {
       hp: STARTING_HP, attack: WEAPONS[w].damage, range: WEAPONS[w].range, move: MOVE_RANGE, domain: 'land',
     }])),
-    adopt: (u, s, spec) => {
-      const weapon = foreignWeapon(u.type, s, spec);
-      const hp = whole(s.hp);
-      return { ...u, hp, maxHp: hp, weapon, ammo: fullAmmo(weapon), moveRange: s.move, perTurn: { ...u.perTurn, moveAllowance: s.move } };
-    },
-    realize: (_kind, s) => ({ hp: whole(s.hp), attack: whole(s.attack), defense: s.defense, range: round1(s.range), move: s.move }),
     art: (kind) => ({
       imagePath: KIND_WEAPON[kind] && KIND_WEAPON[kind] !== 'fists' ? WEAPON_ICON(KIND_WEAPON[kind]) : null,
       glyph: 'P', name: `${kind} player`,

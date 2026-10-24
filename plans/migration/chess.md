@@ -55,15 +55,13 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 
 - [ ] `ui` flags: `allowDiagonalHopsWhileMoving`, `clearSelectedAtEndOfTurn`, `dragToMove`, `freeSelection`, `gridDestinations`, `gridFog`, `gridLabelsBottom`, `hideGridLines`, `hideTurnTimeline`, `highlightLastMove`, `highlightSelectedSquare`, `moveAnimation`, `ownTileColors`, `showFacing`, `showHpBars`, `showRoster`, `showUnitsLost`, `simultaneousMotion`, `timeEntry`, `unitShapes`
 - [ ] `toGrid` fields: `boardType`, `cells`, `clock`, `height`, `locationType`, `markers`, `motion`, `spaceType`, `timeType`, `ui`, `units`, `visible`, `width`, `xLabels`, `yLabels`
-- Plugins to move out of the play UI:
-  - [ ] `DatabasePanel` and `DatabaseMoveList` (its game database)
-  - [ ] the analysis Web Worker (`play/analysis-worker.js`, `clientAnalyze`) and `BeliefWorldStepper` in the analysis panel
-  - [ ] `play/chess-sound.js` (Battlefield calls `playChessMoveSound` when `game === 'chess'`), and fog markers drawn from `/images/chess/` (HtmlLayer, SchematicLayer)
-- Its id in the apps' code (not comments):
-  - `apps/browser/play/HtmlLayer.vue:262: function markerImg(type) { return '${basePath}/images/chess/${enemyPrefix.value}${type.toUpperCase()}'; }`
-  - `apps/browser/play/SchematicLayer.vue:619: function markerImg(type) { return '${window.api.basePath}/images/chess/${enemyPrefix.value}${type.toUpperCase()}'; }`
-  - `apps/browser/play/Battlefield.vue:2463: if (action.type === 'move' && props.liveState?.game === 'chess') window.playChessMoveSound?.();`
-  - `api-server.js:2927: console.log(' POST /sessions { "game": "chess", "players": [{"id":"white","agent":"human"},{"id":"black","agent":"random"}] }');`
+- UI plugins, moved out of the play UI in phase 1 (`uiPlugins`, `games/chess/ui/`):
+  - [ ] `ui/sound.js` (slot `sound`): the move clack, on `onSubmit`
+  - [ ] fog markers: `ui.markerCycle` names the pieces a click guesses; `toGrid`'s markers and `hiddenPiecesOf` carry their own pictures
+  - [ ] `ui.actionLabels` (castling as O-O / O-O-O)
+- Stayed in the core, as generic contracts chess fills:
+  - [ ] `DatabasePanel` / `DatabaseMoveList`, on `game.database`; its rows now say how they are written (`label`, and each example's `title`, `outcome`, `when`), which `fowDatabase.js` fills in
+  - [ ] the analysis Web Worker (`play/analysis-worker.js`), on `clientGame` / `clientAnalyze`, and `BeliefWorldStepper` on the analysis's belief worlds
 
 ## Demos and benches
 
@@ -84,7 +82,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 - [ ] `index.test.js`: 44 tests
 - [ ] `obscuro.test.js`: 7 tests
 - [ ] `spacetime.test.js`: 36 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -113,11 +111,11 @@ What [its README](../../games/chess/README.md) documents, each still true after 
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `agents/cfr.js`
-- `games/planQueue.js`
-- `games/spacetime.js`
+- `src/agents/cfr.js`
+- `src/kit/planQueue.js`
+- `src/kit/spacetime.js`
 - `vendor/obscuro-chess/src/index.js` (3 imports)
 - `vendor/obscuro-chess/src/stockfish.js` (2 imports)
 

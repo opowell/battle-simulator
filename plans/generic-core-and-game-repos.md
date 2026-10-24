@@ -462,13 +462,43 @@ game is *ready to lift out* but nothing has left.
 
 1. Move the core into `src/` (engine, agents, shared helpers, server), add the
    `#core/*` import mapping, and rewrite every game's imports to it.
+
+   *Done 2026-10-24:* `src/engine/`, `src/agents/`, `src/kit/` (the shared
+   helpers, `hexagon.js` among them) and `src/server/`. Besides `#core/*`, a game
+   reaches the vendored repos and the play UI by name too (`#obscuro/*`,
+   `#obscuro-chess/*`, `#browser/*`), so a game repo points them at its own
+   copies. The `/lib/` route the analysis worker loads from rewrites `#`-imports
+   to URLs. The StarCraft shared code had nothing generic in it (team colours come
+   from the board's `fill: 'team'`), so it moved into sc1, and sc2 imports it from
+   there: the one cross-game import left (open decision 2).
 2. `createBattleServer({ games, … })`. The `GAMES` registry moves out of
    `api-server.js` into `games/registry.js`, which still imports all of them for
    now. Fix the WebSocket-attach flag and the game editor.
+
+   *Done 2026-10-24:* `createBattleServer({ games, root, gamesDir, registryFile,
+   sessionsDir, libraryDir })` returns `mount` (JAS's contract) and `listen`. Its
+   sessions are module state, so it is one server per copy of the core, which is
+   what a game repo vendoring the core gets. The registry is `games/games.json`
+   (module, export, seating, and a `note` where the old comments were), loaded by
+   `games/registry.js`; the editor rewrites it one line per game. The upgrade
+   listener is marked per route prefix.
 3. The play UI plugin mechanism. Move every game-only component, sound and
    branch out of `apps/browser` into `games/<game>/ui/`, then turn on the gate
    test. The branches are the slow part: each one becomes either an existing
    `ui.*` flag, a new generic flag (when two or more games want it), or a plugin.
+
+   *Done 2026-10-24:* a game's `uiPlugins` are served from its folder and loaded
+   by `apps/browser/play/plugins.js`, in three slots: `overview` (civ1's Cities,
+   Military, Rates, Science), `city-screen` (civ1's city screen) and `sound` (cs's
+   and chess's). They fill places in the game screen itself, not appfr panels, so
+   appfr needed nothing new. New generic flags: `ui.ownScreenActions`,
+   `ui.actionLabels` (labels only one game uses; those two games share stay
+   generic), `ui.markerCycle`. The dice overlay, the recorded-games database and
+   the analysis worker turned out to be generic contracts already (an action's
+   rolls, `game.database`, `clientGame`/`clientAnalyze`) and stay; the database's
+   rows now say how they are written, which chess fills in. The board layers'
+   client-side copy of chess's piece vision went: the server always sends
+   `fogVisible`. `src/gate.test.js` is on.
 4. The library replaces `registerGames`. Write `scripts/export-pack.mjs` and
    each game's terrain mapping, export every game's pack into `library/`, and
    point `engine/foreignUnits.js` at the library, converting into `BattleGame`
@@ -477,8 +507,28 @@ game is *ready to lift out* but nothing has left.
    phase 2's topologies and terrain format first (steps 1 and 5), so the
    units can go first and the rest follows.
    `games/startingSetup.test.js` becomes per-game tests.
+
+   *Units done 2026-10-24:* `scripts/export-pack.mjs <game-dir>` (and
+   `export-packs.mjs` for every game still here) wrote 18 packs; Arena is the host
+   and has none, rogue and simcity lend none. `src/server/library.js` reads them,
+   and `foreignUnits.js` takes its sources from them and its hosts from
+   `foreignUnits.host`, which only Arena sets. Every game's hosting half is gone
+   (`table`/`write`, `chassis`, `adopt`, `realize`, `absorb`, cs's and Surviv's
+   weapon factories, the per-unit pace and reach overrides); the lending half
+   (`scale`, `factor`, `fold`, `profiles`, `art`) stays until the game is
+   extracted, because phase 3 re-exports from it. Re-exporting after the strip
+   wrote byte-identical packs. `src/library.test.js` replaces
+   `games/foreignUnits.test.js`: every pack is whole, and every one of its units
+   is built in Arena, drawn as itself and played. Terrain and maps wait on phase
+   2, as above; each `pack.json` says so.
 5. Split `npm test` per game, so that each game's tests pass from its folder
    alone.
+
+   *Done 2026-10-24:* `npm test` runs `scripts/test.mjs` (everything, `core`, or
+   named games: `npm test -- civ1 cs`). The core's cross-game lists became checks a
+   game runs on itself from its `contract.test.js` (`agentChecks.js`,
+   `rosterChecks.js`); the rollouts, minutes per game, run with `SLOW_TESTS=1`. The
+   core's tests that played chess moved to chess; the core keeps Arena and stubs.
 
 Golden replays and `npm test` stay green after every step.
 

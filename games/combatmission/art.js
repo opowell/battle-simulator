@@ -455,7 +455,7 @@ function infantryLayers(spec, a) {
 // The board token for a unit of `type` heading `a` radians (0 = east, +y = south):
 // { spriteLayers, sizeFrac, footprint } — footprint is the outline in world tiles, for
 // renderers that draw units smaller than the full sprite (the minimap). Null for a type
-// this game has no art for (a unit from another game keeps its own picture).
+// this game has no art for.
 export function unitArt(type, a) {
   const tank = TANKS[type];
   if (tank) {

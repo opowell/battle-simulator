@@ -305,21 +305,19 @@ export const ChessGame = {
   name: 'Chess',
   colors: { light: '#f0d9b5', dark: '#b58863' },
 
-  // Units from other games (src/engine/foreignUnits.js). Chess has no stats, so a piece
-  // is read by its material value: a pawn is the standard infantryman, and a piece
-  // worth v pawns is √v times as tough and as hard-hitting — √v·√v = v times the
-  // fighting power, the way two armies' strengths compare (Lanchester's square
-  // law). The long-range pieces move three, the knight two, pawn and king one.
-  // Every capture is made by moving onto the piece: a melee reach, which the
-  // common vocabulary counts as a quarter of a standard rifle's.
-  // A unit from another game here simply IS the piece nearest to it — its type is
-  // that piece's, so the move generator, Stockfish and fog belief all know it —
-  // drawn as itself; there is nothing to write its stats into. Never the king.
+  // Its units in the common vocabulary, which its pack in the core's library is
+  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). Chess has no
+  // stats, so a piece is read by its material value: a pawn is the standard
+  // infantryman, and a piece worth v pawns is √v times as tough and as hard-hitting
+  // — √v·√v = v times the fighting power, the way two armies' strengths compare
+  // (Lanchester's square law). The long-range pieces move three, the knight two,
+  // pawn and king one. Every capture is made by moving onto the piece: a melee
+  // reach, which the common vocabulary counts as a quarter of a standard rifle's.
   foreignUnits: {
     scale: { hp: 1, attack: 1, defense: 1, range: 4, move: 1 },
     profiles: () => {
-      const piece = (value, move, extra = {}) => ({ hp: Math.sqrt(value), attack: Math.sqrt(value), defense: Math.sqrt(value), range: 1, move, domain: 'land', ...extra });
-      return { pawn: piece(1, 1), knight: piece(3, 2), bishop: piece(3, 3), rook: piece(5, 3), queen: piece(9, 3), king: piece(4, 1, { chassis: false }) };
+      const piece = (value, move) => ({ hp: Math.sqrt(value), attack: Math.sqrt(value), defense: Math.sqrt(value), range: 1, move, domain: 'land' });
+      return { pawn: piece(1, 1), knight: piece(3, 2), bishop: piece(3, 3), rook: piece(5, 3), queen: piece(9, 3), king: piece(4, 1) };
     },
     art: (type, seat = 0) => ({ imagePath: `/images/chess/${seat % 2 ? 'b' : 'w'}${TYPE_LETTER[type].toUpperCase()}`, glyph: TYPE_LETTER[type].toUpperCase(), name: type }),
   },

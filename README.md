@@ -47,6 +47,24 @@ adds one, and every Obscuro import fails with a confusing module-not-found.
 `--recursive` matters: it is what fills in `vendor/obscuro-chess/vendor/obscuro`,
 the search the chess AI actually runs on.
 
+### What is where
+
+The repo is a generic **core** and the games built on it, on their way to repos
+of their own (see [plans/generic-core-and-game-repos.md](plans/generic-core-and-game-repos.md)):
+
+| Path | What it is |
+|---|---|
+| `src/engine/`, `src/agents/`, `src/kit/` | the engine, the generic AIs, and the board, time and turn machinery games build on |
+| `src/server/` | the HTTP and WebSocket server, which an app constructs with its games: `createBattleServer({ games, … })` |
+| `apps/` | the Browser and the play UI, which know no game (`src/gate.test.js` holds them to it) |
+| `library/` | every game's units as data, which the core's own ruleset fields (see [Library](#library)) |
+| `games/<name>/` | a game: its rules, its art, its tests, and its own UI plugins in `ui/` |
+| `games/games.json` | the registry: which games this app serves (`games/registry.js` loads it) |
+| `api-server.js` | this app: the core's server with every game in the registry |
+
+A game imports the core as `#core/...` (`package.json`'s subpath imports), never
+by a relative path out of its own folder, so it can be lifted out as it is.
+
 ### Run a demo
 
 Each game has an interactive demo (you vs random AI) and an `--auto` mode (random vs random):
@@ -153,10 +171,29 @@ The setup page's **Copy link** writes one from the form as it stands, naming onl
 what differs from the defaults. Edited starting units can't go in a link; when the
 form has them, the button wears a `*` and its tooltip says so.
 
-The data comes from one endpoint, `GET /catalog` (`catalog.js`), which derives
+The data comes from one endpoint, `GET /catalog` (`src/server/catalog.js`), which derives
 it all generically: units come from the same `setupPreview` the setup screen
 uses, so no game needs code for the Browser. Edits to a game's definition or
 source take effect when the server next starts.
+
+## Library
+
+`library/<game>/` keeps each game's units as data: `units.json` (each unit type in
+the common vocabulary — hp, attack, defense, range, move, domain — with the game's
+conversion factor, and how it looks for each seat), its pictures in `art/`, and
+`pack.json` (which commit of the game it came from, and what it leaves out).
+Arena, the core's own ruleset, fields any of them: its setup screen's units editor
+offers every unit of every pack, each playing as the nearest Arena type with its
+stats converted, drawn as itself. The games themselves don't mix.
+
+A pack is written from a game's folder, and rewritten when the game changes:
+
+```sh
+node scripts/export-pack.mjs games/civ1     # one game (or a game repo's game folder)
+node scripts/export-packs.mjs               # every game still here
+```
+
+Terrain types and maps join the packs once the core has its board format.
 
 ## Engine API
 

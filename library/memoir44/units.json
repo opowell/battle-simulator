@@ -1,0 +1,58 @@
+{
+  "game": "memoir44",
+  "title": "Memoir 44",
+  "scale": {
+    "hp": 4,
+    "attack": 3,
+    "defense": 2,
+    "range": 3,
+    "move": 2
+  },
+  "units": {
+    "infantry": {
+      "hp": 4,
+      "attack": 3,
+      "defense": 2,
+      "range": 3,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "I",
+          "name": "Infantry"
+        }
+      ]
+    },
+    "armor": {
+      "hp": 3,
+      "attack": 3,
+      "defense": 3,
+      "range": 3,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "A",
+          "name": "Armor"
+        }
+      ]
+    },
+    "artillery": {
+      "hp": 2,
+      "attack": 3,
+      "defense": 2,
+      "range": 6,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "R",
+          "name": "Artillery"
+        }
+      ]
+    }
+  }
+}

@@ -33,12 +33,7 @@ export const UNITS = {
 export const UNIT_KEYS = Object.keys(UNITS);
 export const COMBAT_TYPES = ['knight', 'barbarian', 'archer'];
 
-// Men from other games (src/engine/foreignUnits.js) are registered in UNITS too, under
-// keys of their own ('sc1:marine'), as a copy of the soldier type they fight as —
-// its `kind`. Nothing that LISTS the types sees them; anything that reads a
-// squad's men must go by these two instead of COMBAT_TYPES.
-
-/** The type a man of `type` fights as: knight, barbarian, archer or spy. */
+/** The type a man of `type` fights as (its `kind`): knight, barbarian, archer or spy. */
 export const kindOf = (type) => UNITS[type]?.kind ?? type;
 
 /** The types of man in `men` that fight, any game's. */

@@ -1,0 +1,223 @@
+{
+  "game": "combatmission",
+  "title": "CombatMission",
+  "scale": {
+    "hp": 10,
+    "attack": 5,
+    "defense": 1,
+    "range": 5,
+    "move": 2
+  },
+  "units": {
+    "rifle-squad": {
+      "hp": 10,
+      "attack": 5,
+      "defense": 1,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/rifle-squad.png",
+          "glyph": "R",
+          "name": "Rifle Sqd"
+        }
+      ]
+    },
+    "mg-team": {
+      "hp": 5,
+      "attack": 8,
+      "defense": 1,
+      "range": 7,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/mg-team.png",
+          "glyph": "G",
+          "name": "MG Team"
+        }
+      ]
+    },
+    "sniper": {
+      "hp": 3,
+      "attack": 12,
+      "defense": 1,
+      "range": 12,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/sniper.png",
+          "glyph": "N",
+          "name": "Sniper"
+        }
+      ]
+    },
+    "bazooka-team": {
+      "hp": 4,
+      "attack": 20,
+      "defense": 1,
+      "range": 3,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/bazooka-team.png",
+          "glyph": "Z",
+          "name": "Bazooka"
+        }
+      ]
+    },
+    "mortar-team": {
+      "hp": 5,
+      "attack": 8,
+      "defense": 1,
+      "range": 10,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/mortar-team.png",
+          "glyph": "O",
+          "name": "Mortar"
+        }
+      ]
+    },
+    "sherman": {
+      "hp": 20,
+      "attack": 12,
+      "defense": 5,
+      "range": 7,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/sherman.png",
+          "glyph": "S",
+          "name": "Sherman"
+        }
+      ]
+    },
+    "stuart": {
+      "hp": 12,
+      "attack": 7,
+      "defense": 3,
+      "range": 5,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/stuart.png",
+          "glyph": "U",
+          "name": "Stuart"
+        }
+      ]
+    },
+    "volks-squad": {
+      "hp": 10,
+      "attack": 5,
+      "defense": 1,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/volks-squad.png",
+          "glyph": "V",
+          "name": "Volks Sqd"
+        }
+      ]
+    },
+    "mg42-team": {
+      "hp": 5,
+      "attack": 9,
+      "defense": 1,
+      "range": 8,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/mg42-team.png",
+          "glyph": "M",
+          "name": "MG-42"
+        }
+      ]
+    },
+    "german-sniper": {
+      "hp": 3,
+      "attack": 13,
+      "defense": 1,
+      "range": 13,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "X",
+          "name": "G.Sniper"
+        }
+      ]
+    },
+    "panzerschreck": {
+      "hp": 4,
+      "attack": 22,
+      "defense": 1,
+      "range": 3,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/panzerschreck.png",
+          "glyph": "P",
+          "name": "Pzschreck"
+        }
+      ]
+    },
+    "mortar-ger": {
+      "hp": 5,
+      "attack": 9,
+      "defense": 1,
+      "range": 10,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/mortar-ger.png",
+          "glyph": "Q",
+          "name": "G.Mortar"
+        }
+      ]
+    },
+    "panzer-iv": {
+      "hp": 18,
+      "attack": 11,
+      "defense": 4,
+      "range": 7,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/panzer-iv.png",
+          "glyph": "F",
+          "name": "Panzer IV"
+        }
+      ]
+    },
+    "tiger": {
+      "hp": 25,
+      "attack": 15,
+      "defense": 8,
+      "range": 8,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/combatmission/art/units/tiger.png",
+          "glyph": "K",
+          "name": "Tiger"
+        }
+      ]
+    }
+  }
+}

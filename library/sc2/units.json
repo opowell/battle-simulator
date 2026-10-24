@@ -1,0 +1,643 @@
+{
+  "game": "sc2",
+  "title": "SC2",
+  "scale": {
+    "hp": 45,
+    "attack": 6,
+    "defense": 1,
+    "range": 4,
+    "move": 2
+  },
+  "units": {
+    "scv": {
+      "hp": 45,
+      "attack": 5,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/scv.png",
+          "glyph": "S",
+          "name": "scv"
+        }
+      ]
+    },
+    "marine": {
+      "hp": 45,
+      "attack": 6,
+      "defense": 1,
+      "range": 4,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/marine.png",
+          "glyph": "M",
+          "name": "marine"
+        }
+      ]
+    },
+    "marauder": {
+      "hp": 125,
+      "attack": 10,
+      "defense": 2,
+      "range": 4,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/marauder.png",
+          "glyph": "M",
+          "name": "marauder"
+        }
+      ]
+    },
+    "reaper": {
+      "hp": 60,
+      "attack": 4,
+      "defense": 1,
+      "range": 4,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/reaper.png",
+          "glyph": "R",
+          "name": "reaper"
+        }
+      ]
+    },
+    "ghost": {
+      "hp": 100,
+      "attack": 10,
+      "defense": 1,
+      "range": 6,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/ghost.png",
+          "glyph": "G",
+          "name": "ghost"
+        }
+      ]
+    },
+    "hellion": {
+      "hp": 90,
+      "attack": 8,
+      "defense": 1,
+      "range": 5,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/hellion.png",
+          "glyph": "H",
+          "name": "hellion"
+        }
+      ]
+    },
+    "siege-tank": {
+      "hp": 175,
+      "attack": 15,
+      "defense": 2,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/siege-tank.png",
+          "glyph": "S",
+          "name": "siege-tank"
+        }
+      ]
+    },
+    "thor": {
+      "hp": 400,
+      "attack": 30,
+      "defense": 3,
+      "range": 7,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/thor.png",
+          "glyph": "T",
+          "name": "thor"
+        }
+      ]
+    },
+    "medivac": {
+      "hp": 150,
+      "attack": 0,
+      "defense": 2,
+      "range": 0,
+      "move": 3,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/medivac.png",
+          "glyph": "M",
+          "name": "medivac"
+        }
+      ]
+    },
+    "viking": {
+      "hp": 125,
+      "attack": 12,
+      "defense": 1,
+      "range": 9,
+      "move": 4,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/viking.png",
+          "glyph": "V",
+          "name": "viking"
+        }
+      ]
+    },
+    "banshee": {
+      "hp": 140,
+      "attack": 12,
+      "defense": 1,
+      "range": 6,
+      "move": 4,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/banshee.png",
+          "glyph": "B",
+          "name": "banshee"
+        }
+      ]
+    },
+    "battlecruiser": {
+      "hp": 550,
+      "attack": 25,
+      "defense": 4,
+      "range": 6,
+      "move": 2,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/battlecruiser.png",
+          "glyph": "B",
+          "name": "battlecruiser"
+        }
+      ]
+    },
+    "drone": {
+      "hp": 40,
+      "attack": 5,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/drone.png",
+          "glyph": "D",
+          "name": "drone"
+        }
+      ]
+    },
+    "zergling": {
+      "hp": 35,
+      "attack": 5,
+      "defense": 1,
+      "range": 1,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/zergling.png",
+          "glyph": "Z",
+          "name": "zergling"
+        }
+      ]
+    },
+    "baneling": {
+      "hp": 30,
+      "attack": 20,
+      "defense": 1,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/baneling.png",
+          "glyph": "B",
+          "name": "baneling"
+        }
+      ]
+    },
+    "roach": {
+      "hp": 145,
+      "attack": 16,
+      "defense": 2,
+      "range": 4,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/roach.png",
+          "glyph": "R",
+          "name": "roach"
+        }
+      ]
+    },
+    "ravager": {
+      "hp": 120,
+      "attack": 16,
+      "defense": 2,
+      "range": 6,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/ravager.png",
+          "glyph": "R",
+          "name": "ravager"
+        }
+      ]
+    },
+    "hydralisk": {
+      "hp": 90,
+      "attack": 12,
+      "defense": 1,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/hydralisk.png",
+          "glyph": "H",
+          "name": "hydralisk"
+        }
+      ]
+    },
+    "lurker": {
+      "hp": 200,
+      "attack": 20,
+      "defense": 2,
+      "range": 8,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/lurker.png",
+          "glyph": "L",
+          "name": "lurker"
+        }
+      ]
+    },
+    "infestor": {
+      "hp": 90,
+      "attack": 0,
+      "defense": 1,
+      "range": 0,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/infestor.png",
+          "glyph": "I",
+          "name": "infestor"
+        }
+      ]
+    },
+    "queen": {
+      "hp": 175,
+      "attack": 9,
+      "defense": 2,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/queen.png",
+          "glyph": "Q",
+          "name": "queen"
+        }
+      ]
+    },
+    "swarmhost": {
+      "hp": 160,
+      "attack": 0,
+      "defense": 3,
+      "range": 0,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/swarmhost.png",
+          "glyph": "S",
+          "name": "swarmhost"
+        }
+      ]
+    },
+    "ultralisk": {
+      "hp": 500,
+      "attack": 35,
+      "defense": 3,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/ultralisk.png",
+          "glyph": "U",
+          "name": "ultralisk"
+        }
+      ]
+    },
+    "mutalisk": {
+      "hp": 120,
+      "attack": 9,
+      "defense": 1,
+      "range": 3,
+      "move": 6,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/mutalisk.png",
+          "glyph": "M",
+          "name": "mutalisk"
+        }
+      ]
+    },
+    "corruptor": {
+      "hp": 200,
+      "attack": 14,
+      "defense": 3,
+      "range": 6,
+      "move": 4,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/corruptor.png",
+          "glyph": "C",
+          "name": "corruptor"
+        }
+      ]
+    },
+    "broodlord": {
+      "hp": 225,
+      "attack": 20,
+      "defense": 2,
+      "range": 9,
+      "move": 2,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/broodlord.png",
+          "glyph": "B",
+          "name": "broodlord"
+        }
+      ]
+    },
+    "overlord": {
+      "hp": 200,
+      "attack": 0,
+      "defense": 1,
+      "range": 0,
+      "move": 2,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/overlord.png",
+          "glyph": "O",
+          "name": "overlord"
+        }
+      ]
+    },
+    "probe": {
+      "hp": 40,
+      "attack": 5,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/probe.png",
+          "glyph": "P",
+          "name": "probe"
+        }
+      ]
+    },
+    "zealot": {
+      "hp": 150,
+      "attack": 8,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/zealot.png",
+          "glyph": "Z",
+          "name": "zealot"
+        }
+      ]
+    },
+    "stalker": {
+      "hp": 160,
+      "attack": 13,
+      "defense": 2,
+      "range": 6,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/stalker.png",
+          "glyph": "S",
+          "name": "stalker"
+        }
+      ]
+    },
+    "sentry": {
+      "hp": 80,
+      "attack": 6,
+      "defense": 2,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/sentry.png",
+          "glyph": "S",
+          "name": "sentry"
+        }
+      ]
+    },
+    "adept": {
+      "hp": 140,
+      "attack": 10,
+      "defense": 2,
+      "range": 4,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/adept.png",
+          "glyph": "A",
+          "name": "adept"
+        }
+      ]
+    },
+    "immortal": {
+      "hp": 300,
+      "attack": 20,
+      "defense": 2,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/immortal.png",
+          "glyph": "I",
+          "name": "immortal"
+        }
+      ]
+    },
+    "colossus": {
+      "hp": 350,
+      "attack": 10,
+      "defense": 2,
+      "range": 7,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/colossus.png",
+          "glyph": "C",
+          "name": "colossus"
+        }
+      ]
+    },
+    "high-templar": {
+      "hp": 80,
+      "attack": 0,
+      "defense": 2,
+      "range": 0,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/high-templar.png",
+          "glyph": "H",
+          "name": "high-templar"
+        }
+      ]
+    },
+    "dark-templar": {
+      "hp": 120,
+      "attack": 45,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/dark-templar.png",
+          "glyph": "D",
+          "name": "dark-templar"
+        }
+      ]
+    },
+    "archon": {
+      "hp": 360,
+      "attack": 25,
+      "defense": 1,
+      "range": 3,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/archon.png",
+          "glyph": "A",
+          "name": "archon"
+        }
+      ]
+    },
+    "phoenix": {
+      "hp": 180,
+      "attack": 5,
+      "defense": 1,
+      "range": 4,
+      "move": 6,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/phoenix.png",
+          "glyph": "P",
+          "name": "phoenix"
+        }
+      ]
+    },
+    "void-ray": {
+      "hp": 250,
+      "attack": 6,
+      "defense": 1,
+      "range": 6,
+      "move": 4,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/void-ray.png",
+          "glyph": "V",
+          "name": "void-ray"
+        }
+      ]
+    },
+    "carrier": {
+      "hp": 450,
+      "attack": 5,
+      "defense": 3,
+      "range": 8,
+      "move": 3,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/carrier.png",
+          "glyph": "C",
+          "name": "carrier"
+        }
+      ]
+    },
+    "tempest": {
+      "hp": 500,
+      "attack": 40,
+      "defense": 3,
+      "range": 14,
+      "move": 2,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/tempest.png",
+          "glyph": "T",
+          "name": "tempest"
+        }
+      ]
+    },
+    "locust": {
+      "hp": 50,
+      "attack": 10,
+      "defense": 1,
+      "range": 3,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc2/art/units/locust.png",
+          "glyph": "L",
+          "name": "locust"
+        }
+      ]
+    }
+  }
+}

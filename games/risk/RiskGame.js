@@ -8,7 +8,7 @@ import { whole } from '#core/engine/foreignUnits.js';
 
 // The printed game's pieces: an infantryman is one army, a horseman five, a cannon
 // ten. The rules only ever count armies; the pieces are what a roster names and what
-// the other games read a Risk army as (src/engine/foreignUnits.js).
+// the core's library reads a Risk army as (src/engine/foreignUnits.js).
 const PIECES = { infantry: 1, cavalry: 5, artillery: 10 };
 
 /**
@@ -959,20 +959,16 @@ export const RiskGame = {
     return PIECES[type] ? { id, ownerId, type, position, alive: true, hp: PIECES[type], maxHp: PIECES[type] } : null;
   },
   applyStartingUnits: (state) => absorbUnits(state),
-  // Units from other games (src/engine/foreignUnits.js). The conversion factor is one
-  // army. An army has no punch or guard of its own — every army rolls the same die
-  // — so a unit's attack and defense ride in its hp with its toughness, and the lot
-  // is how many armies it is worth: twice a standard infantryman's hp, attack and
-  // defense is eight. A battle is between neighbours, and a turn's move one border.
+  // Its units in the common vocabulary, which its pack in the core's library is
+  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
+  // conversion factor is one army. An army has no punch or guard of its own — every
+  // army rolls the same die — so a piece is as strong as the armies it is worth. A
+  // battle is between neighbours, and a turn's move one border.
   foreignUnits: {
     scale: { hp: 1, attack: 1, defense: 1, range: 1, move: 1 },
-    fold: { attack: 'hp', defense: 'hp' },
-    absorb: true,
     profiles: () => Object.fromEntries(Object.entries(PIECES).map(([type, n]) => [type, {
-      hp: n, attack: 1, defense: 1, range: 1, move: 1, domain: 'land', ...(type === 'infantry' ? {} : { chassis: false }),
+      hp: n, attack: 1, defense: 1, range: 1, move: 1, domain: 'land',
     }])),
-    // What a unit's armies are: its hp, rounded as armies are.
-    realize: (_type, s) => ({ hp: whole(s.hp), attack: s.attack, defense: s.defense, range: 1, move: 1 }),
     art: (type) => ({ glyph: type[0].toUpperCase(), name: type }),
   },
   getLegalActions,

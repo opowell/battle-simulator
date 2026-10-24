@@ -43,7 +43,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 
 - [ ] `ui` flags: `isometric`, `showFacing`
 - [ ] `toGrid` fields: `cells`, `height`, `width`
-- Plugins to move out of the play UI: none found
+- UI plugins: none (`src/gate.test.js` keeps game ids and imports out of the play UI)
 
 ## Demos and benches
 
@@ -57,7 +57,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 - [ ] `fog.test.js`: 6 tests
 - [ ] `golden.test.js`: 3 golden replays (default, scenario:ufo-crash, fog-on)
 - [ ] `index.test.js`: 13 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -79,11 +79,11 @@ What [its README](../../games/xcom/README.md) documents, each still true after t
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `agents/learned/leafEval.js`
-- `engine/foreignUnits.js`
-- `games/evalHelpers.js`
+- `src/agents/learned/leafEval.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/evalHelpers.js`
 
 ## Notes
 

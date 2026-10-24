@@ -75,7 +75,6 @@ export function counterMen(squad, enemyType) {
 }
 
 // The dominant combat type in a squad — used to decide which counter the enemy needs.
-// Men from other games count as the kind they fight as.
 export function dominantType(squad) {
   const byKind = {};
   for (const t of fightersIn(squad.men)) byKind[kindOf(t)] = (byKind[kindOf(t)] ?? 0) + squad.men[t];

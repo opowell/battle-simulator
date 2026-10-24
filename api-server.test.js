@@ -479,36 +479,43 @@ test('a roster the game cannot build is refused with a reason', async () => {
   assert.match(bad.error ?? '', /not a starting unit type/);
 });
 
-test('a session can field units of other games, drawn as themselves', async () => {
-  const players = [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }];
-  const preview = await post('/games/chess/setup', { players, config: {} });
+test('an Arena session can field units from the library, drawn as themselves', async () => {
+  const players = [{ id: 'p1', name: 'One' }, { id: 'p2', name: 'Two' }];
+  const preview = await post('/games/arena/setup', { players, config: {} });
   const sc1 = preview.foreign.find(g => g.game === 'sc1');
-  assert.ok(sc1, 'chess should be offered SC1\'s units');
-  assert.equal(sc1.units.find(u => u.type === 'zergling').plays.white.chassis, 'pawn');
+  assert.ok(sc1, 'Arena should be offered SC1\'s units from the library');
+  const marine = sc1.units.find(u => u.type === 'marine');
+  assert.ok(marine.plays.p1.chassis, 'a marine plays as one of Arena\'s own types');
+  assert.equal(marine.imagePath, '/library/sc1/art/units/marine.png');
 
+  // The games themselves don't mix: only the core's own ruleset takes units in.
+  assert.deepEqual((await post('/games/chess/setup', { players: [{ id: 'white' }, { id: 'black' }], config: {} })).foreign, []);
+
+  const taken = new Set(preview.roster.map(u => JSON.stringify(u.position)));
+  const spot = preview.board.cells.find(c => c.pos != null && !taken.has(JSON.stringify(c.pos))).pos;
   const roster = [
     ...preview.roster.map(({ id, ownerId, type, position }) => ({ id, ownerId, type, position })),
-    { ownerId: 'white', type: 'zergling', game: 'sc1', position: 'e4' },
+    { ownerId: 'p1', type: 'marine', game: 'sc1', position: spot },
   ];
   const s = await post('/sessions', {
-    game: 'chess',
-    players: [{ id: 'white', agent: 'human' }, { id: 'black', agent: 'human' }],
-    config: { startingUnits: roster },
+    game: 'arena',
+    players: [{ id: 'p1', agent: 'human' }, { id: 'p2', agent: 'human' }],
+    config: { ...preview.config, startingUnits: roster },
   });
-  const snap = await get(`/sessions/${s.id}?player=white`);
-  const e4 = snap.grid.cells.find(c => c.x === 4 && c.y === 4);
-  assert.equal(e4.imagePath, '/images/sc1/units/zergling', 'drawn as a zergling, not as the pawn it plays as');
-  assert.deepEqual(e4.origin, { game: 'sc1', type: 'zergling', chassis: 'pawn' });
-  assert.ok(snap.legalActions.some(a => a.from === 'e4'), 'and it moves, as a pawn');
+  const snap = await get(`/sessions/${s.id}?player=p1`);
+  const drawn = [...(snap.grid.cells ?? []), ...(snap.grid.units ?? [])].find(c => c?.origin?.game === 'sc1');
+  assert.ok(drawn, 'the marine is on the board');
+  assert.equal(drawn.imagePath, '/library/sc1/art/units/marine.png', 'drawn as a marine, not as the Arena type it plays as');
+  assert.equal(drawn.origin.type, 'marine');
 
-  // The in-game editor reads it back as the zergling it was asked for.
-  const live = await post(`/sessions/${s.id}/setup`, { config: {}, by: 'white' });
-  assert.deepEqual(live.roster.filter(u => u.game).map(u => [u.game, u.type]), [['sc1', 'zergling']]);
+  // The in-game editor reads it back as the marine it was asked for.
+  const live = await post(`/sessions/${s.id}/setup`, { config: {}, by: 'p1' });
+  assert.deepEqual(live.roster.filter(u => u.game).map(u => [u.game, u.type]), [['sc1', 'marine']]);
 
   const bad = await post('/sessions', {
-    game: 'chess',
-    players: [{ id: 'white', agent: 'human' }, { id: 'black', agent: 'human' }],
-    config: { startingUnits: [...roster, { ownerId: 'black', type: 'dragon', game: 'sc1', position: 'e5' }] },
+    game: 'arena',
+    players: [{ id: 'p1', agent: 'human' }, { id: 'p2', agent: 'human' }],
+    config: { ...preview.config, startingUnits: [...roster, { ownerId: 'p2', type: 'dragon', game: 'sc1', position: spot }] },
   });
   assert.match(bad.error ?? '', /not a unit of SC1/);
 });

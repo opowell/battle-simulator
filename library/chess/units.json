@@ -1,0 +1,133 @@
+{
+  "game": "chess",
+  "title": "Chess",
+  "scale": {
+    "hp": 1,
+    "attack": 1,
+    "defense": 1,
+    "range": 4,
+    "move": 1
+  },
+  "units": {
+    "pawn": {
+      "hp": 1,
+      "attack": 1,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/chess/art/wP.svg",
+          "glyph": "P",
+          "name": "pawn"
+        },
+        {
+          "imagePath": "/library/chess/art/bP.svg",
+          "glyph": "P",
+          "name": "pawn"
+        }
+      ]
+    },
+    "knight": {
+      "hp": 1.7320508075688772,
+      "attack": 1.7320508075688772,
+      "defense": 1.7320508075688772,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/chess/art/wN.svg",
+          "glyph": "N",
+          "name": "knight"
+        },
+        {
+          "imagePath": "/library/chess/art/bN.svg",
+          "glyph": "N",
+          "name": "knight"
+        }
+      ]
+    },
+    "bishop": {
+      "hp": 1.7320508075688772,
+      "attack": 1.7320508075688772,
+      "defense": 1.7320508075688772,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/chess/art/wB.svg",
+          "glyph": "B",
+          "name": "bishop"
+        },
+        {
+          "imagePath": "/library/chess/art/bB.svg",
+          "glyph": "B",
+          "name": "bishop"
+        }
+      ]
+    },
+    "rook": {
+      "hp": 2.23606797749979,
+      "attack": 2.23606797749979,
+      "defense": 2.23606797749979,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/chess/art/wR.svg",
+          "glyph": "R",
+          "name": "rook"
+        },
+        {
+          "imagePath": "/library/chess/art/bR.svg",
+          "glyph": "R",
+          "name": "rook"
+        }
+      ]
+    },
+    "queen": {
+      "hp": 3,
+      "attack": 3,
+      "defense": 3,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/chess/art/wQ.svg",
+          "glyph": "Q",
+          "name": "queen"
+        },
+        {
+          "imagePath": "/library/chess/art/bQ.svg",
+          "glyph": "Q",
+          "name": "queen"
+        }
+      ]
+    },
+    "king": {
+      "hp": 2,
+      "attack": 2,
+      "defense": 2,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/chess/art/wK.svg",
+          "glyph": "K",
+          "name": "king"
+        },
+        {
+          "imagePath": "/library/chess/art/bK.svg",
+          "glyph": "K",
+          "name": "king"
+        }
+      ]
+    }
+  }
+}

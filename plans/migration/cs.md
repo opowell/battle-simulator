@@ -54,11 +54,9 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 
 - [ ] `ui` flags: `aimedActionTypes`, `fovDegrees`, `hideGridLines`, `visionRange`
 - [ ] `toGrid` fields: `cells`, `height`, `locationType`, `los`, `shapes`, `ui`, `units`, `width`
-- Plugins to move out of the play UI:
-  - [ ] `play/cs-sound.js` (Battlefield plays weapon, step, bomb, grenade and death sounds when `game === 'cs'`)
-- Its id in the apps' code (not comments):
-  - `apps/browser/play/cs-sound.js:18: const audio = new Audio('/sounds/cs/${kind}');`
-  - `apps/browser/play/Battlefield.vue:1373: if (oldLen === undefined || props.liveState?.game !== 'cs') return;`
+- UI plugins, moved out of the play UI in phase 1 (`uiPlugins`, `games/cs/ui/`):
+  - [ ] `ui/sound.js` (slot `sound`): weapon, step, bomb, grenade and death sounds, on `onEntry` as the board plays a turn
+  - [ ] `ui.actionLabels` (Done Buying, Crouch, Stand Up)
 
 ## Demos and benches
 
@@ -72,7 +70,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 - [ ] `golden.test.js`: 10 golden replays (default, scenario:de_dust2, scenario:dust2, scenario:de_dust, scenario:cs_siege, scenario:cs_italy, scenario:de_forge, scenario:de_pond, scenario:de_plaza, fog-off)
 - [ ] `index.test.js`: 36 tests
 - [ ] `obscuro.test.js`: 18 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -102,16 +100,16 @@ What [its README](../../games/cs/README.md) documents, each still true after the
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `agents/learned/leafEval.js`
-- `agents/ObscuroAgent.js`
-- `engine/foreignUnits.js`
-- `games/continuousMove.js`
-- `games/coord.js` (4 imports)
-- `games/renderOptions.js`
-- `games/terrainShapes.js` (2 imports)
-- `games/vision.js` (3 imports)
+- `src/agents/learned/leafEval.js`
+- `src/agents/ObscuroAgent.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/continuousMove.js`
+- `src/kit/coord.js` (4 imports)
+- `src/kit/renderOptions.js`
+- `src/kit/terrainShapes.js` (2 imports)
+- `src/kit/vision.js` (3 imports)
 - `vendor/obscuro/src/search.js`
 
 ## Notes

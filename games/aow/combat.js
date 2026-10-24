@@ -7,7 +7,6 @@ function combatMenOf(men) {
 }
 
 function dominant(men) {
-  // Men from other games count as the kind they fight as.
   const byKind = {};
   for (const t of fightersIn(men)) byKind[kindOf(t)] = (byKind[kindOf(t)] ?? 0) + men[t];
   let best = null, bestN = 0;

@@ -633,16 +633,13 @@ export const KDiceGame = {
     return type === 'die' ? { id, ownerId, type, position, alive: true, hp: 1, maxHp: 1 } : null;
   },
   applyStartingUnits: (state) => absorbUnits(state),
-  // Units from other games (src/engine/foreignUnits.js). The conversion factor is one
-  // die. A die has no punch or guard of its own — every die rolls the same — so a
-  // unit's attack and defense ride in its hp with its toughness, and the lot is how
-  // many dice it is worth. A battle is between neighbours, and so is a move.
+  // Its units in the common vocabulary, which its pack in the core's library is
+  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
+  // conversion factor is one die. A die has no punch or guard of its own — every die
+  // rolls the same. A battle is between neighbours, and so is a move.
   foreignUnits: {
     scale: { hp: 1, attack: 1, defense: 1, range: 1, move: 1 },
-    fold: { attack: 'hp', defense: 'hp' },
-    absorb: true,
     profiles: () => ({ die: { hp: 1, attack: 1, defense: 1, range: 1, move: 1, domain: 'land' } }),
-    realize: (_type, s) => ({ hp: whole(s.hp), attack: s.attack, defense: s.defense, range: 1, move: 1 }),
     art: () => ({ glyph: '⚀', name: 'die' }),
   },
   getLegalActions,

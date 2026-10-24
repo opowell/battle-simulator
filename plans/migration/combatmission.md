@@ -49,7 +49,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 
 - [ ] `ui` flags: `aimedActionTypes`, `boxSelect`, `hideGridLines`, `showFacing`, `targetAim`
 - [ ] `toGrid` fields: `cells`, `height`, `locationType`, `shapes`, `spaceType`, `timeType`, `ui`, `units`, `width`
-- Plugins to move out of the play UI: none found
+- UI plugins: none (`src/gate.test.js` keeps game ids and imports out of the play UI)
 
 ## Demos and benches
 
@@ -64,7 +64,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 - [ ] `golden.test.js`: 10 golden replays (default, scenario:bocage, scenario:river_line, scenario:hill_woods, scenario:ambush, mode:continuous-sequential, mode:continuous-simultaneous, mode:discrete-sequential, mode:discrete-simultaneous, fog-off)
 - [ ] `index.test.js`: 16 tests
 - [ ] `rules.test.js`: 9 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -87,16 +87,16 @@ What [its README](../../games/combatmission/README.md) documents, each still tru
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `agents/learned/leafEval.js`
-- `engine/foreignUnits.js`
-- `games/continuousMove.js`
-- `games/coord.js` (6 imports)
-- `games/evalHelpers.js`
-- `games/renderOptions.js`
-- `games/spacetime.js`
-- `games/terrainShapes.js` (2 imports)
+- `src/agents/learned/leafEval.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/continuousMove.js`
+- `src/kit/coord.js` (6 imports)
+- `src/kit/evalHelpers.js`
+- `src/kit/renderOptions.js`
+- `src/kit/spacetime.js`
+- `src/kit/terrainShapes.js` (2 imports)
 
 ## Notes
 

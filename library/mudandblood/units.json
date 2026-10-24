@@ -1,0 +1,118 @@
+{
+  "game": "mudandblood",
+  "title": "Mud and Blood 2",
+  "scale": {
+    "hp": 8,
+    "attack": 4,
+    "defense": 1,
+    "range": 10,
+    "move": 2
+  },
+  "units": {
+    "rifleman": {
+      "hp": 8,
+      "attack": 4,
+      "defense": 1,
+      "range": 10,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/mudandblood/art/units/rifleman.png",
+          "glyph": "R",
+          "name": "rifleman"
+        }
+      ]
+    },
+    "mg": {
+      "hp": 7,
+      "attack": 5.5,
+      "defense": 1,
+      "range": 8,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/mudandblood/art/units/mg.png",
+          "glyph": "M",
+          "name": "mg"
+        }
+      ]
+    },
+    "sniper": {
+      "hp": 6,
+      "attack": 6.5,
+      "defense": 1,
+      "range": 20,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/mudandblood/art/units/sniper.png",
+          "glyph": "S",
+          "name": "sniper"
+        }
+      ]
+    },
+    "medic": {
+      "hp": 6,
+      "attack": 3,
+      "defense": 1,
+      "range": 7,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/mudandblood/art/units/medic.png",
+          "glyph": "+",
+          "name": "medic"
+        }
+      ]
+    },
+    "grenadier": {
+      "hp": 6,
+      "attack": 4,
+      "defense": 1,
+      "range": 8,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/mudandblood/art/units/grenadier.png",
+          "glyph": "g",
+          "name": "grenadier"
+        }
+      ]
+    },
+    "mg42": {
+      "hp": 8,
+      "attack": 5,
+      "defense": 1,
+      "range": 10,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/mudandblood/art/units/mg42.png",
+          "glyph": "m",
+          "name": "mg42"
+        }
+      ]
+    },
+    "officer": {
+      "hp": 7,
+      "attack": 4,
+      "defense": 1,
+      "range": 8,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/mudandblood/art/units/officer.png",
+          "glyph": "o",
+          "name": "officer"
+        }
+      ]
+    }
+  }
+}

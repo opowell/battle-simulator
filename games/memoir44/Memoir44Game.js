@@ -5,7 +5,7 @@ import {
 } from './hex.js';
 import { hexLayoutBounds } from '#core/kit/hexagon.js';
 import { unitStats, baseDice, maxRange, UNIT_TYPES, kindOf } from './units.js';
-import { tableUnits, whole } from '#core/engine/foreignUnits.js';
+import { tableUnits } from '#core/engine/foreignUnits.js';
 import {
   TERRAIN, terrainAt, terrainInfo, defenseReduction, passable, blocksLOS,
   mustStopOn, enterMax, isHill, ignoresFirstFlag,
@@ -222,12 +222,12 @@ export const Memoir44Game = {
     return UNIT_TYPES[type] && position ? makeUnit(id, ownerId, type, position.col, position.row) : null;
   },
 
-  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
-  // infantry block: 4 figures, 3 dice at close range, reaching 3 hexes, moving 2.
-  // Its defense is how many die faces it shrugs off — a die kills infantry one
-  // time in two and armor one in three, so 2 and 3 — and that is all the rules
-  // know, so a unit's own defense rides in its figures. Its dice fall away with
-  // range the way its chassis's do.
+  // Its units in the common vocabulary, which its pack in the core's library is
+  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
+  // conversion factor is the infantry block: 4 figures, 3 dice at close range,
+  // reaching 3 hexes, moving 2. Its defense is how many die faces it shrugs off — a
+  // die kills infantry one time in two and armor one in three, so 2 and 3 — and
+  // that is all the rules know of it.
   foreignUnits: {
     ...tableUnits({
       table: UNIT_TYPES,
@@ -236,21 +236,8 @@ export const Memoir44Game = {
         hp: e.figures, attack: e.diceByRange[0], defense: e.kind === 'armor' ? 3 : 2,
         range: e.diceByRange.length, move: e.moveMax, domain: 'land',
       }),
-      write: (e, s) => {
-        const len = whole(s.range);
-        const f = s.attack / e.diceByRange[0];
-        const moveMax = whole(s.move);
-        return {
-          ...e,
-          figures: whole(s.hp),
-          diceByRange: Array.from({ length: len }, (_, i) => whole(e.diceByRange[Math.floor(i * e.diceByRange.length / len)] * f)),
-          moveMax,
-          moveAndBattle: e.moveAndBattle === 0 ? 0 : Math.min(moveMax, whole(e.moveAndBattle * moveMax / e.moveMax)),
-        };
-      },
       art: (type) => ({ glyph: UNIT_TYPES[type]?.glyph, name: UNIT_TYPES[type]?.name ?? type }),
     }),
-    fold: { defense: 'hp' },
   },
 
   createInitialState(players, config = {}) {

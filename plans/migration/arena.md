@@ -48,7 +48,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 
 - [ ] `ui` flags: `gridDestinations`, `hideTurnTimeline`, `moveAnimation`, `showFacing`, `showHpBars`, `showUnitsLost`, `simultaneousMotion`, `timeEntry`
 - [ ] `toGrid` fields: `boardType`, `cells`, `clock`, `height`, `locationType`, `los`, `spaceType`, `timeType`, `ui`, `units`, `width`
-- Plugins to move out of the play UI: none found
+- UI plugins: none (`src/gate.test.js` keeps game ids and imports out of the play UI)
 
 ## Demos and benches
 
@@ -58,7 +58,7 @@ None.
 
 - [ ] `golden.test.js`: 13 golden replays (default, scenario:skirmish, scenario:open-field, scenario:real-time, mode:discrete-discrete-sequential, mode:discrete-discrete-simultaneous, mode:discrete-continuous-sequential, mode:discrete-continuous-simultaneous, mode:continuous-discrete-sequential, mode:continuous-discrete-simultaneous, mode:continuous-continuous-sequential, mode:continuous-continuous-simultaneous, fog-on)
 - [ ] `index.test.js`: 17 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -77,10 +77,10 @@ None in its folder.
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `engine/foreignUnits.js`
-- `games/spacetime.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/spacetime.js`
 
 ## Notes
 

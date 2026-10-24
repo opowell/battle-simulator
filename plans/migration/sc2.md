@@ -43,7 +43,7 @@ None of its own (the engine options only).
 
 - [ ] `ui` flags: none
 - [ ] `toGrid` fields: `cells`, `height`, `shapes`, `width`
-- Plugins to move out of the play UI: none found
+- UI plugins: none (`src/gate.test.js` keeps game ids and imports out of the play UI)
 
 ## Demos and benches
 
@@ -58,7 +58,7 @@ None of its own (the engine options only).
 - [ ] `golden.test.js`: 4 golden replays (default, scenario:tvz, scenario:pvt, scenario:zvp)
 - [ ] `index.test.js`: 15 tests
 - [ ] `noop-actions.test.js`: 4 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -86,15 +86,18 @@ What [its README](../../games/sc2/README.md) documents, each still true after th
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `agents/learned/leafEval.js`
-- `engine/foreignUnits.js`
-- `games/evalHelpers.js`
-- `games/mapTypes/starcraftMap.js`
-- `games/starcraftSprite.js`
+- `src/agents/learned/leafEval.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/evalHelpers.js`
+- `games/sc1/starcraftMap.js`
+- `games/sc1/starcraftSprite.js`
 
 ## Notes
 
-Shares `games/starcraftSprite.js` and `games/mapTypes/starcraftMap.js` with sc1
-(see the plan's open decision 2).
+Shares the StarCraft code with sc1. It had nothing generic in it (team colours
+come from the board's `fill: 'team'`, not from the sprite code), so phase 1 moved
+both files into sc1 (`games/sc1/starcraftSprite.js`, `games/sc1/starcraftMap.js`)
+and sc2 imports them from there: the one cross-game import left, which the plan's
+open decision 2 recommends turning into sc1 vendored into sc2.

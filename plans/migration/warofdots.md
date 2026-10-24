@@ -43,7 +43,7 @@ None of its own (the engine options only).
 
 - [ ] `ui` flags: `help`, `hideGridLines`
 - [ ] `toGrid` fields: `cells`, `height`, `shapes`, `ui`, `width`
-- Plugins to move out of the play UI: none found
+- UI plugins: none (`src/gate.test.js` keeps game ids and imports out of the play UI)
 
 ## Demos and benches
 
@@ -54,7 +54,7 @@ None.
 - [ ] `fog.test.js`: 6 tests
 - [ ] `golden.test.js`: 4 golden replays (default, scenario:standard, scenario:lakelands, scenario:divide)
 - [ ] `index.test.js`: 30 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -66,10 +66,10 @@ No README.
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `engine/foreignUnits.js`
-- `games/terrainShapes.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/terrainShapes.js`
 
 ## Notes
 

@@ -807,9 +807,11 @@ export const ArenaGame = {
   },
   applyStartingUnits: (state) => settle(state),
 
-  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
+  // Units from every game in the library (src/engine/foreignUnits.js): Arena, the
+  // core's own ruleset, is where they mix. The conversion factor is the
   // infantryman, except range, where it is the archer's reach.
   foreignUnits: {
+    host: true,
     scale: { hp: 10, attack: 4, defense: 4, range: 4, move: 3 },
     profiles: () => ArenaGame.unitStats(),
     adopt: (u, s) => {

@@ -13,7 +13,7 @@ import { castleShapes, villageShapes, flagShapes } from './decor.js';
 import { movePointLattice } from '#core/kit/continuousMove.js';
 import { posToWire } from '#core/kit/coord.js';
 import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
-import { tableUnits, whole } from '#core/engine/foreignUnits.js';
+import { tableUnits } from '#core/engine/foreignUnits.js';
 
 // A squad raised for a customised roster: this many men of one kind.
 const SQUAD_SIZE = 10;
@@ -74,7 +74,7 @@ function createInitialState(players, config = {}) {
     players,
     board,
     // The squads are the game's units — every other part of the engine (the roster
-    // editor, units from other games) knows a game's pieces by that name.
+    // editor, the library) knows a game's pieces by that name.
     units: squads,
     lastActions: null,
     gameSpecific: {
@@ -462,34 +462,22 @@ function terrainInfo(key) {
 
 // ── Export ──────────────────────────────────────────────────────────────────
 
-// Units from other games (src/engine/foreignUnits.js). A squad is the piece that
-// marches and fights, so it is what a unit from elsewhere becomes, and what this
-// game lends out: ten men of one kind. Its hp is its men, its attack each man's
-// power, its move his marching pace; a fight is a brawl at contact (range 1) and
-// no man wears more than his kind does, so a unit's defense rides in its men.
-// The conversion factor is a squad of ten archers. A unit from elsewhere is a
-// squad of men of its own, fighting as the nearest kind of man (spies never
-// fight, so nothing becomes one); a squad holds 14 at most, so any more strength
-// than that is in each man's power.
+// Its units in the common vocabulary, which its pack in the core's library is
+// exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). A squad is
+// the piece that marches and fights, so it is what this game lends out: ten men of
+// one kind. Its hp is its men, its attack each man's power, its move his marching
+// pace; a fight is a brawl at contact (range 1). The conversion factor is a squad
+// of ten archers; nobody wears armour, so a squad has no defense of its own
+// (`fold`).
 function lentUnits() {
-  const menOf = (s) => Math.min(MAX_MEN, whole(s.hp));
-  const table = tableUnits({
-    table: UNITS,
-    scale: { hp: SQUAD_SIZE, attack: UNITS.archer.power, defense: 1, range: 1, move: UNITS.archer.speed },
-    read: (e) => ({ hp: SQUAD_SIZE, attack: e.power, range: 1, move: e.speed, domain: 'land' }),
-    write: (e, s) => ({
-      ...e, power: Math.round(s.attack * Math.max(1, s.hp / MAX_MEN) * 10) / 10,
-      speed: Math.max(0.5, Math.round(s.move * 10) / 10),
-    }),
-    chassis: (_type, e) => !!e.combatant,
-    art: (type) => ({ glyph: UNITS[type]?.symbol, name: UNITS[type]?.name ?? type }),
-  });
   return {
-    ...table,
+    ...tableUnits({
+      table: UNITS,
+      scale: { hp: SQUAD_SIZE, attack: UNITS.archer.power, defense: 1, range: 1, move: UNITS.archer.speed },
+      read: (e) => ({ hp: SQUAD_SIZE, attack: e.power, range: 1, move: e.speed, domain: 'land' }),
+      art: (type) => ({ glyph: UNITS[type]?.symbol, name: UNITS[type]?.name ?? type }),
+    }),
     fold: { defense: 'hp' },
-    adopt: (u, s) => ({ ...u, men: { [u.type]: menOf(s) } }),
-    // Its men are its own count, not the ten a squad is read as.
-    realize: (type, s, spec) => ({ ...table.realize(type, s, spec), hp: menOf(s) }),
   };
 }
 

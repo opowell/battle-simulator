@@ -1,0 +1,43 @@
+{
+  "game": "warofdots",
+  "title": "War of Dots",
+  "scale": {
+    "hp": 60,
+    "attack": 5.4,
+    "defense": 1,
+    "range": 38,
+    "move": 75
+  },
+  "units": {
+    "light": {
+      "hp": 60,
+      "attack": 5.4,
+      "defense": 1,
+      "range": 38,
+      "move": 75,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "L",
+          "name": "Light Infantry"
+        }
+      ]
+    },
+    "heavy": {
+      "hp": 150,
+      "attack": 8,
+      "defense": 1,
+      "range": 38,
+      "move": 35,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "H",
+          "name": "Heavy Infantry"
+        }
+      ]
+    }
+  }
+}

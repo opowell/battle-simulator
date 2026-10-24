@@ -1,11 +1,11 @@
 import { unitStrengthEval } from '#core/kit/evalHelpers.js';
 import { createMap, renderMap } from './map.js';
-import { getReachable, manhattan } from './grid.js';
+import { getReachable } from './grid.js';
 import { hasLOS } from './los.js';
 import { calcHitChance, rollHit, rollDamage } from './combat.js';
 import { createUnit, UNIT_DEFS } from './units.js';
 import { getXcomBelief } from './belief.js';
-import { whole, meanOf, rescaleRoll } from '#core/engine/foreignUnits.js';
+import { meanOf } from '#core/engine/foreignUnits.js';
 
 function defaultUnits(playerIds) {
   const [xcomId, aliensId] = playerIds;
@@ -46,20 +46,18 @@ export const XComGame = {
   createSetupUnit(_state, { id, ownerId, type, position }) {
     return UNIT_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
   },
-  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
-  // rookie soldier: 8 hp, 4 damage a hit (its 3–5 roll), 3 moves. X-Com has no
-  // armour, so a unit's defense rides in its hp. Nor a range: anything in sight can
-  // be shot at, the odds falling 4 points a square — its reading is how far it
-  // shoots before those odds have halved (a sniper's fall only 1). A foreign unit
-  // keeps its own reach, as attrs.range. A unit's rules are read off the unit
-  // itself (attrs), so that is where its stats are written.
+  // Its units in the common vocabulary, which its pack in the core's library is
+  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
+  // conversion factor is the rookie soldier: 8 hp, 4 damage a hit (its 3–5 roll),
+  // 3 moves. X-Com has no armour, so no unit has a defense of its own (`fold`). Nor
+  // a range: anything in sight can be shot at, the odds falling 4 points a square —
+  // its reading is how far it shoots before those odds have halved (a sniper's
+  // fall only 1).
   foreignUnits: {
     scale: { hp: 8, attack: 4, defense: 1, range: 75 / 8, move: 3 },
     fold: { defense: 'hp' },
     profiles: () => Object.fromEntries(Object.entries(UNIT_DEFS).map(([type, d]) => (
       [type, { hp: d.maxHP, attack: meanOf(d.damage), range: d.aim / (2 * (type === 'sniper' ? 1 : 4)), move: d.moveRange, domain: 'land' }]))),
-    adopt: (u, s) => ({ ...u, hp: whole(s.hp), attrs: { ...u.attrs, damage: rescaleRoll(u.attrs.damage, s.attack), range: whole(s.range), moveRange: whole(s.move) } }),
-    realize: (type, s) => ({ hp: whole(s.hp), attack: meanOf(rescaleRoll(UNIT_DEFS[type].damage, s.attack)), range: whole(s.range), move: whole(s.move) }),
     art: (type) => ({ imagePath: `/images/xcom/${type}`, glyph: UNIT_DEFS[type]?.symbol, name: type }),
   },
 
@@ -100,10 +98,8 @@ export const XComGame = {
         actions.push({ type: 'move', unitId: unit.id, from: unit.position, to });
       }
 
-      // Shoot: uses all remaining AP, ends unit's activation. Anything in sight —
-      // except for a unit from another game that only reaches so far (attrs.range).
+      // Shoot: uses all remaining AP, ends unit's activation. Anything in sight.
       for (const enemy of enemies) {
-        if (unit.attrs.range != null && manhattan(unit.position, enemy.position) > unit.attrs.range) continue;
         if (hasLOS(state.board, unit.position, enemy.position)) {
           actions.push({ type: 'shoot', unitId: unit.id, targetId: enemy.id });
         }

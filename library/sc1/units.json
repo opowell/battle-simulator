@@ -1,0 +1,403 @@
+{
+  "game": "sc1",
+  "title": "SC1",
+  "scale": {
+    "hp": 40,
+    "attack": 6,
+    "defense": 1,
+    "range": 4,
+    "move": 2
+  },
+  "units": {
+    "scv": {
+      "hp": 60,
+      "attack": 5,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/scv.png",
+          "glyph": "S",
+          "name": "scv"
+        }
+      ]
+    },
+    "marine": {
+      "hp": 40,
+      "attack": 6,
+      "defense": 1,
+      "range": 4,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/marine.png",
+          "glyph": "M",
+          "name": "marine"
+        }
+      ]
+    },
+    "firebat": {
+      "hp": 50,
+      "attack": 16,
+      "defense": 2,
+      "range": 2,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "F",
+          "name": "firebat"
+        }
+      ]
+    },
+    "ghost": {
+      "hp": 45,
+      "attack": 10,
+      "defense": 1,
+      "range": 7,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/ghost.png",
+          "glyph": "G",
+          "name": "ghost"
+        }
+      ]
+    },
+    "vulture": {
+      "hp": 80,
+      "attack": 20,
+      "defense": 1,
+      "range": 5,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "V",
+          "name": "vulture"
+        }
+      ]
+    },
+    "siege-tank": {
+      "hp": 150,
+      "attack": 30,
+      "defense": 2,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "S",
+          "name": "siege-tank"
+        }
+      ]
+    },
+    "goliath": {
+      "hp": 125,
+      "attack": 12,
+      "defense": 2,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "G",
+          "name": "goliath"
+        }
+      ]
+    },
+    "wraith": {
+      "hp": 120,
+      "attack": 8,
+      "defense": 1,
+      "range": 5,
+      "move": 5,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/wraith.png",
+          "glyph": "W",
+          "name": "wraith"
+        }
+      ]
+    },
+    "battlecruiser": {
+      "hp": 500,
+      "attack": 25,
+      "defense": 4,
+      "range": 6,
+      "move": 2,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/battlecruiser.png",
+          "glyph": "B",
+          "name": "battlecruiser"
+        }
+      ]
+    },
+    "drone": {
+      "hp": 40,
+      "attack": 5,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/drone.png",
+          "glyph": "D",
+          "name": "drone"
+        }
+      ]
+    },
+    "zergling": {
+      "hp": 35,
+      "attack": 5,
+      "defense": 1,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/zergling.png",
+          "glyph": "Z",
+          "name": "zergling"
+        }
+      ]
+    },
+    "hydralisk": {
+      "hp": 80,
+      "attack": 10,
+      "defense": 1,
+      "range": 4,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/hydralisk.png",
+          "glyph": "H",
+          "name": "hydralisk"
+        }
+      ]
+    },
+    "lurker": {
+      "hp": 125,
+      "attack": 20,
+      "defense": 2,
+      "range": 6,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/lurker.png",
+          "glyph": "L",
+          "name": "lurker"
+        }
+      ]
+    },
+    "mutalisk": {
+      "hp": 120,
+      "attack": 9,
+      "defense": 1,
+      "range": 3,
+      "move": 5,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/mutalisk.png",
+          "glyph": "M",
+          "name": "mutalisk"
+        }
+      ]
+    },
+    "scourge": {
+      "hp": 25,
+      "attack": 110,
+      "defense": 1,
+      "range": 1,
+      "move": 6,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/scourge.png",
+          "glyph": "S",
+          "name": "scourge"
+        }
+      ]
+    },
+    "ultralisk": {
+      "hp": 400,
+      "attack": 20,
+      "defense": 3,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/ultralisk.png",
+          "glyph": "U",
+          "name": "ultralisk"
+        }
+      ]
+    },
+    "overlord": {
+      "hp": 200,
+      "attack": 0,
+      "defense": 1,
+      "range": 0,
+      "move": 2,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/overlord.png",
+          "glyph": "O",
+          "name": "overlord"
+        }
+      ]
+    },
+    "probe": {
+      "hp": 40,
+      "attack": 5,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/probe.png",
+          "glyph": "P",
+          "name": "probe"
+        }
+      ]
+    },
+    "zealot": {
+      "hp": 160,
+      "attack": 8,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/zealot.png",
+          "glyph": "Z",
+          "name": "zealot"
+        }
+      ]
+    },
+    "dragoon": {
+      "hp": 180,
+      "attack": 20,
+      "defense": 2,
+      "range": 4,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/dragoon.png",
+          "glyph": "D",
+          "name": "dragoon"
+        }
+      ]
+    },
+    "high-templar": {
+      "hp": 80,
+      "attack": 0,
+      "defense": 2,
+      "range": 5,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/high-templar.png",
+          "glyph": "H",
+          "name": "high-templar"
+        }
+      ]
+    },
+    "dark-templar": {
+      "hp": 120,
+      "attack": 40,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/dark-templar.png",
+          "glyph": "D",
+          "name": "dark-templar"
+        }
+      ]
+    },
+    "archon": {
+      "hp": 360,
+      "attack": 30,
+      "defense": 1,
+      "range": 2,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/archon.png",
+          "glyph": "A",
+          "name": "archon"
+        }
+      ]
+    },
+    "corsair": {
+      "hp": 160,
+      "attack": 5,
+      "defense": 1,
+      "range": 5,
+      "move": 6,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/corsair.png",
+          "glyph": "C",
+          "name": "corsair"
+        }
+      ]
+    },
+    "carrier": {
+      "hp": 400,
+      "attack": 6,
+      "defense": 5,
+      "range": 8,
+      "move": 3,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/sc1/art/units/carrier.png",
+          "glyph": "C",
+          "name": "carrier"
+        }
+      ]
+    },
+    "arbiter": {
+      "hp": 350,
+      "attack": 10,
+      "defense": 3,
+      "range": 5,
+      "move": 3,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "A",
+          "name": "arbiter"
+        }
+      ]
+    }
+  }
+}

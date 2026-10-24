@@ -4,8 +4,7 @@
 
 export const UNIT_TYPES = {
   infantry: {
-    // Which of the three it is to the rules (a unit from another game, registered
-    // here as a copy of one of them, is that one).
+    // Which of the three it is to the rules.
     kind: 'infantry',
     name: 'Infantry',
     figures: 4,

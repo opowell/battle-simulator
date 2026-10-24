@@ -1,0 +1,448 @@
+{
+  "game": "ffta",
+  "title": "Final Fantasy Tactics Advance",
+  "scale": {
+    "hp": 28,
+    "attack": 10,
+    "defense": 8,
+    "range": 1,
+    "move": 3
+  },
+  "units": {
+    "soldier": {
+      "hp": 28,
+      "attack": 10,
+      "defense": 8,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/soldier/portrait.png",
+          "glyph": "S",
+          "name": "Soldier"
+        }
+      ]
+    },
+    "whiteMage": {
+      "hp": 20,
+      "attack": 9,
+      "defense": 5,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/whiteMage/portrait.png",
+          "glyph": "W",
+          "name": "White Mage"
+        }
+      ]
+    },
+    "blackMage": {
+      "hp": 16,
+      "attack": 12,
+      "defense": 4,
+      "range": 3,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/blackMage/portrait.png",
+          "glyph": "B",
+          "name": "Black Mage"
+        }
+      ]
+    },
+    "archer": {
+      "hp": 22,
+      "attack": 9,
+      "defense": 5,
+      "range": 4,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/archer/portrait.png",
+          "glyph": "A",
+          "name": "Archer"
+        }
+      ]
+    },
+    "thief": {
+      "hp": 20,
+      "attack": 8,
+      "defense": 5,
+      "range": 1,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/thief/portrait.png",
+          "glyph": "T",
+          "name": "Thief"
+        }
+      ]
+    },
+    "fighter": {
+      "hp": 32,
+      "attack": 13,
+      "defense": 9,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/fighter/portrait.png",
+          "glyph": "F",
+          "name": "Fighter"
+        }
+      ]
+    },
+    "paladin": {
+      "hp": 30,
+      "attack": 10,
+      "defense": 11,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/paladin/portrait.png",
+          "glyph": "P",
+          "name": "Paladin"
+        }
+      ]
+    },
+    "ninja": {
+      "hp": 18,
+      "attack": 12,
+      "defense": 4,
+      "range": 3,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/ninja/portrait.png",
+          "glyph": "N",
+          "name": "Ninja"
+        }
+      ]
+    },
+    "dragoon": {
+      "hp": 34,
+      "attack": 14,
+      "defense": 8,
+      "range": 2,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/dragoon/portrait.png",
+          "glyph": "D",
+          "name": "Dragoon"
+        }
+      ]
+    },
+    "elementalist": {
+      "hp": 18,
+      "attack": 10,
+      "defense": 4,
+      "range": 4,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/elementalist/portrait.png",
+          "glyph": "L",
+          "name": "Elementalist"
+        }
+      ]
+    },
+    "redMage": {
+      "hp": 22,
+      "attack": 8,
+      "defense": 5,
+      "range": 3,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/redMage/portrait.png",
+          "glyph": "R",
+          "name": "Red Mage"
+        }
+      ]
+    },
+    "timeMage": {
+      "hp": 14,
+      "attack": 11,
+      "defense": 3,
+      "range": 3,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/timeMage/portrait.png",
+          "glyph": "M",
+          "name": "Time Mage"
+        }
+      ]
+    },
+    "summoner": {
+      "hp": 14,
+      "attack": 13,
+      "defense": 3,
+      "range": 4,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/summoner/portrait.png",
+          "glyph": "U",
+          "name": "Summoner"
+        }
+      ]
+    },
+    "illusionist": {
+      "hp": 16,
+      "attack": 12,
+      "defense": 4,
+      "range": 4,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/illusionist/portrait.png",
+          "glyph": "I",
+          "name": "Illusionist"
+        }
+      ]
+    },
+    "assassin": {
+      "hp": 20,
+      "attack": 11,
+      "defense": 5,
+      "range": 1,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/assassin/portrait.png",
+          "glyph": "X",
+          "name": "Assassin"
+        }
+      ]
+    },
+    "warrior": {
+      "hp": 38,
+      "attack": 15,
+      "defense": 11,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/warrior/portrait.png",
+          "glyph": "V",
+          "name": "Warrior"
+        }
+      ]
+    },
+    "whiteMonk": {
+      "hp": 32,
+      "attack": 13,
+      "defense": 8,
+      "range": 2,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/whiteMonk/portrait.png",
+          "glyph": "K",
+          "name": "White Monk"
+        }
+      ]
+    },
+    "bishop": {
+      "hp": 22,
+      "attack": 9,
+      "defense": 5,
+      "range": 3,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/bishop/portrait.png",
+          "glyph": "G",
+          "name": "Bishop"
+        }
+      ]
+    },
+    "templar": {
+      "hp": 40,
+      "attack": 12,
+      "defense": 13,
+      "range": 3,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/templar/portrait.png",
+          "glyph": "Q",
+          "name": "Templar"
+        }
+      ]
+    },
+    "alchemist": {
+      "hp": 16,
+      "attack": 10,
+      "defense": 4,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/alchemist/portrait.png",
+          "glyph": "C",
+          "name": "Alchemist"
+        }
+      ]
+    },
+    "morpher": {
+      "hp": 20,
+      "attack": 8,
+      "defense": 6,
+      "range": 2,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/morpher/portrait.png",
+          "glyph": "H",
+          "name": "Morpher"
+        }
+      ]
+    },
+    "fencer": {
+      "hp": 20,
+      "attack": 10,
+      "defense": 5,
+      "range": 1,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/fencer/portrait.png",
+          "glyph": "E",
+          "name": "Fencer"
+        }
+      ]
+    },
+    "sniper": {
+      "hp": 22,
+      "attack": 12,
+      "defense": 5,
+      "range": 5,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/sniper/portrait.png",
+          "glyph": "Z",
+          "name": "Sniper"
+        }
+      ]
+    },
+    "blueMage": {
+      "hp": 20,
+      "attack": 9,
+      "defense": 5,
+      "range": 3,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/blueMage/portrait.png",
+          "glyph": "Y",
+          "name": "Blue Mage"
+        }
+      ]
+    },
+    "hunter": {
+      "hp": 24,
+      "attack": 11,
+      "defense": 7,
+      "range": 4,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/hunter/portrait.png",
+          "glyph": "J",
+          "name": "Hunter"
+        }
+      ]
+    },
+    "mogKnight": {
+      "hp": 28,
+      "attack": 12,
+      "defense": 8,
+      "range": 2,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/mogKnight/portrait.png",
+          "glyph": "O",
+          "name": "Mog Knight"
+        }
+      ]
+    },
+    "juggler": {
+      "hp": 18,
+      "attack": 9,
+      "defense": 4,
+      "range": 3,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/juggler/portrait.png",
+          "glyph": "@",
+          "name": "Juggler"
+        }
+      ]
+    },
+    "animist": {
+      "hp": 20,
+      "attack": 8,
+      "defense": 5,
+      "range": 3,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/animist/portrait.png",
+          "glyph": "$",
+          "name": "Animist"
+        }
+      ]
+    },
+    "gunner": {
+      "hp": 20,
+      "attack": 10,
+      "defense": 4,
+      "range": 4,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/ffta/art/gunner/portrait.png",
+          "glyph": "&",
+          "name": "Gunner"
+        }
+      ]
+    }
+  }
+}

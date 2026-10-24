@@ -1,0 +1,118 @@
+{
+  "game": "cs",
+  "title": "CS",
+  "scale": {
+    "hp": 100,
+    "attack": 33,
+    "defense": 1,
+    "range": 9,
+    "move": 5.6
+  },
+  "units": {
+    "melee": {
+      "hp": 100,
+      "attack": 40,
+      "defense": 1,
+      "range": 1,
+      "move": 10,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/cs/art/weapons/knife.svg",
+          "glyph": "P",
+          "name": "melee player"
+        }
+      ]
+    },
+    "pistol": {
+      "hp": 100,
+      "attack": 30,
+      "defense": 1,
+      "range": 6,
+      "move": 8,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/cs/art/weapons/pistol.png",
+          "glyph": "P",
+          "name": "pistol player"
+        }
+      ]
+    },
+    "smg": {
+      "hp": 100,
+      "attack": 22,
+      "defense": 1,
+      "range": 7,
+      "move": 5.6,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/cs/art/weapons/mac10.png",
+          "glyph": "P",
+          "name": "smg player"
+        }
+      ]
+    },
+    "shotgun": {
+      "hp": 100,
+      "attack": 52,
+      "defense": 1,
+      "range": 3,
+      "move": 5.6,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/cs/art/weapons/nova.png",
+          "glyph": "P",
+          "name": "shotgun player"
+        }
+      ]
+    },
+    "heavy": {
+      "hp": 100,
+      "attack": 35,
+      "defense": 1,
+      "range": 10,
+      "move": 5.6,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/cs/art/weapons/negev.png",
+          "glyph": "P",
+          "name": "heavy player"
+        }
+      ]
+    },
+    "rifle": {
+      "hp": 100,
+      "attack": 30,
+      "defense": 1,
+      "range": 9,
+      "move": 5.6,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/cs/art/weapons/galil.png",
+          "glyph": "P",
+          "name": "rifle player"
+        }
+      ]
+    },
+    "sniper": {
+      "hp": 100,
+      "attack": 88,
+      "defense": 1,
+      "range": 12,
+      "move": 5.6,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/cs/art/weapons/ssg08.png",
+          "glyph": "P",
+          "name": "sniper player"
+        }
+      ]
+    }
+  }
+}

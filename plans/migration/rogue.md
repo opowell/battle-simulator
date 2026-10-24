@@ -41,7 +41,7 @@ None: one setup, from its options.
 
 - [ ] `ui` flags: none
 - [ ] `toGrid` fields: `cells`, `height`, `width`
-- Plugins to move out of the play UI: none found
+- UI plugins: none (`src/gate.test.js` keeps game ids and imports out of the play UI)
 
 ## Demos and benches
 
@@ -55,7 +55,7 @@ None: one setup, from its options.
 - [ ] `fog.test.js`: 10 tests
 - [ ] `golden.test.js`: 2 golden replays (default, fog-on)
 - [ ] `index.test.js`: 16 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -67,7 +67,7 @@ No README.
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
 Nothing.
 

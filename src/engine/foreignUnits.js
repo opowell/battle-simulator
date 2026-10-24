@@ -1,14 +1,19 @@
 /**
  * foreignUnits.js — units from one game playing under another game's rules.
  *
- * A session has ONE set of rules, its game's, but its roster may name units of
- * any other game that lends them out: an SC1 marine standing in a civ1 army, a
- * chess knight in a tactical skirmish. The rules never learn a new unit: every
- * game reads a unit's stats out of a table of its own, by type, and has
- * behaviour keyed on its own type names. So a foreign unit plays AS one of the
- * host's own types, its CHASSIS — moving and fighting the way that type does —
- * but with its stats converted from its own game's numbers into the host's, and
- * wearing its own game's picture and name.
+ * A session has ONE set of rules, its game's, but when that game is one of the
+ * core's own rulesets (a HOST: Arena, today) its roster may name units of any game
+ * in the library — an SC1 marine, a civ1 legion and a chess knight in one
+ * skirmish. The library (library/<game>/, written by scripts/export-pack.mjs and
+ * read in by src/server/library.js) keeps each game's units as data, so they can
+ * be fielded here after the game itself has moved to a repo of its own. The
+ * standalone games don't mix.
+ *
+ * The rules never learn a new unit: a ruleset reads a unit's stats out of a table
+ * of its own, by type, and has behaviour keyed on its own type names. So a
+ * foreign unit plays AS one of the host's own types, its CHASSIS — moving and
+ * fighting the way that type does — but with its stats converted from its own
+ * game's numbers into the host's, and wearing its own game's picture and name.
  *
  * ── The conversion factor ────────────────────────────────────────────────────
  * Games count in very different numbers: a civ1 unit has 10 hp, an SC1 marine 40,
@@ -28,8 +33,8 @@
  *   move     how far it moves in a turn, in its own board's cells
  *
  * plus a `domain` ('land' | 'sea' | 'air') that decides which chassis it may take.
- * Every unit of every game has all five (games/foreignUnits.test.js holds every
- * registered game to it).
+ * Every unit of every pack has all five (src/library.test.js holds the library to
+ * it).
  *
  * ── The general adjustment factor ────────────────────────────────────────────
  * `scale` makes one game's standard infantryman the same as another's. Whether
@@ -52,24 +57,29 @@
  *
  * ── What a game declares (all optional; see src/kit/types.js) ──────────────────
  *
+ * A game LENDS its units — what its pack in the library is exported from:
+ *
  *   game.foreignUnits = {
  *     scale,                       // the conversion factor, per stat — all five
  *     factor,                      // the general adjustment factor (default 1)
- *     fold,                        // { stat: 'hp' } for a stat its rules have no knob for
- *     absorb,                      // true for a game that counts its pieces (Risk's armies,
- *                                  //   KDice's dice): a unit laid out there becomes its hp's worth
- *                                  //   of them (its applyStartingUnits does it), not a unit drawn as itself
+ *     fold,                        // { stat: 'hp' } for a stat its rules have no knob for: its
+ *                                  //   profiles read it as the standard, and (a host) a foreign
+ *                                  //   unit's own rides in the other stat
  *     profiles(),                  // { type: { hp, attack, …, domain, chassis? } } in its own numbers —
- *                                  //   every type it lends out, and every type it can put a foreign unit in
+ *                                  //   every type it lends out, and (a host) every type it can put a foreign unit in
  *     art(type, seat),             // { imagePath, glyph, name } — how its unit looks, for seat 0, 1, …
- *     table,                       // import: the type table its rules read (UNITS) — the foreign
+ *   }
+ *
+ * A HOST (a core ruleset) also says how it takes them in:
+ *
+ *     host: true,
+ *     table,                       // the type table its rules read (UNITS) — the foreign
  *     write(entry, stats),         //   type is registered there, as the chassis's entry with the
  *                                  //   converted stats written in
- *     adopt(unit, stats),          // import: write converted stats onto the unit itself, for rules
- *                                  //   that read them off the unit (xcom's attrs.aim) rather than a table
- *     realize(chassis, stats),     // what a unit given `stats` really ends up with once the game has
+ *     adopt(unit, stats),          // or: write converted stats onto the unit itself, for rules
+ *                                  //   that read them off the unit rather than a table
+ *     realize(chassis, stats),     // what a unit given `stats` really ends up with once the host has
  *                                  //   rounded them its own way — what a setup screen shows
- *   }
  *
  * A game with a `table` registers each foreign type in it under a key of its own
  * (`sc1:marine`) as a NON-ENUMERABLE property: every `UNITS[u.type]` the rules,
@@ -77,10 +87,10 @@
  * lists the table (production menus, an AI's build choices, the setup editor's
  * own types) never sees it. The key depends only on the source unit and the host,
  * so registering it again — another session, a replay — finds the same entry.
- * A game without one keeps the chassis's own type on the unit (chess must: its
- * move generator knows six types) and `adopt` carries the stats, if it has any.
+ * A host without one keeps the chassis's own type on the unit and `adopt` carries
+ * the stats, if it has any.
  *
- * Which games exist is the api-server's registry, handed over with registerGames.
+ * Which games lend units is the library, handed over with registerSources.
  */
 
 /** The stats of the common vocabulary, in the order they are shown. */
@@ -105,33 +115,52 @@ function worth(game, stat) {
 /** The stats `game`'s rules carry in another stat ({ defense: 'hp' }), as entries. */
 const folded = (game) => Object.entries(game?.foreignUnits?.fold ?? {});
 
-const games = new Map();   // registry name ('sc1') → game definition
+const sources = new Map();   // library name ('sc1') → what lends its units: { name, foreignUnits }
 
 /**
- * Tell this module which games exist, as the api-server's GAMES registry
- * ({ name: { game } }) or as plain { name: definition }.
+ * Tell this module which games lend their units, as { name: source }: a source
+ * is anything with a `foreignUnits` lending declaration — a library pack read in
+ * by src/server/library.js (see sourceFromPack), or a test's own.
  */
-export function registerGames(map) {
-  for (const [name, entry] of Object.entries(map ?? {})) {
-    const def = entry?.game ?? entry;
-    if (def) games.set(name, def);
-  }
+export function registerSources(map) {
+  sources.clear();
+  for (const [name, source] of Object.entries(map ?? {})) if (source) sources.set(name, source);
 }
 
-/** A registered game definition by its registry name, or null. */
-export function gameNamed(name) { return games.get(name) ?? null; }
+/**
+ * A library pack (library/<game>/units.json) as a source: its units in its own
+ * numbers, and how each looks for each seat.
+ */
+export function sourceFromPack(pack) {
+  const units = Object.fromEntries(Object.entries(pack.units ?? {}).map(([type, { art: _art, ...profile }]) => [type, profile]));
+  return {
+    name: pack.title ?? pack.game,
+    foreignUnits: {
+      scale: pack.scale,
+      ...(pack.factor != null ? { factor: pack.factor } : {}),
+      profiles: () => units,
+      art: (type, seat = 0) => {
+        const art = pack.units?.[type]?.art ?? [];
+        return art.length ? art[seat % art.length] : {};
+      },
+    },
+  };
+}
 
-/** The registry name of a game definition ('sc1' for Sc1Game), or null. */
+/** A source by its library name, or null. */
+export function gameNamed(name) { return sources.get(name) ?? null; }
+
+/** The library name of a source ('sc1'), or null — a host is not one. */
 export function nameOfGame(game) {
-  for (const [name, def] of games) if (def === game) return name;
+  for (const [name, def] of sources) if (def === game) return name;
   return null;
 }
 
-/**
- * Whether `game` takes part: lends its units to the other games and takes theirs in.
- * Both need its unit profiles and its conversion factor, so it is one question.
- */
+/** Whether `game` lends its units: it has unit profiles and a conversion factor. */
 export const takesPart = (game) => typeof game?.foreignUnits?.profiles === 'function' && !!game.foreignUnits.scale;
+
+/** Whether `game` takes other games' units in: a core ruleset that says it does. */
+export const hosts = (game) => takesPart(game) && game.foreignUnits.host === true;
 
 /** The key a foreign type is registered under in a host's table. */
 export const foreignKey = (from, type) => `${from}:${type}`;
@@ -237,7 +266,7 @@ function pickChassis(host, base, stats, domain, ownerId) {
  */
 export function foreignSpec(host, base, from, type, ownerId = null) {
   const source = gameNamed(from);
-  if (!takesPart(host) || !takesPart(source) || source === host) return null;
+  if (!hosts(host) || !takesPart(source) || source === host) return null;
   const profile = profilesOf(source)[type];
   if (!profile) return null;
   const chassis = pickChassis(host, base, common(profile, source), profile.domain, ownerId);
@@ -278,7 +307,7 @@ export function foreignArt(from, type, seat = 0) {
  */
 export function foreignEntryError(host, base, entry) {
   const hostName = nameOfGame(host);
-  if (!takesPart(host)) return `${host?.name ?? hostName} does not take units from other games`;
+  if (!hosts(host)) return `${host?.name ?? hostName} does not take units from other games`;
   const source = gameNamed(entry.game);
   if (!source) return `no game "${entry.game}"`;
   if (!takesPart(source)) return `${source.name ?? entry.game} does not lend its units to other games`;
@@ -378,7 +407,7 @@ const shown = (stats) => Object.fromEntries(STATS.filter(k => typeof stats?.[k] 
  * the host takes none.
  */
 export function foreignCatalog(host, base, ownerIds = null) {
-  if (!takesPart(host)) return [];
+  if (!hosts(host)) return [];
   const hostName = nameOfGame(host);
   const hostProfiles = profilesOf(host);
   const owners = ownerIds ?? [...new Set([
@@ -386,7 +415,7 @@ export function foreignCatalog(host, base, ownerIds = null) {
     ...(base?.units ?? []).filter(u => u && u.alive !== false).map(u => u.ownerId),
   ])];
   const out = [];
-  for (const [name, source] of games) {
+  for (const [name, source] of sources) {
     if (name === hostName || source === host || !takesPart(source)) continue;
     const units = [];
     for (const [type, profile] of Object.entries(profilesOf(source))) {
@@ -467,16 +496,19 @@ export function dressGrid(game, state, grid, toCell = null) {
 /**
  * A `foreignUnits` declaration for a game whose rules read every stat from one
  * type table — the common case. `read(entry, type)` is a type in the common
- * vocabulary (its own numbers), `write(entry, stats)` the entry with converted
- * stats written in.
+ * vocabulary (its own numbers). A host also gives `write(entry, stats)`, the
+ * entry with converted stats written in; without it the game only lends.
  */
-export function tableUnits({ table, scale, read, write, art, chassis = () => true }) {
+export function tableUnits({ table, scale, read, write, art, chassis = () => true, host = false }) {
   return {
     scale,
-    table,
-    write,
     art,
-    realize: (type, stats, spec) => read(write(structuredClone(table[type]), stats, spec), type) ?? {},
+    ...(write ? {
+      host,
+      table,
+      write,
+      realize: (type, stats, spec) => read(write(structuredClone(table[type]), stats, spec), type) ?? {},
+    } : {}),
     profiles: () => Object.fromEntries(Object.keys(table).map((type) => {
       const p = read(table[type], type);
       return p ? [type, { ...p, ...(chassis(type, table[type]) ? {} : { chassis: false }) }] : null;

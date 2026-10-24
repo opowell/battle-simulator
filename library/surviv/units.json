@@ -1,0 +1,103 @@
+{
+  "game": "surviv",
+  "title": "Surviv",
+  "scale": {
+    "hp": 100,
+    "attack": 24,
+    "defense": 1,
+    "range": 8,
+    "move": 4
+  },
+  "units": {
+    "melee": {
+      "hp": 100,
+      "attack": 14,
+      "defense": 1,
+      "range": 0.9,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "P",
+          "name": "melee player"
+        }
+      ]
+    },
+    "pistol": {
+      "hp": 100,
+      "attack": 22,
+      "defense": 1,
+      "range": 6,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/surviv/art/weapons/colt45.svg",
+          "glyph": "P",
+          "name": "pistol player"
+        }
+      ]
+    },
+    "smg": {
+      "hp": 100,
+      "attack": 16,
+      "defense": 1,
+      "range": 7,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/surviv/art/weapons/vector.svg",
+          "glyph": "P",
+          "name": "smg player"
+        }
+      ]
+    },
+    "shotgun": {
+      "hp": 100,
+      "attack": 68,
+      "defense": 1,
+      "range": 3,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/surviv/art/weapons/mp220.svg",
+          "glyph": "P",
+          "name": "shotgun player"
+        }
+      ]
+    },
+    "rifle": {
+      "hp": 100,
+      "attack": 24,
+      "defense": 1,
+      "range": 8,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/surviv/art/weapons/famas.svg",
+          "glyph": "P",
+          "name": "rifle player"
+        }
+      ]
+    },
+    "sniper": {
+      "hp": 100,
+      "attack": 75,
+      "defense": 1,
+      "range": 12,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/surviv/art/weapons/mosin.svg",
+          "glyph": "P",
+          "name": "sniper player"
+        }
+      ]
+    }
+  }
+}

@@ -22,7 +22,7 @@ import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gameImageFiles } from '../src/server/gameImages.js';
-import { STATS } from '../src/engine/foreignUnits.js';
+import { STATS, profilesOf } from '../src/engine/foreignUnits.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -98,7 +98,9 @@ async function main() {
   }
 
   const units = {};
-  for (const [type, p] of Object.entries(fu.profiles())) {
+  // profilesOf, not profiles(): a stat the game's rules fold into another one reads
+  // as the standard, which is what it is worth anywhere else.
+  for (const [type, p] of Object.entries(profilesOf(game))) {
     const stats = Object.fromEntries(STATS.filter(k => typeof p[k] === 'number').map(k => [k, p[k]]));
     const art = [];
     for (let seat = 0; seat < SEATS; seat++) {

@@ -106,9 +106,10 @@ const tokens = computed(() => roster.value.map(u => ({ ...u, color: colorOf(u.ow
 const imgSrc = (path) => window.api.imgSrc(path);
 
 // ── units of other games ─────────────────────────────────────────────────────
-// A roster entry may name a unit of another game ({ type, game }), which then plays
-// under this game's rules as the nearest of its own types, its stats converted by
-// the two games' conversion factors (src/engine/foreignUnits.js). In the pickers below
+// In a core ruleset's session a roster entry may name a unit of any game in the
+// library ({ type, game }), which then plays under these rules as the nearest of its
+// own types, its stats converted by the two games' conversion factors
+// (src/engine/foreignUnits.js); any other game offers none. In the pickers below
 // such a unit is the one value "game:type"; this game's own types are bare.
 const foreignGroups = computed(() => preview.value?.foreign ?? []);
 const valueOf = (u) => (u.game ? `${u.game}:${u.type}` : u.type);

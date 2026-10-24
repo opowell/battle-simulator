@@ -1,0 +1,28 @@
+{
+  "game": "kdice",
+  "title": "KDice",
+  "scale": {
+    "hp": 1,
+    "attack": 1,
+    "defense": 1,
+    "range": 1,
+    "move": 1
+  },
+  "units": {
+    "die": {
+      "hp": 1,
+      "attack": 1,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "⚀",
+          "name": "die"
+        }
+      ]
+    }
+  }
+}

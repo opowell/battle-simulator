@@ -4,7 +4,7 @@ import { resolveBattle } from './combat.js';
 import { getAxisAlliesBelief } from './belief.js';
 import { sidesEval } from '#core/kit/evalHelpers.js';
 import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
-import { tableUnits, whole } from '#core/engine/foreignUnits.js';
+import { tableUnits } from '#core/engine/foreignUnits.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -784,21 +784,15 @@ export const AxisAlliesGame = {
       : (mine.find(u => (UNITS[u.type]?.domain === 'sea' ? 'sea' : 'land') === domain) ?? mine[0])?.territory;
     return territory ? makeUnit(id, ownerId, type, territory) : null;
   },
-  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
-  // infantryman: 1 hp, attacking on a 1 and defending on a 2 (what a d6 must roll
-  // at or under to hit), 1 territory a turn. A battle is fought within one
-  // territory, so every unit's range is that territory. A d6 can't roll over 6, so
-  // a punch or a guard beyond that is capped there. Transports and carriers never
-  // carry a foreign unit: their cargo rules go by the type's name.
+  // Its units in the common vocabulary, which its pack in the core's library is
+  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
+  // conversion factor is the infantryman: 1 hp, attacking on a 1 and defending on
+  // a 2 (what a d6 must roll at or under to hit), 1 territory a turn. A battle is
+  // fought within one territory, so every unit's range is that territory.
   foreignUnits: tableUnits({
     table: UNITS,
     scale: { hp: 1, attack: 1, defense: 2, range: 1, move: 1 },
     read: (e) => ({ hp: e.hp, attack: e.attack, defense: e.defense, range: 1, move: e.moves, domain: e.domain }),
-    write: (e, s) => ({
-      ...e, hp: whole(s.hp), attack: Math.min(6, whole(s.attack, 0)), defense: Math.min(6, whole(s.defense, 0)),
-      moves: whole(s.move), capacity: 0,
-    }),
-    chassis: (_type, e) => !(e.capacity > 0),
     art: (type) => ({ imagePath: UNIT_PORTRAITS.has(type) ? `/images/axisallies/units/${type}` : null, glyph: type[0].toUpperCase(), name: type }),
   }),
   sampleWorlds,

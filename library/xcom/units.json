@@ -1,0 +1,118 @@
+{
+  "game": "xcom",
+  "title": "X-Com Tactical",
+  "scale": {
+    "hp": 8,
+    "attack": 4,
+    "defense": 1,
+    "range": 9.375,
+    "move": 3
+  },
+  "units": {
+    "soldier": {
+      "hp": 8,
+      "attack": 4,
+      "defense": 1,
+      "range": 9.375,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/xcom/art/soldier.png",
+          "glyph": "S",
+          "name": "soldier"
+        }
+      ]
+    },
+    "heavy": {
+      "hp": 12,
+      "attack": 6.5,
+      "defense": 1,
+      "range": 8.125,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/xcom/art/heavy.png",
+          "glyph": "H",
+          "name": "heavy"
+        }
+      ]
+    },
+    "sniper": {
+      "hp": 6,
+      "attack": 5.5,
+      "defense": 1,
+      "range": 42.5,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/xcom/art/sniper.png",
+          "glyph": "N",
+          "name": "sniper"
+        }
+      ]
+    },
+    "support": {
+      "hp": 8,
+      "attack": 4,
+      "defense": 1,
+      "range": 8.75,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/xcom/art/support.png",
+          "glyph": "P",
+          "name": "support"
+        }
+      ]
+    },
+    "sectoid": {
+      "hp": 4,
+      "attack": 3,
+      "defense": 1,
+      "range": 8.125,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/xcom/art/sectoid.png",
+          "glyph": "z",
+          "name": "sectoid"
+        }
+      ]
+    },
+    "floater": {
+      "hp": 6,
+      "attack": 4,
+      "defense": 1,
+      "range": 7.5,
+      "move": 4,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/xcom/art/floater.png",
+          "glyph": "f",
+          "name": "floater"
+        }
+      ]
+    },
+    "muton": {
+      "hp": 10,
+      "attack": 5.5,
+      "defense": 1,
+      "range": 8.75,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/xcom/art/muton.png",
+          "glyph": "m",
+          "name": "muton"
+        }
+      ]
+    }
+  }
+}

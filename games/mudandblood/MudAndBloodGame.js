@@ -4,7 +4,7 @@ import { getReachable, manhattan } from './grid.js';
 import { calcHitChance, rollHit, rollDamage } from './combat.js';
 import { createUnit, UNIT_DEFS } from './units.js';
 import { getMudAndBloodBelief } from './belief.js';
-import { whole, meanOf, rescaleRoll } from '#core/engine/foreignUnits.js';
+import { meanOf } from '#core/engine/foreignUnits.js';
 
 // ---------------------------------------------------------------------------
 // Wave definitions — each wave index = wave number - 1
@@ -129,25 +129,16 @@ export const MudAndBloodGame = {
   createSetupUnit(_state, { id, ownerId, type, position }) {
     return UNIT_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
   },
-  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
-  // rifleman: 8 hp, 4 damage a hit (its 3–5 roll), range 10, 2 moves; there is no
-  // armour, so a unit's defense rides in its hp. A unit's rules are read off the unit itself (attrs), so that is where
-  // its stats are written — and it plays as a plain soldier, never the medic or the
-  // officer, whose healing and command would come with it.
+  // Its units in the common vocabulary, which its pack in the core's library is
+  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
+  // conversion factor is the rifleman: 8 hp, 4 damage a hit (its 3–5 roll), range
+  // 10, 2 moves; there is no armour, so no unit has a defense of its own (`fold`).
   foreignUnits: {
     scale: { hp: 8, attack: 4, defense: 1, range: 10, move: 2 },
     fold: { defense: 'hp' },
     profiles: () => Object.fromEntries(Object.entries(UNIT_DEFS).map(([type, d]) => [type, {
       hp: d.maxHP, attack: meanOf(d.damage), range: d.maxRange, move: d.moveRange, domain: 'land',
-      ...(d.canHeal || d.isOfficer ? { chassis: false } : {}),
     }])),
-    adopt: (u, s) => ({
-      ...u, hp: whole(s.hp), maxHp: whole(s.hp),
-      attrs: { ...u.attrs, damage: rescaleRoll(u.attrs.damage, s.attack), maxRange: whole(s.range), moveRange: whole(s.move) },
-    }),
-    realize: (type, s) => ({
-      hp: whole(s.hp), attack: meanOf(rescaleRoll(UNIT_DEFS[type].damage, s.attack)), range: whole(s.range), move: whole(s.move),
-    }),
     art: (type) => ({ imagePath: `/images/mudandblood/units/${type}`, glyph: UNIT_DEFS[type]?.symbol, name: type }),
   },
 

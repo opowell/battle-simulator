@@ -44,7 +44,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 
 - [ ] `ui` flags: `aimedActionTypes`, `fovDegrees`, `hideGridLines`, `recolorTeamSprites`, `showHpBars`, `visionRange`
 - [ ] `toGrid` fields: `cells`, `height`, `locationType`, `los`, `shapes`, `ui`, `units`, `width`
-- Plugins to move out of the play UI: none found
+- UI plugins: none (`src/gate.test.js` keeps game ids and imports out of the play UI)
 
 ## Demos and benches
 
@@ -55,7 +55,7 @@ None.
 - [ ] `fog.test.js`: 7 tests
 - [ ] `golden.test.js`: 3 golden replays (default, scenario:sandbar_island, fog-off)
 - [ ] `index.test.js`: 16 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -67,15 +67,15 @@ No README.
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `engine/foreignUnits.js`
-- `games/continuousMove.js`
-- `games/coord.js` (3 imports)
-- `games/evalHelpers.js`
-- `games/renderOptions.js`
-- `games/terrainShapes.js` (3 imports)
-- `games/vision.js` (2 imports)
+- `src/engine/foreignUnits.js`
+- `src/kit/continuousMove.js`
+- `src/kit/coord.js` (3 imports)
+- `src/kit/evalHelpers.js`
+- `src/kit/renderOptions.js`
+- `src/kit/terrainShapes.js` (3 imports)
+- `src/kit/vision.js` (2 imports)
 
 ## Notes
 

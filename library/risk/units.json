@@ -1,0 +1,58 @@
+{
+  "game": "risk",
+  "title": "Risk",
+  "scale": {
+    "hp": 1,
+    "attack": 1,
+    "defense": 1,
+    "range": 1,
+    "move": 1
+  },
+  "units": {
+    "infantry": {
+      "hp": 1,
+      "attack": 1,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "I",
+          "name": "infantry"
+        }
+      ]
+    },
+    "cavalry": {
+      "hp": 5,
+      "attack": 1,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "C",
+          "name": "cavalry"
+        }
+      ]
+    },
+    "artillery": {
+      "hp": 10,
+      "attack": 1,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": null,
+          "glyph": "A",
+          "name": "artillery"
+        }
+      ]
+    }
+  }
+}

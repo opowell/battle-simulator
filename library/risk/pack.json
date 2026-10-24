@@ -1,0 +1,12 @@
+{
+  "game": "risk",
+  "from": {
+    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
+    "date": "2026-10-24T12:56:37+02:00"
+  },
+  "units": 3,
+  "art": 0,
+  "omitted": [
+    "terrain types and maps: not exported until the core has its board format (phase 2)"
+  ]
+}

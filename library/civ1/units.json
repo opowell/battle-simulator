@@ -1,0 +1,433 @@
+{
+  "game": "civ1",
+  "title": "Civ1",
+  "scale": {
+    "hp": 10,
+    "attack": 2,
+    "defense": 2,
+    "range": 4,
+    "move": 1
+  },
+  "units": {
+    "settlers": {
+      "hp": 20,
+      "attack": 0,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/settlers.png",
+          "glyph": "S",
+          "name": "settlers"
+        }
+      ]
+    },
+    "diplomat": {
+      "hp": 10,
+      "attack": 0,
+      "defense": 0,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/diplomat.png",
+          "glyph": "D",
+          "name": "diplomat"
+        }
+      ]
+    },
+    "caravan": {
+      "hp": 10,
+      "attack": 0,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/caravan.png",
+          "glyph": "C",
+          "name": "caravan"
+        }
+      ]
+    },
+    "militia": {
+      "hp": 10,
+      "attack": 1,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/militia.png",
+          "glyph": "M",
+          "name": "militia"
+        }
+      ]
+    },
+    "phalanx": {
+      "hp": 10,
+      "attack": 1,
+      "defense": 2,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/phalanx.png",
+          "glyph": "P",
+          "name": "phalanx"
+        }
+      ]
+    },
+    "legion": {
+      "hp": 10,
+      "attack": 3,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/legion.png",
+          "glyph": "L",
+          "name": "legion"
+        }
+      ]
+    },
+    "catapult": {
+      "hp": 10,
+      "attack": 6,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/catapult.png",
+          "glyph": "C",
+          "name": "catapult"
+        }
+      ]
+    },
+    "cavalry": {
+      "hp": 10,
+      "attack": 2,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/cavalry.png",
+          "glyph": "C",
+          "name": "cavalry"
+        }
+      ]
+    },
+    "chariot": {
+      "hp": 10,
+      "attack": 4,
+      "defense": 1,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/chariot.png",
+          "glyph": "C",
+          "name": "chariot"
+        }
+      ]
+    },
+    "knights": {
+      "hp": 10,
+      "attack": 4,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/knights.png",
+          "glyph": "K",
+          "name": "knights"
+        }
+      ]
+    },
+    "musketeers": {
+      "hp": 20,
+      "attack": 2,
+      "defense": 3,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/musketeers.png",
+          "glyph": "M",
+          "name": "musketeers"
+        }
+      ]
+    },
+    "cannon": {
+      "hp": 20,
+      "attack": 8,
+      "defense": 1,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/cannon.png",
+          "glyph": "C",
+          "name": "cannon"
+        }
+      ]
+    },
+    "riflemen": {
+      "hp": 20,
+      "attack": 3,
+      "defense": 5,
+      "range": 1,
+      "move": 1,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/riflemen.png",
+          "glyph": "R",
+          "name": "riflemen"
+        }
+      ]
+    },
+    "artillery": {
+      "hp": 20,
+      "attack": 12,
+      "defense": 2,
+      "range": 1,
+      "move": 2,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/artillery.png",
+          "glyph": "A",
+          "name": "artillery"
+        }
+      ]
+    },
+    "armor": {
+      "hp": 30,
+      "attack": 10,
+      "defense": 5,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/armor.png",
+          "glyph": "A",
+          "name": "armor"
+        }
+      ]
+    },
+    "mech-inf": {
+      "hp": 30,
+      "attack": 6,
+      "defense": 6,
+      "range": 1,
+      "move": 3,
+      "domain": "land",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/mech-inf.png",
+          "glyph": "M",
+          "name": "mech-inf"
+        }
+      ]
+    },
+    "nuclear": {
+      "hp": 10,
+      "attack": 99,
+      "defense": 0,
+      "range": 1,
+      "move": 16,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/nuclear.png",
+          "glyph": "N",
+          "name": "nuclear"
+        }
+      ]
+    },
+    "fighter": {
+      "hp": 20,
+      "attack": 4,
+      "defense": 2,
+      "range": 1,
+      "move": 10,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/fighter.png",
+          "glyph": "F",
+          "name": "fighter"
+        }
+      ]
+    },
+    "bomber": {
+      "hp": 20,
+      "attack": 12,
+      "defense": 1,
+      "range": 1,
+      "move": 8,
+      "domain": "air",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/bomber.png",
+          "glyph": "B",
+          "name": "bomber"
+        }
+      ]
+    },
+    "trireme": {
+      "hp": 10,
+      "attack": 1,
+      "defense": 0,
+      "range": 1,
+      "move": 3,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/trireme.png",
+          "glyph": "T",
+          "name": "trireme"
+        }
+      ]
+    },
+    "sail": {
+      "hp": 10,
+      "attack": 1,
+      "defense": 1,
+      "range": 1,
+      "move": 3,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/sail.png",
+          "glyph": "S",
+          "name": "sail"
+        }
+      ]
+    },
+    "frigate": {
+      "hp": 10,
+      "attack": 2,
+      "defense": 2,
+      "range": 1,
+      "move": 3,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/frigate.png",
+          "glyph": "F",
+          "name": "frigate"
+        }
+      ]
+    },
+    "ironclad": {
+      "hp": 20,
+      "attack": 4,
+      "defense": 4,
+      "range": 1,
+      "move": 4,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/ironclad.png",
+          "glyph": "I",
+          "name": "ironclad"
+        }
+      ]
+    },
+    "submarine": {
+      "hp": 20,
+      "attack": 8,
+      "defense": 2,
+      "range": 1,
+      "move": 3,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/submarine.png",
+          "glyph": "S",
+          "name": "submarine"
+        }
+      ]
+    },
+    "transport": {
+      "hp": 20,
+      "attack": 0,
+      "defense": 3,
+      "range": 1,
+      "move": 4,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/transport.png",
+          "glyph": "T",
+          "name": "transport"
+        }
+      ]
+    },
+    "cruiser": {
+      "hp": 20,
+      "attack": 6,
+      "defense": 6,
+      "range": 1,
+      "move": 6,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/cruiser.png",
+          "glyph": "C",
+          "name": "cruiser"
+        }
+      ]
+    },
+    "battleship": {
+      "hp": 40,
+      "attack": 18,
+      "defense": 12,
+      "range": 1,
+      "move": 4,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/battleship.png",
+          "glyph": "B",
+          "name": "battleship"
+        }
+      ]
+    },
+    "carrier": {
+      "hp": 40,
+      "attack": 1,
+      "defense": 12,
+      "range": 1,
+      "move": 5,
+      "domain": "sea",
+      "art": [
+        {
+          "imagePath": "/library/civ1/art/units/carrier.png",
+          "glyph": "C",
+          "name": "carrier"
+        }
+      ]
+    }
+  }
+}

@@ -47,7 +47,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 
 - [ ] `ui` flags: `boxSelect`, `help`, `hideGridLines`, `recolorTeamSprites`, `showFacing`, `showRightSidebar`
 - [ ] `toGrid` fields: `cells`, `height`, `locationType`, `shapes`, `units`, `width`
-- Plugins to move out of the play UI: none found
+- UI plugins: none (`src/gate.test.js` keeps game ids and imports out of the play UI)
 
 ## Demos and benches
 
@@ -61,7 +61,7 @@ README, its tests and its `toGrid`, then annotated by hand under **Notes**.
 - [ ] `noop-actions.test.js`: 4 tests
 - [ ] `placement.test.js`: 7 tests
 - [ ] `sprites.test.js`: 4 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -88,18 +88,18 @@ What [its README](../../games/sc1/README.md) documents, each still true after th
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `agents/learned/leafEval.js`
-- `engine/foreignUnits.js`
-- `games/continuousMove.js`
-- `games/coord.js` (5 imports)
-- `games/evalHelpers.js`
-- `games/mapTypes/starcraftMap.js`
-- `games/renderOptions.js`
-- `games/starcraftSprite.js` (2 imports)
+- `src/agents/learned/leafEval.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/continuousMove.js`
+- `src/kit/coord.js` (5 imports)
+- `src/kit/evalHelpers.js`
+- `src/kit/renderOptions.js`
 
 ## Notes
 
-Shares `games/starcraftSprite.js` and `games/mapTypes/starcraftMap.js` with sc2
-(see the plan's open decision 2).
+Owns the StarCraft code sc2 shares since phase 1: `starcraftSprite.js` and
+`starcraftMap.js` had nothing generic in them, so they moved here from
+`games/`, and sc2 imports them from this folder (the plan's open decision 2
+recommends vendoring sc1 into sc2).

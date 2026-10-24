@@ -31,12 +31,13 @@ import { stripStatics, stripBodyStatics, haveFromHeader, socketHolder } from '..
 import { GridTimeline } from '../engine/gridFrames.js';
 
 import { GameEngine, rosterError, rosterFromState, setupPreview, cellMapper, SETUP_KEY } from '../engine/index.js';
-import { registerGames, dressGrid } from '../engine/foreignUnits.js';
+import { dressGrid } from '../engine/foreignUnits.js';
 import { planReconfigure, carriedRoster, rebuiltState, editedState, livePreview } from '../engine/reconfigure.js';
 import { validate as validateAction } from '../engine/ActionValidator.js';
 import * as gameEditor from './gameEditor.js';
 import { buildCatalog, createRecordingReader } from './catalog.js';
 import { gameImageFiles } from './gameImages.js';
+import { loadLibrary } from './library.js';
 import { RandomAgent } from '../agents/index.js';
 import { ApiAgent } from '../agents/ApiAgent.js';
 import { ObscuroAgent } from '../agents/ObscuroAgent.js';
@@ -57,6 +58,7 @@ const APPS_DIR = resolve(CORE_DIR, 'apps');
 let ROOT_DIR = CORE_DIR;
 let GAMES_DIR = resolve(CORE_DIR, 'games');
 let SESSIONS_DIR = resolve(CORE_DIR, 'sessions');
+let LIBRARY_DIR = resolve(CORE_DIR, 'library');
 let REGISTRY_FILE = null;
 
 /** Filesystem-safe local datetime for recording filenames, e.g. 2026-07-12T14-16-03. */
@@ -234,6 +236,22 @@ async function serveAppfr(res, relPath) {
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-cache',
     });
+    res.end(data);
+  } catch { res.writeHead(404); res.end('Not found'); }
+}
+
+// ---------------------------------------------------------------------------
+// The library's pictures — /library/:game/art/… → library/:game/art/… (the
+// units of every game, kept as data: library.js)
+// ---------------------------------------------------------------------------
+
+async function serveLibraryFile(res, relPath) {
+  const abs = resolve(LIBRARY_DIR, relPath);
+  if (!abs.startsWith(LIBRARY_DIR + sep) || !relPath.split('/').includes('art')) { res.writeHead(403); return res.end('Forbidden'); }
+  try {
+    const data = await readFile(abs);
+    const ct = sniffMime(data) ?? MIME_TYPES[extname(abs)] ?? 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' });
     res.end(data);
   } catch { res.writeHead(404); res.end('Not found'); }
 }
@@ -2637,6 +2655,9 @@ async function handleRequest(req, res) {
     }
 
     // GET /images/:game/:job[/:type] — serve game images (e.g. /images/ffta/soldier/sprite)
+    if (method === 'GET' && parts[0] === 'library' && parts.length >= 4)
+      return await serveLibraryFile(res, parts.slice(1).join('/'));
+
     if (method === 'GET' && parts[0] === 'images' && (parts.length === 3 || parts.length === 4))
       return await serveGameImage(parts[1], parts[2], res, parts[3]);
 
@@ -2865,11 +2886,13 @@ let created = false;
  * @param {string} [p.registryFile] the JSON registry the game editor rewrites;
  *                                  without one the editor's writes are refused.
  * @param {string} [p.sessionsDir]  where recordings are written.
+ * @param {string} [p.libraryDir]   the library of every game's units (the core's own
+ *                                  by default), which the core's rulesets field.
  * @returns {{ games, handleRequest, handleUpgrade, mount, listen }}
  *   `mount` is the JAS embedded-mode contract, (router, app, httpServer) => void;
  *   `listen(port)` runs it standalone on its own node:http server.
  */
-export function createBattleServer({ games, root = CORE_DIR, gamesDir, registryFile, sessionsDir } = {}) {
+export function createBattleServer({ games, root = CORE_DIR, gamesDir, registryFile, sessionsDir, libraryDir } = {}) {
   // Sessions, recordings and the registry are this module's own state, so one
   // copy of it is one server.
   if (created) throw new Error('createBattleServer: this copy of the core already serves a registry');
@@ -2878,10 +2901,10 @@ export function createBattleServer({ games, root = CORE_DIR, gamesDir, registryF
   GAMES_DIR = resolve(gamesDir ?? resolve(ROOT_DIR, 'games'));
   SESSIONS_DIR = resolve(sessionsDir ?? resolve(ROOT_DIR, 'sessions'));
   REGISTRY_FILE = registryFile ? resolve(registryFile) : null;
+  LIBRARY_DIR = resolve(libraryDir ?? resolve(CORE_DIR, 'library'));
   Object.assign(GAMES, games);
-  // Every game may field units of the others (src/engine/foreignUnits.js) — those
-  // that declare `foreignUnits` lend theirs and take the others' in.
-  registerGames(GAMES);
+  // The units the core's own rulesets may field from every game (src/engine/foreignUnits.js).
+  loadLibrary(LIBRARY_DIR);
 
   const listen = (port) => {
     const server = createServer((req, res) => handleRequest(req, res));

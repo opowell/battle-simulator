@@ -44,8 +44,7 @@ None: one setup, from its options.
 
 - [ ] `ui` flags: `clearSelectedAtEndOfTurn`, `combatFx`, `hideGridLines`, `showAiAnalysis`, `showFacing`, `showHpBars`, `showRightSidebar`, `showRoster`, `showRuler`, `showUnitInfo`, `territoryClick`
 - [ ] `toGrid` fields: `cells`, `grid`, `height`, `hexSize`, `standings`, `territoryBorders`, `width`
-- Plugins to move out of the play UI:
-  - [ ] `DiceRollOverlay` (battles carry `attackerRolls`/`defenderRolls`, read by SessionView)
+- Stayed in the core, as a generic contract: `DiceRollOverlay`, for any action whose `result` carries `attackerRolls`/`defenderRolls`
 
 ## Demos and benches
 
@@ -63,7 +62,7 @@ None: one setup, from its options.
 - [ ] `golden.test.js`: 2 golden replays (default, fog-on)
 - [ ] `index.test.js`: 19 tests
 - [ ] `reserve.test.js`: 10 tests
-- [ ] Also covered from outside its folder: `games/startingSetup.test.js`, `games/foreignUnits.test.js` and, where listed, `agents/greedy.test.js`, `agents/rollout.test.js`
+- [ ] The core's checks of it, in its `contract.test.js` since phase 1 (roster editing; the greedy and, with `SLOW_TESTS=1`, rollout agents where it has them), and its pack in `library/` (`src/library.test.js`)
 
 ## README
 
@@ -75,11 +74,11 @@ No README.
 
 ## What it uses from outside its folder
 
-Each becomes a `#core/…` import in phase 1, or moves with the game.
+Since phase 1 each is a `#core/…` import (or moved into the game).
 
-- `agents/learned/leafEval.js`
-- `engine/foreignUnits.js`
-- `games/mapTypes/hexagon.js` (2 imports)
+- `src/agents/learned/leafEval.js`
+- `src/engine/foreignUnits.js`
+- `src/kit/hexagon.js` (2 imports)
 
 ## Notes
 
