@@ -2,7 +2,7 @@
 // One session being played, inside the browser: the board (Battlefield) and
 // everything that keeps it in step with the server — the subscription, the turn
 // animations, history, forks. The browser opens one per session tab and keeps it
-// alive while the tab is behind another (see SessionFrames), so `active` says
+// alive while the tab is behind another (see SessionPlay), so `active` says
 // whether this one is the one on screen, and only that one answers the keyboard.
 import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue';
 import Battlefield from './Battlefield.vue';

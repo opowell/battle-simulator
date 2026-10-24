@@ -10,7 +10,7 @@ import { buildSchema } from './schema.js'
 import { buildRows } from './rows.js'
 import { createCatalogSource } from './source.js'
 import { settings } from './settings.js'
-import { OPEN_SESSION, OPEN_SETUP, SESSION_SLOTS } from './opener.js'
+import { OPEN_SESSION, OPEN_SETUP, SESSION_KEYBOARD } from './opener.js'
 import { newSessionRequest, parseNewSessionLink } from './deeplink.js'
 import Art from './components/Art.vue'
 import RecordPanel from './components/RecordPanel.vue'
@@ -19,7 +19,6 @@ import GameSummaryCards from './components/GameSummaryCards.vue'
 import ScenarioSummaryCards from './components/ScenarioSummaryCards.vue'
 import UnitSummaryCards from './components/UnitSummaryCards.vue'
 import SessionPlay from './components/SessionPlay.vue'
-import SessionFrames from './components/SessionFrames.vue'
 import SetupPanel from './components/SetupPanel.vue'
 
 const THEME = 'dark'
@@ -128,7 +127,8 @@ function titleOf(item) {
 
 const panels = computed(() => [
   { id: 'browse', title: 'Browse', closable: false },
-  ...opened.value.map((item) => ({ id: item.id, ...titleOf(item), closable: true })),
+  // A session's board is kept mounted behind other tabs (see SessionPlay).
+  ...opened.value.map((item) => ({ id: item.id, ...titleOf(item), closable: true, keepAlive: item.kind === 'session' })),
 ])
 
 /** @param focus  false leaves whichever top-level tab is showing where it is */
@@ -222,10 +222,8 @@ onMounted(openFromHash)
 window.addEventListener('hashchange', openFromHash)
 onBeforeUnmount(() => window.removeEventListener('hashchange', openFromHash))
 
-// The boxes the open sessions show in; SessionFrames lays each one's board over them.
-const sessionSlots = reactive(new Map())
-provide(SESSION_SLOTS, sessionSlots)
-const sessionIds = computed(() => opened.value.filter((o) => o.kind === 'session').map((o) => o.sessionId))
+// Which of the sessions on screen answers the keyboard (see SessionPlay).
+provide(SESSION_KEYBOARD, { shown: reactive(new Set()), keyed: ref(null) })
 
 /** A tab that is a strip holding nothing but one space: that space. */
 const lone = (tab) => (typeof tab !== 'string' && tab.kind === 'group' && tab.panels.length === 1 && typeof tab.panels[0] !== 'string' ? tab.panels[0] : null)
@@ -251,9 +249,32 @@ function settle(node) {
   }
   return changed ? { ...node, panels } : node
 }
-// Whatever left it so — a close, a tab carried off, a URL.
+/**
+ * A window on a desktop is carried by its title bar, and a headless space — the
+ * browser, which is the page rather than a window on it — has none: on a desktop
+ * it would be a window nothing can move. So one there gets its bar back.
+ */
+function barred(node) {
+  if (typeof node === 'string') return node
+  if (node.kind === 'float') {
+    const frames = node.frames.map((frame) => {
+      let inner = barred(frame.node)
+      if (inner.headless) {
+        const { headless: _, ...space } = inner
+        inner = space
+      }
+      return inner === frame.node ? frame : { ...frame, node: inner }
+    })
+    return frames.some((f, i) => f !== node.frames[i]) ? { ...node, frames } : node
+  }
+  const key = node.kind === 'group' ? 'panels' : 'children'
+  const inner = node[key].map(barred)
+  return inner.some((n, i) => n !== node[key][i]) ? { ...node, [key]: inner } : node
+}
+
+// Whatever left it so — a close, a tab carried off, a URL, a space made a desktop.
 watch(layout, (node) => {
-  const settled = settle(node)
+  const settled = barred(settle(node))
   if (settled !== node) layout.value = settled
 }, { immediate: true })
 
@@ -379,9 +400,14 @@ const fileRows = computed(() => rows.value?.files ?? [])
           @created="(rowId, { replace }) => openCreated(rowId, replace ? panel.id : undefined)"
         />
         <!-- Keyed: one session replacing another in the same tab (a rematch) must
-             register its own box, not inherit the old one's (SessionPlay registers
-             on mount). -->
-        <SessionPlay v-else-if="itemFor(panel.id)?.kind === 'session'" :key="panel.id" :session-id="itemFor(panel.id).sessionId" />
+             be a board of its own, not the old one's told a new id. -->
+        <SessionPlay
+          v-else-if="itemFor(panel.id)?.kind === 'session'"
+          :key="panel.id"
+          :session-id="itemFor(panel.id).sessionId"
+          @open-session="(id, { replace }) => { openSession(id, { replace: replace ? itemFor(panel.id).sessionId : null }); refresh() }"
+          @close="close(panel.id)"
+        />
       </template>
       <template #actions="{ panel }">
         <a
@@ -399,12 +425,6 @@ const fileRows = computed(() => rows.value?.files ?? [])
       {{ linkError }}
       <button type="button" class="cx-btn cx-btn--quiet" title="Dismiss" @click="linkError = ''">✕</button>
     </p>
-    <SessionFrames
-      :session-ids="sessionIds"
-      :slots="sessionSlots"
-      @open-session="(id, { replace, from }) => { openSession(id, { replace: replace ? from : null }); refresh() }"
-      @close="(id) => close(`play:${id}`)"
-    />
   </div>
 </template>
 

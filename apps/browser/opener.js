@@ -16,11 +16,11 @@ export const OPEN_SETUP = Symbol('open-setup')
 export const useSetupOpener = () => inject(OPEN_SETUP)
 
 /**
- * The boxes the sessions open in the browser are showing in, by session id —
- * a reactive Map SessionPlay fills while its tab is in front, and SessionFrames
- * lays each session's board over.
+ * Which of the sessions open in the browser has the keyboard: `shown`, a
+ * reactive Set of the ids on screen that each SessionPlay keeps itself in, and
+ * `keyed`, a ref to the one of them that answers keys.
  */
-export const SESSION_SLOTS = Symbol('session-slots')
+export const SESSION_KEYBOARD = Symbol('session-keyboard')
 
 export function useSessionOpener() {
   const openHere = inject(OPEN_SESSION, null)
