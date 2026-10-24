@@ -1,12 +1,19 @@
 {
   "game": "warofdots",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "5a712f76fcb0630bd536d1ed75ab6197a16935df",
+    "date": "2026-10-24T21:53:40+02:00"
   },
   "units": 2,
   "art": 0,
+  "terrain": 10,
+  "maps": 3,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "real time and pixel positions: a unit stands on the square it was in",
+    "speeds per kind of infantry: a square costs what the slower kind pays",
+    "water drowning a unit that stays in it, and forest and hills blunting a heavy unit's fire: the core has no such terrain effects",
+    "gold, recruiting in cities, upkeep, morale and routing",
+    "cities and capitals are features only: no capture, and the war is won by elimination",
+    "the standard map's generator: one world, at a fixed seed"
   ]
 }

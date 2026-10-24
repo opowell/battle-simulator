@@ -1,0 +1,98 @@
+{
+  "plains": {
+    "name": "Plains",
+    "color": "#b8a860",
+    "description": "Open ground. Fast marching; small forage; no cover.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "forest": {
+    "name": "Forest",
+    "color": "#2a6830",
+    "description": "Slow marching, tires men; +35% defence; light forage.",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 35,
+    "blocksSight": false
+  },
+  "hills": {
+    "name": "Hills",
+    "color": "#9a8050",
+    "description": "Slow but commanding; +60% defence from downhill momentum.",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 60,
+    "blocksSight": false
+  },
+  "water": {
+    "name": "Shallows",
+    "color": "#28506e",
+    "description": "Fordable but perilous — slow, exposed, and men may drown.",
+    "cost": {
+      "land": 3,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "mountains": {
+    "name": "Mountains",
+    "color": "#706050",
+    "description": "Impassable ridge.",
+    "cost": {
+      "land": null,
+      "air": 1
+    },
+    "passable": {
+      "land": false,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "open": {
+    "name": "Plains",
+    "color": "#b8a860",
+    "description": "Open ground. Fast marching; small forage; no cover.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  }
+}

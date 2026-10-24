@@ -13,10 +13,9 @@ import { castleShapes, villageShapes, flagShapes } from './decor.js';
 import { movePointLattice } from '#core/kit/continuousMove.js';
 import { posToWire } from '#core/kit/coord.js';
 import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
-import { tableUnits } from '#core/engine/foreignUnits.js';
 
 // A squad raised for a customised roster: this many men of one kind.
-const SQUAD_SIZE = 10;
+export const SQUAD_SIZE = 10;
 
 /** A squad's men as a short string (6K 4A), the game's own types first. */
 const composition = (men, sep) => Object.keys(men).filter(t => men[t] && UNITS[t]).map(t => `${men[t]}${UNITS[t].symbol}`).join(sep);
@@ -462,25 +461,6 @@ function terrainInfo(key) {
 
 // ── Export ──────────────────────────────────────────────────────────────────
 
-// Its units in the common vocabulary, which its pack in the core's library is
-// exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). A squad is
-// the piece that marches and fights, so it is what this game lends out: ten men of
-// one kind. Its hp is its men, its attack each man's power, its move his marching
-// pace; a fight is a brawl at contact (range 1). The conversion factor is a squad
-// of ten archers; nobody wears armour, so a squad has no defense of its own
-// (`fold`).
-function lentUnits() {
-  return {
-    ...tableUnits({
-      table: UNITS,
-      scale: { hp: SQUAD_SIZE, attack: UNITS.archer.power, defense: 1, range: 1, move: UNITS.archer.speed },
-      read: (e) => ({ hp: SQUAD_SIZE, attack: e.power, range: 1, move: e.speed, domain: 'land' }),
-      art: (type) => ({ glyph: UNITS[type]?.symbol, name: UNITS[type]?.name ?? type }),
-    }),
-    fold: { defense: 'hp' },
-  };
-}
-
 export const AowGame = {
   name: 'AncientArtOfWar',
   evaluateState,
@@ -498,7 +478,6 @@ export const AowGame = {
     if (!UNITS[type] || !position) return null;
     return makeSquad(ownerId, { [type]: SQUAD_SIZE }, Number(position.x), Number(position.y), { id, type });
   },
-  foreignUnits: lentUnits(),
   getLegalActions,
   isActionLegal,
   applyActions,

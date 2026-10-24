@@ -1,16 +1,15 @@
 import { getWarodDotsBelief } from './belief.js';
 import { forEachCell } from '#core/kit/terrainShapes.js';
-import { tableUnits } from '#core/engine/foreignUnits.js';
 
-const T = 28;
+export const T = 28;
 const COLS = 40;
 const ROWS = 26;
 const MAP_W = COLS * T;
 const MAP_H = ROWS * T;
 
-const TERRAIN = { PLAINS: 0, FOREST: 1, HILLS: 2, WATER: 3, MOUNTAINS: 4, SAND: 5, CITY: 6, CAPITAL: 7, BRIDGE: 8 };
+export const TERRAIN = { PLAINS: 0, FOREST: 1, HILLS: 2, WATER: 3, MOUNTAINS: 4, SAND: 5, CITY: 6, CAPITAL: 7, BRIDGE: 8 };
 
-const TERRAIN_COLOR = [
+export const TERRAIN_COLOR = [
   '#3a6e28', // PLAINS
   '#1e4010', // FOREST
   '#7a6040', // HILLS
@@ -23,11 +22,11 @@ const TERRAIN_COLOR = [
 ];
 
 // `kind` is which of the two the terrain rules treat it as.
-const UNIT_DEF = {
+export const UNIT_DEF = {
   light: { kind: 'light', cost: 200, hp: 60,  speed: 75, dmg: 6,  atkRate: 0.9, range: 38, moraleDmg: 3 },
   heavy: { kind: 'heavy', cost: 400, hp: 150, speed: 35, dmg: 16, atkRate: 0.5, range: 38, moraleDmg: 8 },
 };
-const kindOf = (type) => UNIT_DEF[type]?.kind ?? type;
+export const kindOf = (type) => UNIT_DEF[type]?.kind ?? type;
 
 const GOLD_PER_SEC = 18;
 const UNIT_UPKEEP  = 0.8;
@@ -165,7 +164,7 @@ function generateMap(players, rng) {
 // slow them and blunt heavy fire, mountains are impassable. The same shapes are handed to
 // the client to draw as layered SVGs. Cities are placed at authored positions.
 
-const WOD_SHAPE_STYLES = {
+export const WOD_SHAPE_STYLES = {
   water:     { terrain: TERRAIN.WATER,     render: { fill: '#0e3d5c' },              name: 'Water',     description: 'Slows units and drowns them over time.' },
   forest:    { terrain: TERRAIN.FOREST,    render: { fill: '#1e4010' },              name: 'Forest',    description: 'Slows movement; cover from heavy fire.' },
   hills:     { terrain: TERRAIN.HILLS,     render: { fill: '#7a6040', opacity: 0.9 },name: 'Hills',     description: 'Slows movement; cover from heavy fire.' },
@@ -297,7 +296,7 @@ function getTerrainAt(grid, x, y) {
   return grid[r][c];
 }
 
-function speedMod(terrain, type) {
+export function speedMod(terrain, type) {
   if (terrain === TERRAIN.MOUNTAINS) return 0;
   if (terrain === TERRAIN.WATER) return 0.45;
   if (terrain === TERRAIN.FOREST || terrain === TERRAIN.HILLS) return kindOf(type) === 'heavy' ? 0.5 : 0.78;
@@ -559,22 +558,6 @@ export const WarodDotsGame = {
       x = near.x + T * 0.4; y = near.y + T * 0.4;
     }
     return makeUnit(id, type, ownerId, x, y);
-  },
-
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
-  // conversion factor is the light infantryman: 60 hp, 5.4 damage a second (6 a
-  // blow, 0.9 blows a second), reaching 38 px, marching 75 px a second. Nobody
-  // wears armour — only terrain covers — so its units have no defense of their own
-  // (`fold`): they read as the standard.
-  foreignUnits: {
-    ...tableUnits({
-      table: UNIT_DEF,
-      scale: { hp: 60, attack: 5.4, defense: 1, range: 38, move: 75 },
-      read: (e) => ({ hp: e.hp, attack: e.dmg * e.atkRate, range: e.range, move: e.speed, domain: 'land' }),
-      art: (type) => ({ glyph: kindOf(type) === 'heavy' ? 'H' : 'L', name: kindOf(type) === 'heavy' ? 'Heavy Infantry' : 'Light Infantry' }),
-    }),
-    fold: { defense: 'hp' },
   },
 
   createInitialState(players, config = {}) {

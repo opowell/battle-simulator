@@ -1,0 +1,94 @@
+{
+  "open": {
+    "name": "Open Ground",
+    "color": "#c8b87a",
+    "description": "No cover.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "wire": {
+    "name": "Barbed Wire",
+    "color": "#5a4530",
+    "description": "Costs 2 AP to enter.",
+    "cost": {
+      "land": 2,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 0,
+    "blocksSight": false
+  },
+  "crater": {
+    "name": "Crater",
+    "color": "#8a7a6a",
+    "description": "Low cover.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 20,
+    "blocksSight": false
+  },
+  "sandbags": {
+    "name": "Sandbags",
+    "color": "#b8a040",
+    "description": "High cover.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 35,
+    "blocksSight": false
+  },
+  "trench": {
+    "name": "Allied Trench",
+    "color": "#4a3828",
+    "description": "Maximum cover. Axis reaching this row wins.",
+    "cost": {
+      "land": 1,
+      "air": 1
+    },
+    "passable": {
+      "land": true,
+      "sea": false,
+      "air": true
+    },
+    "cover": 50,
+    "blocksSight": false
+  },
+  "base": {
+    "name": "Allied Base",
+    "color": "#1a1208",
+    "description": "Impassable.",
+    "cost": {
+      "land": null,
+      "air": null
+    },
+    "passable": false,
+    "cover": 0,
+    "blocksSight": false
+  }
+}

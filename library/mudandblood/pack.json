@@ -1,12 +1,16 @@
 {
   "game": "mudandblood",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "0bde41f74e8f5d53eb5c1a2ddffc5034ea3e7d1a",
+    "date": "2026-10-24T19:13:44+02:00"
   },
   "units": 7,
   "art": 7,
+  "terrain": 6,
+  "maps": 1,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "the Axis waves after the first: the map opens with wave 1 only",
+    "action points, hit chances and healing: the core's strikes are deterministic and spend a turn window",
+    "the Allied win after all six waves: here the Allies win by wiping out who came"
   ]
 }

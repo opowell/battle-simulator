@@ -87,3 +87,22 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-memoir44](https://github.com/opowell/battle-memoir44), built
+by `scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 26 tests, its 3 golden replays among them,
+plus the app's own 4) passes; in the Browser, driven headless, the default
+setup, `encounter` and `pegasus-bridge` draw the board with both armies in the
+roster, the Orders panel lists the hand of command cards and one can be played,
+with no console error or failed request. Its pack (3 units, 12 terrain types
+and both scenarios' boards, from its existing `scripts/export/memoir44.mjs`,
+which already covered every map and terrain type) was re-exported into
+`library/memoir44/` first; only its provenance changed.
+
+Pre-existing, the same in the core today: the board opens zoomed in far enough
+that a few hexes fill it, with square grid lines over them; the objective
+markers are listed in the roster as units of one hp named by their raw ids
+(`u_261.66…`); and no End Turn is offered in the command phase, so the headless
+check could not end a turn by its button.

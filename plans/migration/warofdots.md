@@ -74,3 +74,27 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-warofdots](https://github.com/opowell/battle-warofdots),
+built by `scripts/extract-game.mjs` and pinned to the core at the commit it left
+from. Checked there: `npm test` (the game's 42 tests, its 4 golden replays among
+them, plus the app's own 4) passes; in the Browser, driven headless, the default
+setup, `standard`, `lakelands` and `divide` draw (the tile map, and the two
+shape maps as their lakes, forests and hills), the help button shows, and turns
+end and come back from the AI ten in a row, with no console error or failed
+request. Its pack (2 units, 10 terrain types, and its three maps: the two shape
+scenarios as they rasterise onto the game's 40×26 grid, and the standard map,
+which the game generates afresh each game, at one fixed seed) was exported into
+`library/warofdots/` first. To export them, the game's terrain tables, its unit
+table and `speedMod` are now named exports of `WarodDotsGame.js`.
+
+Found here, and fixed in the core: under its own repo's JAS (`JAS_DEFAULT_APP`,
+which serves the app at `/` for HTTP only), the Browser's session socket at
+`/sessions/:id/ws` was never answered, so an AI's turn never reached the page
+(xcom's repo too). The app JAS serves at `/` now claims those sockets
+(`src/server/battleServer.js`, tested in `battleServer.test.js`).
+
+Pre-existing, the same in the core today: neutral cities are drawn and listed
+in the roster as the first seat's (blue) tokens, named by raw ids (`u_20_4`).
