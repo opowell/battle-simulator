@@ -72,3 +72,20 @@ Nothing.
 
 Not registered in the server, single-seat, and not a battle. Kept until the
 plan's open decision 4 is made: the recommendation is to extract it as it is.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-simcity](https://github.com/opowell/battle-simcity), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+There it is registered (`games/games.json`: one seat, `mayor`, as its golden
+replays seat it). It lends no units, so it has no pack in `library/`. Checked
+there: `npm test` (the game's 38 tests, its 2 golden replays among them, plus
+the app's own 4, among them a session the random AI plays through the server)
+passes. That a one-seat session can start at all needed a core fix (the server
+refused fewer than two seats whatever the registry said; see rogue's note).
+
+Not playable in the Browser, as it never was: it has no `toGrid`, so the game
+page opens and its session starts (the mayor to move, the legal zoning and
+building actions listed by the server), but the board never draws and the page
+stays on "Loading…". Nothing was changed for it: drawing a city is new work,
+not something the move broke.
