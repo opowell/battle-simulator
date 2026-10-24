@@ -6,7 +6,6 @@ import { resolveAttack, resolveAttackVsBuilding, inRange, chebyshev, effectiveRa
 import { generateMap, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
 import { getSc2Belief } from './belief.js';
 import { scSpriteLayers } from '../sc1/starcraftSprite.js';
-import { tableUnits } from '#core/engine/foreignUnits.js';
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1031,7 +1030,7 @@ function terrainInfo(key) {
 }
 
 // Side-panel portraits (single frame each, sourced from starcraft.fandom.com).
-const UNIT_PORTRAITS = new Set([
+export const UNIT_PORTRAITS = new Set([
   'scv', 'marine', 'marauder', 'reaper', 'ghost', 'hellion', 'siege-tank', 'thor',
   'medivac', 'viking', 'banshee', 'battlecruiser',
   'drone', 'zergling', 'baneling', 'roach', 'ravager', 'hydralisk', 'lurker',
@@ -1058,19 +1057,6 @@ export const Sc2Game = {
   createSetupUnit(_state, { id, ownerId, type, position }) {
     return UNITS[type] ? makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0) : null;
   },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). Read as
-  // SC1's are: the marine (45 hp here, 6 damage, range 4, 2 moves) is one point of
-  // each stat, shields count as hp, armour is read one higher than it is.
-  foreignUnits: tableUnits({
-    table: UNITS,
-    scale: { hp: 45, attack: 6, defense: 1, range: 4, move: 2 },
-    read: (e) => ({
-      hp: e.hp + (e.shields ?? 0), attack: e.attack, defense: (e.armor ?? 0) + 1, range: e.range, move: e.moves,
-      domain: e.domain === 'air' ? 'air' : 'land',
-    }),
-    art: (type) => ({ imagePath: UNIT_PORTRAITS.has(type) ? `/images/sc2/units/${type}` : null, glyph: type[0].toUpperCase(), name: type }),
-  }),
   getLegalActions,
   applyActions,
   getResult,
