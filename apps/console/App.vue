@@ -11,6 +11,7 @@ import { buildRows } from './rows.js'
 import { createCatalogSource } from './source.js'
 import { settings } from './settings.js'
 import { OPEN_SESSION, OPEN_SETUP, SESSION_SLOTS } from './opener.js'
+import { newSessionRequest, parseNewSessionLink } from './deeplink.js'
 import Art from './components/Art.vue'
 import RecordPanel from './components/RecordPanel.vue'
 import CreatePanel from './components/CreatePanel.vue'
@@ -189,12 +190,33 @@ provide(OPEN_SETUP, openSetup)
 // `#/session/<id>` and `#/game/<name>` — still lands where it pointed (the server
 // sends /ui/design here, and a redirect keeps the fragment); so does a session
 // opened in a browser tab of its own (playUrl.session).
+//
+// `#/new/<game>[/<scenario>]?…` starts a session and opens it (deeplink.js). The
+// fragment is cleared before anything else, so a reload opens the session the
+// link made rather than making another.
 function openFromHash() {
+  const link = parseNewSessionLink(window.location.hash)
   const [, kind, name] = window.location.hash.match(/^#\/(session|game)\/([^/?]+)/) ?? []
-  if (!kind) return
+  if (!kind && !link) return
   history.replaceState(history.state, '', window.location.pathname + window.location.search)
-  if (kind === 'session') openSession(decodeURIComponent(name))
+  if (link) startFromLink(link)
+  else if (kind === 'session') openSession(decodeURIComponent(name))
   else openSetup(decodeURIComponent(name))
+}
+
+/** Why the last `#/new/…` link started nothing; shown until dismissed. */
+const linkError = ref('')
+async function startFromLink(link) {
+  linkError.value = ''
+  try {
+    const game = (await api.games()).find((g) => g.name === link.game)
+    if (!game) throw new Error(`No game called ${link.game}`)
+    const created = await api.createSession(newSessionRequest(game, link))
+    openSession(created.id)
+    refresh()
+  } catch (e) {
+    linkError.value = `Could not start a session from the link: ${e.message}`
+  }
 }
 onMounted(openFromHash)
 window.addEventListener('hashchange', openFromHash)
@@ -373,6 +395,10 @@ const fileRows = computed(() => rows.value?.files ?? [])
         >↗</a>
       </template>
     </WindowFrame>
+    <p v-if="linkError" class="cx-link-error" role="alert">
+      {{ linkError }}
+      <button type="button" class="cx-btn cx-btn--quiet" title="Dismiss" @click="linkError = ''">✕</button>
+    </p>
     <SessionFrames
       :session-ids="sessionIds"
       :slots="sessionSlots"
@@ -404,6 +430,14 @@ const fileRows = computed(() => rows.value?.files ?? [])
 .cx-window .dc-window__gutter:focus-visible::after { background: var(--dc-accent); }
 .cx-boot { margin: auto; font: 13px/1.5 ui-monospace, Menlo, monospace; color: #8a96a1; }
 .cx-boot--err { color: #ff8a80; }
+.cx-link-error {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
+  display: flex; gap: 8px; align-items: center; max-width: calc(100% - 32px); margin: 0;
+  /* Outside the window, so off appfr's tokens: the boot message's colours. */
+  padding: 6px 6px 6px 12px; font: 13px/1.4 system-ui, sans-serif; color: #ff8a80;
+  background: #1b2026; border: 1px solid #5a2a2a; border-radius: 6px;
+}
+.cx-link-error .cx-btn { color: inherit; }
 
 .cx-panel { height: 100%; overflow: auto; padding: 16px 18px 28px; box-sizing: border-box; font-family: var(--dc-sans); color: var(--dc-fg-0); }
 .cx-panel h2 { margin: 0 0 2px; font-size: 18px; font-weight: var(--dc-weight-semibold, 600); }
