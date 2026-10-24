@@ -270,39 +270,89 @@ doesn't.
 `agents/`, `apps/` or `src/` imports from a game, or contains a game id as a
 string literal. Comments are exempt; they may keep using civ1 as an example.
 
-### Units across games: here only
+### The library: units, terrain and maps from every game, here only
 
-Mixing units from different games is a **core** feature. The standalone games
-don't mix. A civ1 game in its own repo fields civ1 units and nothing else, but
-here a `BattleGame` scenario can field a marine, a knight and a chess rook side
-by side.
+Mixing games is a **core** feature: units, terrain types and whole maps. The
+standalone games don't mix. A civ1 game in its own repo fields civ1 units on
+civ1 maps and nothing else. Here, a `BattleGame` scenario can put a marine, a
+knight and a chess rook on de_dust2, or on civ1's world.
 
 `registerGames(GAMES)` can't stay as it is, because the games will no longer be
-here to import. What the core needs from each game is only its units as numbers
-and pictures, so it keeps that as data, in a **unit library**:
+here to import. What the core needs from each game is data, so it keeps it as
+data, in a **library**:
 
-- `units/<game>/pack.json` holds each type in core attributes, plus the source
-  game's `scale` and `factor` so `engine/foreignUnits.js` can still convert
-  between games. `units/<game>/art/` holds its images.
-- A script (`scripts/export-unit-pack.mjs`) generates a pack from what the game
-  declares today: `foreignUnits.profiles()`, `art()`, `scale`, `factor`,
-  `fold`. It runs once for each game, *before* that game is extracted, while
-  it is still importable here. A later change to a game's units reaches the
-  library only when the export is re-run from the game's repo (the script takes
-  a path).
-- `engine/foreignUnits.js` stays in the core and converts units from the
-  library into `BattleGame`. It no longer converts into other games, so the
-  hosting half of the `foreignUnits` contract (`table` + `write`, `adopt`,
-  `realize`, `absorb`) goes. `games/foreignUnits.test.js` becomes a test that
-  every pack in `units/` meets the core schema and round-trips through
-  `BattleGame`.
+```
+library/<game>/
+  units.json      each unit type in core attributes, plus the game's scale and factor
+  terrain.json    each terrain type in the core terrain format
+  maps/<id>.json  each map as a core board, plus how the original draws it
+  art/            unit sprites, terrain tiles, map art, each stored once per game
+  pack.json       what was exported, from which game commit, and what was left out
+```
+
+**Units** are exported from what every game declares today:
+`foreignUnits.profiles()`, `art()`, `scale`, `factor`, `fold`.
+
+**Terrain** has no shared declaration to read. Each game keeps its own table in
+its own shape. About 11 games have one (civ1, civ2, sc1, sc2, aow, memoir44,
+combatmission, xcom, mudandblood, warofdots, Arena), cs, doom and surviv build
+terrain from drawn shapes, and chess and kdice have none. So each game gets a
+small mapping in the exporter (`scripts/export/<game>.mjs`) into the core
+format: cost per movement class, passable, cover, blocks sight, concealment,
+elevation. Unit domains are mapped onto the same movement classes, so a civ1
+trireme and a StarCraft dropship price the same terrain the same way.
+
+**Maps** are exported in two halves:
+
+- *Rules*: the board in the core format. For discrete boards that is the
+  topology (square, hex, regions), the terrain id and elevation of each cell,
+  adjacency for regions, and wrap. For continuous boards it is the bounds and
+  the convex shapes, walls and windows, each with a terrain id. It also carries
+  `starts` (where each side deploys in the original) and `features`, named
+  markers (cities, bomb sites, bases, flags) that a scenario may turn into
+  `hold` or `reach` objectives.
+- *Drawing*: the static part of the game's own `toGrid` output (cells, `shapes`,
+  `los`). The generic play UI already draws every game's board from `toGrid`, so
+  the library map looks like the original without any game code.
+
+Which maps to export:
+
+| The game's maps are | Games | Exported |
+|---|---|---|
+| fixed boards | ffta, xcom, sc1, sc2, memoir44, mudandblood, chess, warofdots | every scenario's board |
+| shape maps | cs, doom, surviv, combatmission | every scenario's board, shapes and all |
+| generated | civ1, civ2, kdice, rogue, aow (in part) | every fixed scenario's board, plus a few seeded worlds; the generator stays with the game |
+| territories | risk, axisallies, kdice | each map as a `regions` board |
+
+**Scale.** A map comes with its source game's `scale`, and the map plays the
+role the host game plays today: `engine/foreignUnits.js` converts every unit
+into the map's game's numbers (hp, attack and defense by `scale` and `factor`,
+range and move by board distance). A marine on civ1's world moves and shoots
+in civ1 squares.
+
+**What a pack can't carry.** Rules the core can't express are dropped and
+listed in `pack.json`'s `omitted`, for example civ1's river trade, sc1's creep
+and cs's smoke. A library map plays as its terrain, not as its game.
+
+How the library is maintained:
+
+- `scripts/export-pack.mjs <game-dir>` writes a game's pack. It runs once for
+  each game, *before* that game is extracted, while it is still importable
+  here. A later change in a game reaches the library only when the export is
+  re-run against the game's repo (it takes a path).
+- `engine/foreignUnits.js` stays in the core and converts into `BattleGame`
+  only. It no longer converts into other games, so the hosting half of the
+  `foreignUnits` contract (`table` + `write`, `adopt`, `realize`, `absorb`)
+  goes. `games/foreignUnits.test.js` becomes a test that every pack in
+  `library/` meets the core schemas, every map loads, and every unit can stand
+  on every map.
 - On extraction, a game drops its `foreignUnits` declaration and the hosting
   code behind it. Its starting-units editor offers only its own types.
 
-This repo is **public**, and the packs carry original game art (StarCraft
-sprites, civ1 tiles). That is no worse than today, since all of that art is
-already here, but it is the one place where commercial art would stay public
-after the game repos go private (see open decisions).
+This repo is **public**, and the packs carry original game art: StarCraft
+sprites, civ1 tiles, de_dust2. That is no worse than today, since all of that
+art is already here, but it is the one place where commercial art would stay
+public after the game repos go private (see open decisions).
 
 ## What stays and what goes
 
@@ -311,7 +361,7 @@ after the game repos go private (see open decisions).
 | `engine/`, `agents/` (Random, Greedy, Generic, Obscuro adapter, `cfr.js`, `learned/`), `vendor/obscuro`, `vendor/appfr`, `vendor/ws` | stays (into `src/`) |
 | `games/arena/` | stays, becomes `BattleGame` and its scenarios |
 | `engine/foreignUnits.js` | stays, converting only into `BattleGame` |
-| `units/` (new) | the unit library: every game's types and art, exported before the game leaves |
+| `library/` (new) | every game's units, terrain types and maps, with their art, exported before the game leaves |
 | `games/tactical/`, `games/csmini/`, `demo/tactical-demo.js`, `demo/csmini-demo.js` | deleted, along with their registry entries and UI branches |
 | `games/spacetime.js`, `coord.js`, `vision.js`, `continuousMove.js`, `terrainShapes.js`, `moveQueue.js`, `planQueue.js`, `formatAction.js`, `renderOptions.js`, `evalHelpers.js`, `types.js`, `mapTypes/hexagon.js` | stays: these are the board, time and turn machinery |
 | `games/starcraftSprite.js` | audit: team-colour recolouring is generic (`ui.recolorTeamSprites`) and moves into the core; the sprite-sheet layout goes to the StarCraft repos |
@@ -397,10 +447,13 @@ game is *ready to lift out* but nothing has left.
    branch out of `apps/browser` into `games/<game>/ui/`, then turn on the gate
    test. The branches are the slow part: each one becomes either an existing
    `ui.*` flag, a new generic flag (when two or more games want it), or a plugin.
-4. The unit library replaces `registerGames`. Export every game's pack into
-   `units/` and point `engine/foreignUnits.js` at the library, converting into
-   `BattleGame` only. Then remove the cross-game hosting from the games, and
-   turn `games/foreignUnits.test.js` into the library's schema test.
+4. The library replaces `registerGames`. Write `scripts/export-pack.mjs` and
+   each game's terrain mapping, export every game's pack into `library/`, and
+   point `engine/foreignUnits.js` at the library, converting into `BattleGame`
+   only. Then remove the cross-game hosting from the games, and turn
+   `games/foreignUnits.test.js` into the library's test. Terrain and maps need
+   phase 2's topologies and terrain format first (steps 1 and 5), so the
+   units can go first and the rest follows.
    `games/startingSetup.test.js` becomes per-game tests.
 5. Split `npm test` per game, so that each game's tests pass from its folder
    alone.
@@ -429,8 +482,10 @@ eight modes:
    a **close-quarters** one (vision cones, facing, an `ammo` pool with a
    reload). That last one inherits csmini's job as the generic AI's measured
    weak spot, and moves into the bench in place of cs.
-9. A **mixed** scenario that fields units from several packs in `units/`, so
-   the library is tested in play and not only by its schema test.
+9. **Mixed** scenarios: units from several games on library maps (a square
+   grid, a hex board, a regions board and a shape map at least), so the library
+   is tested in play and not only by its schema test. The scenario picker
+   offers every library map, and the units editor every library unit.
 
 ### Phase 3: extract the games, one by one
 
@@ -447,8 +502,10 @@ Least coupled first, so the template gets proven on easy cases:
 
 For each game:
 
-1. Check that its unit pack in `units/` is up to date (phase 1, step 4). After
-   this step the game can no longer be imported here to export it.
+1. Re-export its pack into `library/` and check that the pack is complete:
+   every unit, every terrain type and every map, and an `omitted` list that
+   covers everything the core can't carry. After this step the game can no
+   longer be imported here to export it.
 2. Create the repo from the template and extract its history with
    `filter-repo`.
 3. Add `vendor/battle-simulator` pinned to the current core commit.
@@ -461,7 +518,7 @@ For each game:
    because it stays here.
 6. In the same change on this side, delete `games/<game>/` and its registry
    entry, plugins, demos and benches. Record the repo in the README's games
-   table. Its pack stays in `units/`.
+   table. Its pack stays in `library/`.
 
 Up to three games can be extracted at once by sub-agents, each in its own
 worktree (the *max three sub-agents* feedback).
@@ -504,8 +561,9 @@ smaller afterwards and gets every core feature for free.
 
 - **cs stays and csmini goes**: csmini is the less complete of the two.
 - **tactical goes**: FFTA covers it.
-- **Units mix only here**, in the core's `BattleGame`, from the unit library.
-  The standalone games don't mix.
+- **Mixing is core-only**: units, terrain types and maps from every game are
+  copied into `library/` and combined only in the core's `BattleGame`. The
+  standalone games don't mix.
 - **Lift and shift** (phase 3), with the rewrite onto the spec left as optional
   phase 5. Rewriting every game before it moves would put every current
   capability at risk at once.
@@ -514,12 +572,12 @@ smaller afterwards and gets every core feature for free.
 
 Each has a recommendation. The plan above assumes it.
 
-1. **The unit library's art in a public repo.** battle-simulator is public, and
-   the packs would keep sprites from commercial games in it after their own
+1. **The library's art in a public repo.** battle-simulator is public, and
+   the packs would keep sprites, tiles and map art from commercial games in it after their own
    repos go private. That is no change from today, where all of that art is
    already here. *Recommend* keeping it as it is for now. The alternatives are
-   glyph-only packs here, with real art only where the game repo is installed
-   alongside, or a private `units-art` submodule.
+   glyph-and-colour packs here, with real art only where the game repo is installed
+   alongside, or a private `library-art` submodule.
 2. **sc1 and sc2 share code.** *Recommend* two repos, with the generic part of
    `starcraftSprite.js` moved into the core and the rest (sprite-sheet layout,
    `starcraftMap.js`) living in sc1 and vendored into sc2 as a submodule. The
