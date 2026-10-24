@@ -3,6 +3,9 @@
 // plans/generic-core-and-game-repos.md), laid out like /Users/op/repos/fog-chess:
 //
 //   node scripts/extract-game.mjs <game> --to <dir> [--core <commit>] [--port N]
+//   node scripts/extract-game.mjs <game> --to <dir> --standalone-test
+//
+// The second form only (re)writes an existing repo's test/standalone.test.js.
 //
 // The new repo keeps the game's history (git filter-repo over games/<game>/, its
 // demos and benches, and its capability checklist), and on top of it one commit
@@ -50,9 +53,10 @@ const UNREGISTERED = {
 };
 
 function parseArgs(argv) {
-  const o = { game: null, to: null, core: null, port: null };
+  const o = { game: null, to: null, core: null, port: null, standaloneTest: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--to') o.to = path.resolve(argv[++i]);
+    else if (argv[i] === '--standalone-test') o.standaloneTest = true;
     else if (argv[i] === '--core') o.core = argv[++i];
     else if (argv[i] === '--port') o.port = Number(argv[++i]);
     else o.game = argv[i];
@@ -95,7 +99,12 @@ function initSubmodules(repo, modulesDir) {
 }
 
 function main() {
-  const { game, to, core, port: portArg } = parseArgs(process.argv);
+  const { game, to, core, port: portArg, standaloneTest: onlyTest } = parseArgs(process.argv);
+  if (onlyTest) {
+    write(path.join(to, 'test', 'standalone.test.js'), standaloneTest(game));
+    console.log(`${game}: wrote ${path.join(to, 'test', 'standalone.test.js')}`);
+    return;
+  }
   const registry = JSON.parse(readFileSync(path.join(ROOT, 'games', 'games.json'), 'utf8'));
   const entry = registry[game] ?? UNREGISTERED[game];
   if (!entry || !existsSync(path.join(ROOT, 'games', game))) { console.error(`no game ${game} in games/`); process.exit(1); }
@@ -155,6 +164,53 @@ The core is vendor/battle-simulator, pinned to ${coreCommit.slice(0, 7)}; JAS ru
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`);
   console.log(`${game}: ${to} (port ${port})`);
+}
+
+/**
+ * test/standalone.test.js: what being a game of its own means, checked through its
+ * server: a session of it starts and the AI plays it, and it is offered no other
+ * game's units (mixing is the core's). A file of its own, so that a repo made
+ * before it existed can be given it as it is (--standalone-test).
+ */
+function standaloneTest(game) {
+  const name = JSON.stringify(game);
+  return `// ${game} as a game of its own, through its server: a session of it starts and
+// the random AI plays it, and it fields its own units only (mixing games is the
+// battle-simulator core's).
+import { test, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const sessions = mkdtempSync(join(tmpdir(), 'battle-${game}-standalone-'));
+process.env.BATTLE_SIM_SESSIONS_DIR = sessions;
+const { server } = await import('../apps/${game}/server.js');
+const http = server.listen(0);
+await new Promise(r => http.once('listening', r));
+const base = \`http://127.0.0.1:\${http.address().port}\`;
+after(() => { http.close(); http.closeAllConnections?.(); rmSync(sessions, { recursive: true, force: true }); });
+
+const registry = JSON.parse(readFileSync(new URL('../apps/${game}/games/games.json', import.meta.url), 'utf8'));
+const seats = registry[${name}].defaultPlayers;
+const post = (path, body) => fetch(base + path, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+}).then(r => r.json());
+
+test('a session of ${game} starts and the random AI plays it', async () => {
+  const s = await post('/sessions', { game: ${name}, players: seats.map(p => ({ ...p, agent: 'random' })), config: { maxTurns: 3 } });
+  assert.ok(s.id && !s.error, s.error);
+  await new Promise(r => setTimeout(r, 1000));
+  const snap = await (await fetch(\`\${base}/sessions/\${s.id}?observer=1\`)).json();
+  assert.notEqual(snap.status, 'error', snap.error);
+  await fetch(\`\${base}/sessions/\${s.id}\`, { method: 'DELETE' });
+});
+
+test('${game} is offered no other game\\'s units', async () => {
+  const setup = await post('/games/${game}/setup', { players: seats, config: {} });
+  assert.deepEqual(setup.foreign ?? [], [], JSON.stringify(setup).slice(0, 300));
+});
+`;
 }
 
 /** The game's display name, from its README's first heading. */
@@ -262,7 +318,7 @@ const run = spawnSync(process.execPath, ['--test', ...files], { cwd: ROOT, stdio
 process.exit(run.status ?? 1);
 `],
     'test/server.test.js': [`// The app serves its game: the server starts on the vendored core, lists the
-// game, and plays a session of it against the random AI.
+// game, and serves the Browser.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -289,6 +345,7 @@ test('the Browser is served', async () => {
   assert.match(await res.text(), /<base href=/);
 });
 `],
+    'test/standalone.test.js': [standaloneTest(game)],
     'start.sh': [`#!/bin/sh
 # ${title} launcher for macOS and Linux: runs the bundled JAS server (vendor/jas)
 # on this repo's apps/ folder, on its own port so it can sit beside an everyday
