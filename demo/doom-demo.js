@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { DoomGame }   from '../games/doom/index.js';
-import { HumanAgent } from '../agents/index.js';
+import { HumanAgent } from '#core/agents/index.js';
 import { WEAPONS }    from '../games/doom/weapons.js';
 import { manhattan }  from '../games/doom/map.js';
 

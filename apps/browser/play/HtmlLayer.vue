@@ -552,7 +552,7 @@ const suggestionArrowGeom = computed(() => props.suggestionArrows.map(a => {
   };
 }));
 
-// ── queued move waypoints (the generic goto-queue mechanic, games/moveQueue.js) ──
+// ── queued move waypoints (the generic goto-queue mechanic, src/kit/moveQueue.js) ──
 // Shown for every unit (not just the selected one) so a plan stays visible on the
 // board turn to turn — a dashed segment per hop plus a numbered dot at each stop,
 // chained from the unit's current square through its queue in order. On by default

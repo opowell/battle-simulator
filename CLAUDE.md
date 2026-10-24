@@ -11,7 +11,7 @@ Two separate repositories are vendored here, and the second contains the first:
 
 - `vendor/obscuro` — the **generic** Obscuro search
   ([opowell/obscuro-ai](https://github.com/opowell/obscuro-ai)). No game
-  knowledge at all. `agents/ObscuroAgent.js` re-exports it.
+  knowledge at all. `src/agents/ObscuroAgent.js` re-exports it.
 - `vendor/obscuro-chess` — the **fog-chess AI**
   ([opowell/obscuro-chess](https://github.com/opowell/obscuro-chess)): board and
   move generation, the Stockfish leaf evaluator (engine binaries included), the

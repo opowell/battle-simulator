@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { CombatMissionGame as G } from './index.js';
 import { createUnit } from './units.js';
 import { TURN_TICKS, ticksLeft, apLeft } from './rules.js';
-import { num } from '../coord.js';
-import { GameEngine } from '../../engine/index.js';
+import { num } from '#core/kit/coord.js';
+import { GameEngine } from '#core/engine/index.js';
 
 // A plain open field (the border is wall, as on every CM map) with optional wall tiles.
 function field(walls = [], w = 16, h = 10) {

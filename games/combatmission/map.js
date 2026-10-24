@@ -1,5 +1,5 @@
-import { forEachCell, pointInShape } from '../terrainShapes.js';
-import { tileNum } from '../coord.js';
+import { forEachCell, pointInShape } from '#core/kit/terrainShapes.js';
+import { tileNum } from '#core/kit/coord.js';
 
 export const TERRAIN = {
   FLOOR:  '.',
@@ -51,7 +51,7 @@ export function createMap() {
 //
 // Terrain authored as an array of shapes (rectangles + ovals) instead of a hand-laid
 // tile grid. Each shape's `kind` decides how it rasterizes onto the tile grid (for
-// movement/LOS) and how the client draws it as a layered SVG. See games/terrainShapes.js.
+// movement/LOS) and how the client draws it as a layered SVG. See src/kit/terrainShapes.js.
 
 const CM_SHAPE_STYLES = {
   building: { tile: TERRAIN.WALL,  render: { fill: '#5a5045', stroke: '#6b5f50' }, name: 'Building', description: 'Impassable, blocks line of sight.' },

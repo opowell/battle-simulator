@@ -1,6 +1,6 @@
-import { GameEngine }       from '../engine/index.js';
+import { GameEngine }       from '#core/engine/index.js';
 import { MudAndBloodGame }  from '../games/mudandblood/index.js';
-import { HumanAgent }       from '../agents/index.js';
+import { HumanAgent }       from '#core/agents/index.js';
 import { manhattan }        from '../games/mudandblood/grid.js';
 
 // ---------------------------------------------------------------------------

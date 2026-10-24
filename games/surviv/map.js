@@ -15,8 +15,8 @@
 //     file (isWalkableContinuous) and belief.js's LOS blockers takes an optional
 //     destroyed-id/-cell set so a broken crate stops blocking movement and sight.
 
-import { forEachCell, pointInShape } from '../terrainShapes.js';
-import { num, tileNum } from '../coord.js';
+import { forEachCell, pointInShape } from '#core/kit/terrainShapes.js';
+import { num, tileNum } from '#core/kit/coord.js';
 
 export const CRATE_HP  = 60;
 export const BARREL_HP = 40;

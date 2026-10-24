@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
 import { Sc1Game, UNITS } from './index.js';
 import { BUILDINGS } from './buildings.js';
-import { RandomAgent } from '../../agents/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 const players = [
   { id: 'p1', name: 'P1', agent: RandomAgent, race: 'protoss' },

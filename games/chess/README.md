@@ -74,7 +74,7 @@ Any scenario runs from the demo with `--scenario=<id>`, with or without `--auto`
 The Scenario picker offers one human seat against one AI in each of five games.
 The first two are chess as described above. The other three take the same pieces
 into another quadrant of the (space × time) plane — the axes
-[games/spacetime.js](../spacetime.js) already names for every game in this repo —
+[src/kit/spacetime.js](../spacetime.js) already names for every game in this repo —
 and are implemented in [games/chess/spacetime.js](spacetime.js), which
 `ChessGame` delegates to whenever the quadrant isn't discrete/discrete.
 

@@ -19,7 +19,7 @@
    * a single hop.
    *
    * Two shapes of board, matching buildField's two ways of placing a token:
-   *   • continuous-location games (doom/cs/combatmission — see games/coord.js) carry
+   *   • continuous-location games (doom/cs/combatmission — see src/kit/coord.js) carry
    *     real positions in a parallel `grid.units` channel;
    *   • everything else embeds its units in the cells, located by cell index.
    *

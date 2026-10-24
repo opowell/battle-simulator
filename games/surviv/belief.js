@@ -20,9 +20,9 @@
 // ---------------------------------------------------------------------------
 
 import { isWalkable, getReachable, isInBush, destroyedIdSet } from './map.js';
-import { num, tilePos } from '../coord.js';
-import { euclidean, seesPoint, viewersOf } from '../vision.js';
-import { segmentClearOf } from '../terrainShapes.js';
+import { num, tilePos } from '#core/kit/coord.js';
+import { euclidean, seesPoint, viewersOf } from '#core/kit/vision.js';
+import { segmentClearOf } from '#core/kit/terrainShapes.js';
 import { BUSH_SPOT_RANGE, MOVE_RANGE } from './weapons.js';
 
 export const SURVIV_VISION = { range: 5, fovDegrees: 110, metric: euclidean };
@@ -58,7 +58,7 @@ export function spotsPoint(viewer, x, y, cfg, map) {
 }
 
 // getVisibleState helper: own units + any enemy any own unit actually spots (see
-// spotsPoint). Mirrors games/vision.js's filterVisibleUnits, with the bush wrinkle.
+// spotsPoint). Mirrors src/kit/vision.js's filterVisibleUnits, with the bush wrinkle.
 export function survivFilterVisibleUnits(units, teamId, cfg, map, numXY) {
   const viewers = viewersOf(units, teamId, cfg, numXY);
   return units.filter(u => {

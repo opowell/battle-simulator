@@ -1,14 +1,14 @@
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
-import { tileNum } from '../coord.js';
-import { buildStarcraftMap, MAP_WIDTH, MAP_HEIGHT, mulberry32 } from '../mapTypes/starcraftMap.js';
+import { tileNum } from '#core/kit/coord.js';
+import { buildStarcraftMap, MAP_WIDTH, MAP_HEIGHT, mulberry32 } from './starcraftMap.js';
 
 export { mulberry32, MAP_WIDTH, MAP_HEIGHT };
 
 /**
  * Generate the SC1 map — "Aiur Crossing", a hand-authored 2-player map built from
- * grouped terrain features (see games/mapTypes/starcraftMap.js), the same shape-based
+ * grouped terrain features (see games/sc1/starcraftMap.js), the same shape-based
  * approach as games/doom/map.js. Four mineral-ring bases per player (corner main,
  * natural, third, and a 4th in the opposite corner), impassable rock outcrops that
  * carve the field into lanes, and a contested central plateau ringed by cliffs with
@@ -24,7 +24,7 @@ export function generateMap() {
 }
 
 // Continuous (non-rasterized) terrain lookup for free-form unit movement — positions
-// can now be continuous (see games/coord.js), so snap to the tile they sit in before
+// can now be continuous (see src/kit/coord.js), so snap to the tile they sit in before
 // indexing the tile dictionary.
 export function isPassableContinuous(board, x, y, domain) {
   const t  = board.tiles[`${tileNum(x)},${tileNum(y)}`];
@@ -47,7 +47,7 @@ export function getReachableTiles(unit, board, allUnits, allBuildings, playerId)
   const stats = UNITS[unit.type];
   const { domain } = stats;
   // Still builds the AI's discrete candidate set even once positions are continuous
-  // (free-form movement, see games/coord.js), so every position is pinned to the
+  // (free-form movement, see src/kit/coord.js), so every position is pinned to the
   // integer tile it sits in before indexing.
   const key = p => `${tileNum(p.x)},${tileNum(p.y)}`;
 

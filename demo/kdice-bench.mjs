@@ -20,12 +20,12 @@
 //
 // Output: wins for each side and the win rate against the share an equal agent would
 // take (1/N at an N-seat table, 50% in a duel).
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { KDiceGame } from '../games/kdice/index.js';
 import { makeKDiceAgent } from '../games/kdice/agent.js';
-import { makeGreedyAgent } from '../agents/GreedyAgent.js';
-import { ObscuroAgent } from '../agents/ObscuroAgent.js';
-import { sidesEval } from '../games/evalHelpers.js';
+import { makeGreedyAgent } from '#core/agents/GreedyAgent.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { sidesEval } from '#core/kit/evalHelpers.js';
 
 const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const flag = (name, dflt) => {

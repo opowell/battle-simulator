@@ -1,7 +1,7 @@
-import { unitStrengthEval } from '../evalHelpers.js';
+import { unitStrengthEval } from '#core/kit/evalHelpers.js';
 import { UNIT_DEFS, createUnit } from './units.js';
 import { createMap, createMapFromShapes, renderMap, TERRAIN, isPassableContinuous, getMoveCostContinuous } from './map.js';
-import { resolveSpaceTime } from '../spacetime.js';
+import { resolveSpaceTime } from '#core/kit/spacetime.js';
 import {
   getLegalActions, getSearchActions, isActionLegal, applyActions, getActionDuration,
   getProjectileSpeed, actionKey, freshPerTurn, reachLeft, spaceTimeOf, sees,
@@ -11,10 +11,10 @@ import { getCombatMissionBelief } from './belief.js';
 import { SHAPE_SCENARIOS } from './scenarios.js';
 import { squareCentre } from './grid.js';
 import { terrainArt, unitArt } from './art.js';
-import { tilesToShapes } from '../terrainShapes.js';
-import { num, posToWire } from '../coord.js';
-import { MAP_ZOOM_OPTION } from '../renderOptions.js';
-import { tableUnits, whole } from '../../engine/foreignUnits.js';
+import { tilesToShapes } from '#core/kit/terrainShapes.js';
+import { num, posToWire } from '#core/kit/coord.js';
+import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
+import { tableUnits, whole } from '#core/engine/foreignUnits.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
 
@@ -216,7 +216,7 @@ function toGrid(state) {
   const cells = boardCells(board);
 
   // Continuous unit channel: real (possibly non-integer) positions as decimal strings
-  // (see games/coord.js), built directly from state.units.
+  // (see src/kit/coord.js), built directly from state.units.
   const st = spaceTimeOf(state);
   const unitList = (units ?? []).filter(u => u.alive).map(u => {
     const p = posToWire(u.position);
@@ -252,7 +252,7 @@ function toGrid(state) {
 
 // The terrain-only cells for a board, built once per board object. Handing back the
 // same array every snapshot is also what lets the wire send it once (a board part
-// that comes back as the very same object is static — engine/gridStatics.js).
+// that comes back as the very same object is static — src/engine/gridStatics.js).
 const boardCellsCache = new WeakMap();
 function boardCells(board) {
   let cells = boardCellsCache.get(board);
@@ -308,7 +308,7 @@ function unitHeading(state, u) {
 
 export const CombatMissionGame = {
   // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
-  // minus the enemy's. See games/evalHelpers.js.
+  // minus the enemy's. See src/kit/evalHelpers.js.
   evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'CombatMission',
   scenarios: [
@@ -344,7 +344,7 @@ export const CombatMissionGame = {
     if (!UNIT_DEFS[type] || !position) return null;
     return { ...createUnit(id, type, ownerId, position), perTurn: freshPerTurn(spaceTimeOf(state), UNIT_DEFS[type]) };
   },
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // rifle squad: 10 hp, 5 attack, range 5, 2 moves; armour is read one higher than
   // it is, so a squad's 0 is one point of defence and a Tiger's 7 is eight.
   foreignUnits: tableUnits({
@@ -371,7 +371,7 @@ export const CombatMissionGame = {
   getProjectileSpeed,
   actionKey,
   // A move names only its destination; in a we-go round it glides from where the unit
-  // stands (engine/KineticResolver.js).
+  // stands (src/engine/KineticResolver.js).
   movesFromBody: true,
   // The board, stamped with the session's time axis (the UI's time scrub reads it).
   toGrid: (state) => ({ ...toGrid(state), spaceType: 'continuous', timeType: spaceTimeOf(state).time }),

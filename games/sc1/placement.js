@@ -2,7 +2,7 @@
 //
 // A structure's rules occupy one square (its `position`), but it DRAWS much bigger: a
 // command center's plate is 2.4 tokens across, about two squares, centred on the middle
-// of its square (games/starcraftSprite.js's scBuildingSize / scBuildingHalfSide). A
+// of its square (games/sc1/starcraftSprite.js's scBuildingSize / scBuildingHalfSide). A
 // unit put down "on the next square" — which is how the opening and every finished
 // unit used to be placed — therefore stood on the plate, drawn half inside the
 // building. This module is the one place that knows that ground, and every way SC1
@@ -15,14 +15,14 @@
 // a worker toward the base's mineral field — between the base and its minerals, where
 // StarCraft starts its workers — and anything else out of the base's open side.
 //
-// Positions are exact (games/coord.js): every spot is a whole number of twentieths
+// Positions are exact (src/kit/coord.js): every spot is a whole number of twentieths
 // of a square, built as a BigNumber, never float arithmetic.
 
 import { TERRAIN } from './terrain.js';
 import { UNITS, UNIT_PX } from './units.js';
 import { BUILDINGS } from './buildings.js';
-import { scBuildingHalfSide, scUnitRingR, TOKEN_R } from '../starcraftSprite.js';
-import { C, num, tileNum } from '../coord.js';
+import { scBuildingHalfSide, scUnitRingR, TOKEN_R } from './starcraftSprite.js';
+import { C, num, tileNum } from '#core/kit/coord.js';
 
 const Q = 20;          // spots are on a 1/20-square lattice
 const STEP = 6;        // between candidate spots along a ring: 0.3 squares

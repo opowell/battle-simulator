@@ -240,7 +240,7 @@ nothing here starts on its own.
 
 ${install}
 
-Use it as a library — \`engine/index.js\` is the entry point, \`games/*/index.js\`
+Use it as a library — \`src/engine/index.js\` is the entry point, \`games/*/index.js\`
 are the game definitions — or run a match from the command line:
 
     node demo/chess-demo.js --auto

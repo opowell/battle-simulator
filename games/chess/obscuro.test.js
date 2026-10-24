@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ChessGame } from './index.js';
-import { ObscuroAgent, obscuroStrategy } from '../../vendor/obscuro-chess/src/index.js';
+import { ObscuroAgent, obscuroStrategy } from '#obscuro-chess/index.js';
 import { solveMatrixGame } from './cfr.js';
-import { getAllLegalMoves } from '../../vendor/obscuro-chess/src/index.js';
+import { getAllLegalMoves } from '#obscuro-chess/index.js';
 import { quit as stockfishQuit } from './stockfish.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 const unit = (id, ownerId, type, position) => ({ id, ownerId, type, position, alive: true });
 const noCastle = { white: { kingSide: false, queenSide: false }, black: { kingSide: false, queenSide: false } };

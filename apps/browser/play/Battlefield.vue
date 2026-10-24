@@ -1638,7 +1638,7 @@ function actionGridCoord(action, field) {
   return null;
 }
 
-// ── queued future moves (the player-level plan, games/planQueue.js) ───────────
+// ── queued future moves (the player-level plan, src/kit/planQueue.js) ───────────
 // Moves this seat has committed to for its NEXT turns, and the moves that could be
 // added behind them — both served by the session (see api-server's toJSON). Unlike
 // everything else the board interacts with, these are not legal ACTIONS: a plan is
@@ -1681,7 +1681,7 @@ const unitMoves = computed(() => {
 // Whether unitMoves are currently backed by 'queue-move' actions rather than 'move'
 // — i.e. moveUnitId's unit has spent its moves for now and further clicks plan a
 // future move instead of moving right away (the generic goto-queue mechanic, see
-// games/moveQueue.js; ui.moveQueue !== false by default). Derived from action type,
+// src/kit/moveQueue.js; ui.moveQueue !== false by default). Derived from action type,
 // not any per-game stat field — games use `mp`/`maxMp` for different things (civ1:
 // movement points; FFTA: real magic points), so type is the only universal signal.
 const queuingMoves = computed(() => {
@@ -2077,12 +2077,12 @@ function handleSqClick(col, row, x, y, mods) {
     return;
   }
   if ((canMove.value || planning.value) && moveUnitId.value) {
-    // Continuous-location maps (see games/coord.js): movement is a straight-line slide to
+    // Continuous-location maps (see src/kit/coord.js): movement is a straight-line slide to
     // the exact point clicked — no grid to snap to. The server (each game's isActionLegal)
     // is the real authority on walls/occupancy/cost; here we only gate on the unit's move
     // radius so an out-of-range click deselects instead of firing off a certain-reject.
     // The click point goes on the wire as decimal strings (the server parses them to
-    // authoritative BigNumbers, see games/coord.js posToWire/parsePos).
+    // authoritative BigNumbers, see src/kit/coord.js posToWire/parsePos).
     // Games that list 'move' in field.ui.aimedActionTypes (CS) route this through the
     // explicit "Move…" button + aim overlay instead (see startAim/aiming above), so a
     // bare click on a selected unit's own square shouldn't also slide it.
@@ -2723,8 +2723,8 @@ function onKeyDown(e) {
   else if (e.key === 'Backspace') {
     // Drops the last queued move. Two mechanics land here, because to the player
     // they are one gesture: the player-level plan while waiting for a turn
-    // (games/planQueue.js), and the selected unit's own goto queue on it
-    // (games/moveQueue.js — see ActionsPanel's "Undo last queued move" button, the
+    // (src/kit/planQueue.js), and the selected unit's own goto queue on it
+    // (src/kit/moveQueue.js — see ActionsPanel's "Undo last queued move" button, the
     // mouse equivalent). ui.moveQueue defaults true.
     if (planning.value && plannedMoves.value.length) {
       e.preventDefault();

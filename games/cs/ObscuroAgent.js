@@ -23,8 +23,8 @@
 // known world, which is exactly the right behaviour.
 // ---------------------------------------------------------------------------
 
-import { ObscuroAgent as GenericObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { makeHooks, runObscuroSearch } from '../../vendor/obscuro/src/search.js';
+import { ObscuroAgent as GenericObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { makeHooks, runObscuroSearch } from '#obscuro/search.js';
 import { csScore, unitValue, CS_SEARCH_WIN, ROUND_WIN } from './eval.js';
 
 // EXPOSURE — the CS analogue of chess's KING_HANG.

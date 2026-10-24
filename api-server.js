@@ -21,20 +21,20 @@ import { fileURLToPath }         from 'node:url';
 
 
 import { WebSocketServer } from './vendor/ws/wrapper.mjs';
-import { stripStatics, stripBodyStatics, haveFromHeader, socketHolder } from './engine/gridStatics.js';
-import { GridTimeline } from './engine/gridFrames.js';
+import { stripStatics, stripBodyStatics, haveFromHeader, socketHolder } from './src/engine/gridStatics.js';
+import { GridTimeline } from './src/engine/gridFrames.js';
 
-import { GameEngine, rosterError, rosterFromState, setupPreview, cellMapper, SETUP_KEY } from './engine/index.js';
-import { registerGames, dressGrid } from './engine/foreignUnits.js';
-import { planReconfigure, carriedRoster, rebuiltState, editedState, livePreview } from './engine/reconfigure.js';
-import { validate as validateAction } from './engine/ActionValidator.js';
+import { GameEngine, rosterError, rosterFromState, setupPreview, cellMapper, SETUP_KEY } from './src/engine/index.js';
+import { registerGames, dressGrid } from './src/engine/foreignUnits.js';
+import { planReconfigure, carriedRoster, rebuiltState, editedState, livePreview } from './src/engine/reconfigure.js';
+import { validate as validateAction } from './src/engine/ActionValidator.js';
 import * as gameEditor from './gameEditor.js';
 import { buildCatalog, createRecordingReader } from './catalog.js';
-import { RandomAgent } from './agents/index.js';
-import { ApiAgent } from './agents/ApiAgent.js';
-import { ObscuroAgent } from './agents/ObscuroAgent.js';
-import { makeGreedyAgent } from './agents/GreedyAgent.js';
-import { makeGenericAgent } from './agents/generic/GenericAgent.js';
+import { RandomAgent } from './src/agents/index.js';
+import { ApiAgent } from './src/agents/ApiAgent.js';
+import { ObscuroAgent } from './src/agents/ObscuroAgent.js';
+import { makeGreedyAgent } from './src/agents/GreedyAgent.js';
+import { makeGenericAgent } from './src/agents/generic/GenericAgent.js';
 
 import { ChessGame }         from './games/chess/index.js';
 import { Civ1Game }          from './games/civ1/index.js';
@@ -141,14 +141,14 @@ async function serveApp(appName, req, res) {
   }
 }
 
-// Serve repo ES modules (games/*, agents/*, …) to the browser analysis Web
+// Serve repo ES modules (games/*, src/agents/*, …) to the browser analysis Web
 // Worker (apps/browser/play/analysis-worker.js), which imports the real chess + CFR
 // code directly instead of a bundle. Restricted to JS/WASM so it can't read
 // arbitrary source, with path-escape protection. The worker imports absolute
 // URLs like /lib/games/chess/ChessGame.js; those modules' own relative imports
 // (./board.js, ../../vendor/obscuro/src/search.js) then resolve under /lib/ too.
 //
-// An npm package imported by its bare name ('bignumber.js', from games/coord.js)
+// An npm package imported by its bare name ('bignumber.js', from src/kit/coord.js)
 // is the exception: a browser resolves a bare specifier only through an import
 // map, and a worker has none. So each one is rewritten to a URL under
 // /lib/node_modules/, relative to the module importing it, and that path serves
@@ -173,11 +173,25 @@ function packageEntry(dir) {
   return typeof entry === 'string' ? entry.replace(/^\.\//, '') : null;
 }
 const packageName = (spec) => spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/');
+// A `#core/…` subpath import (package.json's "imports") is rewritten the same
+// way, to the file it maps to under the root.
+const SUBPATH_IMPORTS = Object.entries(JSON.parse(readFileSync(resolve(ROOT_DIR, 'package.json'), 'utf8')).imports ?? {})
+  .map(([from, to]) => [from.replace(/\*$/, ''), to.replace(/\*$/, '').replace(/^\.\//, '')]);
+function subpathTarget(spec) {
+  const hit = SUBPATH_IMPORTS.find(([from]) => spec.startsWith(from));
+  return hit ? hit[1] + spec.slice(hit[0].length) : null;
+}
 // `from 'x'` and `import('x')` / `import 'x'`, for an x that is neither relative
 // nor absolute nor a URL or `node:` builtin (no colon).
 const BARE_IMPORT = /(\bfrom\s*|\bimport\s*\(?\s*)(['"])([^'"./][^'":]*)\2/g;
 function rewriteBareImports(source, relPath) {
   return source.replace(BARE_IMPORT, (whole, lead, quote, spec) => {
+    if (spec.startsWith('#')) {
+      const target = subpathTarget(spec);
+      if (!target) return whole;
+      const url = posix.relative(posix.dirname(relPath), target);
+      return `${lead}${quote}${url.startsWith('.') ? url : `./${url}`}${quote}`;
+    }
     const name = packageName(spec);
     const dir = packageDir(name);
     const file = dir && (spec.slice(name.length + 1) || packageEntry(dir));
@@ -365,7 +379,7 @@ const GAMES = {
   arena:         { game: ArenaGame,         minPlayers: 2, maxPlayers: 4,  defaultPlayers: [{ id: 'p1', name: 'Player 1' }, { id: 'p2', name: 'Player 2' }] },
 };
 
-// Every game may field units of the others (engine/foreignUnits.js) — those that
+// Every game may field units of the others (src/engine/foreignUnits.js) — those that
 // declare `foreignUnits` lend theirs and take the others' in.
 registerGames(GAMES);
 
@@ -484,7 +498,7 @@ class Session {
     this.status = 'active';
     this.result = null;
     this.error = null;
-    // The scrub-bar timeline, stored as DIFFS (engine/gridFrames.js): frame 0 carries a
+    // The scrub-bar timeline, stored as DIFFS (src/engine/gridFrames.js): frame 0 carries a
     // whole grid, every frame after it only the cells (and any other grid fields) that
     // changed since the one before. Holding them whole cost ~460 KB EACH on civ1 —
     // ~275 MB a session, never released until the session is explicitly deleted, on a
@@ -642,7 +656,7 @@ class Session {
       ? (client.viewAs ? this.toJSON(client.viewAs) : this.toJSON(null, { observer: true }))
       : this.toJSON(client.playerId);
     // The board's static parts (terrain shapes, …) go only to a socket that doesn't
-    // hold them yet, else by key — see engine/gridStatics.js.
+    // hold them yet, else by key — see src/engine/gridStatics.js.
     const msg = this._deltaFor(client, full);
     client.statics ??= socketHolder();
     const payload = JSON.stringify(msg?.grid
@@ -728,7 +742,7 @@ class Session {
   }
 
   /**
-   * Diff `preState.units` (generic, per games/types.js: an alive-only array like
+   * Diff `preState.units` (generic, per src/kit/types.js: an alive-only array like
    * chess's, or the alive:false-tagged form the type doc describes — both are
    * handled) against the just-stepped `this.engine.state.units` and append one
    * casualty entry per unit that dropped out. Zero game-specific code: it only
@@ -785,7 +799,7 @@ class Session {
 
   /**
    * Record a position on the scrub-bar timeline. Sampling, diffing and the bound on
-   * how much is kept all live in engine/gridFrames.js's GridTimeline.
+   * how much is kept all live in src/engine/gridFrames.js's GridTimeline.
    */
   _pushGridHistory(g) {
     this.gridTimeline.push(g);
@@ -903,7 +917,7 @@ class Session {
 
   /**
    * Freeze how the game looks right now, so the run loop can move past it. Engine
-   * states are REPLACED rather than mutated on each step (engine/StateManager.js
+   * states are REPLACED rather than mutated on each step (src/engine/StateManager.js
    * freeze — the same guarantee _recordCasualties already relies on to diff against
    * a pre-step state), so holding this position costs one reference; the log and the
    * two running tallies are copied because they are appended to in place.
@@ -1098,7 +1112,7 @@ class Session {
    * recorded in `changes` and pushed to everyone, so nobody's game moves under
    * them unannounced.
    *
-   * How each change lands is worked out generically (engine/reconfigure.js): the
+   * How each change lands is worked out generically (src/engine/reconfigure.js): the
    * engine's own options just take effect, settings the game copied into its
    * state are patched there, and anything that changes the world itself — space,
    * time, map, or an edited set of units — rebuilds the position from where every
@@ -1140,7 +1154,7 @@ class Session {
 
     // A new world (space, time, map) is rebuilt from a fresh opening with every
     // unit carried across; units edited on the SAME world go onto the game as it
-    // stands, so its cities, research and turn are kept (engine/reconfigure.js).
+    // stands, so its cities, research and turn are kept (src/engine/reconfigure.js).
     const plan = planReconfigure(game, nextDefs, fromConfig, toConfig);
     const rebuild = plan.kind === 'rebuild' || units != null;
     let roster = null;
@@ -1377,7 +1391,7 @@ class Session {
     // Whose eyes this board is drawn through, stamped on the state itself so
     // `toGrid` can leave out what this viewer isn't entitled to see. Fog already
     // filters the BOARD; this is for the things that are private without being
-    // hidden — a player's queued future moves (games/planQueue.js), which the
+    // hidden — a player's queued future moves (src/kit/planQueue.js), which the
     // opponent must not read off the board even in a game with no fog at all. An
     // observer (no playerId) is a viewer with no side, and sees no one's plans.
     const viewState = viewStateRaw && playerId
@@ -1462,7 +1476,7 @@ class Session {
       pendingPlayers: [...this.apiAgents.entries()].filter(([, a]) => a.pending).map(([id]) => id),
       legalActions: pending?.legalActions ?? null,
       // The seat's own queued future moves, and the moves that could be added to
-      // the end of them (games/planQueue.js). Both are `null` for a game with no
+      // the end of them (src/kit/planQueue.js). Both are `null` for a game with no
       // such mechanic and for an observer, who has no plan to hold.
       plan: (!fogNoPlayer && playerId && game.planFrontier && rawState)
         ? (rawState.gameSpecific?.plan?.[playerId] ?? []) : null,
@@ -1497,7 +1511,7 @@ class Session {
   }
 
   // Keep a HUMAN seat's imperfect-information belief up to date, the same way an AI
-  // seat's is kept by the generic ObscuroAgent (see agents/ObscuroAgent.js: it
+  // seat's is kept by the generic ObscuroAgent (see src/agents/ObscuroAgent.js: it
   // samples worlds — which advances the belief for this turn — and then reports its
   // chosen move through onActionCommitted).
   //
@@ -1562,7 +1576,7 @@ function applyAxisLabels(game, grid) {
 
 // What a client is sent to draw `state`: the game's own toGrid, with its static axis
 // labels, and every unit from another game drawn as itself rather than as the type
-// it plays as here (engine/foreignUnits.js dressGrid).
+// it plays as here (src/engine/foreignUnits.js dressGrid).
 function renderGrid(game, state) {
   let grid = game.toGrid(state);
   if (state?.units?.some(u => u?.origin)) grid = dressGrid(game, state, grid, cellMapper(game, state, grid).toCell);
@@ -1589,7 +1603,7 @@ function readBody(req) {
 function send(res, status, body) {
   // Compact: a snapshot is hundreds of KB, and indenting it nearly doubled that.
   // A board's static parts are left out when the caller says it already holds them
-  // (the browser's X-Grid-Have header — see engine/gridStatics.js).
+  // (the browser's X-Grid-Have header — see src/engine/gridStatics.js).
   const payload = JSON.stringify(stripBodyStatics(body, haveFromHeader(res.req?.headers?.['x-grid-have'])));
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(payload);
@@ -1610,10 +1624,10 @@ function route(req) {
 // ---------------------------------------------------------------------------
 
 // Available for every game. 'greedy' is the generic low-memory/high-performance
-// 1-ply heuristic agent (agents/GreedyAgent.js); 'generic' searches its own turn
+// 1-ply heuristic agent (src/agents/GreedyAgent.js); 'generic' searches its own turn
 // and judges positions from unit numbers alone, so it needs no evaluateState
-// (agents/generic/); 'obscuro' is the generic equilibrium/CFR agent
-// (agents/ObscuroAgent.js). A game may override either by
+// (src/agents/generic/); 'obscuro' is the generic equilibrium/CFR agent
+// (src/agents/ObscuroAgent.js). A game may override either by
 // declaring an entry with the same id in its own `agents` array (chess does).
 const BUILTIN_AGENTS = [
   { id: 'random', name: 'AI (random)' },
@@ -2128,7 +2142,7 @@ async function handleControl(req, res, id) {
 // survives a reload and updates immediately for the player who set it (and anyone else
 // watching, via the broadcast below).
 /**
- * Replace a player's queued future moves (games/planQueue.js). Deliberately NOT a
+ * Replace a player's queued future moves (src/kit/planQueue.js). Deliberately NOT a
  * turn action and deliberately not gated on whose turn it is: the moment to plan
  * your next move is while the opponent is still thinking about theirs, and a
  * queued move that fires the instant your turn opens is only safe if you can call
@@ -2890,7 +2904,7 @@ function handleUpgrade(req, socket, head, prefix = '') {
   // to see everything — a per-player view is strictly less information).
   const viewAs = observer ? (url.searchParams.get('viewAs') || null) : null;
   wss.handleUpgrade(req, socket, head, (ws) => {
-    // `have`: the board parts (by key) the client already holds — engine/gridStatics.js.
+    // `have`: the board parts (by key) the client already holds — src/engine/gridStatics.js.
     const client = { ws, playerId, observer, viewAs, statics: socketHolder(url.searchParams.get('have')) };
     session.wsClients.add(client);
     // Immediate snapshot so a freshly-connected client is in sync without a REST

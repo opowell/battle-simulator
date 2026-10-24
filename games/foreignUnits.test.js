@@ -1,6 +1,6 @@
 /**
  * Every registered game, against every other: each game's units can be put into
- * each other game (engine/foreignUnits.js).
+ * each other game (src/engine/foreignUnits.js).
  *
  * What is held to it, game by game:
  *   - it takes part at all: a conversion factor for all five stats, and a profile
@@ -16,9 +16,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   registerGames, takesPart, profilesOf, foreignCatalog, dressGrid, originOf, STATS,
-} from '../engine/foreignUnits.js';
-import { setupPreview, rosterFromState, cellMapper } from '../engine/startingSetup.js';
-import { GameEngine } from '../engine/GameEngine.js';
+} from '#core/engine/foreignUnits.js';
+import { setupPreview, rosterFromState, cellMapper } from '#core/engine/startingSetup.js';
+import { GameEngine } from '#core/engine/GameEngine.js';
 
 import { ChessGame }         from './chess/index.js';
 import { Civ1Game }          from './civ1/index.js';

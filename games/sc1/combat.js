@@ -1,6 +1,6 @@
 import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
-import { num, tileNum } from '../coord.js';
+import { num, tileNum } from '#core/kit/coord.js';
 
 /**
  * Apply one attack from attacker to defender.
@@ -86,7 +86,7 @@ export function resolveAttackVsBuilding(attacker, building, state, rng) {
 
 /**
  * Chebyshev distance between two positions. `a`/`b` may be a unit's continuous
- * position (BigNumber, see games/coord.js) or a building's plain-number position —
+ * position (BigNumber, see src/kit/coord.js) or a building's plain-number position —
  * read both in Number-space so either shape works.
  */
 export function chebyshev(a, b) {

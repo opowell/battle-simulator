@@ -26,13 +26,13 @@
 // ---------------------------------------------------------------------------
 
 import { isWalkable, getReachable, perimeterBlockShapes } from './map.js';
-import { num, tilePos } from '../coord.js';
-import { euclidean, seesPoint } from '../vision.js';
-import { segmentHitsSolid } from '../terrainShapes.js';
+import { num, tilePos } from '#core/kit/coord.js';
+import { euclidean, seesPoint } from '#core/kit/vision.js';
+import { segmentHitsSolid } from '#core/kit/terrainShapes.js';
 import { SMOKE_RADIUS, smokeOval } from './weapons.js';
 
 // Field-of-vision config, shared with CsGame.getVisibleState so the belief's visible set
-// matches the observation exactly (see games/vision.js): Euclidean range (a circle,
+// matches the observation exactly (see src/kit/vision.js): Euclidean range (a circle,
 // matching the design UI veil) + facing cone + line-of-sight blocked by walls (the
 // authored wall shapes) and smoke clouds.
 export const CS_VISION = { range: 42, fovDegrees: 90, metric: euclidean }; // tripled alongside the 3x map resize (2026-07-17)
@@ -86,7 +86,7 @@ const THREAT_BIAS  = 3;  // over-sample tiles near our players
 const k = (x, y) => `${x},${y}`;
 const coords = key => key.split(',').map(Number);
 // `p` may be a belief tile ({x,y} Numbers) or a live unit position (BigNumbers), so
-// read both coordinates in Number-space (see games/coord.js).
+// read both coordinates in Number-space (see src/kit/coord.js).
 const cheby = (x, y, p) => Math.max(Math.abs(x - num(p.x)), Math.abs(y - num(p.y)));
 
 function weightedPick(items, weights, rng) {

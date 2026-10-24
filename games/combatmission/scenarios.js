@@ -1,5 +1,5 @@
 // Shape-based (non-grid terrain) scenarios for Combat Mission. Each scenario authors
-// terrain as an array of rectangles and ovals (see games/terrainShapes.js) and a
+// terrain as an array of rectangles and ovals (see src/kit/terrainShapes.js) and a
 // `deploy` table of [unitType, x, y] placements. players[0] fields `allied`, players[1]
 // fields `axis`. All maps are 22×16 with a wall border; deployments keep the Allies
 // north (low y) and the Axis south (high y). See CombatMissionGame.js.

@@ -1,9 +1,9 @@
 import { generateMap, getLargestConnectedRegion } from './map.js';
 import { getKDiceBelief, visibleTerritoryIds } from './belief.js';
-import { hexLayoutBounds, territoryBorders } from '../mapTypes/hexagon.js';
+import { hexLayoutBounds, territoryBorders } from '#core/kit/hexagon.js';
 import { MAX_DICE, DEFAULT_STOCK_MAX, winProbability } from './odds.js';
 import { KDiceAgent, evaluatePosition } from './agent.js';
-import { whole } from '../../engine/foreignUnits.js';
+import { whole } from '#core/engine/foreignUnits.js';
 
 /**
  * Every unit a roster laid out, turned into dice: its hp's worth, on the territory
@@ -243,7 +243,7 @@ function applyActions(state, playerActions, rng = Math.random) {
     };
 
     // Stamp the dice-roll result directly onto the action object — the engine's
-    // log stores this exact `action` reference (see engine/GameEngine.js
+    // log stores this exact `action` reference (see src/engine/GameEngine.js
     // _stepDiscrete's `playerActions.push`), so mutating it here is how the
     // battle's outcome ends up visible in the game log after the fact rather
     // than only in the transient (next-turn-clearing) gameSpecific.lastBattle.
@@ -485,7 +485,7 @@ function territoryLooks(state, ids) {
 // Each territory renders as a blob of colored hexes (owner's team colour on
 // every hex it owns — see SchematicLayer's 'team' tile-colour sentinel),
 // with a single dice-count "unit" token anchored at the territory's capital
-// hex (its most central cell — see games/mapTypes/hexagon.js territoryCapital).
+// hex (its most central cell — see src/kit/hexagon.js territoryCapital).
 // Non-capital hexes carry no unit, only a `territoryId` so the client can
 // resolve a click anywhere in the blob to the territory as a whole.
 function toGrid(state) {
@@ -546,7 +546,7 @@ function toGrid(state) {
   }
 
   // One clean outline per territory (only the edges bordering a different
-  // territory or the map edge — see games/mapTypes/hexagon.js) instead of a
+  // territory or the map edge — see src/kit/hexagon.js) instead of a
   // full hex lattice, so the board reads as a blob map, not a honeycomb. Each
   // shared edge is emitted once (deduped in territoryBorders itself), tagged
   // with BOTH bordering territories, so the client can correctly recolor it
@@ -633,7 +633,7 @@ export const KDiceGame = {
     return type === 'die' ? { id, ownerId, type, position, alive: true, hp: 1, maxHp: 1 } : null;
   },
   applyStartingUnits: (state) => absorbUnits(state),
-  // Units from other games (engine/foreignUnits.js). The conversion factor is one
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is one
   // die. A die has no punch or guard of its own — every die rolls the same — so a
   // unit's attack and defense ride in its hp with its toughness, and the lot is how
   // many dice it is worth. A battle is between neighbours, and so is a move.

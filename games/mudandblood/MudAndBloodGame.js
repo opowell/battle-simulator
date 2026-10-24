@@ -1,10 +1,10 @@
-import { unitStrengthEval } from '../evalHelpers.js';
+import { unitStrengthEval } from '#core/kit/evalHelpers.js';
 import { createMap, renderMap } from './map.js';
 import { getReachable, manhattan } from './grid.js';
 import { calcHitChance, rollHit, rollDamage } from './combat.js';
 import { createUnit, UNIT_DEFS } from './units.js';
 import { getMudAndBloodBelief } from './belief.js';
-import { whole, meanOf, rescaleRoll } from '../../engine/foreignUnits.js';
+import { whole, meanOf, rescaleRoll } from '#core/engine/foreignUnits.js';
 
 // ---------------------------------------------------------------------------
 // Wave definitions — each wave index = wave number - 1
@@ -129,7 +129,7 @@ export const MudAndBloodGame = {
   createSetupUnit(_state, { id, ownerId, type, position }) {
     return UNIT_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
   },
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // rifleman: 8 hp, 4 damage a hit (its 3–5 roll), range 10, 2 moves; there is no
   // armour, so a unit's defense rides in its hp. A unit's rules are read off the unit itself (attrs), so that is where
   // its stats are written — and it plays as a plain soldier, never the medic or the

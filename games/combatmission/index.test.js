@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CombatMissionGame } from './index.js';
-import { num, BigNumber } from '../coord.js';
+import { num, BigNumber } from '#core/kit/coord.js';
 import { isPassable, isPassableContinuous } from './map.js';
 import { ticksLeft, apLeft } from './rules.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 function players() {
   return [
@@ -91,7 +91,7 @@ test('combatmission: move updates unit position', () => {
   const next  = CombatMissionGame.applyActions(state, [{ playerId: 'allied', action: move }]);
   const moved = next.units.find(u => u.id === move.unitId);
   // Positions are authoritative BigNumbers now (continuous coordinates); compare in
-  // Number-space (see games/coord.js).
+  // Number-space (see src/kit/coord.js).
   assert.equal(num(moved.position.x), move.to.x);
   assert.equal(num(moved.position.y), move.to.y);
 });

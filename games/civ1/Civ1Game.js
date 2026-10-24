@@ -1,4 +1,4 @@
-import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
+import { unitStrengthEval, sidesEval } from '#core/kit/evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat, pickDefender, attackThirds } from './combat.js';
@@ -21,9 +21,9 @@ import {
   BARBARIAN_ID, BARBARIAN_TEAM, BARBARIAN_LEVELS, BARBARIAN_LEVEL_IDS,
   DEFAULT_BARBARIAN_LEVEL, resolveBarbarianLevel, barbarianPhase,
 } from './barbarians.js';
-import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '../moveQueue.js';
-import * as ST from '../spacetime.js';
-import { tableUnits, whole } from '../../engine/foreignUnits.js';
+import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '#core/kit/moveQueue.js';
+import * as ST from '#core/kit/spacetime.js';
+import { tableUnits, whole } from '#core/engine/foreignUnits.js';
 
 // Specials that make a unit something other than a soldier — what a unit from
 // another game must not pick up by playing as one (see foreignUnits below).
@@ -79,7 +79,7 @@ function buildOptionInfo(id, shieldsPerTurn) {
   };
 }
 
-// ── The single movement spec (games/spacetime.js) ─────────────────────────────
+// ── The single movement spec (src/kit/spacetime.js) ─────────────────────────────
 // civ1's one movement fact is a unit's `moves` (units.js). The framework turns it
 // into the per-turn budget (discrete time — what the turn refresh below hands out)
 // and the per-move cooldown (continuous time — getActionDuration). civ1 keeps its
@@ -324,7 +324,7 @@ function getLegalActions(state, playerId) {
       }
     } else {
       // No moves left this turn: further clicks plan a route instead of acting right
-      // away (see games/moveQueue.js) — one queued waypoint per future turn, consumed
+      // away (see src/kit/moveQueue.js) — one queued waypoint per future turn, consumed
       // by runQueuedMoves in the 'end-turn' handling below.
       actions.push(...queueMoveActions(unit, playerId, fullThirds(unit.type),
         (virtualUnit, pid) => getReachableTiles(virtualUnit, board, units, pid, cities), 'moveThirds'));
@@ -609,7 +609,7 @@ const reaches = (unit, board, units, cities, playerId, to) =>
   getReachableTiles(unit, board, units, playerId, cities).some(t => t.x === to.x && t.y === to.y);
 
 /**
- * The one action the enumerated legal list can't cover (see engine/ActionValidator).
+ * The one action the enumerated legal list can't cover (see src/engine/ActionValidator).
  *
  * getReachableTiles routes around every unit on the board — you attack what stands
  * in your way rather than walking through it. A player under fog, though, plans
@@ -1260,7 +1260,7 @@ function createFixedMapState(map, players, config) {
       nextId: idCtr,
       // Resolved (space × time × play) quadrant. civ1 is natively discrete/discrete/
       // sequential; engine `timeType: 'continuous'` reads getActionDuration's
-      // dist/speed cooldown from this same spec. See games/spacetime.js.
+      // dist/speed cooldown from this same spec. See src/kit/spacetime.js.
       spacetime: ST.resolveSpaceTime(Civ1Game, config),
       fogOfWar: config.fogOfWar ?? true,
       // Whether a turn you have played ends itself once nothing wants orders (the
@@ -1363,7 +1363,7 @@ function buildInitialState(players, config = {}) {
       nextId: idCtr,
       // Resolved (space × time × play) quadrant. civ1 is natively discrete/discrete/
       // sequential; engine `timeType: 'continuous'` reads getActionDuration's
-      // dist/speed cooldown from this same spec. See games/spacetime.js.
+      // dist/speed cooldown from this same spec. See src/kit/spacetime.js.
       spacetime: ST.resolveSpaceTime(Civ1Game, config),
       fogOfWar: config.fogOfWar ?? true,
       // Whether a turn you have played ends itself once nothing wants orders (the
@@ -1888,7 +1888,7 @@ export const Civ1Game = {
   // Units, plus cities weighted heavily (losing your last city loses the game),
   // plus the economy the new systems create: bigger cities, more advances, and a
   // treasury are all progress the search should value. Heuristic leaf for the
-  // generic ObscuroAgent; see games/evalHelpers.js.
+  // generic ObscuroAgent; see src/kit/evalHelpers.js.
   evaluateState: (state, playerId) => {
     let score = unitStrengthEval(state, playerId)
       + sidesEval(state.cities, playerId, c => 100 + (c.size ?? 1) * 20 + (c.buildings?.length ?? 0) * 8);
@@ -1897,7 +1897,7 @@ export const Civ1Game = {
     return score;
   },
   name: 'Civ1',
-  // The single movement spec + its default quadrant (games/spacetime.js). civ1's
+  // The single movement spec + its default quadrant (src/kit/spacetime.js). civ1's
   // discrete-time per-turn budget and continuous-time cooldown both derive from
   // `kinematics.speed` (a unit's `moves`).
   spacetime: CIV1_SPACETIME,
@@ -1907,7 +1907,7 @@ export const Civ1Game = {
   // option) and the view starts one zoom step in from the original game's rough tile
   // scale (40px * the 1.25 step in Battlefield.vue), which is where the terrain art and
   // the unit sprites actually read.
-  // moveQueue: the goto-queue mechanic (games/moveQueue.js) — on by default for every game,
+  // moveQueue: the goto-queue mechanic (src/kit/moveQueue.js) — on by default for every game,
   // stated here explicitly since civ1 is the one that actually wires it up (queue-move/
   // queue-pop, see getLegalActions/applyActions above).
   ui: {
@@ -2186,7 +2186,7 @@ export const Civ1Game = {
   ],
   createInitialState,
 
-  // ── Customised starting units (engine/startingSetup.js) ─────────────────────
+  // ── Customised starting units (src/engine/startingSetup.js) ─────────────────────
   // A world is rolled from a seed; pin it, so the map somebody laid their settlers
   // out on is the map the session is finally played on rather than a fresh random
   // one. (createInitialState re-rolls whenever the seed is blank.)
@@ -2202,7 +2202,7 @@ export const Civ1Game = {
   createSetupUnit(state, { id, ownerId, type, position }) {
     return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0);
   },
-  // Units from other games (engine/foreignUnits.js). The conversion factor is an
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is an
   // ancient line unit — 10 hp, attack and defence 2, one move. Every attack is made
   // on the next square: a melee reach, which the common vocabulary counts as a
   // quarter of a standard rifle's. A foreign unit plays as a FIGHTING type, on

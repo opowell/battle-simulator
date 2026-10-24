@@ -48,7 +48,7 @@ load();
 watch(() => `${props.liveState?.turn}|${props.liveState?.changes?.length}`, () => { if (!busy.value) load(); });
 
 // The sides a unit can belong to: the seats, and any side of the game's own that
-// already holds units (cs's teams, doom's demons) — see engine/startingSetup.js.
+// already holds units (cs's teams, doom's demons) — see src/engine/startingSetup.js.
 const sides = computed(() => {
   const ids = [...props.teams.map(t => t.id), ...(preview.value?.roster ?? []).map(u => u.ownerId)];
   return [...new Set(ids)].filter(id => id != null).map((id) => {

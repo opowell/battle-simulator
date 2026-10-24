@@ -9,7 +9,7 @@ import { csLeafEval, CsObscuroAgent } from './ObscuroAgent.js';
 import { ROUND_TURN_MAX, BOMB_TIMER, SMOKE_RADIUS, smokeOval, FIRE_RADIUS, fireOval, inZone } from './weapons.js';
 import { csVisionCfg, csLosLayers } from './belief.js';
 import { isWalkable } from './map.js';
-import { RandomAgent } from '../../agents/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 function players() {
   return [{ id: 'p1', name: 'P1', agent: RandomAgent }, { id: 'p2', name: 'P2', agent: RandomAgent }];

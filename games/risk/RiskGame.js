@@ -1,14 +1,14 @@
-import { sidesEval } from '../evalHelpers.js';
+import { sidesEval } from '#core/kit/evalHelpers.js';
 import { TERRITORY_IDS, TERRITORY_NAMES, ADJACENCY, CONTINENTS, CONTINENT_OF, getConnectedOwned } from './RiskMap.js';
 import { resolveCombat } from './RiskCombat.js';
 import { getRiskBelief } from './belief.js';
 import { LAYOUT, SEA_ROUTES, HEX_SIZE, routeKey } from './RiskLayout.js';
-import { hexLayoutBounds, territoryBorders } from '../mapTypes/hexagon.js';
-import { whole } from '../../engine/foreignUnits.js';
+import { hexLayoutBounds, territoryBorders } from '#core/kit/hexagon.js';
+import { whole } from '#core/engine/foreignUnits.js';
 
 // The printed game's pieces: an infantryman is one army, a horseman five, a cannon
 // ten. The rules only ever count armies; the pieces are what a roster names and what
-// the other games read a Risk army as (engine/foreignUnits.js).
+// the other games read a Risk army as (src/engine/foreignUnits.js).
 const PIECES = { infantry: 1, cavalry: 5, artillery: 10 };
 
 /**
@@ -817,7 +817,7 @@ function getActionDuration(_state, action) {
 
 export const RiskGame = {
   // Territory control: each owned territory plus its armies, minus opponents'.
-  // Heuristic leaf for the generic ObscuroAgent; see games/evalHelpers.js.
+  // Heuristic leaf for the generic ObscuroAgent; see src/kit/evalHelpers.js.
   evaluateState: (state, playerId) =>
     sidesEval(Object.values(state.board.territories), playerId, t => 10 + (t.armies ?? 0), t => t.owner),
   name: 'Risk',
@@ -959,7 +959,7 @@ export const RiskGame = {
     return PIECES[type] ? { id, ownerId, type, position, alive: true, hp: PIECES[type], maxHp: PIECES[type] } : null;
   },
   applyStartingUnits: (state) => absorbUnits(state),
-  // Units from other games (engine/foreignUnits.js). The conversion factor is one
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is one
   // army. An army has no punch or guard of its own — every army rolls the same die
   // — so a unit's attack and defense ride in its hp with its toughness, and the lot
   // is how many armies it is worth: twice a standard infantryman's hp, attack and

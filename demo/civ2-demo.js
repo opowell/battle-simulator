@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { Civ2Game } from '../games/civ2/index.js';
-import { HumanAgent } from '../agents/index.js';
+import { HumanAgent } from '#core/agents/index.js';
 
 // Manhattan distance helper
 function dist(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }

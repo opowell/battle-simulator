@@ -4,7 +4,7 @@
 // where each of them stands. Entirely generic: the server hands back the game's
 // own opening roster, the board it sits on and the unit types that may be added
 // (POST /games/:name/setup), and what goes back is the edited roster as
-// config.startingUnits. See engine/startingSetup.js for the whole contract.
+// config.startingUnits. See src/engine/startingSetup.js for the whole contract.
 //
 // Off by default, and off means absent: the session config carries no roster at
 // all, so the game builds its own opening exactly as it always did.
@@ -108,7 +108,7 @@ const imgSrc = (path) => window.api.imgSrc(path);
 // ── units of other games ─────────────────────────────────────────────────────
 // A roster entry may name a unit of another game ({ type, game }), which then plays
 // under this game's rules as the nearest of its own types, its stats converted by
-// the two games' conversion factors (engine/foreignUnits.js). In the pickers below
+// the two games' conversion factors (src/engine/foreignUnits.js). In the pickers below
 // such a unit is the one value "game:type"; this game's own types are bare.
 const foreignGroups = computed(() => preview.value?.foreign ?? []);
 const valueOf = (u) => (u.game ? `${u.game}:${u.type}` : u.type);
@@ -166,7 +166,7 @@ function pickCell([col, row]) {
 /**
  * The game's own kind of position for a board cell. Every cell of the preview board
  * carries it ({x,y}, 'e4', whatever this game uses), so nothing here has to know
- * how any game names a square — see engine/startingSetup.js's cellMapper.
+ * how any game names a square — see src/engine/startingSetup.js's cellMapper.
  */
 function cellPosition([col, row], like) {
   const cell = (preview.value?.board?.cells ?? []).find(c => c.x === col && c.y === row);

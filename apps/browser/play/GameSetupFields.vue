@@ -29,7 +29,7 @@ const gameOpts = ref({});
 const slots    = ref([]);
 // The customised opening roster, or null for "however the game opens by itself"
 // (the default). It rides along in gameOpts as `startingUnits` — see
-// StartingUnitsField.vue / engine/startingSetup.js.
+// StartingUnitsField.vue / src/engine/startingSetup.js.
 const startingUnits = ref(null);
 // Editing a game in progress (`initial`): the options as the form opened, and
 // what has been changed since — what the units editor previews the board under,

@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { ChessGame } from '../games/chess/index.js';
-import { RandomAgent, HumanAgent, makeGreedyAgent } from '../agents/index.js';
+import { RandomAgent, HumanAgent, makeGreedyAgent } from '#core/agents/index.js';
 
 const isAuto = process.argv.includes('--auto');
 // `--scenario=<id>` picks one of ChessGame.scenarios — the same five the web UI's

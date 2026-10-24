@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import { CsGame } from './index.js';
 import { isWalkable } from './map.js';
 import { CsBelief, CS_VISION, csVisionCfg } from './belief.js';
-import { anySeesPoint, viewersOf } from '../vision.js';
-import { num } from '../coord.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { RandomAgent } from '../../agents/RandomAgent.js';
-import { GameEngine } from '../../engine/index.js';
+import { anySeesPoint, viewersOf } from '#core/kit/vision.js';
+import { num } from '#core/kit/coord.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
+import { GameEngine } from '#core/engine/index.js';
 
 const players = () => [{ id: 'p1', name: 'T' }, { id: 'p2', name: 'CT' }];
 // Mirror the game's real visibility (Chebyshev range + facing cone + walls/smoke LOS) so
-// the fog oracle stays in lockstep with getVisibleState — the shared games/vision.js
+// the fog oracle stays in lockstep with getVisibleState — the shared src/kit/vision.js
 // predicate, built from the observation's map/smoke via csVisionCfg.
 const canSee = (obs, owner, pos) => {
   const cfg = csVisionCfg(obs.gameSpecific.map, obs.gameSpecific.smokeZones ?? []);
@@ -130,7 +130,7 @@ test('cs fog: exposes a fogOfWar game option', () => {
 // the veil silently ignored because its ray test had no poly branch, and `floor`-carved
 // terrain (cs_siege's courtyard) that a flat blocker union wrongly reported as opaque.
 test('cs fog: drawn veil and engine LOS agree exactly on every map', async () => {
-  await import('../../apps/browser/play/vision.js');
+  await import('#browser/play/vision.js');
   const { shapeExit } = globalThis.VISION._internal;
   const { MAPS } = await import('./map.js');
   const { csLosLayers } = await import('./belief.js');

@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { KDiceGame } from '../games/kdice/index.js';
-import { RandomAgent, HumanAgent } from '../agents/index.js';
+import { RandomAgent, HumanAgent } from '#core/agents/index.js';
 
 const isAuto = process.argv.includes('--auto');
 const numPlayers = parseInt(process.argv.find(a => a.startsWith('--players='))?.split('=')[1] ?? '2');

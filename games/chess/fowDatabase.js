@@ -44,7 +44,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { getVisibleSquares } from '../../vendor/obscuro-chess/src/index.js';
+import { getVisibleSquares } from '#obscuro-chess/index.js';
 import { ChessGame } from './ChessGame.js';
 
 const CORPUS_DIR = fileURLToPath(new URL('./vendor/', import.meta.url));

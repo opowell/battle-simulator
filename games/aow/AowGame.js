@@ -10,10 +10,10 @@ import {
   dominantType, hasSpy, clamp, MAX_MEN,
 } from './squad.js';
 import { castleShapes, villageShapes, flagShapes } from './decor.js';
-import { movePointLattice } from '../continuousMove.js';
-import { posToWire } from '../coord.js';
-import { MAP_ZOOM_OPTION } from '../renderOptions.js';
-import { tableUnits, whole } from '../../engine/foreignUnits.js';
+import { movePointLattice } from '#core/kit/continuousMove.js';
+import { posToWire } from '#core/kit/coord.js';
+import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
+import { tableUnits, whole } from '#core/engine/foreignUnits.js';
 
 // A squad raised for a customised roster: this many men of one kind.
 const SQUAD_SIZE = 10;
@@ -108,7 +108,7 @@ function getLegalActions(state, playerId) {
 
 // Continuous move validation: any passable point within a generous reach of the squad
 // (the actual march is clamped to the squad's speed by marchAlong, so a far click just
-// advances partway). See engine/ActionValidator.js.
+// advances partway). See src/engine/ActionValidator.js.
 function isActionLegal(state, playerId, action) {
   if (action.type !== 'move') return false;
   const sq = state.units.find(s => s.id === action.unitId);
@@ -462,7 +462,7 @@ function terrainInfo(key) {
 
 // ── Export ──────────────────────────────────────────────────────────────────
 
-// Units from other games (engine/foreignUnits.js). A squad is the piece that
+// Units from other games (src/engine/foreignUnits.js). A squad is the piece that
 // marches and fights, so it is what a unit from elsewhere becomes, and what this
 // game lends out: ten men of one kind. Its hp is its men, its attack each man's
 // power, its move his marching pace; a fight is a brawl at contact (range 1) and

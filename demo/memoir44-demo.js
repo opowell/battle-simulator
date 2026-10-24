@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { Memoir44Game } from '../games/memoir44/index.js';
-import { RandomAgent, HumanAgent } from '../agents/index.js';
+import { RandomAgent, HumanAgent } from '#core/agents/index.js';
 
 const isAuto = process.argv.includes('--auto');
 const scenIdx = process.argv.indexOf('--scenario');

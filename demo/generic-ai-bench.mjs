@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Benchmark the generic AI (agents/generic) across games and (space × time ×
+// Benchmark the generic AI (src/agents/generic) across games and (space × time ×
 // play) modes, in SEAT-SWAPPED pairs so neither side's seat advantage counts.
 //
 //   node demo/generic-ai-bench.mjs                        # Arena, all 8 modes, vs random
@@ -17,10 +17,10 @@
 // plans/migration/cs.md), as short matches: first to two rounds, a round being
 // what a CS-mini game was, a fight to the last man or the bomb.
 
-import { GameEngine } from '../engine/index.js';
-import { RandomAgent } from '../agents/RandomAgent.js';
-import { makeGreedyAgent } from '../agents/GreedyAgent.js';
-import { makeGenericAgent, genericEvaluateState } from '../agents/generic/GenericAgent.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
+import { makeGreedyAgent } from '#core/agents/GreedyAgent.js';
+import { makeGenericAgent, genericEvaluateState } from '#core/agents/generic/GenericAgent.js';
 import { ArenaGame } from '../games/arena/index.js';
 import { FFTAGame } from '../games/ffta/index.js';
 import { CsGame } from '../games/cs/index.js';

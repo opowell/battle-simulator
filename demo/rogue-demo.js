@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { RogueGame  } from '../games/rogue/index.js';
-import { HumanAgent } from '../agents/index.js';
+import { HumanAgent } from '#core/agents/index.js';
 import { stepToward  } from '../games/rogue/map.js';
 
 // ── Greedy AI: fight monsters, grab items, descend ────────────────────────────

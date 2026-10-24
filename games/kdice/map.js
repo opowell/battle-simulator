@@ -1,6 +1,6 @@
 import {
   generateHexRect, growTerritories, territoryAdjacency, territoryCapital,
-} from '../mapTypes/hexagon.js';
+} from '#core/kit/hexagon.js';
 
 const HEX_SIZE = 1;
 const TERRITORIES_PER_PLAYER = 8;
@@ -27,7 +27,7 @@ const GRID_ASPECT = 1.3;
 /**
  * Generate a K.Dice map: territories grown onto a hex grid by accretion, so the
  * landmass is a ragged amoeba surrounded (and pocked) by sea rather than a
- * filled rectangle — see games/mapTypes/hexagon.js growTerritories. Returns the
+ * filled rectangle — see src/kit/hexagon.js growTerritories. Returns the
  * territory graph plus the underlying hex layout so KDiceGame.toGrid can render
  * the real hex blobs.
  */

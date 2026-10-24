@@ -317,7 +317,7 @@ export function createUnit(id, job, ownerId, position, facing = 0) {
     id,
     ownerId,
     // A unit's type is its job — what a roster names and what the other games
-    // read it as (engine/foreignUnits.js).
+    // read it as (src/engine/foreignUnits.js).
     type: job,
     job,
     race: def.race,
@@ -341,7 +341,7 @@ export function createUnit(id, job, ownerId, position, facing = 0) {
     doomCountdown: null,
     preMovedPosition: null,
     // Waypoints ({x,y}) queued for this unit's future CT turns while some other
-    // unit is active — see games/moveQueue.js and FFTAGame.js's getLegalActions/
+    // unit is active — see src/kit/moveQueue.js and FFTAGame.js's getLegalActions/
     // advanceTurn.
     queue: [],
   };

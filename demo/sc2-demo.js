@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { Sc2Game } from '../games/sc2/index.js';
-import { HumanAgent } from '../agents/index.js';
+import { HumanAgent } from '#core/agents/index.js';
 import { UNITS } from '../games/sc2/units.js';
 import { BUILDINGS } from '../games/sc2/buildings.js';
 import { chebyshev } from '../games/sc2/combat.js';

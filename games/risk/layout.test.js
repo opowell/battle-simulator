@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ADJACENCY, TERRITORY_IDS, CONTINENTS, getContinent } from './RiskMap.js';
 import { LAYOUT, SEA_ROUTES, HEX_SIZE, routeKey, touchingPairs } from './RiskLayout.js';
-import { hexToPixel, hexLayoutBounds } from '../mapTypes/hexagon.js';
+import { hexToPixel, hexLayoutBounds } from '#core/kit/hexagon.js';
 import { RiskGame } from './index.js';
 
 const key = (a, b) => [a, b].sort().join('|');

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KDiceGame, generateMap, getLargestConnectedRegion } from './index.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 function players(n = 2) {
   return Array.from({ length: n }, (_, i) => ({
@@ -16,7 +16,7 @@ function players(n = 2) {
 
 test('kdice: generateMap produces a reasonable number of multi-hex territories', () => {
   // Territories under the minimum size, and any group of them the growth left
-  // marooned offshore, are dropped rather than kept (see games/mapTypes/hexagon.js
+  // marooned offshore, are dropped rather than kept (see src/kit/hexagon.js
   // growTerritories), so the final count can land a bit under the numPlayers*8
   // target — just check it's in the right ballpark, not an exact floor.
   const { territoryIds } = generateMap(2, Math.random);

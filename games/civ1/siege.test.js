@@ -8,8 +8,8 @@ import { siegeRole } from './objective.js';
 import { civ1SearchActions } from './searchActions.js';
 import { getFixedMap } from './fixedMaps.js';
 import { UNITS } from './units.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 const players = () => [
   { id: 'p1', name: 'Attacker', agent: RandomAgent },

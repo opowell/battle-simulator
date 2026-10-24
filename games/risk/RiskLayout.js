@@ -2,7 +2,7 @@
 // territories is a blob of hexes drawn to follow the printed board — continents
 // in their own silhouettes, sized against each other the way the board sizes
 // them — so it can be drawn (and clicked) like KDice's territory map. See
-// games/mapTypes/hexagon.js for the axial math and RiskGame.toGrid for the render.
+// src/kit/hexagon.js for the axial math and RiskGame.toGrid for the render.
 //
 // The rules never consult this file: RiskMap.ADJACENCY stays the single authority
 // on who can attack whom. The layout only has to AGREE with it, which layout.test.js
@@ -14,7 +14,7 @@
 // island has to the mainland. toGrid emits them as dashed links so a legal attack
 // is never invisible.
 
-import { hexId, hexNeighbors, hexLayoutBounds, territoryCapital } from '../mapTypes/hexagon.js';
+import { hexId, hexNeighbors, hexLayoutBounds, territoryCapital } from '#core/kit/hexagon.js';
 
 export const HEX_SIZE = 1;
 

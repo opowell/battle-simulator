@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { RiskGame } from './index.js';
 import { allCardsInGame } from './RiskGame.js';
 import { getRiskBelief } from './belief.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
 
 function players() {
   return [

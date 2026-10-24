@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/RandomAgent.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
 import { ArenaGame, UNIT_TYPES } from './index.js';
 import { segmentCells, segmentCost, lineOfSight } from './geometry.js';
 import { strikeDamage, MAX_WAIT } from './ArenaGame.js';

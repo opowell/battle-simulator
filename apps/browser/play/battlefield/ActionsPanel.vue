@@ -13,7 +13,7 @@ const props = defineProps({
   ui:               Object,
   unitMoves:        { type: Array, default: () => [] },
   // Whether unitMoves are 'queue-move' actions rather than 'move' — see
-  // Battlefield.vue's queuingMoves (games/moveQueue.js).
+  // Battlefield.vue's queuingMoves (src/kit/moveQueue.js).
   queuingMoves:     { type: Boolean, default: false },
   displayedActions: { type: Array, default: () => [] },
   // Other units are waiting on orders this list leaves out — it lists only the unit
@@ -141,7 +141,7 @@ const allListActions = computed(() => aimedActions.value.filter(a => !ORDERS.onO
 // for a continuous one hands back exactly the freedom the quadrant is about. The
 // game still enumerates a few lengths — a search needs a finite action set — and
 // they serve here as the field's default; anything else typed is checked by the
-// game's isActionLegal (see engine/ActionValidator.js).
+// game's isActionLegal (see src/engine/ActionValidator.js).
 const timeEntryTypes = computed(() => new Set(Object.keys(props.ui?.timeEntry ?? {})));
 const listCandidates = computed(() => allListActions.value.filter(a => !timeEntryTypes.value.has(a.type)));
 

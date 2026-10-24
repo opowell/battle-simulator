@@ -10,7 +10,7 @@ import {
   geometricMoves, contactWindow, resolveVariant, isSpacetimeVariant,
   sqOf, gridOf, PIECE_SPEED, HITBOX_R, MAX_ORDERS, MIN_DELAY, MAX_DELAY,
 } from './spacetime.js';
-import { validate } from '../../engine/ActionValidator.js';
+import { validate } from '#core/engine/ActionValidator.js';
 
 const PLAYERS = [{ id: 'white', name: 'White' }, { id: 'black', name: 'Black' }];
 const CONFIG = {
@@ -588,8 +588,8 @@ test('a plan dies with the piece, and with the route it was planned from', () =>
 // ── End to end ──────────────────────────────────────────────────────────────
 
 test('every variant plays out to a decisive result under the greedy agent', async () => {
-  const { GameEngine } = await import('../../engine/index.js');
-  const { makeGreedyAgent } = await import('../../agents/GreedyAgent.js');
+  const { GameEngine } = await import('#core/engine/index.js');
+  const { makeGreedyAgent } = await import('#core/agents/GreedyAgent.js');
   for (const variant of Object.keys(CONFIG)) {
     const players = PLAYERS.map((p) => ({ ...p, agent: makeGreedyAgent(ChessGame) }));
     const engine = new GameEngine(ChessGame, players, { ...CONFIG[variant], maxTurns: 300, stepLimit: 60000 });

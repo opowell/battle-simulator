@@ -36,8 +36,8 @@ import {
 } from './weapons.js';
 import { isBombsite } from './map.js';
 import { csVisionCfg } from './belief.js';
-import { num } from '../coord.js';
-import { seesPoint } from '../vision.js';
+import { num } from '#core/kit/coord.js';
+import { seesPoint } from '#core/kit/vision.js';
 
 // The magnitude of a decided ROUND, on the cs-point scale below. A full five-unit
 // team is worth ~2100 material points, so at 6000 (≈2.9×) a round win decisively

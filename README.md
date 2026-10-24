@@ -98,7 +98,7 @@ There is no lobby or authentication — the share link is the full credential. A
 
 Every setting can be changed while a game is being played: the game's own options (fog of war, AI difficulty, chess's space and time models, a map), the engine's (simultaneous turns, observers, AI pacing, turn limit), who plays each seat, and the units on the board. Open the in-game menu (Esc) → **Game settings**. It is the setup form, opened on the game's current settings; only what you change is sent (`POST /sessions/:id/reconfigure`).
 
-How each change lands is worked out generically, without game-specific code (`engine/reconfigure.js`):
+How each change lands is worked out generically, without game-specific code (`src/engine/reconfigure.js`):
 
 | A setting that… | e.g. | lands as |
 |---|---|---|
@@ -254,7 +254,7 @@ import { makeGenericAgent } from './agents/generic/GenericAgent.js';
 
 Offered for every game as **AI (generic tactics)**. It is
 [Arena](games/arena/README.md)'s default opponent. How it works, and what it has
-been measured against: [agents/generic/](agents/generic/README.md).
+been measured against: [src/agents/generic/](src/agents/generic/README.md).
 
 ### ObscuroAgent
 
@@ -270,7 +270,7 @@ import { ObscuroAgent } from './agents/ObscuroAgent.js';
 
 It contains no game knowledge, so it lives in **its own repository** —
 [github.com/opowell/obscuro-ai](https://github.com/opowell/obscuro-ai) — vendored
-here as a submodule at `vendor/obscuro`. `agents/ObscuroAgent.js` is a one-line
+here as a submodule at `vendor/obscuro`. `src/agents/ObscuroAgent.js` is a one-line
 re-export of it.
 
 The **fog-chess** specialisation on top of it — the Stockfish leaf evaluator, the
@@ -290,7 +290,7 @@ git add vendor/obscuro-chess && git commit
 ```
 
 A game opts into stronger play by implementing the optional hooks in
-[games/types.js](games/types.js) — `evaluateState` for leaf values,
+[src/kit/types.js](src/kit/types.js) — `evaluateState` for leaf values,
 `getVisibleState` + `sampleWorlds` for real fog reasoning. Upstream's
 [docs/GAME-INTERFACE.md](vendor/obscuro/docs/GAME-INTERFACE.md) is the guide, and
 [docs/PARAMETERS.md](vendor/obscuro/docs/PARAMETERS.md) documents every knob; the
@@ -359,7 +359,7 @@ opening roster, as `[{ id?, ownerId, type, position }]`. An entry whose `id` nam
 a unit of the same owner and type in the game's own opening is THAT unit, moved to
 `position` (keeping its stats and everything else the game hung off it); anything
 else is a new unit of that type. It works for every game — see
-`engine/startingSetup.js` — and a roster the game cannot build is refused with a
+`src/engine/startingSetup.js` — and a roster the game cannot build is refused with a
 reason (400) rather than creating a broken session. Because it lives in the
 session's config, replays, analysis and undo rebuild from the same opening.
 
@@ -494,7 +494,7 @@ export const MyGame = {
   // Optional: filter state for fog-of-war
   getVisibleState(state, playerId) { ... },
 
-  // Optional: only for customised starting units (engine/startingSetup.js). The
+  // Optional: only for customised starting units (src/engine/startingSetup.js). The
   // feature itself needs none of these — it works off `state.units` alone.
   applyStartingUnits(state, config) { ... },  // rebuild what you derive from your opening units
   setupUnitTypes(state) { ... },              // types a roster may add beyond the ones you deal

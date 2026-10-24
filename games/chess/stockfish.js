@@ -18,8 +18,8 @@
 // ChessGame.js imports this module for exactly that reason.
 // ---------------------------------------------------------------------------
 
-import { setCacheDir } from '../../vendor/obscuro-chess/src/stockfish.js';
+import { setCacheDir } from '#obscuro-chess/stockfish.js';
 
 setCacheDir(new URL('./vendor/', import.meta.url));
 
-export * from '../../vendor/obscuro-chess/src/stockfish.js';
+export * from '#obscuro-chess/stockfish.js';

@@ -17,7 +17,7 @@ export function makeSquad(ownerId, men, x, y, extra = {}) {
   const clean = {};
   let total = 0;
   // The game's own types in their own order (a tie for the dominant type goes to
-  // the first), then any men from other games (engine/foreignUnits.js).
+  // the first), then any men from other games (src/engine/foreignUnits.js).
   const own = Object.keys(UNITS);
   for (const t of [...own, ...Object.keys(men).filter(k => !own.includes(k))]) {
     if (!UNITS[t]) continue;

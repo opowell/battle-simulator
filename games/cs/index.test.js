@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { CsGame } from './index.js';
 import { WEAPONS } from './weapons.js';
 import { CS_VISION } from './belief.js';
-import { num } from '../coord.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
+import { num } from '#core/kit/coord.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 function players() {
   return [

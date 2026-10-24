@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Chess in the other three quadrants of the (space × time) plane.
 //
-// Ordinary chess sits in one corner of games/spacetime.js's table: discrete
+// Ordinary chess sits in one corner of src/kit/spacetime.js's table: discrete
 // space (pieces stand on squares), discrete time (a turn is one move), played
 // sequentially. This module is the other three corners — the rules that take
 // over once you stop assuming a move is instantaneous, or that a piece is only
@@ -22,7 +22,7 @@
 // What every non-standard quadrant has in common, and why they share a file:
 //
 //   • A move is a JOURNEY, not a relocation. It has a path (a list of squares),
-//     a speed (games/spacetime.js's one spec number — see PIECE_SPEED), and a
+//     a speed (src/kit/spacetime.js's one spec number — see PIECE_SPEED), and a
 //     duration. The board can change under a piece while it travels.
 //   • Because the board changes mid-move, a destination cannot be filtered by
 //     what stands on it when the order is given. Destinations are therefore
@@ -48,17 +48,17 @@
 // mid-slide.
 //
 // Everything here is driven from ChessGame.js, which decides per session which
-// quadrant is in force (games/spacetime.js `resolveSpaceTime`) and delegates
+// quadrant is in force (src/kit/spacetime.js `resolveSpaceTime`) and delegates
 // createInitialState / getLegalActions / applyActions / getResult / renderState
 // / toGrid here when it isn't the standard one.
 // ---------------------------------------------------------------------------
 
-import { resolveSpaceTime } from '../spacetime.js';
+import { resolveSpaceTime } from '#core/kit/spacetime.js';
 
 // ── The spec numbers ─────────────────────────────────────────────────────────
 
 /**
- * THE one movement spec number, per games/spacetime.js: squares covered in one
+ * THE one movement spec number, per src/kit/spacetime.js: squares covered in one
  * turn window. Continuous time reads it as a rate (a hop of length d is followed
  * by d/speed of cooldown; a slide of length d takes d/speed); continuous space
  * reads it as how fast the disk travels. Deliberately the same table
@@ -359,7 +359,7 @@ export function createInitialState(players, config, st) {
       aiTimeMs: typeof config.aiTimeMs === 'number' ? config.aiTimeMs : null,
       difficulty: typeof config.aiTimeMs === 'number' ? null : (config.difficulty ?? 25),
       markers: undefined,
-      // Each side's queued future moves (games/planQueue.js). Only meaningful in
+      // Each side's queued future moves (src/kit/planQueue.js). Only meaningful in
       // discrete time — see ChessGame's `planningIsTurnBased`.
       plan: { white: [], black: [] },
       rt: {
@@ -397,7 +397,7 @@ export function createInitialState(players, config, st) {
 }
 
 /**
- * A position laid out by the generic setup layer (engine/startingSetup.js) — a
+ * A position laid out by the generic setup layer (src/engine/startingSetup.js) — a
  * customised opening, or a game rebuilt mid-play under new settings — names each
  * piece's position in whichever form it arrived in: a square ('e4') from a
  * discrete board, a point from a continuous one. Here every piece is put in this
@@ -560,7 +560,7 @@ export function delayAction(unitId, duration, queued = false) {
  * The legality check for orders that cannot be enumerated — the same role
  * `isActionLegal` plays in the continuous-SPACE games (cs, doom, surviv), where a
  * player may click any exact point and the engine can only check it after the
- * fact (see engine/ActionValidator.js). Continuous TIME has the same shape of
+ * fact (see src/engine/ActionValidator.js). Continuous TIME has the same shape of
  * freedom in its one time-valued field: a hold may be any length, so the delays
  * `getLegalActions` lists are examples rather than the whole set, and a length
  * typed in the panel arrives here instead.
@@ -1258,7 +1258,7 @@ const queueEntriesForUi = (queue) => queue.map((e) => (e.kind === 'delay'
   : { x: e.path[e.path.length - 1].x, y: e.path[e.path.length - 1].y }));
 
 /**
- * A player-level plan (games/planQueue.js), re-cut as per-PIECE waypoint lists so
+ * A player-level plan (src/kit/planQueue.js), re-cut as per-PIECE waypoint lists so
  * the client's goto-queue overlay can draw it: `Map(square the piece stands on
  * now → the squares it will visit, in order)`.
  *
@@ -1366,7 +1366,7 @@ export function toGrid(state, colors) {
       maxHp: rt.space === 'continuous' ? u.maxHp : undefined,
       imagePath: `/images/chess/${u.ownerId === 'white' ? 'w' : 'b'}${GLYPH[u.type]}`,
       // The piece's plan, in the shape the generic goto-queue UI already draws
-      // (games/moveQueue.js): a dashed, numbered route on the board and a chip
+      // (src/kit/moveQueue.js): a dashed, numbered route on the board and a chip
       // list in the side panel. A `delay` has no square to draw, so it carries a
       // `label` and no coordinates — see HtmlLayer's queueSegments.
       //

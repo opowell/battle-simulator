@@ -7,7 +7,7 @@ const _BASE = window.location.origin + _BASE_PATH;
 // ── A board's static parts ──────────────────────────────────────────────────
 // The server sends a board's unchanging fields (terrain shapes, …) by content key:
 // `grid.statics` names each one's key, and the value itself is left out when we
-// already hold it (see engine/gridStatics.js). These put the values back, so every
+// already hold it (see src/engine/gridStatics.js). These put the values back, so every
 // consumer still gets whole boards — and the SAME array object for as long as the
 // terrain doesn't change, which lets caches keyed on it (the minimap's) hold.
 //
@@ -162,7 +162,7 @@ window.api = {
   // regardless of whose turn it is or which game this session is running.
   resign:   (id, playerId)          => _req('/sessions/' + id + '/resign', { method: 'POST', body: JSON.stringify({ playerId }) }),
   setMarker: (id, playerId, col, row, type) => _req('/sessions/' + id + '/marker', { method: 'POST', body: JSON.stringify({ playerId, col, row, type }) }),
-  // Replace a player's queued future moves (games/planQueue.js). Not a turn action
+  // Replace a player's queued future moves (src/kit/planQueue.js). Not a turn action
   // and not gated on whose turn it is — a plan is made, and called off, while the
   // opponent is still thinking. `moves` is the whole plan, thin descriptors
   // ({unitId, from, to, payload, pathId}); the server validates it end to end and
@@ -256,7 +256,7 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
   // changed cells and the new log entries only; rebuild the whole snapshot here so
   // every consumer downstream keeps receiving exactly what it always did.
   let base = null;
-  // The static board fields this socket may leave out (see engine/gridStatics.js) —
+  // The static board fields this socket may leave out (see src/engine/gridStatics.js) —
   // the same record the server keeps for the connection: what we named on connecting
   // (`pinned`, key -> value, fixed for the socket's life) and the last of each field
   // it has sent us since (`held`: { shapes: {key, value} }).

@@ -2,9 +2,9 @@ import { UNITS } from './units.js';
 import { TERRITORIES, ADJACENCY, STARTING_OWNERS, STARTING_UNITS, CAPITALS } from './territories.js';
 import { resolveBattle } from './combat.js';
 import { getAxisAlliesBelief } from './belief.js';
-import { sidesEval } from '../evalHelpers.js';
-import { MAP_ZOOM_OPTION } from '../renderOptions.js';
-import { tableUnits, whole } from '../../engine/foreignUnits.js';
+import { sidesEval } from '#core/kit/evalHelpers.js';
+import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
+import { tableUnits, whole } from '#core/engine/foreignUnits.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -556,7 +556,7 @@ function summarizeUnits(units) {
 // land, ovals for sea zones) at hand-picked approximate-geography coordinates, laid
 // out left→right Americas/Atlantic/Europe/USSR/Asia-Pacific (mirrors the region
 // order in renderState above). Units are a continuous per-unit channel (see
-// games/coord.js convention used by doom/cs) so multiple units stacked in one
+// src/kit/coord.js convention used by doom/cs) so multiple units stacked in one
 // territory — normal in this game — can be spread out as a small cluster instead of
 // only one unit per cell.
 
@@ -784,7 +784,7 @@ export const AxisAlliesGame = {
       : (mine.find(u => (UNITS[u.type]?.domain === 'sea' ? 'sea' : 'land') === domain) ?? mine[0])?.territory;
     return territory ? makeUnit(id, ownerId, type, territory) : null;
   },
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // infantryman: 1 hp, attacking on a 1 and defending on a 2 (what a d6 must roll
   // at or under to hit), 1 territory a turn. A battle is fought within one
   // territory, so every unit's range is that territory. A d6 can't roll over 6, so

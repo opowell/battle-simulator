@@ -14,7 +14,7 @@
 //
 // Games mostly time out as draws at 600 turns, so read cities/advances rather than the
 // decisive record; `stacked units/turn` is the mechanism check.
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { Civ1Game } from '../games/civ1/index.js';
 import { makeCiv1Agent, makeGreedyAgent } from '../games/civ1/ai.js';
 

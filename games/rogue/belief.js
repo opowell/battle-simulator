@@ -7,7 +7,7 @@
 // There is no opposing agent to reason about strategically here — the "fog"
 // is classic roguelike exploration fog (unseen dungeon tiles + unseen/unlit
 // monsters), and ObscuroAgent's existing machinery treats this as expectimax
-// over the hidden monster placement (see agents/ObscuroAgent.js's
+// over the hidden monster placement (see src/agents/ObscuroAgent.js's
 // `_chooseWithFog`: since activePlayers stays [hero] after applyActions
 // resolves the monsters' automatic reactions, every row/world pair is a
 // forced leaf — no opponent-reply search needed).

@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { CsGame } from '../games/cs/index.js';
-import { HumanAgent } from '../agents/index.js';
+import { HumanAgent } from '#core/agents/index.js';
 import { WEAPONS } from '../games/cs/weapons.js';
 import { euclidean } from '../games/cs/map.js';
 

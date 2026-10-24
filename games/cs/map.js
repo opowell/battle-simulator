@@ -2,8 +2,8 @@
 // y increases upward (y=0 = bottom row, y=H-1 = top row)
 // All utility functions accept `tiles` as first argument.
 
-import { forEachCell, pointInShape, shapeBBox, assertConvexPoly, segmentHitsSolid } from '../terrainShapes.js';
-import { num, tileNum } from '../coord.js';
+import { forEachCell, pointInShape, shapeBBox, assertConvexPoly, segmentHitsSolid } from '#core/kit/terrainShapes.js';
+import { num, tileNum } from '#core/kit/coord.js';
 
 function k(x, y) { return `${x},${y}`; }
 

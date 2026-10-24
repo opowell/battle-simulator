@@ -21,7 +21,7 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { STATS, profilesOf, factorOf, takesPart } from './engine/foreignUnits.js';
+import { STATS, profilesOf, factorOf, takesPart } from './src/engine/foreignUnits.js';
 
 /**
  * The unit types `game` defines, one record each: what the setup screen would
@@ -32,7 +32,7 @@ import { STATS, profilesOf, factorOf, takesPart } from './engine/foreignUnits.js
  * has none either.
  *
  * `profiles` is the game's unitStats(), else its foreignUnits profiles — its
- * units' hp, attack, defense, range and move in its own numbers (games/types.js)
+ * units' hp, attack, defense, range and move in its own numbers (src/kit/types.js)
  * — and gives each type it knows its `stats`; a type it doesn't know has none.
  */
 export function unitRecords(gameName, preview, profiles = {}) {
@@ -263,7 +263,7 @@ export function buildCatalog({ games, sessions, recordings, files, setupPreview,
       units: units.length,
       unitsError,
       // The general adjustment factor its units' strength is compared with other
-      // games' by (engine/foreignUnits.js); null for a game that lends none.
+      // games' by (src/engine/foreignUnits.js); null for a game that lends none.
       unitFactor: takesPart(game) ? factorOf(game) : null,
       options: (game.gameOptions ?? []).length,
       agents: agents.size,

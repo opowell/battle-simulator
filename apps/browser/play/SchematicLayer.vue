@@ -87,7 +87,7 @@ const selectedSquare = computed(() => {
   return u ? { x: Math.floor(u.x), y: Math.floor(u.y) } : null;
 });
 
-// Continuous-location maps (see games/coord.js) have no tile grid visually, so showing
+// Continuous-location maps (see src/kit/coord.js) have no tile grid visually, so showing
 // legal moves as a lattice of unit-cell squares looks wrong — draw the reachable area as
 // a single movement-radius circle around the selected unit instead. On these maps
 // movement is a continuous straight-line slide to wherever's clicked (see Battlefield.vue's
@@ -498,7 +498,7 @@ function tileColor(tile) {
 }
 
 // Hex polygon points for a pointy-top hex tile centered at (tile.x, tile.y),
-// sized by field.hexSize (world units) — see games/mapTypes/hexagon.js's
+// sized by field.hexSize (world units) — see src/kit/hexagon.js's
 // hexCorners, mirrored here so the renderer doesn't need a server round-trip
 // to know a hex's corners.
 function hexPoints(tile) {
@@ -535,7 +535,7 @@ function darken(hex, amt) {
 }
 
 // A border segment sits between exactly two territories (or one territory and
-// the map's edge — see games/mapTypes/hexagon.js territoryBorders, which emits
+// the map's edge — see src/kit/hexagon.js territoryBorders, which emits
 // each shared edge only once, tagged with both sides via aId/bId). It reads as
 // "selected" if either bordering territory is the one selected, so a shared
 // edge always recolors correctly regardless of which side asks — drawing each

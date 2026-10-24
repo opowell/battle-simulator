@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Sc1Game } from './index.js';
 import { Sc1Belief } from './belief.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { RandomAgent } from '../../agents/RandomAgent.js';
-import { GameEngine } from '../../engine/index.js';
-import { tilePos } from '../coord.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
+import { GameEngine } from '#core/engine/index.js';
+import { tilePos } from '#core/kit/coord.js';
 
 const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 

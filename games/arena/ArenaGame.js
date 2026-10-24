@@ -10,7 +10,7 @@
 //
 // The unit types (UNIT_TYPES) are only presets. Every unit carries its own
 // numbers in `unit.stats`, so a roster can field anything — including units of
-// other games, converted by engine/foreignUnits.js — and no rule ever asks what
+// other games, converted by src/engine/foreignUnits.js — and no rule ever asks what
 // a unit IS, only what its numbers are.
 //
 // The same rules run in all eight corners of (space × time × play):
@@ -39,7 +39,7 @@
 //                       in initiative order (which rotates every instant), each
 //                       seeing the orders given before it.
 //          simultaneous discrete time: the engine's we-go path — every seat
-//                       plans a whole turn, then engine/KineticResolver.js plays
+//                       plans a whole turn, then src/engine/KineticResolver.js plays
 //                       the plans out together. Continuous time: every seat with
 //                       a decision is on move at once (the engine asks them all
 //                       and hands the orders over together).
@@ -50,9 +50,9 @@
 // Hit points and damage are integers; discrete-space movement points too.
 // ---------------------------------------------------------------------------
 
-import * as ST from '../spacetime.js';
+import * as ST from '#core/kit/spacetime.js';
 import { TERRAIN, terrainAt, terrainUnder, segmentCells, segmentCost, lineOfSight, inBounds } from './geometry.js';
-import { whole } from '../../engine/foreignUnits.js';
+import { whole } from '#core/engine/foreignUnits.js';
 
 // ── Unit presets ─────────────────────────────────────────────────────────────
 
@@ -165,7 +165,7 @@ function canStrike(state, u, t) {
   return true;
 }
 
-// ── Movement (games/spacetime.js does the quadrant arithmetic) ───────────────
+// ── Movement (src/kit/spacetime.js does the quadrant arithmetic) ───────────────
 
 const DIRS8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
 
@@ -774,7 +774,7 @@ export const ArenaGame = {
     // Sequential vs simultaneous is the engine's Simultaneous Turns switch.
   ],
   // Arena has no evaluateState on purpose: it is played by the generic AI
-  // (agents/generic), which needs none.
+  // (src/agents/generic), which needs none.
   uiDefaults: { cpuAgent: 'generic' },
   ui: {
     timeEntry: {
@@ -783,10 +783,10 @@ export const ArenaGame = {
   },
   // In continuous time Arena runs its own clock and decides itself who is on move
   // at each instant, several seats at once when play is simultaneous — so the
-  // engine must not wrap it in its we-go planning (engine/GameEngine.js step()).
+  // engine must not wrap it in its we-go planning (src/engine/GameEngine.js step()).
   nativelySimultaneous: (state) => isContinuousTime(state),
 
-  // The generic unit contract (games/types.js `unitAttributes`): what every unit
+  // The generic unit contract (src/kit/types.js `unitAttributes`): what every unit
   // is, in numbers — Arena's own fields — and, on a clock, what it is in the
   // middle of doing.
   unitAttributes(state, u) {
@@ -807,7 +807,7 @@ export const ArenaGame = {
   },
   applyStartingUnits: (state) => settle(state),
 
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // infantryman, except range, where it is the archer's reach.
   foreignUnits: {
     scale: { hp: 10, attack: 4, defense: 4, range: 4, move: 3 },

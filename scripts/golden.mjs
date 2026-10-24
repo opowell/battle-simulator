@@ -15,12 +15,12 @@
 // --check compares against the committed files instead of writing them (which is
 // what each game's golden.test.js does, case by case, in a process of its own).
 //
-// See engine/golden.js for what a run is and what gets hashed.
+// See src/engine/golden.js for what a run is and what gets hashed.
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { runGolden } from '../engine/golden.js'
+import { runGolden } from '../src/engine/golden.js'
 import { GAMES } from '../api-server.js'
 import { RogueGame } from '../games/rogue/index.js'
 import { SimCityGame } from '../games/simcity/index.js'
@@ -46,7 +46,7 @@ const SEED = 1
 
 // Written beside a game's golden.json the first time, so its goldens are tested.
 const TEST_FILE = `// This game's golden replays (golden.json, written by scripts/golden.mjs).
-import { goldenTests } from '../../engine/goldenTest.js';
+import { goldenTests } from '#core/engine/goldenTest.js';
 
 goldenTests(import.meta.url);
 `

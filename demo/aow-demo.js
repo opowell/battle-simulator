@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { AowGame } from '../games/aow/index.js';
-import { HumanAgent } from '../agents/index.js';
+import { HumanAgent } from '#core/agents/index.js';
 
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 

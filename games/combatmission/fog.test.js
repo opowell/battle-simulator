@@ -4,10 +4,10 @@ import { CombatMissionGame } from './index.js';
 import { CombatMissionBelief } from './belief.js';
 import { hasLOS } from './los.js';
 import { UNIT_DEFS } from './units.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { RandomAgent } from '../../agents/RandomAgent.js';
-import { GameEngine } from '../../engine/index.js';
-import { num, tilePos } from '../coord.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
+import { GameEngine } from '#core/engine/index.js';
+import { num, tilePos } from '#core/kit/coord.js';
 
 const players = () => [{ id: 'allied', name: 'Allies' }, { id: 'axis', name: 'Axis' }];
 

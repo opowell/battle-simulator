@@ -1,6 +1,6 @@
 /**
  * Every registered game, run through the customised-starting-units layer
- * (engine/startingSetup.js).
+ * (src/engine/startingSetup.js).
  *
  * The layer is generic, so the thing worth testing is not the layer — it's that
  * each game actually SURVIVES having its opening roster edited: a unit dropped
@@ -12,7 +12,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rosterFromState, applyRoster, rosterError } from '../engine/startingSetup.js';
+import { rosterFromState, applyRoster, rosterError } from '#core/engine/startingSetup.js';
 
 import { ChessGame }         from './chess/index.js';
 import { Civ1Game }          from './civ1/index.js';

@@ -26,19 +26,19 @@ import {
   ObscuroAgent, analyzeObscuro, setGame,
   getBelief, impossiblePlacement,
   getExactBelief, getBeliefReachWeighting,
-} from '../../vendor/obscuro-chess/src/index.js';
+} from '#obscuro-chess/index.js';
 // Side effect only: points the vendored engine at this repo's warm evaluation
 // cache before anything can open it. See the file for why the cache stayed here.
 import './stockfish.js';
 // The other three quadrants of the (space x time) plane — pieces that hop square
 // by square on a clock, or slide as bodies through continuous space. Standard and
 // fog chess (discrete/discrete) are this file's own code below; anything else is
-// delegated wholesale to that module. See games/spacetime.js for the quadrants.
+// delegated wholesale to that module. See src/kit/spacetime.js for the quadrants.
 import * as ST from './spacetime.js';
 // The player-level move queue — moves committed for FUTURE turns. Out-of-band
 // state rather than a game action, for the reasons its header sets out; the
 // adapter that teaches it chess is `PLAN` below.
-import * as PQ from '../planQueue.js';
+import * as PQ from '#core/kit/planQueue.js';
 
 // ---------------------------------------------------------------------------
 // Initial board setup
@@ -206,7 +206,7 @@ function updateCastlingRights(rights, unit, square) {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// The player-level move queue (games/planQueue.js)
+// The player-level move queue (src/kit/planQueue.js)
 // ---------------------------------------------------------------------------
 
 /** The plain move list for a position — what a plan is built and checked against. */
@@ -242,7 +242,7 @@ function isPawnPush(board, action) {
     && !action.isCapture && !action.isEnPassant;
 }
 
-/** Teaches games/planQueue.js what a chess move is. See its `PlanAdapter` typedef. */
+/** Teaches src/kit/planQueue.js what a chess move is. See its `PlanAdapter` typedef. */
 const PLAN = {
   baseActions: baseMoves,
   applyOne(state, playerId, action) {
@@ -305,7 +305,7 @@ export const ChessGame = {
   name: 'Chess',
   colors: { light: '#f0d9b5', dark: '#b58863' },
 
-  // Units from other games (engine/foreignUnits.js). Chess has no stats, so a piece
+  // Units from other games (src/engine/foreignUnits.js). Chess has no stats, so a piece
   // is read by its material value: a pawn is the standard infantryman, and a piece
   // worth v pawns is √v times as tough and as hard-hitting — √v·√v = v times the
   // fighting power, the way two armies' strengths compare (Lanchester's square
@@ -325,7 +325,7 @@ export const ChessGame = {
   },
 
   // The quadrant this game is played in unless a scenario or the Configure screen
-  // says otherwise (games/spacetime.js). Discrete space + discrete time +
+  // says otherwise (src/kit/spacetime.js). Discrete space + discrete time +
   // sequential IS chess; the other three are games/chess/spacetime.js.
   spacetime: { space: 'discrete', time: 'discrete', play: 'sequential' },
 
@@ -501,7 +501,7 @@ export const ChessGame = {
         markers: config.fogOfWar
           ? (config.initialMarkers ? seedMarkers(board) : { white: {}, black: {} })
           : undefined,
-        // Each side's queued future moves (games/planQueue.js). Never an action:
+        // Each side's queued future moves (src/kit/planQueue.js). Never an action:
         // see `setPlan`.
         plan: emptyPlans(),
       },
@@ -509,7 +509,7 @@ export const ChessGame = {
   },
 
   /**
-   * A customised opening (engine/startingSetup.js) hands back the units it wants
+   * A customised opening (src/engine/startingSetup.js) hands back the units it wants
    * on the board; here is everything standard chess derives from them.
    *
    * `board` is the authoritative position for this quadrant — the units array is
@@ -564,7 +564,7 @@ export const ChessGame = {
   // through its own channel (`setPlan`) precisely so that it never becomes an
   // action — it can be built and called off while the opponent is thinking, which
   // is when a plan is worth making, and no agent has to reason about a move that
-  // changes nothing it can see. See games/planQueue.js.
+  // changes nothing it can see. See src/kit/planQueue.js.
   getLegalActions(state, playerId) {
     if (ST.isSpacetimeVariant(state)) return ST.getLegalActions(state, playerId);
     // Annotated with display-grid coordinates so the UI works generically without
@@ -591,7 +591,7 @@ export const ChessGame = {
 
   /**
    * Orders too numerous to enumerate, checked after the fact instead (see
-   * engine/ActionValidator.js). There is exactly one here: a continuous-time
+   * src/engine/ActionValidator.js). There is exactly one here: a continuous-time
    * hold, whose length may be any number of turn windows the player names, so
    * the delays `getLegalActions` lists are examples and not the whole set.
    * Standard chess has no such action — every move it allows is in the list.
@@ -1182,7 +1182,7 @@ export const ChessGame = {
           unitId: piece?.id,
           imagePath: piece ? `/images/chess/${piece.ownerId === 'white' ? 'w' : 'b'}${sym}` : null,
           // Queued future moves, in the shape the generic goto-queue overlay
-          // already draws (games/moveQueue.js): a dashed, numbered route per piece.
+          // already draws (src/kit/moveQueue.js): a dashed, numbered route per piece.
           queue: routes.get(algSq),
         });
         if (visSet && visSet.has(algSq)) visible.push([fi, 8 - rank]);

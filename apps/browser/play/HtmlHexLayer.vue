@@ -74,7 +74,7 @@ function tileColor(tile) {
   return lighten(teamRaw(heldOwner(tile.territoryId) ?? tile.owner), 0.35);
 }
 // A border sits between exactly two territories (or a territory and the map's edge —
-// see games/mapTypes/hexagon.js's territoryBorders, which emits each shared edge once,
+// see src/kit/hexagon.js's territoryBorders, which emits each shared edge once,
 // tagged with both sides). It reads as "selected" if either side is the selection, so a
 // shared edge recolours the same regardless of which side asks.
 function isSegSelected(seg) {
@@ -113,7 +113,7 @@ function segBorderColor(seg) {
 }
 
 // ── geometry ──────────────────────────────────────────────────────────────────
-// Pointy-top hexes, matching games/mapTypes/hexagon.js's hexCorners: a box of
+// Pointy-top hexes, matching src/kit/hexagon.js's hexCorners: a box of
 // √3·r by 2·r cut by HEX_CLIP below. The hair over the true radius makes adjacent
 // same-territory fills overdraw their shared edge — without it, anti-aliasing
 // leaves a faint background-coloured seam that reads as a spurious grid line.

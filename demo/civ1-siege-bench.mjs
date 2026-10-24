@@ -14,7 +14,7 @@
 //
 // Besides the result it reports what the forts and the sorties did, so a change to the
 // defender's play can be checked by its mechanism and not only by the score.
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { Civ1Game } from '../games/civ1/index.js';
 import { makeCiv1Agent } from '../games/civ1/ai.js';
 import { getFixedMap } from '../games/civ1/fixedMaps.js';

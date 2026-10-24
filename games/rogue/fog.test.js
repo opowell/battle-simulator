@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { RogueGame } from './index.js';
 import { RogueBelief, isMonsterVisible, VISION } from './belief.js';
 import { hasLOS, manhattan } from './map.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { GameEngine } from '../../engine/index.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { GameEngine } from '#core/engine/index.js';
 
 // Rogue is single-player: only players[0] (the hero) is a real controllable
 // player. Monsters are owned by 'dungeon' and move automatically inside

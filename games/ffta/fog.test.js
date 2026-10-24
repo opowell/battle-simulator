@@ -2,14 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FFTAGame } from './FFTAGame.js';
 import { FftaBelief, FFTA_VISION } from './belief.js';
-import { anySeesPoint, viewersOf } from '../vision.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { RandomAgent } from '../../agents/RandomAgent.js';
-import { GameEngine } from '../../engine/index.js';
+import { anySeesPoint, viewersOf } from '#core/kit/vision.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
+import { GameEngine } from '#core/engine/index.js';
 
 const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 // Mirror the game's own visibility (range + facing cone) so the fog oracle can't drift
-// from getVisibleState — the whole point of the shared games/vision.js predicate.
+// from getVisibleState — the whole point of the shared src/kit/vision.js predicate.
 const canSee = (viewerUnits, myId, pos) =>
   anySeesPoint(viewersOf(viewerUnits, myId, FFTA_VISION, p => [p.x, p.y]), pos.x, pos.y, FFTA_VISION);
 

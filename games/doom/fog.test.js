@@ -2,15 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DoomGame } from './index.js';
 import { DoomBelief, DOOM_VISION } from './belief.js';
-import { anySeesPoint, viewersOf } from '../vision.js';
-import { num } from '../coord.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { RandomAgent } from '../../agents/RandomAgent.js';
-import { GameEngine } from '../../engine/index.js';
+import { anySeesPoint, viewersOf } from '#core/kit/vision.js';
+import { num } from '#core/kit/coord.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
+import { GameEngine } from '#core/engine/index.js';
 
 const players = () => [{ id: 'p1', name: 'Marine' }, { id: 'p2', name: 'Demons' }];
 // Mirror the game's real visibility (range + LOS + facing cone) so the fog oracle can't
-// drift from getVisibleState — the shared games/vision.js predicate.
+// drift from getVisibleState — the shared src/kit/vision.js predicate.
 const canSee = (units, owner, pos) =>
   anySeesPoint(viewersOf(units, owner, DOOM_VISION, p => [num(p.x), num(p.y)]), num(pos.x), num(pos.y), DOOM_VISION);
 

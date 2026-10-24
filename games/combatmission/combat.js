@@ -1,6 +1,6 @@
 import { UNIT_DEFS } from './units.js';
 import { getCoverBonus } from './map.js';
-import { num } from '../coord.js';
+import { num } from '#core/kit/coord.js';
 
 // Base hit chance before modifiers
 const BASE_HIT = 65;

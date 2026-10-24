@@ -1,13 +1,13 @@
-import { unitStrengthEval } from '../evalHelpers.js';
+import { unitStrengthEval } from '#core/kit/evalHelpers.js';
 import { MAP_WIDTH, MAP_HEIGHT, RENDER_SHAPES, LOS_OPEN_SHAPES, hasLOS, getReachable, renderMap, isWalkableContinuous } from './map.js';
 import { WEAPONS, AMMO_CAPS, WEAPON_RANK } from './weapons.js';
 import { createMarine, createMonster, MONSTER_DEFS } from './units.js';
-import { whole, meanOf, rescaleRoll } from '../../engine/foreignUnits.js';
+import { whole, meanOf, rescaleRoll } from '#core/engine/foreignUnits.js';
 import { getDoomBelief, DOOM_VISION } from './belief.js';
-import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
-import { filterVisibleUnits, orientToEnemies } from '../vision.js';
-import { parsePos, num, tileNum, posToWire } from '../coord.js';
-import { MAP_ZOOM_OPTION } from '../renderOptions.js';
+import { hasClearLine, isClearOfUnits, latticeActions } from '#core/kit/continuousMove.js';
+import { filterVisibleUnits, orientToEnemies } from '#core/kit/vision.js';
+import { parsePos, num, tileNum, posToWire } from '#core/kit/coord.js';
+import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
 
 const ROTATE_COST = 1;  // flat AP tax for a 'rotate' action (turn in place, no move)
 
@@ -128,14 +128,14 @@ function getLegalActions(state, teamId) {
 
 // ── isMoveLegal (internal, called with team ID) ─────────────────────────────────
 // Geometric fallback for the human UI's continuous click-to-move (see
-// engine/ActionValidator.js): getLegalActions above still enumerates a discrete
+// src/engine/ActionValidator.js): getLegalActions above still enumerates a discrete
 // candidate set for AI search, but a player's move can target any point their click
 // resolves to — legality here is a straight-line range/wall/occupancy check against
 // the real room geometry instead of exact membership in that candidate set.
 function isMoveLegal(state, teamId, action) {
   const unit = state.units.find(u => u.id === action.unitId);
   if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.ap <= 0) return false;
-  // The continuous geometry runs in float64 (see games/coord.js §2): convert the
+  // The continuous geometry runs in float64 (see src/kit/coord.js §2): convert the
   // authoritative BigNumber position and the incoming wire coordinate to Number here.
   const px = num(unit.position.x), py = num(unit.position.y);
   const x = num(action.to.x), y = num(action.to.y);
@@ -180,7 +180,7 @@ function isShootLegal(state, teamId, action) {
   return true; // bare "shoot" template with neither target — a no-op miss
 }
 
-// Dispatcher for the engine's continuous-action fallback (engine/ActionValidator.js):
+// Dispatcher for the engine's continuous-action fallback (src/engine/ActionValidator.js):
 // 'move'/'rotate' carry a continuous, not-pre-enumerated destination/aim point; 'shoot'
 // may arrive as a free-aim point instead of one of getLegalActions' enumerated targetIds.
 function isActionLegal(state, teamId, action) {
@@ -191,9 +191,9 @@ function isActionLegal(state, teamId, action) {
 }
 
 // Stable identity for the ObscuroAgent's search tree — the generic defaultActionKey
-// (games/types.js) doesn't cover `target`, so distinct rotate aim points would all
+// (src/kit/types.js) doesn't cover `target`, so distinct rotate aim points would all
 // collide onto the same key. Coordinates go through num() so continuous points key
-// consistently (see games/coord.js).
+// consistently (see src/kit/coord.js).
 function doomActionKey(a) {
   const pt = p => (p && typeof p === 'object') ? [num(p.x), num(p.y)] : null;
   return JSON.stringify([a.type ?? null, a.unitId ?? null, a.targetId ?? null, pt(a.to), pt(a.target)]);
@@ -201,7 +201,7 @@ function doomActionKey(a) {
 
 // Continuous action set for the ObscuroAgent's tree search: each mover's discrete tile
 // moves are replaced by a lattice of exact reachable points, so the AI positions freely
-// like a human clicking the board (see games/continuousMove.js). Non-move actions
+// like a human clicking the board (see src/kit/continuousMove.js). Non-move actions
 // (shoot/skip/end-turn) pass through unchanged.
 function getSearchActions(state, teamId, res) {
   const units = state.units;
@@ -254,7 +254,7 @@ function applyActions(state, playerActions, rng = Math.random) {
       // per tile), not a flat per-action price — see units.js for the stat rationale.
       const dist = Math.hypot(num(u.position.x) - num(to.x), num(u.position.y) - num(to.y));
       // Movement-derived heading: a unit faces where it last moved, driving its vision
-      // cone (see games/vision.js). A zero-length move keeps the old facing.
+      // cone (see src/kit/vision.js). A zero-length move keeps the old facing.
       const facing = dist > 0
         ? Math.atan2(num(to.y) - num(u.position.y), num(to.x) - num(u.position.x))
         : u.facing;
@@ -470,7 +470,7 @@ function createInitialState(players, config = {}) {
   ];
 
   // Orient each side toward the enemy at spawn so vision cones point at the action from
-  // turn 1 (facing then follows movement — see the move handler and games/vision.js).
+  // turn 1 (facing then follows movement — see the move handler and src/kit/vision.js).
   const units = orientToEnemies([...marines, ...demons], p => [num(p.x), num(p.y)]);
 
   return {
@@ -528,7 +528,7 @@ function toGrid(state) {
       cells.push({ x, y, color: '#23262b' });
 
   // Continuous unit channel: real (possibly non-integer) positions as decimal
-  // strings (see games/coord.js), built directly from state.units — no cell-grid
+  // strings (see src/kit/coord.js), built directly from state.units — no cell-grid
   // indexing, so a unit's exact point always reaches the client.
   const unitList = units.filter(u => u.alive).map(u => {
     const p = posToWire(u.position);
@@ -595,9 +595,9 @@ function sampleWorlds(observation, myTeam, n, rng = Math.random) {
 
 export const DoomGame = {
   // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
-  // minus the enemy's. See games/evalHelpers.js.
+  // minus the enemy's. See src/kit/evalHelpers.js.
   // Team game: withTeam translates the player id to its team ownerId (T/CT,
-  // marine/demon) before the material eval. See games/evalHelpers.js.
+  // marine/demon) before the material eval. See src/kit/evalHelpers.js.
   evaluateState: withTeam((state, teamId) => unitStrengthEval(state, teamId)),
   name: 'Doom',
   scenarios: [
@@ -613,7 +613,7 @@ export const DoomGame = {
     if (type === 'doomguy') return createMarine(id, position);
     return MONSTER_DEFS[type] ? createMonster(id, type, position) : null;
   },
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // zombieman: 20 hp, 7.5 damage a shot, range 6, 6 tiles of AP a turn; there is
   // no armour to read (only the marine wears any, and only what it picks up), so a
   // unit's defense rides in its hp. A shot's damage is every pellet

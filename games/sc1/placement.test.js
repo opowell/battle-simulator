@@ -4,9 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Sc1Game, UNITS } from './index.js';
 import { footprint, footprintUnder, onFootprint, ringR } from './placement.js';
-import { buildInitialState } from '../../engine/startingSetup.js';
-import { rosterFromState } from '../../engine/startingSetup.js';
-import { num } from '../coord.js';
+import { buildInitialState } from '#core/engine/startingSetup.js';
+import { rosterFromState } from '#core/engine/startingSetup.js';
+import { num } from '#core/kit/coord.js';
 
 const players = [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 const opening = (config) => Sc1Game.createInitialState(players, config);

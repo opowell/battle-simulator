@@ -2,7 +2,7 @@
 
 Two sets of the same 55 pictures — every unit type in `units.js` and every
 building in `buildings.js` — which the `spriteSet` game option chooses between
-(Sc1Game.js's toGrid, drawn by `games/starcraftSprite.js`):
+(Sc1Game.js's toGrid, drawn by `games/sc1/starcraftSprite.js`):
 
 - `map-original/` — the 1998 in-game sprites (the default). Small originals are blown
   up by a whole factor with hard pixel edges, so they keep their pixels.

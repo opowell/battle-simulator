@@ -7,8 +7,8 @@ import { makeCiv1Agent } from './ai.js';
 import { siegeRole } from './objective.js';
 import { FIXED_MAPS, getFixedMap } from './fixedMaps.js';
 import { UNITS } from './units.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 const LADDER = ['desert-raiders', 'outpost', 'mountain-pass', 'caravan', 'two-rivers', 'siege'];
 

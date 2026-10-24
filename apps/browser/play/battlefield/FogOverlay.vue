@@ -1,5 +1,5 @@
 <script setup>
-// Continuous-map fog layer (see games/coord.js locationType==='continuous', e.g. doom/cs).
+// Continuous-map fog layer (see src/kit/coord.js locationType==='continuous', e.g. doom/cs).
 // There are no tiles to shade per-square, so fog is one semi-transparent veil drawn on
 // TOP of the terrain/shapes/units, with each visible unit's vision region punched out via
 // an SVG mask. Overlapping regions union correctly under a mask (white = fog, black =

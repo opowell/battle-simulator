@@ -7,7 +7,7 @@
 //
 // Every game whose unit positions map to grid cells gets this for free; the ones
 // whose don't (a card, a territory) never mount it — see `placeable` in
-// engine/startingSetup.js.
+// src/engine/startingSetup.js.
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({

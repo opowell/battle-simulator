@@ -10,10 +10,10 @@
 // the contrast: full information collapses to a single (minimax) move, while fog
 // of war yields a *mixed* strategy — the randomisation/bluffing the paper is about.
 
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { ChessGame, ObscuroAgent, obscuroStrategy } from '../games/chess/index.js';
 import { available as stockfishAvailable } from '../games/chess/stockfish.js';
-import { RandomAgent } from '../agents/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 const fog = process.argv.includes('--fog');
 const vsIdx = process.argv.indexOf('--vs');

@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SurvivGame } from './index.js';
-import { num } from '../coord.js';
+import { num } from '#core/kit/coord.js';
 import { isWalkableContinuous } from './map.js';
 import { WEAPONS } from './weapons.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 function players() {
   return [

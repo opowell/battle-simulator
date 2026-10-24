@@ -1,12 +1,12 @@
-import { unitStrengthEval } from '../evalHelpers.js';
-import { whole } from '../../engine/foreignUnits.js';
+import { unitStrengthEval } from '#core/kit/evalHelpers.js';
+import { whole } from '#core/engine/foreignUnits.js';
 import { ABILITIES } from './abilities.js';
 import { JOB_DEFS, createUnit } from './units.js';
 import { createMap, renderMap, getTile } from './map.js';
 import { getReachable, getInRange, getAoeTiles, manhattan, attackDirection } from './grid.js';
 import { getFftaBelief, FFTA_VISION } from './belief.js';
-import { filterVisibleUnits } from '../vision.js';
-import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '../moveQueue.js';
+import { filterVisibleUnits } from '#core/kit/vision.js';
+import { queueMoveActions, queuePopAction, enqueueWaypoint, dequeueLastWaypoint, runQueuedMoves } from '#core/kit/moveQueue.js';
 
 // ── Scenario definitions ──────────────────────────────────────────────────────
 
@@ -478,7 +478,7 @@ function advanceTurn(state) {
 
   const nextOwner = units.find(u => u.id === nextId)?.ownerId ?? state.players[0].id;
 
-  // Run the incoming unit's queued move, if any (games/moveQueue.js): the
+  // Run the incoming unit's queued move, if any (src/kit/moveQueue.js): the
   // synthetic `movesLeft` gate is 1 for just this unit (its CT turn just started,
   // so this is its one shot to move) and 0 for everyone else, then stripped back
   // off — FFTA's own move-availability signal is `moved`, not `movesLeft`.
@@ -686,7 +686,7 @@ function getLegalActions(state, playerId) {
     actions.push({ type: 'end-turn', unitId: unit.id, direction });
   }
 
-  // The generic goto-queue mechanic (games/moveQueue.js, ui.moveQueue !== false by
+  // The generic goto-queue mechanic (src/kit/moveQueue.js, ui.moveQueue !== false by
   // default): FFTA's Charge-Time system only gives one unit a turn at a time, so
   // every OTHER of the player's own units — including the active one once it has
   // already moved this turn — can have a future move planned now instead of
@@ -744,7 +744,7 @@ function applyActions(state, playerActions, rng = Math.random) {
     return { ...state, units, lastActions: playerActions };
   }
 
-  // ── queue-move / queue-pop (games/moveQueue.js) ──────────────────────────────
+  // ── queue-move / queue-pop (src/kit/moveQueue.js) ──────────────────────────────
   if (action.type === 'queue-move') {
     const units = enqueueWaypoint(state.units, action.unitId, action.to);
     return { ...state, units, lastActions: playerActions };
@@ -888,7 +888,7 @@ function createInitialState(players, config = {}) {
 
 function getVisibleState(state, playerId) {
   // Own units + any enemy within an own unit's range and facing cone. FFTA_VISION is shared
-  // with belief.js so the observation and fog sampler agree — see games/vision.js.
+  // with belief.js so the observation and fog sampler agree — see src/kit/vision.js.
   return {
     ...state,
     units: filterVisibleUnits(state.units, playerId, FFTA_VISION, p => [p.x, p.y]),
@@ -969,7 +969,7 @@ function terrainInfo(tile) {
 
 export const FFTAGame = {
   // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
-  // minus the enemy's. See games/evalHelpers.js.
+  // minus the enemy's. See src/kit/evalHelpers.js.
   evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'Final Fantasy Tactics Advance',
   scenarios: [
@@ -990,7 +990,7 @@ export const FFTAGame = {
   // player must click the game-designated active unit to see its actions.
   // showFacing: false — the isometric renderer's facing arrow is redundant now that
   // each job has separate N/E/S/W sprite art (see toGrid's imagePath), same as XComGame.
-  // moveQueue: the goto-queue mechanic (games/moveQueue.js) — on by default for every
+  // moveQueue: the goto-queue mechanic (src/kit/moveQueue.js) — on by default for every
   // game, stated here explicitly since FFTA is the one that wires it up (queue-move/
   // queue-pop for idle units, see getLegalActions/advanceTurn above).
   ui: { moveAnimation: 'hop', combatFx: true, isometric: true, strictActiveUnit: true, showFacing: false, moveQueue: true },
@@ -1000,7 +1000,7 @@ export const FFTAGame = {
   createSetupUnit(_state, { id, ownerId, type, position }) {
     return JOB_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
   },
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // soldier: 28 hp, 10 attack, 8 defense, a sword's reach, 3 squares. A job's
   // attack is the stronger of its weapon and its magic, its range the farthest
   // its abilities strike. A unit from elsewhere plays as the closest job, its
@@ -1132,7 +1132,7 @@ export const FFTAGame = {
           acted:         u?.acted,
           isActive:      u ? u.id === activeUnitId : false,
           facing:        u?.facing,
-          // Waypoints queued for a future CT turn (games/moveQueue.js) — drives the
+          // Waypoints queued for a future CT turn (src/kit/moveQueue.js) — drives the
           // goto-path overlay on the map (every unit) and the queue list in the side
           // panel (selected unit only).
           queue: u?.queue?.length ? u.queue : null,

@@ -1,5 +1,5 @@
-import { forEachCell, pointInShape, segmentInUnion, tilesToShapes, tilesToPolygons } from '../terrainShapes.js';
-import { num, tileNum } from '../coord.js';
+import { forEachCell, pointInShape, segmentInUnion, tilesToShapes, tilesToPolygons } from '#core/kit/terrainShapes.js';
+import { num, tileNum } from '#core/kit/coord.js';
 
 export const MAP_WIDTH  = 36;
 export const MAP_HEIGHT = 24;
@@ -8,7 +8,7 @@ function k(x, y) { return `${x},${y}`; }
 
 // ── E1M1: Hangar ────────────────────────────────────────────────────────────────
 // A faithful, top-down reimagining of Doom's iconic first level, authored as an array
-// of shapes (rects + ovals — see games/terrainShapes.js) carved out of solid rock,
+// of shapes (rects + ovals — see src/kit/terrainShapes.js) carved out of solid rock,
 // exactly like CsGame/SurvivGame. Two lists drive everything:
 //
 //   FLOOR — the walkable regions. Their UNION (plus NUKAGE — see below) is what's
@@ -162,7 +162,7 @@ function buildDecorKinds() {
 const DECOR_KINDS = buildDecorKinds();
 const decorType = (x, y) => DECOR_KINDS.get(k(x, y)) ?? null;
 
-// Merge contiguous same-kind decor cells into panel rects (games/terrainShapes.js) — used
+// Merge contiguous same-kind decor cells into panel rects (src/kit/terrainShapes.js) — used
 // for the floor-overlap invariant (map.test.js) and as the geometry DECOR_KINDS classifies
 // against; nukage/barrel/column carry `round` in their style so they still read as
 // pools/drums.

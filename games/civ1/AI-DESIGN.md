@@ -169,7 +169,7 @@ everywhere. The current Manhattan `dist` is simply the wrong metric for this boa
 
 ## Evaluation
 
-[agents/LEARNED-EVAL-PLAN.md:121](../../agents/LEARNED-EVAL-PLAN.md#L121) flags civ1 as
+[src/agents/LEARNED-EVAL-PLAN.md:121](../../agents/LEARNED-EVAL-PLAN.md#L121) flags civ1 as
 "very long games — truncated-outcome", which is the real obstacle to a learned eval here.
 Two implications:
 

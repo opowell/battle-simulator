@@ -177,7 +177,7 @@ export const UNITS = {
 
 // How big each unit is in the original game: the larger side of its units.dat
 // dimension box, in game pixels. The map art draws each picture at this size against a
-// 32 px dragoon (games/starcraftSprite.js's imageScale) — the art files themselves are
+// 32 px dragoon (games/sc1/starcraftSprite.js's imageScale) — the art files themselves are
 // all blown up to about the same size, so without it a marine stood as tall as a
 // dragoon. A type missing here falls back to the tag-based rule there.
 export const UNIT_PX = {

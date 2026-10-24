@@ -1,12 +1,12 @@
-import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
+import { unitStrengthEval, sidesEval } from '#core/kit/evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
 import { resolveAttack, resolveAttackVsBuilding, inRange, chebyshev, effectiveRange } from './combat.js';
 import { generateMap, findAdjacentFree, getReachableTiles, renderMap } from './map.js';
 import { getSc2Belief } from './belief.js';
-import { scSpriteLayers } from '../starcraftSprite.js';
-import { tableUnits, whole } from '../../engine/foreignUnits.js';
+import { scSpriteLayers } from '../sc1/starcraftSprite.js';
+import { tableUnits, whole } from '#core/engine/foreignUnits.js';
 
 // What makes a unit something other than a plain fighter — a type a unit from
 // another game must not play as (see foreignUnits below).
@@ -922,7 +922,7 @@ export function createInitialState(players, config = {}) {
   const race1 = config.race1 ?? p1.race ?? 'terran';
   const race2 = config.race2 ?? p2.race ?? 'zerg';
 
-  // "Aiur Crossing" is a fixed, hand-authored shape map (see games/mapTypes/starcraftMap.js),
+  // "Aiur Crossing" is a fixed, hand-authored shape map (see games/sc1/starcraftMap.js),
   // so its dimensions and the two main-base centres come from the map itself.
   const { width, height, tiles, shapes, bases } = generateMap();
   const board = { width, height, tiles, shapes, bases };
@@ -1064,7 +1064,7 @@ export const Sc2Game = {
   createSetupUnit(_state, { id, ownerId, type, position }) {
     return UNITS[type] ? makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0) : null;
   },
-  // Units from other games (engine/foreignUnits.js) — read as SC1's are: the marine
+  // Units from other games (src/engine/foreignUnits.js) — read as SC1's are: the marine
   // (45 hp here, 6 damage, range 4, 2 moves) is one point of each stat, shields
   // count as hp, armour is read one higher than it is, and a foreign unit plays as
   // a fighting unit rather than a worker, supplier, suicide or anti-air-only one.

@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DoomGame } from './index.js';
 import { MAP_WIDTH as W, MAP_HEIGHT as H, MAP_TILES, FLOOR_SHAPES, DECOR_SHAPES, RENDER_SHAPES } from './map.js';
-import { forEachCell } from '../terrainShapes.js';
-import { num } from '../coord.js';
+import { forEachCell } from '#core/kit/terrainShapes.js';
+import { num } from '#core/kit/coord.js';
 
 const k = (x, y) => `${x},${y}`;
 const floorCells = new Set();

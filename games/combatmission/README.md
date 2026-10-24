@@ -84,7 +84,7 @@ Fixed 20×16 map:
 
 ## Where units stand
 
-Positions are exact points (BigNumber, `games/coord.js`); square (x, y) is the area
+Positions are exact points (BigNumber, `src/kit/coord.js`); square (x, y) is the area
 [x, x+1) × [y, y+1), and rules read the square a point is in by flooring it (LOS,
 cover, spotting, the AI's tile moves). Units deploy in the **middle** of their square
 (x+0.5, y+0.5), the tile-graph moves go square middle to square middle, and sampled fog

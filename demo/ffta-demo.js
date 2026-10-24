@@ -1,7 +1,7 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { FFTAGame }   from '../games/ffta/index.js';
 import { ABILITIES }  from '../games/ffta/abilities.js';
-import { HumanAgent } from '../agents/index.js';
+import { HumanAgent } from '#core/agents/index.js';
 import { manhattan, attackDirection }  from '../games/ffta/grid.js';
 
 // How much better an attack from `fromPos` lands on `target`, exploiting facing:

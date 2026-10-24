@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { connect } from 'node:net';
 import { readFile } from 'node:fs/promises';
 import { runInThisContext } from 'node:vm';
-import { applyGridFrame as applyFrame } from './engine/gridFrames.js';
+import { applyGridFrame as applyFrame } from './src/engine/gridFrames.js';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const PORT = 4700 + Math.floor(Math.random() * 200);
@@ -292,7 +292,7 @@ test('a long game keeps its timeline bounded and still rebuilds', async () => {
   // so the newest frame legitimately trails the final board by a step. That is how
   // this has always sampled — unmodified main does the same, measured over repeated
   // runs — and it is not what these frames are for. Whether the DIFFS themselves
-  // survive thinning is settled deterministically in engine/gridFrames.test.js, which
+  // survive thinning is settled deterministically in src/engine/gridFrames.test.js, which
   // drives a timeline past its cap many times over and checks every surviving frame
   // against the board that produced it.
   const s = await playWatchedCiv1(70);
@@ -360,7 +360,7 @@ test('a fog player seat is never sent deltas', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// A board's static parts (engine/gridStatics.js): a shape map's terrain is sent
+// A board's static parts (src/engine/gridStatics.js): a shape map's terrain is sent
 // once per connection (and not at all to a REST caller that says it holds it), and
 // the shipped client puts it back so nothing downstream sees a board without it.
 // ---------------------------------------------------------------------------
@@ -434,7 +434,7 @@ test('a socket that asks to resync is sent the terrain again', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Customised starting units (engine/startingSetup.js) over the wire: what a
+// Customised starting units (src/engine/startingSetup.js) over the wire: what a
 // setup screen asks for, and what a session created from its answer plays.
 // ---------------------------------------------------------------------------
 
@@ -554,7 +554,7 @@ test('the browser is served at the root, its files from /ui/browser/, and its ol
   }
 });
 
-// ── Changing settings mid-game (Session.reconfigure, engine/reconfigure.js) ──
+// ── Changing settings mid-game (Session.reconfigure, src/engine/reconfigure.js) ──
 
 /** A two-human chess game after 1. e4 — black to move. */
 async function chessAfterE4(config = {}) {

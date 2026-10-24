@@ -1,6 +1,6 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { AxisAlliesGame } from '../games/axisallies/index.js';
-import { HumanAgent } from '../agents/index.js';
+import { HumanAgent } from '#core/agents/index.js';
 import { UNITS } from '../games/axisallies/units.js';
 
 // ── Greedy Agent ──────────────────────────────────────────────────────────────

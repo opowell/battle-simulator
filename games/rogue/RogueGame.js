@@ -968,7 +968,7 @@ function getActionDuration(_state, action) {
 }
 
 // ── Fog of war: exploration + hidden-monster hooks for the generic ──────────
-// ObscuroAgent (see games/types.js and agents/ObscuroAgent.js). Rogue is
+// ObscuroAgent (see src/kit/types.js and src/agents/ObscuroAgent.js). Rogue is
 // single-player, so there's no opposing agent to reason about: the "fog" is
 // classic roguelike exploration fog over dungeon geometry and monsters. See
 // games/rogue/belief.js for the stateful per-monster belief tracker.
@@ -1108,7 +1108,7 @@ function evaluateState(state, playerId) {
 }
 
 // ── toGrid (design UI) ──────────────────────────────────────────────────────────
-// Discrete tile grid (see games/coord.js) — each cell is either a unit (hero or
+// Discrete tile grid (see src/kit/coord.js) — each cell is either a unit (hero or
 // monster) or dungeon terrain/decoration, mirroring the ffta/xcom pattern of
 // embedding the occupying unit's fields directly on its cell.
 

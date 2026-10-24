@@ -19,7 +19,7 @@
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
-import { num, tilePos } from '../coord.js';
+import { num, tilePos } from '#core/kit/coord.js';
 
 const VISION       = 3;   // matches getVisibleState (Chebyshev, no LOS)
 const MAX_POSSIBLE = 40;
@@ -28,7 +28,7 @@ const THREAT_BIAS  = 3;
 const k      = (x, y) => `${x},${y}`;
 const coords = key   => key.split(',').map(Number);
 // `p` may be a belief tile ({x,y} Numbers) or a live unit/building position (a unit's
-// may be a continuous BigNumber, see games/coord.js) — read both in Number-space.
+// may be a continuous BigNumber, see src/kit/coord.js) — read both in Number-space.
 const cheby  = (x, y, p) => Math.max(Math.abs(x - num(p.x)), Math.abs(y - num(p.y)));
 
 function weightedPick(items, weights, rng) {
@@ -80,7 +80,7 @@ export class Sc1Belief {
 
     for (const u of enemyUnits) {
       // Belief lives in integer tile-space; a unit's position may be continuous, so
-      // pin it to the tile it sits in (see games/coord.js).
+      // pin it to the tile it sits in (see src/kit/coord.js).
       const tp = tilePos(u.position);
       this.unitPieces.set(u.id, {
         ownerId: u.ownerId, type: u.type,

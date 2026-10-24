@@ -4,9 +4,9 @@ import { ChessGame } from './index.js';
 import {
   isKingInCheck, isAttackedBy, getVisibleSquares, getAllLegalMoves,
   ChessAgent, Belief,
-} from '../../vendor/obscuro-chess/src/index.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
+} from '#obscuro-chess/index.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

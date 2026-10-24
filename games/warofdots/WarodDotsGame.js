@@ -1,6 +1,6 @@
 import { getWarodDotsBelief } from './belief.js';
-import { forEachCell } from '../terrainShapes.js';
-import { tableUnits, whole } from '../../engine/foreignUnits.js';
+import { forEachCell } from '#core/kit/terrainShapes.js';
+import { tableUnits, whole } from '#core/engine/foreignUnits.js';
 
 const T = 28;
 const COLS = 40;
@@ -23,7 +23,7 @@ const TERRAIN_COLOR = [
 ];
 
 // `kind` is which of the two the terrain rules treat it as — a unit from another
-// game (registered here as a copy of one, engine/foreignUnits.js) is that one.
+// game (registered here as a copy of one, src/engine/foreignUnits.js) is that one.
 const UNIT_DEF = {
   light: { kind: 'light', cost: 200, hp: 60,  speed: 75, dmg: 6,  atkRate: 0.9, range: 38, moraleDmg: 3 },
   heavy: { kind: 'heavy', cost: 400, hp: 150, speed: 35, dmg: 16, atkRate: 0.5, range: 38, moraleDmg: 8 },
@@ -160,7 +160,7 @@ function generateMap(players, rng) {
 // ── Shape-based (non-grid) maps ─────────────────────────────────────────────────
 //
 // Instead of the random tile generator, a scenario can author terrain as an array of
-// shapes (rectangles + ovals) — see games/terrainShapes.js. Each shape's `kind` decides
+// shapes (rectangles + ovals) — see src/kit/terrainShapes.js. Each shape's `kind` decides
 // the terrain it stamps onto the grid, so it feeds straight into the existing simulation
 // (speedMod / dmgMod / getTerrainAt): oval lakes slow and drown units, forests and hills
 // slow them and blunt heavy fire, mountains are impassable. The same shapes are handed to
@@ -562,7 +562,7 @@ export const WarodDotsGame = {
     return makeUnit(id, type, ownerId, x, y);
   },
 
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // light infantryman: 60 hp, 5.4 damage a second (6 a blow, 0.9 blows a second),
   // reaching 38 px, marching 75 px a second. Nobody wears armour — only terrain
   // covers — so a unit's defense rides in its hp. It fights on the ground the way

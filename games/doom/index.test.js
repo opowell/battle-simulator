@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DoomGame } from './index.js';
-import { num } from '../coord.js';
-import { GameEngine } from '../../engine/index.js';
-import { RandomAgent } from '../../agents/index.js';
+import { num } from '#core/kit/coord.js';
+import { GameEngine } from '#core/engine/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 function players() {
   return [
@@ -76,7 +76,7 @@ test('doom: move updates unit position and spends AP equal to distance travelled
   const next = DoomGame.applyActions(state, [{ playerId: 'p1', action: move }]);
   const moved = next.units.find(u => u.id === marine.id);
   // Positions are authoritative BigNumbers now (continuous coordinates); compare in
-  // Number-space (see games/coord.js).
+  // Number-space (see src/kit/coord.js).
   assert.equal(num(moved.position.x), move.to.x);
   assert.equal(num(moved.position.y), move.to.y);
   const dist = Math.hypot(num(marine.position.x) - move.to.x, num(marine.position.y) - move.to.y);

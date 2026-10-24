@@ -1,11 +1,11 @@
-import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
+import { unitStrengthEval, sidesEval } from '#core/kit/evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, thirdsLeftAt, renderMap, THIRDS } from './map.js';
 import { assets, cityImg } from './assets/index.js';
 import { getCiv2Belief } from './belief.js';
-import { tableUnits, whole } from '../../engine/foreignUnits.js';
+import { tableUnits, whole } from '#core/engine/foreignUnits.js';
 
 // Specials that make a unit something other than a soldier — what a unit from
 // another game must not pick up by playing as one (see foreignUnits below).
@@ -428,7 +428,7 @@ function terrainInfo(tile) {
 
 export const Civ2Game = {
   // Units plus cities (cities weighted heavily — losing your last city loses the
-  // game). Heuristic leaf for the generic ObscuroAgent; see games/evalHelpers.js.
+  // game). Heuristic leaf for the generic ObscuroAgent; see src/kit/evalHelpers.js.
   evaluateState: (state, playerId) =>
     unitStrengthEval(state, playerId) + sidesEval(state.cities, playerId, () => 100),
   name: 'Civ2',
@@ -457,7 +457,7 @@ export const Civ2Game = {
   ],
   createInitialState,
 
-  // Customised starting units (engine/startingSetup.js): pin the map seed, so the
+  // Customised starting units (src/engine/startingSetup.js): pin the map seed, so the
   // world a roster was laid out on is the one that gets played, and offer every
   // unit in the game rather than only the two a civ opens with.
   resolveSetupConfig(config = {}) {
@@ -469,7 +469,7 @@ export const Civ2Game = {
   createSetupUnit(state, { id, ownerId, type, position }) {
     return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0);
   },
-  // Units from other games (engine/foreignUnits.js) — read as civ1's are: an ancient
+  // Units from other games (src/engine/foreignUnits.js) — read as civ1's are: an ancient
   // line unit is one point of each stat, every attack is melee, and a foreign unit plays
   // as a fighting land or sea type (no settlers' or spies' specials, no fuel).
   foreignUnits: tableUnits({

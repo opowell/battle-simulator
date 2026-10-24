@@ -19,11 +19,11 @@
 // ---------------------------------------------------------------------------
 
 import { getReachable, hasLOS } from './map.js';
-import { tilePos, num } from '../coord.js';
-import { euclidean, anySeesPoint } from '../vision.js';
+import { tilePos, num } from '#core/kit/coord.js';
+import { euclidean, anySeesPoint } from '#core/kit/vision.js';
 
 // Field-of-vision config, shared with DoomGame.getVisibleState (imported there) so the
-// belief hides exactly the tiles the observation hides — see games/vision.js. Euclidean
+// belief hides exactly the tiles the observation hides — see src/kit/vision.js. Euclidean
 // range (a circle), matching the design UI's fog veil so reveal and veil agree exactly.
 export const DOOM_VISION = { range: 6, fovDegrees: 90, metric: euclidean, hasLOS };
 
@@ -49,7 +49,7 @@ export class DoomBelief {
     this.pieces = new Map(); // id -> { ownerId, type, possible:Set, anchor, alive, seen, hp, reach }
     for (const u of enemyRoster) {
       // Belief lives in integer tile-space; a unit's position may be continuous, so
-      // pin it to the tile it sits in (see games/coord.js).
+      // pin it to the tile it sits in (see src/kit/coord.js).
       const tp = tilePos(u.position);
       this.pieces.set(u.id, {
         ownerId: u.ownerId, type: u.type,

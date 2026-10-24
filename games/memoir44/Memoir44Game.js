@@ -1,11 +1,11 @@
-import { MAP_ZOOM_OPTION } from '../renderOptions.js';
+import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
 import {
   BOARD_COLS, BOARD_ROWS, key, neighbors, distance, sectionsOf, SECTIONS,
   retreatNeighbors, toAxial, hexesBetween,
 } from './hex.js';
-import { hexLayoutBounds } from '../mapTypes/hexagon.js';
+import { hexLayoutBounds } from '#core/kit/hexagon.js';
 import { unitStats, baseDice, maxRange, UNIT_TYPES, kindOf } from './units.js';
-import { tableUnits, whole } from '../../engine/foreignUnits.js';
+import { tableUnits, whole } from '#core/engine/foreignUnits.js';
 import {
   TERRAIN, terrainAt, terrainInfo, defenseReduction, passable, blocksLOS,
   mustStopOn, enterMax, isHill, ignoresFirstFlag,
@@ -222,7 +222,7 @@ export const Memoir44Game = {
     return UNIT_TYPES[type] && position ? makeUnit(id, ownerId, type, position.col, position.row) : null;
   },
 
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // infantry block: 4 figures, 3 dice at close range, reaching 3 hexes, moving 2.
   // Its defense is how many die faces it shrugs off — a die kills infantry one
   // time in two and armor one in three, so 2 and 3 — and that is all the rules
@@ -572,7 +572,7 @@ function renderText(state) {
 }
 
 // ---------------------------------------------------------------------------
-// Grid render (hex board for the web UI — see games/mapTypes/hexagon.js)
+// Grid render (hex board for the web UI — see src/kit/hexagon.js)
 // ---------------------------------------------------------------------------
 
 function toGrid(state) {

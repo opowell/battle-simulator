@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { XComGame } from './index.js';
 import { XcomBelief } from './belief.js';
 import { hasLOS } from './los.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { RandomAgent } from '../../agents/RandomAgent.js';
-import { GameEngine } from '../../engine/index.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
+import { GameEngine } from '#core/engine/index.js';
 
 const players = () => [{ id: 'xcom', name: 'XCOM' }, { id: 'aliens', name: 'Aliens' }];
 

@@ -10,4 +10,4 @@ export { ChessGame } from './ChessGame.js';
 export {
   ChessAgent,
   ChessObscuroAgent, ObscuroAgent, obscuroStrategy, analyzeObscuro,
-} from '../../vendor/obscuro-chess/src/index.js';
+} from '#obscuro-chess/index.js';

@@ -3,7 +3,7 @@
 //
 // ── Time ────────────────────────────────────────────────────────────────────
 // A turn is one minute of battle (TURN_SECONDS). How a unit spends it depends on the
-// time axis of the session (games/spacetime.js; `gameSpecific.spacetime.time`):
+// time axis of the session (src/kit/spacetime.js; `gameSpecific.spacetime.time`):
 //
 //   discrete   — the classic budget: `ap` action points (2), a move of up to
 //                `moveRange` movement points costs one, so does a burst of fire.
@@ -22,7 +22,7 @@
 // turn closes only once EVERY side has ended it: `end-turn` marks that side done and
 // hands the move on to the next side still playing; the last one opens the next turn,
 // refreshing every unit's budget at once (upkeep). In we-go mode the engine resolves
-// both sides' orders together (engine/KineticResolver.js) and their end-turns arrive
+// both sides' orders together (src/engine/KineticResolver.js) and their end-turns arrive
 // as each side's orders drain, so the same rule closes the turn there too.
 //
 // ── Fire ────────────────────────────────────────────────────────────────────
@@ -44,8 +44,8 @@ import { isPassableContinuous, getMoveCostContinuous } from './map.js';
 import { getReachable, squareCentre } from './grid.js';
 import { hasLOS } from './los.js';
 import { calcHitChance, resolveFire } from './combat.js';
-import { lineCost, isClearOfUnits, latticeActions } from '../continuousMove.js';
-import { parsePos, num } from '../coord.js';
+import { lineCost, isClearOfUnits, latticeActions } from '#core/kit/continuousMove.js';
+import { parsePos, num } from '#core/kit/coord.js';
 
 export const TURN_SECONDS = 60;
 export const TICKS_PER_SECOND = 10;
@@ -264,7 +264,7 @@ export function getLegalActions(state, playerId) {
 }
 
 // Continuous action set for the ObscuroAgent's tree search: each mover's tile moves
-// are replaced by a lattice of exact reachable points (see games/continuousMove.js).
+// are replaced by a lattice of exact reachable points (see src/kit/continuousMove.js).
 export function getSearchActions(state, playerId, res) {
   const st = spaceTimeOf(state);
   const units = state.units;
@@ -330,7 +330,7 @@ export function applyActions(state, playerActions, rng = Math.random) {
 
   if (action.type === 'move') {
     // action.to: decimal strings (human click) or numbers (AI); stored as the
-    // authoritative BigNumber position (see games/coord.js).
+    // authoritative BigNumber position (see src/kit/coord.js).
     const to = parsePos(action.to);
     const cost = walkCost(state.board, actor.position, num(to.x), num(to.y));
     const ticks = moveTicks(def, Number.isFinite(cost) ? cost : dist(actor.position, to));

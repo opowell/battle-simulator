@@ -1,4 +1,4 @@
-import { unitStrengthEval, sidesEval } from '../evalHelpers.js';
+import { unitStrengthEval, sidesEval } from '#core/kit/evalHelpers.js';
 import { TERRAIN } from './terrain.js';
 import { UNITS, UNIT_PX } from './units.js';
 import { BUILDINGS } from './buildings.js';
@@ -6,11 +6,11 @@ import { resolveAttack, resolveAttackVsBuilding, inRange, chebyshev } from './co
 import { generateMap, getReachableTiles, renderMap, isPassableContinuous, getMoveCostContinuous } from './map.js';
 import { getSc1Belief } from './belief.js';
 import { spotBeside, footprintUnder } from './placement.js';
-import { lineCost, isClearOfUnits } from '../continuousMove.js';
-import { makePos, parsePos, num, tileNum, posToWire } from '../coord.js';
-import { scSpriteLayers, scImageSpriteLayers, scImageHitRFrac, scBuildingSpriteLayers, scBuildingImageSpriteLayers, scBuildingSize } from '../starcraftSprite.js';
-import { MAP_ZOOM_OPTION } from '../renderOptions.js';
-import { tableUnits, whole } from '../../engine/foreignUnits.js';
+import { lineCost, isClearOfUnits } from '#core/kit/continuousMove.js';
+import { makePos, parsePos, num, tileNum, posToWire } from '#core/kit/coord.js';
+import { scSpriteLayers, scImageSpriteLayers, scImageHitRFrac, scBuildingSpriteLayers, scBuildingImageSpriteLayers, scBuildingSize } from './starcraftSprite.js';
+import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
+import { tableUnits, whole } from '#core/engine/foreignUnits.js';
 
 // What makes a unit something other than a plain fighter — a type a unit from
 // another game must not play as (see foreignUnits below).
@@ -393,7 +393,7 @@ function getUnitRequirements(unitType) {
 
 // ── isMoveLegal ───────────────────────────────────────────────────────────────
 // Geometric fallback for the human UI's continuous click-to-move (see the doom/combat
-// mission equivalents and engine/ActionValidator.js): getLegalActions above still
+// mission equivalents and src/engine/ActionValidator.js): getLegalActions above still
 // enumerates a discrete candidate set for AI search (map.js's weighted BFS), but a
 // player's move can target any point their click resolves to — legality here is a
 // straight-line movement-cost/domain/occupancy check (respecting elevated/ramp terrain
@@ -405,7 +405,7 @@ function isMoveLegal(state, playerId, action) {
     || unit.attrs.sieged || unit.attrs.burrowed) return false;
   const stats = UNITS[unit.type];
   // Continuous geometry runs in float64; convert the authoritative BigNumber position
-  // and the incoming wire coordinate to Number here (see games/coord.js §2).
+  // and the incoming wire coordinate to Number here (see src/kit/coord.js §2).
   const px = num(unit.position.x), py = num(unit.position.y);
   const x = num(action.to.x), y = num(action.to.y);
   if (!isPassableContinuous(board, x, y, stats.domain)) return false;
@@ -424,7 +424,7 @@ function isMoveLegal(state, playerId, action) {
   return true;
 }
 
-// Dispatcher for the engine's continuous-action fallback (engine/ActionValidator.js):
+// Dispatcher for the engine's continuous-action fallback (src/engine/ActionValidator.js):
 // only 'move' carries a continuous, not-pre-enumerated destination in SC1.
 function isActionLegal(state, playerId, action) {
   return action.type === 'move' ? isMoveLegal(state, playerId, action) : false;
@@ -472,7 +472,7 @@ export function applyActions(state, playerActions, rng = Math.random) {
     const to   = parsePos(action.to);
     const unit = units.find(u => u.id === action.unitId);
     // Cost integrates terrain moveCost along the actual straight-line path travelled
-    // (see games/continuousMove.js) rather than just the landing tile's cost, so a
+    // (see src/kit/continuousMove.js) rather than just the landing tile's cost, so a
     // long continuous slide across cheap and costly terrain is billed correctly.
     const cost = lineCost(num(unit.position.x), num(unit.position.y), num(to.x), num(to.y),
       (qx, qy) => getMoveCostContinuous(board, qx, qy));
@@ -584,7 +584,7 @@ export function applyActions(state, playerActions, rng = Math.random) {
     const res     = getResources(state, playerId);
 
     // A building always sits on a whole tile — pin it to the tile the worker (possibly
-    // at a continuous position, see games/coord.js) is currently standing on.
+    // at a continuous position, see src/kit/coord.js) is currently standing on.
     const newBuilding = makeBuilding(`b${nextId}`, playerId, action.buildingType,
                                      tileNum(worker.position.x), tileNum(worker.position.y), bdef.buildTime);
     buildings = [...buildings, newBuilding];
@@ -732,7 +732,7 @@ export function createInitialState(players, config = {}) {
   const race1 = config.race1 ?? p1.race ?? 'terran';
   const race2 = config.race2 ?? p2.race ?? 'zerg';
 
-  // "Aiur Crossing" is a fixed, hand-authored shape map (see games/mapTypes/starcraftMap.js),
+  // "Aiur Crossing" is a fixed, hand-authored shape map (see games/sc1/starcraftMap.js),
   // so its dimensions and the two main-base centres come from the map itself.
   const { width, height, tiles, shapes, bases } = generateMap();
   const board = { width, height, tiles, shapes, bases };
@@ -861,7 +861,7 @@ export const Sc1Game = {
   // owner's team color at render time — used only for the side-panel portrait (see
   // toGrid's portraitPath). The map draws every unit and building as its in-game art
   // (original or Remastered — the spriteSet option) on a team-coloured ring or plate
-  // (games/starcraftSprite.js's scImageSpriteLayers). SC1 has no tracked unit heading, so showFacing is off for the same reason chess/civ1/xcom disable it: a
+  // (games/sc1/starcraftSprite.js's scImageSpriteLayers). SC1 has no tracked unit heading, so showFacing is off for the same reason chess/civ1/xcom disable it: a
   // decorative, meaningless arrow isn't worth it.
   // No right-hand column: an RTS army of dozens of units and buildings doesn't fit a
   // per-unit roster card, and the map wants every pixel of a 48x40 board. What's there
@@ -889,7 +889,7 @@ export const Sc1Game = {
   ],
   colors: { open: '#6a7a50', elevated: '#8a7060', ramp: '#9a8868', minerals: '#2060a0', vespene: '#20884a', obstacle: '#3a2818' },
   // Played we-go by default: both sides plan a whole turn of orders, then everything
-  // resolves together and plays back (engine/KineticResolver.js) — closer to a real-time
+  // resolves together and plays back (src/engine/KineticResolver.js) — closer to a real-time
   // game than one side moving its whole army while the other waits. A session can still
   // turn it off (the "Simultaneous turns" engine option). Every SC1 action keeps a
   // single activePlayers at the turn start, which is what the engine's we-go path needs.
@@ -947,7 +947,7 @@ export const Sc1Game = {
       },
     };
   },
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // marine: 40 hp, 6 damage, range 4, 2 moves. Shields count as hp, and armour is
   // read one higher than it is, so a marine's 0 is one point of defence rather than
   // none and scales like every other stat. A foreign unit plays as a fighting unit
@@ -991,7 +991,7 @@ export const Sc1Game = {
     (state.players ?? []).forEach((p, i) => { pidIdx[p.id] = i + 1; });
 
     // Terrain-only cells — units and buildings both travel in the `units` channel
-    // below now (see games/coord.js), not by exact-match into this integer grid.
+    // below now (see src/kit/coord.js), not by exact-match into this integer grid.
     // The map is drawn from grouped feature shapes (board.shapes, see toGrid's return),
     // so every cell shares one low-ground backdrop colour and the shapes convey the
     // real terrain (like games/doom). Per-cell `terrain` is still carried for the
@@ -1009,7 +1009,7 @@ export const Sc1Game = {
     }
 
     // Continuous unit channel: real (possibly non-integer) positions as decimal
-    // strings (see games/coord.js), built directly from state.units.
+    // strings (see src/kit/coord.js), built directly from state.units.
     const unitList = units.filter(u => u.alive).map(u => {
       const p = posToWire(u.position);
       return {
@@ -1034,7 +1034,7 @@ export const Sc1Game = {
     // Buildings don't move, so they render as stationary tokens pinned to their
     // tile centre — the same spot they occupied as a grid cell before this game
     // went continuous. They draw several times the size of a unit (see
-    // games/starcraftSprite.js) — a command center is a landmark on the map, not
+    // games/sc1/starcraftSprite.js) — a command center is a landmark on the map, not
     // another disc the same size as the worker standing next to it.
     const buildingList = buildings.filter(b => b.alive).map(b => ({
       id: b.id, x: String(b.position.x + 0.5), y: String(b.position.y + 0.5),

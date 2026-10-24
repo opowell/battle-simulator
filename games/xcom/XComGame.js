@@ -1,11 +1,11 @@
-import { unitStrengthEval } from '../evalHelpers.js';
+import { unitStrengthEval } from '#core/kit/evalHelpers.js';
 import { createMap, renderMap } from './map.js';
 import { getReachable, manhattan } from './grid.js';
 import { hasLOS } from './los.js';
 import { calcHitChance, rollHit, rollDamage } from './combat.js';
 import { createUnit, UNIT_DEFS } from './units.js';
 import { getXcomBelief } from './belief.js';
-import { whole, meanOf, rescaleRoll } from '../../engine/foreignUnits.js';
+import { whole, meanOf, rescaleRoll } from '#core/engine/foreignUnits.js';
 
 function defaultUnits(playerIds) {
   const [xcomId, aliensId] = playerIds;
@@ -28,7 +28,7 @@ function fmtUnit(u) {
 
 export const XComGame = {
   // Heuristic leaf value for the generic ObscuroAgent: own surviving strength
-  // minus the enemy's. See games/evalHelpers.js.
+  // minus the enemy's. See src/kit/evalHelpers.js.
   evaluateState: (state, playerId) => unitStrengthEval(state, playerId),
   name: 'X-Com Tactical',
   scenarios: [
@@ -46,7 +46,7 @@ export const XComGame = {
   createSetupUnit(_state, { id, ownerId, type, position }) {
     return UNIT_DEFS[type] && position ? createUnit(id, type, ownerId, position) : null;
   },
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // rookie soldier: 8 hp, 4 damage a hit (its 3–5 roll), 3 moves. X-Com has no
   // armour, so a unit's defense rides in its hp. Nor a range: anything in sight can
   // be shot at, the odds falling 4 points a square — its reading is how far it

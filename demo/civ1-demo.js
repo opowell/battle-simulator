@@ -1,7 +1,7 @@
-import { GameEngine } from '../engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { Civ1Game, Civ1ObscuroAgent } from '../games/civ1/index.js';
 import { makeCiv1Agent, makeGreedyAgent } from '../games/civ1/ai.js';
-import { HumanAgent } from '../agents/index.js';
+import { HumanAgent } from '#core/agents/index.js';
 
 const GreedyAgent = makeGreedyAgent();
 

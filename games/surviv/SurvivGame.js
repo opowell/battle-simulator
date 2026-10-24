@@ -1,4 +1,4 @@
-import { sidesEval } from '../evalHelpers.js';
+import { sidesEval } from '#core/kit/evalHelpers.js';
 import {
   WEAPONS, GRENADES, WEAPON_SVG_SIZE,
   VEST_REDUCTION, HELMET_REDUCTION,
@@ -13,12 +13,12 @@ import {
   initialBreakableState, destroyedIdSet, destroyedCellSet,
 } from './map.js';
 import { getSurvivBelief, survivVisionCfg, survivLosBlockers, survivFilterVisibleUnits, spotsPoint } from './belief.js';
-import { hasClearLine, isClearOfUnits, latticeActions } from '../continuousMove.js';
-import { orientToEnemies } from '../vision.js';
-import { segmentClearOf, nearestPointOnShape } from '../terrainShapes.js';
-import { makePos, parsePos, num, posToWire } from '../coord.js';
-import { MAP_ZOOM_OPTION } from '../renderOptions.js';
-import { lend, whole } from '../../engine/foreignUnits.js';
+import { hasClearLine, isClearOfUnits, latticeActions } from '#core/kit/continuousMove.js';
+import { orientToEnemies } from '#core/kit/vision.js';
+import { segmentClearOf, nearestPointOnShape } from '#core/kit/terrainShapes.js';
+import { makePos, parsePos, num, posToWire } from '#core/kit/coord.js';
+import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
+import { lend, whole } from '#core/engine/foreignUnits.js';
 
 const MOVE_EPS = 0.05; // see games/cs/CsGame.js's identical constant for why this floor exists
 const ROTATE_COST = 1; // flat moveAllowance tax for a 'rotate' action (turn in place, no move)
@@ -50,7 +50,7 @@ function makeUnit(id, ownerId, pos) {
   };
 }
 
-// ── Units from other games (engine/foreignUnits.js) ──────────────────────────
+// ── Units from other games (src/engine/foreignUnits.js) ──────────────────────────
 // A player's kind is the kind of weapon it holds; each kind is read as the first
 // weapon of it (fists, the Colt, the Vector, …). A unit from another game is a
 // player of the nearest kind carrying a weapon of its own — that kind's, with the
@@ -872,7 +872,7 @@ function survivSampleWorlds(observation, myTeam, n, rng = Math.random) {
 
 // Heuristic leaf value: survival (hp + flat bonus) plus a gear bonus — weapon tier,
 // vest/helmet tier, and held grenades — so the search actually values pushing for
-// better loot, not just staying alive (see games/evalHelpers.js's sidesEval; plain
+// better loot, not just staying alive (see src/kit/evalHelpers.js's sidesEval; plain
 // unitStrengthEval has no notion of equipment quality, which surviv centers on).
 function unitGearValue(u) {
   const tier = WEAPONS[u.weapon].tier ?? 0;

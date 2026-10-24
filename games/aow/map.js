@@ -1,5 +1,5 @@
 import { TERRAIN } from './terrain.js';
-import { forEachCell } from '../terrainShapes.js';
+import { forEachCell } from '#core/kit/terrainShapes.js';
 import { terrainDecor } from './decor.js';
 
 // Fast seeded PRNG (mulberry32)

@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import AnalysisCandidateList from './AnalysisCandidateList.vue';
 
 // Latest AI decision record per player, as broadcast by the server (see
-// api-server.js Session.aiAnalysis / agents/ObscuroAgent.js _buildAnalysis).
+// api-server.js Session.aiAnalysis / src/agents/ObscuroAgent.js _buildAnalysis).
 const props = defineProps({
   analysis: { type: Object, default: () => ({}) },
 });

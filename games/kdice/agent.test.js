@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KDiceGame } from './index.js';
 import { KDiceAgent, rankAttacks, evaluatePosition } from './agent.js';
-import { makeGreedyAgent } from '../../agents/GreedyAgent.js';
-import { sidesEval } from '../evalHelpers.js';
-import { GameEngine } from '../../engine/index.js';
+import { makeGreedyAgent } from '#core/agents/GreedyAgent.js';
+import { sidesEval } from '#core/kit/evalHelpers.js';
+import { GameEngine } from '#core/engine/index.js';
 
 const players = (n, agent) => Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `P${i + 1}`, agent }));
 

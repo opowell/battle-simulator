@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { AxisAlliesGame } from './index.js';
 import { AxisAlliesBelief } from './belief.js';
 import { ADJACENCY } from './territories.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { RandomAgent } from '../../agents/RandomAgent.js';
-import { GameEngine } from '../../engine/index.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
+import { GameEngine } from '#core/engine/index.js';
 
 const players = () => [{ id: 'axis', name: 'Axis' }, { id: 'allies', name: 'Allies' }];
 

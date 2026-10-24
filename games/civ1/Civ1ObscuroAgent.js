@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Civ1ObscuroAgent — the generic Obscuro search (agents/ObscuroAgent.js) with the
+// Civ1ObscuroAgent — the generic Obscuro search (src/agents/ObscuroAgent.js) with the
 // three pieces of civ1-specific judgement the paper leaves game-specific:
 // an action set, a leaf evaluation, and a time budget.
 //
@@ -23,7 +23,7 @@
 //      cover, terrain, and settler dispersal.
 //   3. A BOUNDED WIN VALUE. Terminal values are averaged across belief worlds,
 //      so an unbounded win lets one phantom world swamp every real consideration
-//      (see agents/ObscuroAgent.js _winValue). Scaled to sit above a realistic
+//      (see src/agents/ObscuroAgent.js _winValue). Scaled to sit above a realistic
 //      materiel swing without dwarfing it.
 //
 // The action set — the other half of making this tractable — lives in
@@ -31,7 +31,7 @@
 // any other consumer of the search see the same pruned set.
 // ---------------------------------------------------------------------------
 
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
 import { UNITS } from './units.js';
 import { TERRAIN } from './terrain.js';
 import { siteValue } from './searchActions.js';

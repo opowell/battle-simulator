@@ -18,11 +18,11 @@ import {
   isWalkableContinuous, isPathClearContinuous,
 } from './map.js';
 import { getCsBelief, CS_VISION, csVisionCfg, csLosLayers, csHasLOS } from './belief.js';
-import { isClearOfUnits, latticeActions } from '../continuousMove.js';
-import { filterVisibleUnits, orientToEnemies } from '../vision.js';
-import { makePos, parsePos, num, posToWire } from '../coord.js';
-import { MAP_ZOOM_OPTION } from '../renderOptions.js';
-import { lend, whole } from '../../engine/foreignUnits.js';
+import { isClearOfUnits, latticeActions } from '#core/kit/continuousMove.js';
+import { filterVisibleUnits, orientToEnemies } from '#core/kit/vision.js';
+import { makePos, parsePos, num, posToWire } from '#core/kit/coord.js';
+import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
+import { lend, whole } from '#core/engine/foreignUnits.js';
 
 
 const MOVE_RANGE     = 8; // per-turn move allowance (budget, not a single-move cap) — see perTurn.moveAllowance; doubled alongside the 3x map/vision resize (2026-07-17)
@@ -167,7 +167,7 @@ function makeUnit(id, ownerId, pos, faction) {
 
 function spawnUnits(map) {
   // Orient each side toward the enemy at spawn so vision cones point across the map from
-  // turn 1; facing then follows movement (see the move handler and games/vision.js).
+  // turn 1; facing then follows movement (see the move handler and src/kit/vision.js).
   return orientToEnemies([
     ...map.tSpawns.map((p, i)  => makeUnit(`T-${i}`,  'T',  p,  FACTIONS.T[i % FACTIONS.T.length])),
     ...map.ctSpawns.map((p, i) => makeUnit(`CT-${i}`, 'CT', p, FACTIONS.CT[i % FACTIONS.CT.length])),
@@ -179,7 +179,7 @@ function spawnUnits(map) {
 // same-named file in games/cs/images/weapons/.
 const WEAPON_ICON = w => `/images/cs/weapons/${WEAPONS[w]?.sprite ?? w}`;
 
-// ── Units from other games (engine/foreignUnits.js) ──────────────────────────
+// ── Units from other games (src/engine/foreignUnits.js) ──────────────────────────
 // A player's kind is the kind of weapon it has drawn; each kind is read as the
 // first weapon of it (the knife, the pistol, the MAC-10, …). A unit from another
 // game is a player of the nearest kind carrying a weapon of its own in that kind's
@@ -428,7 +428,7 @@ function actionPhaseActions(state, teamId) {
 
 // ── isMoveLegal (internal, called with team ID) ─────────────────────────────────
 // Geometric fallback for the human UI's continuous click-to-move (see the doom
-// equivalent in DoomGame.js and engine/ActionValidator.js): actionPhaseActions above
+// equivalent in DoomGame.js and src/engine/ActionValidator.js): actionPhaseActions above
 // still enumerates a discrete candidate set for AI search, but a player's move can
 // target any point their click resolves to.
 function isMoveLegal(state, teamId, action) {
@@ -437,7 +437,7 @@ function isMoveLegal(state, teamId, action) {
   const unit = state.units.find(u => u.id === action.unitId);
   if (!unit || !unit.alive || unit.ownerId !== teamId || unit.perTurn.moveAllowance <= MOVE_EPS) return false;
   // Continuous geometry runs in float64; convert the authoritative BigNumber position
-  // and the incoming wire coordinate to Number here (see games/coord.js §2).
+  // and the incoming wire coordinate to Number here (see src/kit/coord.js §2).
   const px = num(unit.position.x), py = num(unit.position.y);
   const x = num(action.to.x), y = num(action.to.y);
   const dist = Math.hypot(px - x, py - y);
@@ -451,7 +451,7 @@ function isMoveLegal(state, teamId, action) {
   return true;
 }
 
-// Geometric fallback for a human continuous grenade throw (see engine/ActionValidator.js).
+// Geometric fallback for a human continuous grenade throw (see src/engine/ActionValidator.js).
 // actionPhaseActions enumerates a discrete tile candidate set (getThrowTargets) for AI
 // search; a player may throw to any exact point within range on a walkable tile (no LOS
 // required, matching getThrowTargets). Consuming the grenade is validated at apply time.
@@ -509,7 +509,7 @@ function csActionKey(a) {
 
 // Continuous action set for the ObscuroAgent's tree search: each mover's discrete tile
 // moves AND each thrower's discrete grenade targets are replaced by a lattice of exact
-// continuous points (see games/continuousMove.js), so the AI positions and aims freely
+// continuous points (see src/kit/continuousMove.js), so the AI positions and aims freely
 // like a human. Other actions (shoot/reload/plant/defuse/skip/end-turn) pass through.
 function getSearchActions(state, teamId, res) {
   const units = state.units;
@@ -761,11 +761,11 @@ function applyActions(state, playerActions, rng = Math.random) {
         bomb = { ...bomb, defuseProgress: 0, defusingUnitId: null };
 
       // action.to: decimal strings (human continuous click) or integer tile (AI); store
-      // as the authoritative BigNumber position (see games/coord.js).
+      // as the authoritative BigNumber position (see src/kit/coord.js).
       const to = parsePos(action.to);
       units = units.map(u => {
         if (u.id !== action.unitId) return u;
-        // Movement-derived heading drives the unit's vision cone (games/vision.js); a
+        // Movement-derived heading drives the unit's vision cone (src/kit/vision.js); a
         // zero-length move keeps the prior facing.
         const dx = num(to.x) - num(u.position.x), dy = num(to.y) - num(u.position.y);
         const dist = Math.hypot(dx, dy);
@@ -1110,7 +1110,7 @@ function toGrid(state) {
   }
 
   // Continuous unit channel: real (possibly non-integer) positions as decimal strings
-  // (see games/coord.js), built directly from state.units.
+  // (see src/kit/coord.js), built directly from state.units.
   const unitList = units.filter(u => u.alive).map(u => {
     const p = posToWire(u.position);
     return {
@@ -1234,7 +1234,7 @@ function withTeam(fn) {
 function getVisibleState(state, teamId) {
   // Own units + any enemy within an own unit's range and facing cone AND line of sight
   // (walls + smoke). csVisionCfg is shared with belief.js so observation and fog sampler
-  // agree — see games/vision.js.
+  // agree — see src/kit/vision.js.
   const cfg = csVisionCfg(state.gameSpecific.map, state.gameSpecific.smokeZones ?? []);
   return {
     ...state,
@@ -1331,7 +1331,7 @@ export const CsGame = {
   ],
   // CS is a simultaneous ("we-go") game: every turn both teams plan a whole turn of
   // orders at once, then the orders resolve together by exact kinetics into ~60
-  // playback frames (see engine/KineticResolver.js). defaultConfig is merged into
+  // playback frames (see src/engine/KineticResolver.js). defaultConfig is merged into
   // the engine config by api-server / the demo so sessions get this automatically.
   defaultConfig: { simultaneousTurns: true },
   createInitialState,
@@ -1360,7 +1360,7 @@ export const CsGame = {
     const roster = state.units.map(u => (midGame && was.get(u.id)) || u);
     return { ...state, gameSpecific: { ...state.gameSpecific, roster } };
   },
-  // Units from other games (engine/foreignUnits.js). The conversion factor is the
+  // Units from other games (src/engine/foreignUnits.js). The conversion factor is the
   // rifleman: 100 hp, an M4A4 (33 a hit, 9 squares), walking at a rifle's pace.
   // Kevlar is bought, not brought, so a unit's defense rides in its hp.
   foreignUnits: {

@@ -1,13 +1,13 @@
 import { TERRAIN } from './terrain.js';
 import { UNITS } from './units.js';
 import { BUILDINGS } from './buildings.js';
-import { buildStarcraftMap, MAP_WIDTH, MAP_HEIGHT, mulberry32 } from '../mapTypes/starcraftMap.js';
+import { buildStarcraftMap, MAP_WIDTH, MAP_HEIGHT, mulberry32 } from '../sc1/starcraftMap.js';
 
 export { mulberry32, MAP_WIDTH, MAP_HEIGHT };
 
 /**
  * Generate the SC2 map — "Aiur Crossing", a hand-authored 2-player map built from
- * grouped terrain features (see games/mapTypes/starcraftMap.js), the same shape-based
+ * grouped terrain features (see games/sc1/starcraftMap.js), the same shape-based
  * approach as games/doom/map.js. Shares the layout with SC1: four mineral-ring bases
  * per player (corner main, natural, third, and a 4th in the opposite corner), impassable
  * rock outcrops that carve the field into lanes, and a contested central plateau ringed

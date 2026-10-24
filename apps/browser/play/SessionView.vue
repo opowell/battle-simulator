@@ -542,7 +542,7 @@ watch(liveState, (newState, oldState) => {
   const hopsOn = (ui.moveAnimation ?? 'hop') !== 'none';
   const fxOn   = !!ui.combatFx;
   const diagonal = ui.allowDiagonalHopsWhileMoving ?? false;
-  // Continuous-location maps (doom/cs/combatmission — see games/coord.js) have no grid
+  // Continuous-location maps (doom/cs/combatmission — see src/kit/coord.js) have no grid
   // to hop across: a unit slides in a straight line to the exact point clicked. Their
   // per-unit positions travel in newState.grid.units (real points), not by cell index.
   const continuous = newState.grid.locationType === 'continuous';
@@ -973,9 +973,9 @@ function buildField(g, s) {
 
   // Discrete SQUARE-grid games locate a unit by an integer cell index, rendered at the
   // cell centre (hence +0.5). Hexagon-grid games (kdice) already give cell.x/y as an
-  // exact pixel-space hex center (see games/mapTypes/hexagon.js hexToPixel) — adding
+  // exact pixel-space hex center (see src/kit/hexagon.js hexToPixel) — adding
   // +0.5 there would shift every unit token half a hex radius off its own hex's center.
-  // Continuous games (doom/cs/combatmission — see games/coord.js) carry real positions
+  // Continuous games (doom/cs/combatmission — see src/kit/coord.js) carry real positions
   // in a parallel `g.units` channel as decimal strings; a position is already the exact
   // point, so it renders directly with no cell-centre offset either.
   const cellCenterOffset = (locationType === 'continuous' || g.grid === 'hexagon') ? 0 : 0.5;
@@ -1052,7 +1052,7 @@ function buildField(g, s) {
       imagePath:     c.imagePath,
       portraitPath:  c.portraitPath,
       mainImagePath: c.mainImagePath,
-      // A unit from another game ({ game, type, chassis } — engine/foreignUnits.js):
+      // A unit from another game ({ game, type, chassis } — src/engine/foreignUnits.js):
       // its picture is its own game's, which knows nothing of this board's sides, so
       // the renderer stands it on a plate of its team's colour (battlefield/HtmlUnit.vue).
       origin:        c.origin,
@@ -1117,7 +1117,7 @@ function buildField(g, s) {
       x: c.x, y: c.y, color: c.color, bgImage: c.bgImage ?? null, overlayImage: c.overlayImage ?? null, coastSprite: c.coastSprite ?? null, height: c.height ?? 0, terrain: c.terrain ?? null,
       // Owner index (for the 'team' tile-colour sentinel, see SchematicLayer's tileColor)
       // and the logical territory a hex belongs to (for click-to-select on multi-hex
-      // territory maps — see games/mapTypes/hexagon.js and KDiceGame.toGrid).
+      // territory maps — see src/kit/hexagon.js and KDiceGame.toGrid).
       owner: c.owner ?? null,
       territoryId: c.territoryId ?? null,
     }));
@@ -1132,20 +1132,20 @@ function buildField(g, s) {
     turns: 1,
     grid:  g.grid ?? 'square',
     // Hex "radius" (center-to-corner) in world units — only set by hexagon-grid
-    // games (see games/mapTypes/hexagon.js) — used by SchematicLayer to draw
+    // games (see src/kit/hexagon.js) — used by SchematicLayer to draw
     // hex polygon tiles instead of square-grid rects.
     hexSize: g.hexSize ?? null,
     // Per-territory outline segments on a hexagon-grid map — only the edges
     // bordering a different territory, so multi-hex blobs get one clean
     // outline instead of a full hex lattice (see KDiceGame.toGrid and
-    // games/mapTypes/hexagon.js's territoryBorders).
+    // src/kit/hexagon.js's territoryBorders).
     hexBorders: g.territoryBorders ?? [],
     // Connections between territories that don't share a border — drawn as dashed
     // lines between the two ends (see SchematicLayer). Risk's sea routes are the
     // first user; a game with no such connections leaves this empty.
     hexLinks: g.links ?? [],
     // 'discrete' (integer tile grid) vs 'continuous' (real click-to-point positions,
-    // see games/coord.js). Gates the straight-line slide animation, the move-radius
+    // see src/kit/coord.js). Gates the straight-line slide animation, the move-radius
     // circle, and exact-point move submission — replaces the old shapes?.length proxy.
     locationType,
     boardType,
@@ -1392,7 +1392,7 @@ function stopPoll() { if (_sub) { _sub.close(); _sub = null; } }
 // subscription opened as somebody, whenever there is a human seat to be. Fog needs
 // it so the server can filter the board; simultaneous turns needs it so the server
 // can render this player's private plan state (their queued orders) during the
-// planning window; and a queued future move (games/planQueue.js) needs it in games
+// planning window; and a queued future move (src/kit/planQueue.js) needs it in games
 // with neither, because a plan is private to its owner and the server serves it
 // only to the seat that asks as itself — a snapshot fetched as nobody comes back
 // with `plan: null`, and the board silently has nothing to queue onto.
@@ -1663,7 +1663,7 @@ async function setMarker({ playerId, col, row, type }) {
   } catch (e) { serverErr.value = e.message; }
 }
 
-// Replace a player's queued future moves (games/planQueue.js). Same out-of-band
+// Replace a player's queued future moves (src/kit/planQueue.js). Same out-of-band
 // channel as a fog marker, and for the same reason: it isn't a move, it doesn't
 // consume a turn, and it has to work while the other side is thinking.
 async function setPlan({ playerId, moves }) {

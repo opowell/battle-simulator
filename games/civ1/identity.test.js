@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Civ1Game } from './index.js';
-import { canonicalObsSig } from '../../vendor/obscuro/src/infoset.js';
+import { canonicalObsSig } from '#obscuro/infoset.js';
 
 const players = () => [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 const newGame = (config = {}) =>

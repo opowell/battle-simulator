@@ -12,7 +12,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Sc2Game } from './index.js';
-import { RandomAgent } from '../../agents/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 function players() {
   return [

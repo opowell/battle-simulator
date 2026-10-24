@@ -1,4 +1,4 @@
-import { makePos } from '../coord.js';
+import { makePos } from '#core/kit/coord.js';
 
 // AP is a continuous per-turn budget, not a slot count: moving costs 1 AP per tile
 // travelled (see DoomGame.applyActions) and shooting costs a flat `shootCost`. Values

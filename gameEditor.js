@@ -302,7 +302,7 @@ function scaffoldGameClass(cls, name, meta) {
  * A minimal, fully-runnable turn-based duel: each player owns one champion with
  * ${startHp} HP; on your turn you 'attack' the enemy for a few damage or 'end-turn'.
  * First to drop every enemy champion wins. Replace this with your real rules —
- * it implements the required GameDefinition hooks (see games/types.js).
+ * it implements the required GameDefinition hooks (see src/kit/types.js).
  */
 
 const START_HP = ${startHp};

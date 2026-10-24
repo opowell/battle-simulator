@@ -20,11 +20,11 @@
 
 import { getTile } from './map.js';
 import { JOB_DEFS } from './units.js';
-import { chebyshev, seesPoint } from '../vision.js';
+import { chebyshev, seesPoint } from '#core/kit/vision.js';
 
 // Field-of-vision config, shared with FFTAGame.getVisibleState. FFTA units always carry a
 // cardinal `facing` (used for attack-direction bonuses too), so vision is a 90° cone by
-// default — see games/vision.js.
+// default — see src/kit/vision.js.
 export const FFTA_VISION = { range: 2, fovDegrees: 90, metric: chebyshev };
 
 const VISION       = FFTA_VISION.range;   // matches getVisibleState

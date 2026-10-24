@@ -2,7 +2,7 @@
 // hexes in a brick (offset) layout. Positions are stored as integer offset
 // coordinates { col, row }; axial coordinates are derived only for pixel layout
 // and cube distance/line-of-sight math. Same q = col - floor(row/2) convention
-// the shared hexagon map type uses (games/mapTypes/hexagon.js), so hexToPixel
+// the shared hexagon map type uses (src/kit/hexagon.js), so hexToPixel
 // renders this grid as the expected staggered board.
 
 export const BOARD_COLS = 13;

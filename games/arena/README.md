@@ -2,14 +2,14 @@
 
 The generic battle: a board of terrain cells and armies of units that are
 nothing but numbers. It runs in every corner of (space × time × play), and it is
-played by the generic AI ([agents/generic/](../../agents/generic/README.md)) —
+played by the generic AI ([src/agents/generic/](../../agents/generic/README.md)) —
 Arena has no evaluator of its own on purpose.
 
 ## Units
 
 Every unit carries its own numbers in `unit.stats`; the types below are only
 presets. A customised roster may field anything, including other games' units
-(converted by `engine/foreignUnits.js`).
+(converted by `src/engine/foreignUnits.js`).
 
 | Stat | Meaning |
 |---|---|

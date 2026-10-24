@@ -1,4 +1,4 @@
-import { makePos } from '../coord.js';
+import { makePos } from '#core/kit/coord.js';
 
 export const UNIT_DEFS = {
   // Allied (US)

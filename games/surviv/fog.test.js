@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { SurvivGame } from './index.js';
 import { isWalkable, isInBush } from './map.js';
 import { SurvivBelief, survivVisionCfg, spotsPoint } from './belief.js';
-import { num } from '../coord.js';
-import { ObscuroAgent } from '../../agents/ObscuroAgent.js';
-import { RandomAgent } from '../../agents/RandomAgent.js';
-import { GameEngine } from '../../engine/index.js';
+import { num } from '#core/kit/coord.js';
+import { ObscuroAgent } from '#core/agents/ObscuroAgent.js';
+import { RandomAgent } from '#core/agents/RandomAgent.js';
+import { GameEngine } from '#core/engine/index.js';
 
 const players = () => [{ id: 'blue', name: 'Blue' }, { id: 'red', name: 'Red' }];
 
