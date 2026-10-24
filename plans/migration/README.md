@@ -40,7 +40,7 @@ change that is meant to alter what it does: `node scripts/golden.mjs <game>`.
 | [simcity](simcity.md) | open decision 4 | not registered, not a battle |
 | [surviv](surviv.md) | its own repo, wave 2 | |
 | [warofdots](warofdots.md) | its own repo, wave 2 | |
-| [xcom](xcom.md) | its own repo, wave 1 | |
+| [xcom](xcom.md) | [opowell/battle-xcom](https://github.com/opowell/battle-xcom) | |
 
 tactical and csmini were dropped in phase 0, step 2. What csmini had that
 nothing else does yet is recorded in [cs.md](cs.md).

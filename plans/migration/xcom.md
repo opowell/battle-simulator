@@ -88,3 +88,13 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-xcom](https://github.com/opowell/battle-xcom), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 24 tests, its 3 golden replays among them,
+plus the app's own 2) passes; in the Browser, driven headless, the default setup
+and `ufo-crash` draw the isometric board with every unit's art, and a turn ends
+and comes back with no console error or failed request. Its pack (7 units, 4
+terrain types and the `ufo-crash` map) was re-exported into `library/xcom/` first.

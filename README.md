@@ -12,7 +12,6 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | `risk` | Risk | [games/risk/](games/risk/README.md) |
 | `axisallies` | Axis & Allies | [games/axisallies/](games/axisallies/README.md) |
 | `combatmission` | Combat Mission | [games/combatmission/](games/combatmission/README.md) |
-| `xcom` | XCOM | [games/xcom/](games/xcom/README.md) |
 | `aow` | The Ancient Art of War | [games/aow/](games/aow/README.md) |
 | `cs` | Counter-Strike | [games/cs/](games/cs/README.md) |
 | `ffta` | Final Fantasy Tactics Advance | [games/ffta/](games/ffta/README.md) |
@@ -21,6 +20,15 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | `doom` | Doom | [games/doom/](games/doom/README.md) |
 | `memoir44` | Memoir '44 | [games/memoir44/](games/memoir44/README.md) |
 | `arena` | The generic battle: terrain and units that are only numbers, in all eight (space × time × play) modes | [games/arena/](games/arena/README.md) |
+
+## Games in repos of their own
+
+Each plays on this core, vendored as `vendor/battle-simulator`, and keeps its
+units, terrain and maps in [the library](#library) here.
+
+| Key | Game | Repo |
+|---|---|---|
+| `xcom` | XCOM | [opowell/battle-xcom](https://github.com/opowell/battle-xcom) |
 
 ## Quick start
 
@@ -72,10 +80,10 @@ Each game has an interactive demo (you vs random AI) and an `--auto` mode (rando
 ```sh
 node demo/chess-demo.js
 node demo/chess-demo.js --auto
-node demo/xcom-demo.js --auto --greedy
+node demo/civ1-demo.js --auto --greedy
 ```
 
-All demos are in `demo/`: `chess`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `xcom`, `aow`, `cs`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
+All demos are in `demo/`: `chess`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `aow`, `cs`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
 
 ### Start the HTTP API server
 
