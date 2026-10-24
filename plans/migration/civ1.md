@@ -163,3 +163,32 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-civ1](https://github.com/opowell/battle-civ1), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 353 tests, its 14 golden replays among
+them, plus the app's own 5; the slow rollout skipped) passes. One of the app's
+5 is the core's old api-server test that a unit added to a civ game in progress
+keeps its cities, its map and its turn (`test/midgame.test.js`), which left the
+core when its api-server.test.js moved to Arena. `demo/civ1-demo.js --auto`,
+`civ1-bench.mjs` and `civ1-siege-bench.mjs` run from `apps/civ1/demo/`. In the
+Browser, driven headless, the default setup and all 12 scenarios draw the board
+with their art, and in every one with a seat of yours a turn ends, the AI plays
+and the turn comes back (the two exhibitions have no seat), with no console error
+or failed request. Its 5 plugins are served, and driven on the default setup:
+the settlers found a city, `n` opens its city screen (resources, radius map,
+production), and the Orders panel's Cities, Military, Rates and Science buttons
+open those panels; then two turns end and come back. All of it looks the same
+as the core's own server does it today. Its `ui` flags (the 24 above plus
+`actionLabels` and `ownScreenActions`) are served; civ1 has no sounds. Its pack
+was re-exported into `library/civ1/` first: its 28 units, 11 terrain types and
+9 fixed maps unchanged, plus three generated worlds at the default 50×30 (seeds
+1–3, wrapping east to west, units stacking), each with the settlers and militia
+a civ opens with. The generator stays with the game.
+
+Not checked: the Siege's and Outpost's play beyond the first turn in the UI, and
+the slow rollout (`SLOW_TESTS=1`). The test "the radius map says which squares
+are taken" failed once in the repo's first full run and passed alone and in
+every run after: its world is random, as it is in the core.
