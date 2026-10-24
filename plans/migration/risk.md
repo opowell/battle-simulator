@@ -97,3 +97,24 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-risk](https://github.com/opowell/battle-risk), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 49 tests, its 2 golden replays among them,
+plus the app's own 4; the slow rollout skipped) passes; `npm run demo:risk:auto`
+plays to a win; `npm run export-pack` re-exports the pack unchanged. In the
+Browser, driven headless, the default setup and `world-domination` draw the 42
+territories with their army counts, with no console error or failed request
+(its preview pictures are served); played by clicking the board, three
+reinforcements are placed and an attack is made from Northwest Territory into
+Alaska. Its pack was re-exported into `library/risk/` first: the world map now
+opens with the game's own deal for two (40 armies each, from a fixed seed), each
+territory's armies one counted group (`stacking: 'count'`), and the continents
+as terrain and features.
+
+Pre-existing, not fixed: Risk's battles throw no dice on screen, here or in the
+core today. `DiceRollOverlay` shows a roll only from an action's
+`result.attackerRolls`/`defenderRolls`, which kdice stamps and Risk does not (it
+keeps them in `gameSpecific.lastCombat`).
