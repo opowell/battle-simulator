@@ -10,13 +10,12 @@ import { lineCost, isClearOfUnits } from '#core/kit/continuousMove.js';
 import { makePos, parsePos, num, tileNum, posToWire } from '#core/kit/coord.js';
 import { scSpriteLayers, scImageSpriteLayers, scImageHitRFrac, scBuildingSpriteLayers, scBuildingImageSpriteLayers, scBuildingSize } from './starcraftSprite.js';
 import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
-import { tableUnits } from '#core/engine/foreignUnits.js';
 
 
 // Unit types with a sprite in images/units/. Each PNG stores its player-color
 // region as a magenta ramp; the design app tints it to the owner's team color at
 // render time (ui.recolorTeamSprites → apps/browser/play/teamSprite.js).
-const UNIT_SPRITES = new Set([
+export const UNIT_SPRITES = new Set([
   'archon', 'battlecruiser', 'carrier', 'corsair', 'dark-templar', 'dragoon',
   'drone', 'ghost', 'guardian', 'high-templar', 'hydralisk', 'lurker', 'marine',
   'mutalisk', 'overlord', 'probe', 'scourge', 'scv', 'ultralisk', 'wraith',
@@ -941,20 +940,6 @@ export const Sc1Game = {
       },
     };
   },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
-  // conversion factor is the marine: 40 hp, 6 damage, range 4, 2 moves. Shields
-  // count as hp, and armour is read one higher than it is, so a marine's 0 is one
-  // point of defence rather than none and scales like every other stat.
-  foreignUnits: tableUnits({
-    table: UNITS,
-    scale: { hp: 40, attack: 6, defense: 1, range: 4, move: 2 },
-    read: (e) => ({
-      hp: e.hp + (e.shields ?? 0), attack: e.attack, defense: (e.armor ?? 0) + 1, range: e.range, move: e.moves,
-      domain: e.domain === 'air' ? 'air' : 'land',
-    }),
-    art: (type) => ({ imagePath: UNIT_SPRITES.has(type) ? `/images/sc1/units/${type}` : null, glyph: type[0].toUpperCase(), name: type }),
-  }),
   getLegalActions,
   isActionLegal,
   applyActions,
