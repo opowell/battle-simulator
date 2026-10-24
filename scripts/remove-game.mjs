@@ -35,7 +35,10 @@ const url = `https://github.com/${repo}`;
 const readme = path.join(ROOT, 'games', game, 'README.md');
 const title = existsSync(readme) ? readFileSync(readme, 'utf8').match(/^#\s+(.+)$/m)?.[1].trim() ?? game : game;
 
-const demos = readdirSync(path.join(ROOT, 'demo')).filter(f => f.startsWith(`${game}-`)).map(f => `demo/${f}`);
+// Its demos and benches: named after it, or not (as extract-game.mjs's MORE_DEMOS).
+const MORE_DEMOS = { chess: ['obscuro-demo.js'] };
+const demos = readdirSync(path.join(ROOT, 'demo'))
+  .filter(f => f.startsWith(`${game}-`) || MORE_DEMOS[game]?.includes(f)).map(f => `demo/${f}`);
 git('rm', '-r', '-q', `games/${game}`, ...demos);
 
 // The registry: one line per game.

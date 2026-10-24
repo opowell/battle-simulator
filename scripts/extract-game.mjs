@@ -45,6 +45,9 @@ const PORTS = {
   ffta: 4533, sc1: 4534, sc2: 4535, civ1: 4536, civ2: 4537, chess: 4538, rogue: 4539, simcity: 4540,
 };
 
+// Demos of a game that aren't named after it.
+const MORE_DEMOS = { chess: ['obscuro-demo.js'] };
+
 // rogue and simcity were never in this repo's registry; in their own they are,
 // seated as their tests seat them.
 const UNREGISTERED = {
@@ -122,7 +125,7 @@ function main() {
     if (ref && ref !== 'refs/heads/main') git(to, 'update-ref', '-d', ref);
   }
   git(to, 'remote', 'remove', 'origin');
-  const demos = readdirSync(path.join(ROOT, 'demo')).filter(f => f.startsWith(`${game}-`));
+  const demos = readdirSync(path.join(ROOT, 'demo')).filter(f => f.startsWith(`${game}-`) || MORE_DEMOS[game]?.includes(f));
   run(to, 'git-filter-repo', '--force', '--quiet',
     '--path', `games/${game}/`,
     ...demos.flatMap(f => ['--path', `demo/${f}`]),
