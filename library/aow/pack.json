@@ -1,12 +1,19 @@
 {
   "game": "aow",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "15e23d7add6bc488e2c571d0b54dc500df5032ee",
+    "date": "2026-10-24T19:06:21+02:00"
   },
   "units": 4,
   "art": 0,
+  "terrain": 6,
+  "maps": 2,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "squads of mixed men: a map's squad opens as ten men of its dominant kind",
+    "continuous positions: a squad stands on the square it was in",
+    "supply, forage, morale and routing: the core has no upkeep",
+    "forts, villages and flags are features only: no reinforcements, supply or capture-the-flag victory",
+    "shallows' defence penalty (-40%): the core's cover is never negative",
+    "the battlefield generator: only the two scenarios' worlds, at the game's own seed"
   ]
 }
