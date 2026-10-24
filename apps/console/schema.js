@@ -34,7 +34,17 @@ const stat = (value) => {
   const square = value * value
   return Math.abs(square - Math.round(square)) < 1e-9 ? `√${Math.round(square)}` : String(value)
 }
-const unitStat = (key, label, hint, hideBelow) => metric(key, label, { format: stat, width: '84px', hint, hideBelow })
+// A move, in decimals where they are exact (3.4 rather than 3 2/5); a third has
+// no decimal form, so 1 1/3 stays a fraction.
+const decimalStat = (value) => {
+  const f = typeof value === 'number' && globalThis.EXACT?.asFraction(value)
+  if (!f) return stat(value)
+  let d = f.d
+  while (d % 2 === 0) d /= 2
+  while (d % 5 === 0) d /= 5
+  return d === 1 ? String(value) : stat(value)
+}
+const unitStat = (key, label, hint, hideBelow, format = stat) => metric(key, label, { format, width: '84px', hint, hideBelow })
 
 const kb = (value) => (value == null ? '' : `${Math.max(1, Math.round(Number(value) / 1024))} KB`)
 const count = (n) => n.toLocaleString('en')
@@ -170,8 +180,8 @@ export function buildSchema(catalog, { Art }) {
       key: 'units',
       label: 'Units',
       count: count(catalog.units.length),
-      // A unit's card is its picture and its name, like a game's; the type,
-      // the game and the stats are the table's.
+      // A unit's card is its picture and its name, like a game's; the game and
+      // the stats are the table's.
       card: 'picture',
       // Pressing a unit narrows to it: its game and the sides that start with
       // it, under a card of its own (UnitSummaryCards).
@@ -182,15 +192,13 @@ export function buildSchema(catalog, { Art }) {
         ordinal,
         art,
         identity('Unit', { scope: true }),
-        reference('Type', { mono: true, width: '140px', hideBelow: 1100 }),
         gameColumn,
         unitStat('attack', 'Attack', 'How hard it hits, in its own game\'s numbers', 620),
         unitStat('defense', 'Defense', 'How well it resists being hit, in its own game\'s numbers', 620),
         unitStat('hp', 'HP', 'How much punishment it takes before it dies', 760),
-        unitStat('move', 'Move', 'How far it moves in a turn, in board cells', 760),
+        unitStat('move', 'Move', 'How far it moves in a turn, in board cells', 760, decimalStat),
         unitStat('range', 'Range', 'How far it attacks, in board cells (1 = adjacent)', 900),
         { key: 'domain', label: 'Domain', width: '84px', hideBelow: 900 },
-        { key: 'sides', label: 'Sides', hideBelow: 1100 },
       ],
       sorts: [
         { key: 'game', label: 'game' },
