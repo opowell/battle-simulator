@@ -4,7 +4,7 @@ import { installLearnedEval } from '#core/agents/learned/leafEval.js';
 // Learned leaf evaluation (src/agents/LEARNED-EVAL-PLAN.md): a no-op unless a
 // gate-passing model.json sits next to this file. Regenerate models any time:
 //   node src/agents/learned/train.mjs --game civ2   (or --all)
-installLearnedEval(Civ2Game, import.meta.url);
+installLearnedEval(Civ2Game, import.meta.url, { deferred: true });
 
 export { Civ2Game };
 export { TERRAIN, TERRAIN_SPECIALS, SPECIAL_BONUSES } from './terrain.js';

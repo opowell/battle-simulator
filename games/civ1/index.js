@@ -7,7 +7,7 @@ import { makeCiv1Agent } from './ai.js';
 // Learned leaf evaluation (src/agents/LEARNED-EVAL-PLAN.md): a no-op unless a
 // gate-passing model.json sits next to this file. Regenerate models any time:
 //   node src/agents/learned/train.mjs --game civ1   (or --all)
-installLearnedEval(Civ1Game, import.meta.url);
+installLearnedEval(Civ1Game, import.meta.url, { deferred: true });
 
 // Search hooks are installed here rather than declared inside Civ1Game.js so the
 // game module stays free of any dependency on the agents (searchActions.js reaches

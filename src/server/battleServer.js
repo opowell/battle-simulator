@@ -36,6 +36,7 @@ import { planReconfigure, carriedRoster, rebuiltState, editedState, livePreview 
 import { validate as validateAction } from '../engine/ActionValidator.js';
 import * as gameEditor from './gameEditor.js';
 import { buildCatalog, createRecordingReader } from './catalog.js';
+import { gameImageFiles } from './gameImages.js';
 import { RandomAgent } from '../agents/index.js';
 import { ApiAgent } from '../agents/ApiAgent.js';
 import { ObscuroAgent } from '../agents/ObscuroAgent.js';
@@ -249,63 +250,18 @@ function sniffMime(buf) {
   return null;
 }
 
-// GIF preferred over PNG/JPG for animated sprites.
-const TYPE_EXT_PREF = { gif: 0, png: 1, jpg: 2, jpeg: 2, webp: 3 };
-
 async function serveGameImage(gameName, job, res, type) {
-  const safe = job.replace(/[^a-zA-Z0-9_-]/g, '');
-  // Search both images/ and assets/ directories
-  const baseDirs = [
-    resolve(GAMES_DIR, gameName, 'images'),
-    resolve(GAMES_DIR, gameName, 'assets'),
-  ];
   // Sprite art is still being iterated on (files get replaced in place at stable
   // URLs, e.g. re-sliced or re-mapped facing sets), so never let a browser reuse
   // a cached image without revalidating — otherwise a swapped file keeps showing
   // the old pixels for up to a day. `no-cache` = "always revalidate before use".
-  const cacheControl = 'no-cache';
-
-  // /images/:game/:job/:type  →  games/:game/{images,assets}/:job/{type}*
-  if (type) {
-    const safeType = type.replace(/[^a-zA-Z0-9_-]/g, '');
-    for (const base of baseDirs) {
-      const subdir = resolve(base, safe);
-      let files;
-      try { files = await readdir(subdir); } catch { continue; }
-      const candidates = files
-        .map(f => { const dot = f.lastIndexOf('.'); return dot < 0 ? null : { f, ext: f.slice(dot + 1).toLowerCase() }; })
-        .filter(x => x && f_stem(x.f).startsWith(safeType))
-        .sort((a, b) => (TYPE_EXT_PREF[a.ext] ?? 99) - (TYPE_EXT_PREF[b.ext] ?? 99));
-      for (const { f } of candidates) {
-        try {
-          const data = await readFile(resolve(subdir, f));
-          const ext = f.slice(f.lastIndexOf('.'));
-          const ct = sniffMime(data) ?? MIME_TYPES[ext] ?? 'application/octet-stream';
-          res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': cacheControl });
-          return res.end(data);
-        } catch {}
-      }
-    }
-    res.writeHead(404); res.end('Not found');
-    return;
-  }
-
-  // /images/:game/:job  →  games/:game/{images,assets}/:job.*  (flat file)
-  for (const base of baseDirs) {
-    let files;
-    try { files = await readdir(base); } catch { continue; }
-    for (const f of files) {
-      const dot = f.lastIndexOf('.');
-      if (dot < 0) continue;
-      if (f.slice(0, dot) === safe) {
-        try {
-          const data = await readFile(resolve(base, f));
-          const ct = sniffMime(data) ?? MIME_TYPES[f.slice(dot)] ?? 'application/octet-stream';
-          res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': cacheControl });
-          return res.end(data);
-        } catch {}
-      }
-    }
+  for (const abs of await gameImageFiles(resolve(GAMES_DIR, gameName), job, type)) {
+    try {
+      const data = await readFile(abs);
+      const ct = sniffMime(data) ?? MIME_TYPES[extname(abs)] ?? 'application/octet-stream';
+      res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' });
+      return res.end(data);
+    } catch {}
   }
   res.writeHead(404); res.end('Not found');
 }

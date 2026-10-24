@@ -14,9 +14,13 @@
 //      (truncated games: discounted static-eval margin).
 //   2. TRAIN: antisymmetric-pair MLP (src/agents/learned/mlp.js) by Adam/MSE.
 //   3. GATE: learned-eval Obscuro vs static-eval Obscuro over --gate-games
-//      (colors alternate). The model is written to games/<game>/model.json
-//      ONLY if it scores ≥ --gate (default 0.55) — otherwise the game keeps
-//      its hand heuristic and this run leaves no trace (report aside).
+//      (colors alternate). The model is written to the model.json beside the
+//      game's index.js ONLY if it scores ≥ --gate (default 0.55) — otherwise
+//      the game keeps its hand heuristic and this run leaves no trace (report
+//      aside).
+//
+// The games are the registry's (--registry, games/games.json by default) that
+// take a learned eval: those whose index.js calls installLearnedEval.
 //
 // Flags (defaults in brackets):
 //   --game <name>        train one game            --all        train the roster
@@ -27,12 +31,14 @@
 //   --max-plies N [160]  hard game-length cap
 //   --epochs N [30]      training epochs per generation
 //   --seed N [7]         master seed               --force      retrain existing
-//   --include-deferred   also run risk/kdice/civ1/civ2 with --all
+//   --include-deferred   also run the games that defer it (installLearnedEval's
+//                        `deferred`) with --all
+//   --registry <file>    the registry to find games in [games/games.json]
 //   --dry                run everything but never write model.json
 // ---------------------------------------------------------------------------
 
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { MLP } from './mlp.js';
 import { encodeState, opponentOf, ENCODER_VERSION, INPUT_SIZE } from './encoder.js';
@@ -41,18 +47,18 @@ import { ObscuroAgent } from '../ObscuroAgent.js';
 import { RandomAgent } from '../RandomAgent.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const GAMES_DIR = path.join(HERE, '..', '..', '..', 'games');
+const DEFAULT_REGISTRY = path.join(HERE, '..', '..', '..', 'games', 'games.json');
 
-// Roster: game name → module dir + export. Deferred games (multiplayer head /
-// truncation-dominated labels — see the plan) are skipped by --all but can be
-// trained explicitly with --game.
-const ROSTER = {
-  ffta: 'FFTAGame', doom: 'DoomGame', xcom: 'XComGame',
-  mudandblood: 'MudAndBloodGame', sc1: 'Sc1Game',
-  sc2: 'Sc2Game', cs: 'CsGame', combatmission: 'CombatMissionGame', aow: 'AowGame',
-  risk: 'RiskGame', kdice: 'KDiceGame', civ1: 'Civ1Game', civ2: 'Civ2Game',
-};
-const DEFERRED = new Set(['risk', 'kdice', 'civ1', 'civ2']);
+/** Every registered game that takes a learned eval, by name. */
+async function trainable(registryFile) {
+  const entries = JSON.parse(readFileSync(registryFile, 'utf8'));
+  const out = {};
+  for (const [name, e] of Object.entries(entries)) {
+    const game = (await import(new URL(e.module, pathToFileURL(registryFile)).href))[e.export];
+    if (game?.learnedEvalModel) out[name] = game;
+  }
+  return out;
+}
 
 function mulberry32(a) {
   return function () {
@@ -67,7 +73,7 @@ function parseArgs(argv) {
   const o = {
     game: null, all: false, games: 200, gens: 2, gateGames: 100, gate: 0.55,
     agentMs: 60, maxPlies: 120, epochs: 30, seed: 7, force: false,
-    includeDeferred: false, dry: false,
+    includeDeferred: false, dry: false, registry: DEFAULT_REGISTRY,
   };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
@@ -83,6 +89,7 @@ function parseArgs(argv) {
     else if (a === '--seed') o.seed = Number(argv[++i]);
     else if (a === '--force') o.force = true;
     else if (a === '--include-deferred') o.includeDeferred = true;
+    else if (a === '--registry') o.registry = path.resolve(argv[++i]);
     else if (a === '--dry') o.dry = true;
     else { console.error(`unknown flag ${a}`); process.exit(1); }
   }
@@ -236,10 +243,8 @@ async function gateMatch(game, net, opts, rng) {
   return score / opts.gateGames;
 }
 
-async function trainGame(name, opts) {
-  const exportName = ROSTER[name];
-  if (!exportName) { console.error(`unknown game '${name}' (roster: ${Object.keys(ROSTER).join(', ')})`); return null; }
-  const modelPath = path.join(GAMES_DIR, name, 'model.json');
+async function trainGame(name, game, opts) {
+  const modelPath = game.learnedEvalModel;
   if (!opts.force && existsSync(modelPath)) {
     try {
       const existing = JSON.parse(readFileSync(modelPath, 'utf8'));
@@ -249,8 +254,6 @@ async function trainGame(name, opts) {
       }
     } catch { /* corrupt — retrain */ }
   }
-  const mod = await import(path.join(GAMES_DIR, name, 'index.js'));
-  const game = mod[exportName];
   if (!game?.evaluateState) { console.error(`[${name}] no evaluateState — skipped`); return null; }
   // Train against the PRISTINE definition even if a previous model was
   // installed at import time.
@@ -295,13 +298,18 @@ async function trainGame(name, opts) {
 }
 
 const opts = parseArgs(process.argv);
+const roster = await trainable(opts.registry);
+if (opts.game && !roster[opts.game]) {
+  console.error(`unknown game '${opts.game}' (roster: ${Object.keys(roster).join(', ')})`);
+  process.exit(1);
+}
 const names = opts.all
-  ? Object.keys(ROSTER).filter(n => opts.includeDeferred || !DEFERRED.has(n))
+  ? Object.keys(roster).filter(n => opts.includeDeferred || !roster[n].learnedEvalDeferred)
   : [opts.game];
 const summary = [];
 for (const name of names) {
   try {
-    const spec = await trainGame(name, opts);
+    const spec = await trainGame(name, roster[name], opts);
     summary.push({ name, score: spec?.gate?.score, passed: spec?.gate?.passed });
   } catch (e) {
     console.error(`[${name}] FAILED: ${e?.message ?? e}`);

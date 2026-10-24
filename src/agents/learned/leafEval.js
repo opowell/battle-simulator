@@ -30,12 +30,21 @@ import { encodeState, opponentOf, ENCODER_VERSION } from './encoder.js';
  * @param {object} game  the GameDefinition to (maybe) rewire — mutated in place
  * @param {string} modelUrl  import.meta.url of the game's index.js; the model
  *   is looked up as ./model.json next to it
+ * @param {object} [opts]
+ * @param {boolean} [opts.deferred]  train.mjs --all leaves the game out unless
+ *   asked (--include-deferred): multiplayer heads and truncation-dominated
+ *   labels, see the plan
  * @returns {boolean} whether a learned eval was installed
+ *
+ * Either way the game is marked as one that takes a learned eval, and where its
+ * model goes (`learnedEvalModel`), which is how train.mjs finds it.
  */
-export function installLearnedEval(game, modelUrl) {
+export function installLearnedEval(game, modelUrl, { deferred = false } = {}) {
+  game.learnedEvalModel = fileURLToPath(new URL('./model.json', modelUrl));
+  if (deferred) game.learnedEvalDeferred = true;
   let spec;
   try {
-    spec = JSON.parse(readFileSync(fileURLToPath(new URL('./model.json', modelUrl)), 'utf8'));
+    spec = JSON.parse(readFileSync(game.learnedEvalModel, 'utf8'));
   } catch { return false; } // no model — keep the hand heuristic
   if (spec.encoderVersion !== ENCODER_VERSION) return false; // stale featurizer
   let net;

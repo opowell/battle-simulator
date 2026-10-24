@@ -5,7 +5,6 @@ import { RandomAgent } from '../RandomAgent.js';
 import { makeGenericAgent, whoAmI, genericEvaluateState } from './GenericAgent.js';
 import { readBattle, unitView } from './battleView.js';
 import { ArenaGame, UNIT_TYPES } from '../../../games/arena/index.js';
-import { ChessGame } from '../../../games/chess/index.js';
 
 const PLAYERS = [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }];
 
@@ -32,9 +31,9 @@ test('reads unit numbers from the game contract, unit fields, type tables or alg
     { units: [{ id: 'u', ownerId: 'p1', type: 'mage', position: { x: 1, y: 2 } }] });
   assert.deepEqual([table.units[0].hp, table.units[0].attack, table.units[0].defense, table.units[0].range], [15, 15, 1, 2]);
 
-  const c = ChessGame.createInitialState([{ id: 'white' }, { id: 'black' }], {});
-  const pieces = readBattle(ChessGame, c).units;
-  assert.ok(pieces.length === 32 && pieces.every(u => u.point && u.point.x >= 0 && u.point.x < 8));
+  // A board named in algebraic squares (chess's own reading of it is chess's test).
+  const squares = readBattle({}, { units: [{ id: 'k', ownerId: 'p1', type: 'king', position: 'e1' }, { id: 'q', ownerId: 'p2', type: 'queen', position: 'd8' }] }).units;
+  assert.deepEqual(squares.map(u => [u.point.x, u.point.y]), [[4, 0], [3, 7]]);
 
   assert.equal(readBattle(ArenaGame, ArenaGame.createInitialState(PLAYERS, { space: 'continuous' })).metric, 'euclid');
 });
@@ -113,14 +112,10 @@ test('beats a random player in every (space × time × play) mode of Arena', asy
   assert.ok(wins >= 6, `won ${wins} of 8`);
 });
 
-test('plays every Arena scenario, and a game it was not written for, legally', async () => {
+test('plays every Arena scenario legally', async () => {
   for (const { config } of ArenaGame.scenarios) {
     const players = PLAYERS.map(p => ({ ...p, agent: makeGenericAgent(ArenaGame, { timeMs: 20 }) }));
     const { result } = await new GameEngine(ArenaGame, players, { ...config, maxTurns: 6 }).run();
     assert.ok(result);
   }
-  const chess = ChessGame.createInitialState([{ id: 'white' }, { id: 'black' }], {});
-  const legal = ChessGame.getLegalActions(chess, 'white');
-  const pick = makeGenericAgent(ChessGame, { timeMs: 50 }).chooseAction(chess, legal, ChessGame);
-  assert.ok(legal.some(a => JSON.stringify(a) === JSON.stringify(pick)));
 });

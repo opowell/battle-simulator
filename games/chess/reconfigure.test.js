@@ -1,11 +1,12 @@
-// reconfigure.test.js — changing settings under a game in progress: how a change
+// reconfigure.test.js — changing settings under a chess game in progress (the core's
+// src/engine/reconfigure.js, through chess's four board models): how a change
 // is classified, how units cross between board models, and the engine's guard
 // against a move chosen before the change landing after it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GameEngine, EngineReconfigured } from './GameEngine.js';
-import { planReconfigure, carriedRoster, rebuiltState, editedState } from './reconfigure.js';
-import { ChessGame } from '../../games/chess/index.js';
+import { GameEngine, EngineReconfigured } from '#core/engine/GameEngine.js';
+import { planReconfigure, carriedRoster, rebuiltState, editedState } from '#core/engine/reconfigure.js';
+import { ChessGame } from './index.js';
 
 const seats = () => [{ id: 'white', name: 'W' }, { id: 'black', name: 'B' }];
 
