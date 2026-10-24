@@ -1,12 +1,19 @@
 {
   "game": "sc1",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "b662790a16c17ef36f9dfd0f27721aac14ace878",
+    "date": "2026-10-24T22:31:47+02:00"
   },
   "units": 26,
   "art": 21,
+  "terrain": 6,
+  "maps": 3,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "buildings, workers' mining and production: the core has no economy (each main base is kept as a map feature)",
+    "mineral and gas amounts: a field or geyser is only ground that ground units cannot walk",
+    "creep",
+    "shields, armour and splash as their own rules: the pack reads shields as hp and armour as defence",
+    "high ground: SC1 has ranged attackers below it miss 30% of shots; the core gives the higher defender cover instead, and its elevation blocks sight across the plateau where SC1's sight (three squares, Chebyshev) has no line of sight at all",
+    "continuous positions: SC1 can start units between squares; each is put on its own square, the nearest free one where two would share"
   ]
 }
