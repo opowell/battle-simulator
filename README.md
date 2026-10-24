@@ -7,7 +7,6 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | Key | Game | Docs |
 |---|---|---|
 | `chess` | Chess — plus fog of war and three (space x time) variants | [games/chess/](games/chess/README.md) |
-| `civ1` | Civilization 1 | [games/civ1/](games/civ1/README.md) |
 | `combatmission` | Combat Mission | [games/combatmission/](games/combatmission/README.md) |
 | `cs` | Counter-Strike | [games/cs/](games/cs/README.md) |
 | `ffta` | Final Fantasy Tactics Advance | [games/ffta/](games/ffta/README.md) |
@@ -34,6 +33,7 @@ units, terrain and maps in [the library](#library) here.
 | `warofdots` | warofdots | [opowell/battle-warofdots](https://github.com/opowell/battle-warofdots) |
 | `rogue` | rogue | [opowell/battle-rogue](https://github.com/opowell/battle-rogue) |
 | `simcity` | simcity | [opowell/battle-simcity](https://github.com/opowell/battle-simcity) |
+| `civ1` | Civilization I | [opowell/battle-civ1](https://github.com/opowell/battle-civ1) |
 
 ## Quick start
 
@@ -85,10 +85,10 @@ Each game has an interactive demo (you vs random AI) and an `--auto` mode (rando
 ```sh
 node demo/chess-demo.js
 node demo/chess-demo.js --auto
-node demo/civ1-demo.js --auto --greedy
+node demo/generic-ai-bench.mjs --game=close-quarters
 ```
 
-All demos are in `demo/`: `chess`, `civ1`, `combatmission`, `cs`, `ffta`, `sc2`, `doom`, `rogue`.
+All demos are in `demo/`: `chess`, `combatmission`, `cs`, `ffta`, `sc2`, `doom`.
 
 ### Start the HTTP API server
 

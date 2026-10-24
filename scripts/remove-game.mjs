@@ -74,7 +74,7 @@ ${row}
   } else {
     s = s.replace(/(## Games in repos of their own[\s\S]*?\|---\|---\|---\|\n(?:\|.*\|\n)*)/, `$1${row}\n`);
   }
-  return s.replace(new RegExp(`(All demos are in \`demo/\`: .*?)\`${game}\`, `), '$1');
+  return s.replace(new RegExp(`(All demos are in \`demo/\`: .*?)(\`${game}\`, |, \`${game}\`(?=\\.))`), '$1');
 });
 
 edit('plans/migration/README.md', (s) => s.replace(
