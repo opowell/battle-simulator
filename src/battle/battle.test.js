@@ -376,6 +376,15 @@ test('counted groups merge, and strike once per member', () => {
   assert.equal(unit(s, 'p2-1').hp, 12 - 6, 'six members × ⌊4/4⌋');
 });
 
+test('a placement may say how many members its counted group starts with', () => {
+  const spec = { unitTypes: { band: { hp: 4, attack: 2, defense: 2, range: 1, speed: 2, rate: 1, vision: 3, count: 3 } },
+    board: { ...OPEN(), stacking: 'count' },
+    units: [{ type: 'band', seat: 0, at: [1, 1], count: 7 }, { type: 'band', seat: 1, at: [3, 1] }] };
+  const s = start(spec);
+  assert.deepEqual([unit(s, 'p1-1').hp, unit(s, 'p1-1').maxHp, unit(s, 'p1-1').memberHp], [28, 28, 4]);
+  assert.equal(unit(s, 'p2-1').hp, 12, 'its type\'s three');
+});
+
 test('a wrapped board joins its left and right edges; four neighbours measure Manhattan', () => {
   const wrap = start({ unitTypes: { man: { ...MAN, speed: 1 } }, board: { ...OPEN(6, 3), wrap: true }, units: [{ type: 'man', seat: 0, at: [0, 1] }, { type: 'man', seat: 1, at: [5, 1] }] });
   assert.ok(has(wrap, 'p1', a => a.type === 'attack'), 'next door across the seam');

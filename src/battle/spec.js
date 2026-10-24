@@ -23,7 +23,7 @@
 //                 elevation, wrap, neighbours, regions, shapes, walls,
 //                 stacking: 'one' | 'stack' | 'count', stackDeath, climb }
 //   armies      [[type, …] per seat]   laid along each seat's edge, or
-//   units       [{ type, seat, at: [x, y], facing }]
+//   units       [{ type, seat, at: [x, y], facing, count }]  count: a counted group's members
 //   victory     [{ type: 'eliminate' | 'royal' | 'hold' | 'reach' | 'survive' |
 //                  'points', … } | { fn }]                                 see victory.js
 //   orientation { fov, arcs, turnCost }  facing for every unit type that has none

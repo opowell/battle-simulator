@@ -314,9 +314,10 @@ function defaultUnits(state, playerIds, w, h, layout) {
   return units;
 }
 
-// A spec's own placements: [{ type, seat, at: [x, y] | regionId, facing }]. An
-// entry naming a `game` is a unit of that game, from the library, built by
-// `foreign` (see makeBattleGame).
+// A spec's own placements: [{ type, seat, at: [x, y] | regionId, facing, count }].
+// An entry naming a `game` is a unit of that game, from the library, built by
+// `foreign` (see makeBattleGame). On a counted board (stacking 'count') `count`
+// says how many members the group starts with, instead of its type's.
 function placedUnits(state, playerIds, list, foreign) {
   const n = {};
   const B = boardIn(state);
@@ -326,7 +327,8 @@ function placedUnits(state, playerIds, list, foreign) {
     const at = typeof e.at === 'string' ? B.anchorOf(e.at) : { x: e.at[0], y: e.at[1] };
     const id = e.id ?? `${pid}-${n[pid]}`;
     const facing = e.facing ?? SEAT_FACING[(e.seat ?? 0) % 4];
-    const u = e.game ? foreign({ id, ownerId: pid, type: e.type, game: e.game, position: at, facing }) : makeUnit(state, { id, ownerId: pid, type: e.type, position: at, facing });
+    let u = e.game ? foreign({ id, ownerId: pid, type: e.type, game: e.game, position: at, facing }) : makeUnit(state, { id, ownerId: pid, type: e.type, position: at, facing });
+    if (e.count != null && u.memberHp) u = { ...u, hp: u.memberHp * Math.max(1, e.count), maxHp: u.memberHp * Math.max(1, e.count) };
     return e.hp != null ? { ...u, hp: Math.min(u.maxHp, e.hp) } : u;
   });
 }
@@ -1155,7 +1157,10 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
     const host = hostFor(sp.scale);
     const u = mintForeign(host, state, { ownerId, type, game: from, position }, id,
       (_spec, chassis) => ({ ...makeUnit(state, { id, ownerId, type: chassis, position, facing }), perTurn: null }));
-    return { ...u, position: { x: position.x, y: position.y } };
+    // On a counted board a member is the foreign unit itself, not its chassis: its
+    // hit points are its own, so the group is one of it.
+    const member = u.memberHp ? { memberHp: u.maxHp } : {};
+    return { ...u, ...member, position: { x: position.x, y: position.y } };
   }
 
   function createInitialState(players, config = {}) {

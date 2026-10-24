@@ -60,7 +60,7 @@ with the base table, and every other key replaces the base's.
   formulas:   { damage: 'expression' | { fn: 'name' } },
   board:      { topology, width, height, … },
   armies:     [['knight', 'mage'], …]    // per seat, along its edge
-  units:      [{ type, seat, at: [x, y] | 'regionId', facing, hp, game }],
+  units:      [{ type, seat, at: [x, y] | 'regionId', facing, hp, count, game }],
   victory:    [{ type: 'eliminate' }, …],
   orientation:{ fov, arcs, turnCost },   // facing for every type without its own
   modes:      { space, time, play },     // where the setup form starts
@@ -163,7 +163,8 @@ its ground). `concealment` hides a unit from anyone farther than it.
 `stacking`: `one` (a unit a cell), `stack` (friends share; a blow lands on the
 stack's best defender, and with `stackDeath` the stack dies with it) or `count`
 (a unit is a group of `count` members, merging with its own type where they
-meet, striking once per member).
+meet, striking once per member). A placement's own `count` overrides its
+type's, and a library unit's member is that unit, whatever its chassis.
 
 ### Victory
 
