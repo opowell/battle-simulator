@@ -34,6 +34,31 @@ test('two battle apps on one httpServer both get their WebSocket upgrades', () =
   assert.equal(destroyed, 0);
 });
 
+// A game's own repo runs JAS with JAS_DEFAULT_APP, which serves the app at / for
+// HTTP only: the Browser there opens its sockets on /sessions/:id/ws, unprefixed.
+test('the app JAS serves at / gets its sockets opened at /', () => {
+  const upgrades = [];
+  const httpServer = { on: (event, fn) => upgrades.push(fn) };
+  const was = process.env.JAS_DEFAULT_APP;
+  process.env.JAS_DEFAULT_APP = 'atroot';
+  try {
+    serverOne.mount({ use() {} }, { id: 'atroot' }, httpServer);
+  } finally {
+    if (was === undefined) delete process.env.JAS_DEFAULT_APP; else process.env.JAS_DEFAULT_APP = was;
+  }
+  serverTwo.mount({ use() {} }, { id: 'beside' }, httpServer);
+  const [atRoot, beside] = upgrades;
+  let refused = 0;
+  const socket = { destroy() {}, write: (s) => { if (/404/.test(s)) refused++; } };
+  // No such session, so it is refused, but by the app at / — not left hanging.
+  assert.equal(atRoot({ url: '/sessions/x/ws?player=p1' }, socket, null), true);
+  assert.equal(refused, 1);
+  // Any other socket at / is somebody else's, and an app JAS does not serve at /
+  // claims nothing there.
+  assert.equal(atRoot({ url: '/elsewhere/ws' }, socket, null), false);
+  assert.equal(beside({ url: '/sessions/x/ws' }, socket, null), false);
+});
+
 test('/lib serves a game module with its #core imports rewritten to URLs', async () => {
   const http = serverOne.listen(0);
   try {

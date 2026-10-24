@@ -2809,6 +2809,9 @@ async function handleRequest(req, res) {
 
 const wss = new WebSocketServer({ noServer: true });
 
+// The one path a socket is opened on, /sessions/:id/ws.
+const SESSION_SOCKET = /^\/sessions\/[^/]+\/ws$/;
+
 function handleUpgrade(req, socket, head, prefix = '') {
   const url = new URL(req.url, 'http://localhost');
   if (prefix && url.pathname !== prefix && !url.pathname.startsWith(prefix + '/')) return false;
@@ -2929,10 +2932,15 @@ export function createBattleServer({ games, root = CORE_DIR, gamesDir, registryF
     // Several apps may share one httpServer, battle apps among them, so the mark
     // that our 'upgrade' listener is on is per prefix: a process-wide one would
     // leave the second battle app's WebSockets unattached.
+    // JAS_DEFAULT_APP serves one app at / as well as under its prefix (how a game's
+    // own repo runs, its start.sh), but JAS rewrites only HTTP requests there, not
+    // upgrades: that app claims the root's session sockets too, and nothing else.
+    const atRoot = process.env.JAS_DEFAULT_APP === app.id;
     if (httpServer) {
       httpServer.__battleSimulatorUpgradePrefixes ??= new Set();
       if (!httpServer.__battleSimulatorUpgradePrefixes.has(prefix)) {
-        httpServer.on('upgrade', (req, socket, head) => handleUpgrade(req, socket, head, prefix));
+        httpServer.on('upgrade', (req, socket, head) => handleUpgrade(req, socket, head, prefix)
+          || (atRoot && SESSION_SOCKET.test(new URL(req.url, 'http://localhost').pathname) && handleUpgrade(req, socket, head, '')));
         httpServer.__battleSimulatorUpgradePrefixes.add(prefix);
       }
     }
