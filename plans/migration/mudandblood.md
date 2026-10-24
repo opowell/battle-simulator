@@ -73,3 +73,17 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-mudandblood](https://github.com/opowell/battle-mudandblood),
+built by `scripts/extract-game.mjs` and pinned to the core at the commit it left
+from. Checked there: `npm test` (the game's 30 tests, its 2 golden replays among
+them, plus the app's own 4; the rollout check skipped unless `SLOW_TESTS=1`, as
+here) passes; in the Browser, driven headless, the default setup draws the
+trench board with every unit's portrait served from its `images/`, a turn ends
+and the AI takes its own, with no console error or failed request. Its pack (7
+units with their art, 6 terrain types and the one map, "No Man's Land", opening
+with the first wave and won by the Axis on the trench) was exported into
+`library/mudandblood/` first. It has no scenarios, so only the default setup was
+opened.

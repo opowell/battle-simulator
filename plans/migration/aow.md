@@ -99,7 +99,7 @@ None yet.
 To [opowell/battle-aow](https://github.com/opowell/battle-aow), built by
 `scripts/extract-game.mjs` and pinned to the core at the commit it left from.
 Checked there: `npm test` (the game's 24 tests, its 4 golden replays among them,
-plus the app's own 2; the rollout check skipped unless `SLOW_TESTS=1`, as here)
+plus the app's own 4; the rollout check skipped unless `SLOW_TESTS=1`, as here)
 passes; in the Browser, driven headless, the default setup, `race` and `epic`
 draw the continuous map with its terrain shapes, forts, villages and flags, the
 Orders and Minimap panels open, and a squad's order goes through, with no

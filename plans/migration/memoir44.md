@@ -93,7 +93,7 @@ None yet.
 To [opowell/battle-memoir44](https://github.com/opowell/battle-memoir44), built
 by `scripts/extract-game.mjs` and pinned to the core at the commit it left from.
 Checked there: `npm test` (the game's 26 tests, its 3 golden replays among them,
-plus the app's own 2) passes; in the Browser, driven headless, the default
+plus the app's own 4) passes; in the Browser, driven headless, the default
 setup, `encounter` and `pegasus-bridge` draw the board with both armies in the
 roster, the Orders panel lists the hand of command cards and one can be played,
 with no console error or failed request. Its pack (3 units, 12 terrain types
