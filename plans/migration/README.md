@@ -22,18 +22,18 @@ change that is meant to alter what it does: `node scripts/golden.mjs <game>`.
 |---|---|---|
 | [aow](aow.md) | its own repo, wave 1 | |
 | [arena](arena.md) | stays: becomes `BattleGame` | |
-| [axisallies](axisallies.md) | its own repo, wave 3 | |
+| [axisallies](axisallies.md) | [opowell/battle-axisallies](https://github.com/opowell/battle-axisallies) | |
 | [chess](chess.md) | its own repo, wave 6 | owns obscuro-chess and the Stockfish cache |
 | [civ1](civ1.md) | its own repo, wave 5 | |
-| [civ2](civ2.md) | its own repo, wave 5 | |
+| [civ2](civ2.md) | [opowell/battle-civ2](https://github.com/opowell/battle-civ2) | |
 | [combatmission](combatmission.md) | its own repo, wave 2 | |
 | [cs](cs.md) | its own repo, wave 2 | inherits csmini's gaps; sequential play stalls |
 | [doom](doom.md) | its own repo, wave 2 | |
 | [ffta](ffta.md) | its own repo, wave 4 | replaces tactical in the generic AI bench |
-| [kdice](kdice.md) | its own repo, wave 3 | |
+| [kdice](kdice.md) | [opowell/battle-kdice](https://github.com/opowell/battle-kdice) | |
 | [memoir44](memoir44.md) | its own repo, wave 1 | |
 | [mudandblood](mudandblood.md) | its own repo, wave 2 | |
-| [risk](risk.md) | its own repo, wave 3 | |
+| [risk](risk.md) | [opowell/battle-risk](https://github.com/opowell/battle-risk) | |
 | [rogue](rogue.md) | open decision 4 | not registered |
 | [sc1](sc1.md) | its own repo, wave 4 | shares StarCraft code with sc2 |
 | [sc2](sc2.md) | its own repo, wave 4 | shares StarCraft code with sc1 |

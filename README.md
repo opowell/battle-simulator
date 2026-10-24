@@ -8,9 +8,6 @@ A turn-based game engine for running and building strategy games in JavaScript (
 |---|---|---|
 | `chess` | Chess — plus fog of war and three (space x time) variants | [games/chess/](games/chess/README.md) |
 | `civ1` | Civilization 1 | [games/civ1/](games/civ1/README.md) |
-| `civ2` | Civilization 2 | [games/civ2/](games/civ2/README.md) |
-| `risk` | Risk | [games/risk/](games/risk/README.md) |
-| `axisallies` | Axis & Allies | [games/axisallies/](games/axisallies/README.md) |
 | `combatmission` | Combat Mission | [games/combatmission/](games/combatmission/README.md) |
 | `aow` | The Ancient Art of War | [games/aow/](games/aow/README.md) |
 | `cs` | Counter-Strike | [games/cs/](games/cs/README.md) |
@@ -29,6 +26,10 @@ units, terrain and maps in [the library](#library) here.
 | Key | Game | Repo |
 |---|---|---|
 | `xcom` | XCOM | [opowell/battle-xcom](https://github.com/opowell/battle-xcom) |
+| `risk` | Risk | [opowell/battle-risk](https://github.com/opowell/battle-risk) |
+| `kdice` | kdice | [opowell/battle-kdice](https://github.com/opowell/battle-kdice) |
+| `axisallies` | Axis & Allies | [opowell/battle-axisallies](https://github.com/opowell/battle-axisallies) |
+| `civ2` | Civilization II | [opowell/battle-civ2](https://github.com/opowell/battle-civ2) |
 
 ## Quick start
 
@@ -83,7 +84,7 @@ node demo/chess-demo.js --auto
 node demo/civ1-demo.js --auto --greedy
 ```
 
-All demos are in `demo/`: `chess`, `civ1`, `civ2`, `risk`, `axisallies`, `combatmission`, `aow`, `cs`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
+All demos are in `demo/`: `chess`, `civ1`, `combatmission`, `aow`, `cs`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
 
 ### Start the HTTP API server
 
