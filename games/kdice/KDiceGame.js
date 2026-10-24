@@ -569,7 +569,7 @@ function toGrid(state) {
     grid: 'hexagon', hexSize,
     cells,
     territoryBorders: territoryBorderList,
-    // The leaderboard panel (apps/console/play/battlefield/StandingsPanel.vue).
+    // The leaderboard panel (apps/browser/play/battlefield/StandingsPanel.vue).
     standings: standings(state),
   };
 }

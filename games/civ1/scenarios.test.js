@@ -26,7 +26,7 @@ test('battle ladder: listed easiest first, ending with the Siege', () => {
   assert.deepEqual(ids, LADDER);
 });
 
-test('battle ladder: the scenario menu opens with it, in order (the console lists it so)', () => {
+test('battle ladder: the scenario menu opens with it, in order (the browser lists it so)', () => {
   assert.deepEqual(Civ1Game.scenarios.slice(0, LADDER.length).map(s => s.id), LADDER);
 });
 

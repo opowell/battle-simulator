@@ -1,7 +1,7 @@
 // api.js — HTTP client for the Battle Simulator API. Talks to whatever
 // origin/path prefix loaded this page, so it works standalone (served at the
-// root) or embedded under a launcher (e.g. served at /battle-simulator/ui/console/).
-const _BASE_PATH = window.location.pathname.replace(/\/ui\/.*$/, '');
+// root) or embedded under a launcher (e.g. served at /battle-simulator/).
+const _BASE_PATH = window.location.pathname.replace(/\/(ui\/.*)?$/, '');
 const _BASE = window.location.origin + _BASE_PATH;
 
 // ── A board's static parts ──────────────────────────────────────────────────
@@ -329,7 +329,7 @@ window.api.subscribeSession = function subscribeSession(id, playerId, onUpdate, 
     if (closed) return;
     // A new socket starts with nothing sent, on the server's side and so on ours —
     // only what we name here, pinned so the cache can't drop it from under us. The
-    // console opens a socket every turn, so this is what keeps the map from coming
+    // browser opens a socket every turn, so this is what keeps the map from coming
     // again each time.
     held = {};
     pinned = new Map(_statics);

@@ -2,7 +2,7 @@
 // What a query naming a unit adds to the card-per-type screen, as
 // GameSummaryCards does for a game: a card for the unit itself — its picture,
 // what it is and who starts with it — ahead of the cards of its game and those
-// sides. Pressing a unit anywhere in the console narrows to it, so this card is
+// sides. Pressing a unit anywhere in the browser narrows to it, so this card is
 // where its definition is opened from.
 //
 // Rendered in DataShell's #cards-before slot, so it reads the query off the

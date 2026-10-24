@@ -1,13 +1,13 @@
 /* The game screen's own look: its tokens and the handful of shared classes its
    components lean on (.btn, .panel, .seg, .badge, …). Everything is under .play —
    the root of a session (SessionView) and of the setup page (SetupPanel) — so none
-   of it reaches the console around them, whose forms and buttons are appfr's.
+   of it reaches the Browser around them, whose forms and buttons are appfr's.
    Every selector is wrapped in :where() so it weighs exactly what it did as the
    play UI's page-wide sheet, and the components' own styles still win the same
    ties they did there. */
 
 /* The two themed seat colours; every seat past them is generated — teamPalette.js.
-   On :root, not .play: the console's own seat lists colour seats with them too, and
+   On :root, not .play: the browser's own seat lists colour seats with them too, and
    teamPalette reads them off the document to tint sprites. */
 :root { --teamA:#4f9dff; --teamB:#ff5f56; }
 

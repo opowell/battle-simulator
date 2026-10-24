@@ -71,13 +71,13 @@ Set `PORT` to use a different port.
 
 ## Web UI
 
-The UI is the console, at `/ui/console` on the API server (`http://localhost:3000/` redirects there). It's Vue 3 with no build step: `vue3-sfc-loader` compiles the `.vue` files in the browser, so an edit to one shows on the next page load.
+The UI is the Browser, served at the root of the API server (`http://localhost:3000/`; its files live under `/ui/browser/`). It's Vue 3 with no build step: `vue3-sfc-loader` compiles the `.vue` files in the browser, so an edit to one shows on the next page load.
 
 ```sh
 node api-server.js             # then open http://localhost:3000/
 ```
 
-A session is played in a tab of the console's window. The game screen — board, panels, history, analysis — lives in `apps/console/play` and is game-agnostic: everything a game wants drawn comes from its `toGrid` and `ui`. A session can also be opened in a browser tab of its own (the ↗ on its tab, or the *Open sessions in new tab* setting), which is the console opened on that session.
+A session is played in a tab of the Browser's window. The game screen — board, panels, history, analysis — lives in `apps/browser/play` and is game-agnostic: everything a game wants drawn comes from its `toGrid` and `ui`. A session can also be opened in a browser tab of its own (the ↗ on its tab, or the *Open sessions in new tab* setting), which is the Browser opened on that session.
 
 ### How it works
 
@@ -111,9 +111,9 @@ A rebuild carries each unit to the same cell of the new board (a pawn on e4 beco
 
 Any seat may change any setting, and every change is announced to everyone in the game and recorded in the session (`changes`). The moves before a rebuild stay readable in the log. Under fog, the units editor shows a seat only what it can see, and an edit leaves every unit it could not see exactly as it was.
 
-## Console
+## Browser
 
-`/ui/console` (`apps/console`) is where games are played, and everything *around* playing:
+`/` (`apps/browser`) is where games are played, and everything *around* playing:
 one searchable place for every object the server knows about. It is built on
 [appfr](https://github.com/opowell/appfr), vendored as a submodule at
 `vendor/appfr` and served from its prebuilt `dist/` at `/appfr/`.
@@ -136,10 +136,10 @@ that game, and a number on a game row (Sessions 3, Units 6) opens exactly those
 records. The query lives in the URL, so any view is a link. An opened record
 becomes a tab beside the browser.
 
-A link can also **start** a session and open it (`apps/console/deeplink.js`):
+A link can also **start** a session and open it (`apps/browser/deeplink.js`):
 
 ```
-/ui/console/#/new/<game>[/<scenario>]?seats=human,cpu&fog=on&difficulty=40&maxTurns=80
+/#/new/<game>[/<scenario>]?seats=human,cpu&fog=on&difficulty=40&maxTurns=80
 ```
 
 Left bare it is the scenario's one-click start. `seats` names one agent per seat
@@ -152,7 +152,7 @@ game's setup page.
 
 The data comes from one endpoint, `GET /catalog` (`catalog.js`), which derives
 it all generically: units come from the same `setupPreview` the setup screen
-uses, so no game needs code for the console. Edits to a game's definition or
+uses, so no game needs code for the Browser. Edits to a game's definition or
 source take effect when the server next starts.
 
 ## Engine API

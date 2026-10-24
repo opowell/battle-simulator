@@ -1,5 +1,5 @@
 <script setup>
-// Where a session opened inside the console shows: the space its tab gives it.
+// Where a session opened inside the browser shows: the space its tab gives it.
 // The board itself is not in here — the window mounts a tab's content only
 // while the tab is in front, and a board that is unmounted is a game loaded
 // again from nothing on the way back. SessionFrames keeps each one alive over

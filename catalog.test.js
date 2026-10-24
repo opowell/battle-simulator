@@ -1,4 +1,4 @@
-// catalog.test.js — the records /ui/console browses, derived from a registry,
+// catalog.test.js — the records /ui/browser browses, derived from a registry,
 // live sessions and recordings without knowing any particular game.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

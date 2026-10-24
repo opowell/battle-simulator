@@ -158,7 +158,7 @@
  *
  * @property {() => object} [unitStats]
  *   Optional. { type: { hp, attack, defense, range, move, domain } } in this game's
- *   own numbers, any stat left out — what the console's Units table shows. Defaults
+ *   own numbers, any stat left out — what the browser's Units table shows. Defaults
  *   to foreignUnits.profiles(); a game that doesn't lend its units out can still
  *   say what they are.
  *

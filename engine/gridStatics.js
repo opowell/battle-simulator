@@ -5,7 +5,7 @@
 // during a game. So the wire carries such fields by CONTENT KEY: every snapshot names
 // the key of each one in `grid.statics` ({ shapes: '<key>' }), and leaves the value
 // itself out whenever the receiver already holds that key. The client puts it back
-// (apps/console/play/api.js), so nothing downstream ever sees a board without its
+// (apps/browser/play/api.js), so nothing downstream ever sees a board without its
 // shapes.
 //
 // Content-addressed rather than "sent once, assumed thereafter", so it stays right
@@ -21,7 +21,7 @@
 //
 // Who holds what:
 //   - a WebSocket connection (`socketHolder`): the keys the client said it holds when
-//     it connected (`?have=k1,k2` — the console re-opens its socket at every turn, so
+//     it connected (`?have=k1,k2` — the browser re-opens its socket at every turn, so
 //     this is what keeps a new socket from re-sending the map), plus the last key of
 //     each field the server has sent on it since. The client keeps the same record per
 //     subscription, updated on the same messages, so the two cannot disagree; a client

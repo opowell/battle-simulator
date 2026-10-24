@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Console — Battle Simulator</title>
+<title>Browser — Battle Simulator</title>
 
 <!--
-  The console is built on appfr (vendor/appfr, served at /appfr/ by the API
+  The browser is built on appfr (vendor/appfr, served at /appfr/ by the API
   server): its DataShell is the query header and result views, and every object
   the server knows about — games, sessions, recordings, scenarios, units, sides,
   agents, options, source files — is one entity in its schema.
@@ -14,7 +14,9 @@
   No build step, like the other apps here: the import map names appfr's built
   ES modules and a Vue 3.5 runtime (appfr needs 3.5's useId), and
   vue3-sfc-loader compiles this app's .vue files in the tab. Every path is
-  relative, so the app works under a mount prefix (/battle-simulator/ui/console).
+  relative, so the app works under a mount prefix (/battle-simulator/). The
+  server serves this page at the root with a <base> pointing at /ui/browser/,
+  where the files are.
 -->
 
 <link rel="stylesheet" href="../../appfr/style.css"/>
@@ -100,7 +102,7 @@ try {
 } catch (error) {
   const boot = document.getElementById('boot')
   boot.className = 'err'
-  boot.textContent = `The console failed to load:\n${error?.stack ?? error}`
+  boot.textContent = `The browser failed to load:\n${error?.stack ?? error}`
 }
 </script>
 </body>

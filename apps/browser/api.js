@@ -1,7 +1,9 @@
-// api.js — the console's calls to the API server. The console is served by that
+// api.js — the browser's calls to the API server. The browser is served by that
 // server, so it talks to whatever origin and mount prefix loaded the page.
 
-export const basePath = window.location.pathname.replace(/\/ui\/.*$/, '')
+// The page is served at the mount prefix's root (`/`, `/battle-simulator/`), or at
+// /ui/browser/ under it.
+export const basePath = window.location.pathname.replace(/\/(ui\/.*)?$/, '')
 const base = window.location.origin + basePath
 
 async function request(path, init = {}) {
@@ -36,12 +38,12 @@ export const api = {
 }
 
 /**
- * A link to the console opening a session, or a game's setup page, in a tab —
+ * A link to the browser opening a session, or a game's setup page, in a tab —
  * for a session in a browser tab of its own (see App.vue openFromHash).
  */
 export const playUrl = {
-  session: (id) => `${basePath}/ui/console/#/session/${encodeURIComponent(id)}`,
-  game: (name) => `${basePath}/ui/console/#/game/${encodeURIComponent(name)}`,
+  session: (id) => `${basePath}/#/session/${encodeURIComponent(id)}`,
+  game: (name) => `${basePath}/#/game/${encodeURIComponent(name)}`,
 }
 
 /** A path the server hands out (`/images/…`), under this page's mount prefix. */

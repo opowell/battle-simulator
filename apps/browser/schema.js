@@ -1,4 +1,4 @@
-// schema.js — the console's appfr DomainSchema: one entity per kind of object.
+// schema.js — the browser's appfr DomainSchema: one entity per kind of object.
 //
 // Every entity's rows carry a `game` field (the game's key; a list for agents and
 // engine options, which several games offer), and `games` declares it as its
@@ -8,7 +8,7 @@
 // one); every other kind of row opens instead.
 //
 // Sorting: each entity lists its own sorts, the first being its default, and
-// every sort reads in the order its name says when ascending (the console's
+// every sort reads in the order its name says when ascending (the browser's
 // default direction) — names A→Z, numbers low→high, and `age` youngest first.
 
 import { SETTINGS } from './settings.js'
@@ -283,7 +283,7 @@ export function buildSchema(catalog, { Art }) {
       ],
     },
     {
-      // The console's own preferences (settings.js), kept in this browser.
+      // The Browser's own preferences (settings.js), kept in this browser.
       key: 'settings',
       label: 'Settings',
       count: count(SETTINGS.length),

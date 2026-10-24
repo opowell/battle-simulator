@@ -1,6 +1,6 @@
 // sessionScope.js — what a session's board needs to know about the page it shares.
 //
-// The console keeps every open session's board alive at once, side by side in one
+// The browser keeps every open session's board alive at once, side by side in one
 // document, where each used to have a page of its own. Two things follow, each
 // provided by SessionView to everything under it:
 //

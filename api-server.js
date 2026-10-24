@@ -97,6 +97,14 @@ const MIME_TYPES = {
   '.ogg':  'audio/ogg',
 };
 
+// The Browser's page, served at the root rather than at /ui/browser/ where its
+// files are. Every path in it is relative, so a <base> sends them all there.
+async function serveBrowserIndex(base, res) {
+  const html = await readFile(resolve(APPS_DIR, 'browser', 'index.html'), 'utf8');
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' });
+  res.end(html.replace('<head>', `<head>\n<base href="${base}/ui/browser/"/>`));
+}
+
 async function serveApp(appName, req, res) {
   const urlPath  = new URL(req.url, 'http://localhost').pathname;
   const prefix   = new RegExp(`^/(?:ui/)?${appName}/?`);
@@ -133,7 +141,7 @@ async function serveApp(appName, req, res) {
 }
 
 // Serve repo ES modules (games/*, agents/*, …) to the browser analysis Web
-// Worker (apps/console/play/analysis-worker.js), which imports the real chess + CFR
+// Worker (apps/browser/play/analysis-worker.js), which imports the real chess + CFR
 // code directly instead of a bundle. Restricted to JS/WASM so it can't read
 // arbitrary source, with path-escape protection. The worker imports absolute
 // URLs like /lib/games/chess/ChessGame.js; those modules' own relative imports
@@ -155,7 +163,7 @@ async function serveLibModule(res, relPath) {
 }
 
 // The appfr framework (vendor/appfr, a submodule) ships prebuilt ES modules and
-// one stylesheet in dist/; /ui/console imports them through an import map.
+// one stylesheet in dist/; /ui/browser imports them through an import map.
 const APPFR_DIST = resolve(ROOT_DIR, 'vendor', 'appfr', 'dist');
 
 async function serveAppfr(res, relPath) {
@@ -605,7 +613,7 @@ class Session {
    * re-sent whole on every update even though a turn moves a handful of cells and
    * only ever APPENDS log entries. So: send changed cells as `gridPatch` ([index,
    * cell] pairs against the previous `grid.cells`) and new entries as `logTail`, and
-   * let the client rebuild the snapshot (see apps/console/play/api.js subscribeSession).
+   * let the client rebuild the snapshot (see apps/browser/play/api.js subscribeSession).
    *
    * Only for full-information observers — the exact case a watched AI game is, and
    * the only one where both halves are safely incremental. A fog seat's `log` is a
@@ -1528,7 +1536,7 @@ function readBody(req) {
 function send(res, status, body) {
   // Compact: a snapshot is hundreds of KB, and indenting it nearly doubled that.
   // A board's static parts are left out when the caller says it already holds them
-  // (the console's X-Grid-Have header — see engine/gridStatics.js).
+  // (the browser's X-Grid-Have header — see engine/gridStatics.js).
   const payload = JSON.stringify(stripBodyStatics(body, haveFromHeader(res.req?.headers?.['x-grid-have'])));
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(payload);
@@ -1628,7 +1636,7 @@ async function handleGames(res) {
     // server-only and never serialized. `clientAnalyze` (when present) lets the
     // browser's analysis Web Worker run that same analysis locally instead: it's
     // a { module, export } pointer the worker dynamically imports from /lib/ and
-    // resolves a dot-path into (see apps/console/play/analysis-worker.js). `clientGame`
+    // resolves a dot-path into (see apps/browser/play/analysis-worker.js). `clientGame`
     // is the matching pointer for deriving legal actions client-side.
     agents: dedupeAgents([...BUILTIN_AGENTS, ...(game.agents ?? []).map(({ id, name: n, analyze, clientAnalyze }) => ({ id, name: n, analyzable: !!analyze, clientAnalyze: clientAnalyze ?? null }))]),
     clientGame: game.clientGame ?? null,
@@ -1651,7 +1659,7 @@ async function handleGames(res) {
  * world they were arranged on. Nothing is stored — this creates no session.
  */
 /**
- * GET /catalog — every object the /ui/console app browses (see catalog.js):
+ * GET /catalog — every object the /ui/browser app browses (see catalog.js):
  * games and what each defines, live sessions, and the recordings on disk.
  */
 const readRecordings = createRecordingReader(SESSIONS_DIR);
@@ -2518,7 +2526,7 @@ async function handleGetLog(res, id) {
 // One page of the scrub-bar timeline: ?from=<frame>&limit=<n>. Paged because the
 // whole thing used to go out in a single response — hundreds of megabytes on a long
 // civ1 game, which is a cliff for both ends. Frames come back diff-encoded (see
-// Session.readGridHistory); apps/console/play/api.js pages through and rebuilds them.
+// Session.readGridHistory); apps/browser/play/api.js pages through and rebuilds them.
 async function handleGetHistory(res, id, url) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
@@ -2577,12 +2585,19 @@ async function handleRequest(req, res) {
   try {
     const { parts, method, url } = route(req);
 
-    // Default — the console, which is the UI. The old play UI's addresses
-    // (/ui/design, /design) land there too: a redirect keeps the URL's fragment,
-    // and the console opens the `#/session/<id>` or `#/game/<name>` it names.
-    if (method === 'GET' && (parts[0] === '' || parts[0] === 'design'
-        || (parts[0] === 'ui' && parts[1] === 'design'))) {
-      res.writeHead(302, { Location: `${base}/ui/console/` });
+    // Default — the Browser, which is the UI, served at the root. Its files stay
+    // under /ui/browser/, and a <base> points the page's relative paths there.
+    if (method === 'GET' && parts.length === 1 && parts[0] === '')
+      return await serveBrowserIndex(base, res);
+
+    // Older addresses of the UI — the Browser's own /ui/browser/, its former
+    // name /ui/console, and the old play UI's /ui/design and /design — land on
+    // the root: a redirect keeps the URL's fragment, and the Browser opens the
+    // `#/session/<id>` or `#/game/<name>` it names.
+    if (method === 'GET' && (parts[0] === 'design'
+        || (parts[0] === 'ui' && ['design', 'console'].includes(parts[1]))
+        || (parts[0] === 'ui' && parts[1] === 'browser' && parts.length === 2))) {
+      res.writeHead(302, { Location: `${base}/${url.search}` });
       return res.end();
     }
 
@@ -2591,7 +2606,7 @@ async function handleRequest(req, res) {
       return await serveLibModule(res, parts.slice(1).join('/'));
 
     // Static UI apps — GET /ui/<name>/*
-    const UI_APPS = ['game-editor', 'console'];
+    const UI_APPS = ['game-editor', 'browser'];
     if (method === 'GET' && parts[0] === 'ui' && UI_APPS.includes(parts[1])) {
       // Redirect /ui/<name> (no trailing slash) so relative asset paths resolve correctly
       if (parts.length === 2 && !url.pathname.endsWith('/')) {
@@ -2825,7 +2840,7 @@ function handleUpgrade(req, socket, head, prefix = '') {
     session._sendTo(client);
     const drop = () => session.wsClients.delete(client);
     // The only thing a client may say on this socket: "I can't apply your deltas,
-    // start me over" (see _deltaFor / apps/console/play/api.js rehydrate). Dropping the
+    // start me over" (see _deltaFor / apps/browser/play/api.js rehydrate). Dropping the
     // base makes the next send a whole snapshot, which re-aligns both ends.
     ws.on('message', (raw) => {
       let msg; try { msg = JSON.parse(raw); } catch { return; }

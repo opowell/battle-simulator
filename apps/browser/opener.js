@@ -1,7 +1,7 @@
 // opener.js — where a session opens: a browser tab of its own, or a tab of the
-// console's window beside the browser, as the `sessionsInNewTab` setting says.
+// Browser's window beside its list, as the `sessionsInNewTab` setting says.
 //
-// The console provides OPEN_SESSION and OPEN_SETUP (App.vue); anything that
+// The browser provides OPEN_SESSION and OPEN_SETUP (App.vue); anything that
 // opens a session, or a game's setup page, goes through here rather than
 // building a link itself.
 
@@ -12,11 +12,11 @@ import { settings } from './settings.js'
 export const OPEN_SESSION = Symbol('open-session')
 export const OPEN_SETUP = Symbol('open-setup')
 
-/** Opens a game's setup page (every seat and option) as a tab of the console. */
+/** Opens a game's setup page (every seat and option) as a tab of the browser. */
 export const useSetupOpener = () => inject(OPEN_SETUP)
 
 /**
- * The boxes the sessions open in the console are showing in, by session id —
+ * The boxes the sessions open in the browser are showing in, by session id —
  * a reactive Map SessionPlay fills while its tab is in front, and SessionFrames
  * lays each session's board over.
  */

@@ -1,7 +1,7 @@
 /**
- * catalog.js — every object the /ui/console app browses, as plain records.
+ * catalog.js — every object the /ui/browser app browses, as plain records.
  *
- * The console is one result set over many kinds of thing: games, the sessions
+ * The browser is one result set over many kinds of thing: games, the sessions
  * being played, the recordings left on disk, and what each game defines (its
  * scenarios, unit types, sides, agents, options and source files). This module
  * derives all of them from what the server already holds, so nothing here
@@ -16,7 +16,7 @@
  *   • files — gameEditor's listing of each game's editable source.
  *
  * Every record carries `game` (a list for an agent, which several games offer),
- * the key the console narrows by.
+ * the key the browser narrows by.
  */
 
 import { readdir, readFile, stat } from 'node:fs/promises';
@@ -112,7 +112,7 @@ export function sessionRecord(session) {
 
 /**
  * Everything but the move log, out of a persisted session record — the log is
- * most of a recording's size and none of what the console shows.
+ * most of a recording's size and none of what the browser shows.
  */
 export function recordingRecord(file, size, record) {
   const players = (record.params?.players ?? []).map((p) => ({

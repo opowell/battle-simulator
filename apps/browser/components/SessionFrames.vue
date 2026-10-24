@@ -1,8 +1,8 @@
 <script setup>
-// Every session open inside the console, one SessionView each, kept alive for as
+// Every session open inside the browser, one SessionView each, kept alive for as
 // long as its tab is open. The window renders a tab's content only while it is in
 // front, and a board unmounted with it would be a game loaded again from nothing
-// (history, subscription, animation queue) every time the console's own tab is
+// (history, subscription, animation queue) every time the browser's own tab is
 // looked at. So the boards live here, over the window, each laid over the box its
 // tab shows (SessionPlay) and hidden, still running, while that tab is behind
 // another.
@@ -10,7 +10,7 @@ import { computed, onBeforeUnmount, reactive, ref, watch, watchEffect } from 'vu
 import SessionView from '../play/SessionView.vue'
 
 const props = defineProps({
-  /** The ids of the sessions open in the console. */
+  /** The ids of the sessions open in the browser. */
   sessionIds: Array,
   /** SESSION_SLOTS: the box each session is showing in, while it is. */
   slots: Map,
@@ -106,6 +106,6 @@ function styleOf(id) {
 .sf { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
 /* Each board's box is what a page of its own would have been to it: its
    full-screen scrims (position: fixed; inset: 0) cover the board, not the
-   console — layout containment makes the box their containing block. */
+   Browser — layout containment makes the box their containing block. */
 .sf__frame { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: auto; contain: layout paint; }
 </style>

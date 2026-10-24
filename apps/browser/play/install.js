@@ -4,7 +4,7 @@
 // as if they were the component's own — Vue templates resolve a bare name through
 // the component, never through window, so those are handed to every component here.
 //
-// Render functions rather than template strings: the console runs Vue's runtime-only
+// Render functions rather than template strings: the browser runs Vue's runtime-only
 // build, which has no compiler to turn a string into one.
 import { h, reactive } from 'vue'
 import { PlayOverlay } from './sessionScope.js'

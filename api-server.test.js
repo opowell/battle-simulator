@@ -89,18 +89,18 @@ function deadline(ms, what) {
   return { promise: p, clear: () => clearTimeout(id) };
 }
 
-// THE REAL CLIENT. apps/console/play/api.js is a plain browser script that hangs its API off
+// THE REAL CLIENT. apps/browser/play/api.js is a plain browser script that hangs its API off
 // `window`, so give it a window pointed at the test server and run it — the delta
 // rebuilding under test is the code the UI actually ships, not a restatement of it
 // that could quietly drift out of step with the server it has to agree with.
 let browserApi = null;
 async function loadBrowserApi() {
   if (browserApi) return browserApi;
-  const src = await readFile(resolve(ROOT, 'apps/console/play/api.js'), 'utf8');
+  const src = await readFile(resolve(ROOT, 'apps/browser/play/api.js'), 'utf8');
   // Left in place for the run, not restored around the call: the module's own
   // fallback paths reach back through `window.api` long after it has loaded.
-  globalThis.window = { location: { pathname: '/ui/console/', origin: BASE } };
-  runInThisContext(src, { filename: 'apps/console/play/api.js' });
+  globalThis.window = { location: { pathname: '/', origin: BASE } };
+  runInThisContext(src, { filename: 'apps/browser/play/api.js' });
   browserApi = globalThis.window.api;
   return browserApi;
 }
@@ -404,7 +404,7 @@ test('a shape map\'s terrain goes over a socket once, and the shipped client put
   assert.equal(lean.grid.shapes, undefined, 'a REST caller holding the terrain is not sent it again');
   assert.equal(lean.grid.statics.shapes, whole.grid.statics.shapes);
 
-  // The console opens a new socket every turn: one that names the terrain it holds
+  // The browser opens a new socket every turn: one that names the terrain it holds
   // is not sent it even first — and the shipped client, which names what it holds,
   // still hands its consumer whole boards from a new subscription.
   const named = [];
@@ -513,7 +513,7 @@ test('a session can field units of other games, drawn as themselves', async () =
   assert.match(bad.error ?? '', /not a unit of SC1/);
 });
 
-test('the console catalog lists every game and what it defines, and sees a session as it starts', async () => {
+test('the browser catalog lists every game and what it defines, and sees a session as it starts', async () => {
   const games = await get('/games');
   const before = await get('/catalog');
   assert.deepEqual(before.games.filter(g => g.live).map(g => g.name).sort(), games.map(g => g.name).sort());
@@ -534,12 +534,24 @@ test('the console catalog lists every game and what it defines, and sees a sessi
   assert.equal(after.games.find(g => g.name === 'chess').sessions, chess.sessions + 1);
 });
 
-test('the appfr framework is served for the console: its modules and stylesheet only', async () => {
+test('the appfr framework is served for the browser: its modules and stylesheet only', async () => {
   const js = await fetch(BASE + '/appfr/index.js');
   assert.equal(js.status, 200);
   assert.match(js.headers.get('content-type'), /javascript/);
   assert.equal((await fetch(BASE + '/appfr/style.css')).status, 200);
   assert.equal((await fetch(BASE + '/appfr/index.d.ts')).status, 404);
+});
+
+test('the browser is served at the root, its files from /ui/browser/, and its old addresses land there', async () => {
+  const page = await fetch(BASE + '/');
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /<base href="\/ui\/browser\/"\/>/);
+  assert.equal((await fetch(BASE + '/ui/browser/App.vue')).status, 200);
+  for (const old of ['/ui/browser/', '/ui/console/', '/ui/design', '/design']) {
+    const r = await fetch(BASE + old + '?w=x', { redirect: 'manual' });
+    assert.equal(r.status, 302, old);
+    assert.equal(new URL(r.headers.get('location'), BASE).pathname + new URL(r.headers.get('location'), BASE).search, '/?w=x', old);
+  }
 });
 
 // ── Changing settings mid-game (Session.reconfigure, engine/reconfigure.js) ──

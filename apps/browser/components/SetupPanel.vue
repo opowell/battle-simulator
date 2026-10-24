@@ -1,9 +1,9 @@
 <script setup>
-// A game's setup page as a console tab: its pictures and scenarios beside every
+// A game's setup page as a tab of the Browser: its pictures and scenarios beside every
 // seat and option the game offers (play/GamePage.vue), started as a session — or
 // as an analysis board — the same way every other start here builds one
 // (sessions.js). The form is a step on the way into a game, so a session started
-// here takes its tab's place (the console opens its record there, behind the game);
+// here takes its tab's place (the browser opens its record there, behind the game);
 // one that opens in a browser tab of its own leaves the form be.
 import { onMounted, ref } from 'vue'
 import { api } from '../api.js'

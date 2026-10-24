@@ -200,7 +200,7 @@ function foreignWeapon(kind, stats, spec) {
 const paceOf = (u, slot = u.active) => (u.moveRange ?? MOVE_RANGE) * SLOT_MOVE_MULT[slot] * (u.crouched ? CROUCH_MOVE_MULT : 1);
 
 // ── Map sprite: body + hands + held weapon, all flat-color primitives — surviv.io's look
-// (see apps/console/play/SchematicLayer.vue's generic `unit.spriteLayers` renderer, whose `shape:
+// (see apps/browser/play/SchematicLayer.vue's generic `unit.spriteLayers` renderer, whose `shape:
 // 'circle'|'rect'` layers draw fill/stroke primitives instead of sourced art). All offsets
 // below are LOCAL (unrotated, facing = +x), in multiples of unitR(u); the game precomputes
 // the facing-rotated world offset so the renderer stays a dumb draw loop.
@@ -1309,7 +1309,7 @@ export const CsGame = {
   gameOptions: [
     MAP_ZOOM_OPTION,
     { id: 'fogOfWar', label: 'Fog of War', description: 'Each team sees only enemies near its own players', type: 'boolean', default: true },
-    // The interactive position-analysis panel (apps/console/play/battlefield/AnalysisPanel.vue).
+    // The interactive position-analysis panel (apps/browser/play/battlefield/AnalysisPanel.vue).
     // Battlefield.vue gates it on this config flag alone, defaulting to false when a game
     // does not declare the option — so leaving it out made the panel unreachable. CS has
     // had everything behind it since the Obscuro agent landed (the `analyze` entry above,

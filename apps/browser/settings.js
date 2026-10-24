@@ -1,4 +1,4 @@
-// settings.js — the console's own preferences, kept in this browser.
+// settings.js — the Browser's own preferences, kept in this browser.
 //
 // Each setting is also a record in the catalog (the `settings` entity), so it is
 // found and changed the way anything else is: by querying for it and opening it.
@@ -7,7 +7,9 @@
 
 import { reactive } from 'vue'
 
-const STORAGE_KEY = 'battle-simulator.console.settings'
+const STORAGE_KEY = 'battle-simulator.browser.settings'
+// Where they were kept while the Browser was called the console.
+const OLD_STORAGE_KEY = 'battle-simulator.console.settings'
 
 const yesNo = [{ value: true, label: 'Yes' }, { value: false, label: 'No' }]
 
@@ -15,14 +17,14 @@ export const SETTINGS = [
   {
     key: 'sessionsInNewTab',
     label: 'Open sessions in new tab',
-    description: 'Yes opens a session in a new browser tab. No opens it here, in a tab beside the console.',
+    description: 'Yes opens a session in a new browser tab. No opens it here, in a tab beside the Browser.',
     choices: yesNo,
     default: false,
   },
 ]
 
 function stored() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') ?? {} } catch { return {} }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(OLD_STORAGE_KEY) ?? '{}') ?? {} } catch { return {} }
 }
 
 function read() {
@@ -40,7 +42,7 @@ export function setSetting(key, value) {
 /** What a setting's value reads as: its choice's label. */
 export const settingText = (def, value) => def.choices.find((c) => c.value === value)?.label ?? String(value)
 
-// Another console tab changed one: follow it.
+// The Browser in another tab changed one: follow it.
 window.addEventListener('storage', (event) => {
   if (event.key === STORAGE_KEY) Object.assign(settings, read())
 })

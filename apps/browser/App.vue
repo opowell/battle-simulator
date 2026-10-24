@@ -1,7 +1,7 @@
 <script setup>
-// The console: appfr's WindowFrame holding a DataShell over every object the
+// The browser: appfr's WindowFrame holding a DataShell over every object the
 // server knows about (catalog.js), with each record opened beside it as a tab,
-// and each session opened inside the console as a tab beside the whole of that.
+// and each session opened inside the browser as a tab beside the whole of that.
 // What is open, and where, is held in the URL with the query.
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch } from 'vue'
 import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, openPopOut, panelIds, panelNode, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'header-content-layout'
@@ -77,9 +77,9 @@ provide(ROUTE_ADAPTER_KEY, route)
 onBeforeUnmount(() => route.dispose?.())
 const layoutRoute = useLayoutRoute(layout, { adapter: route, home })
 
-// Any tab but the browser pops out to a browser window holding it and nothing
+// Any tab but the Browser pops out to a browser window holding it and nothing
 // else (appfr's popOut / solo): a session played in a window of its own, not the
-// whole console again. It moves rather than copies — see the panel-pop-out handler.
+// whole Browser again. It moves rather than copies — see the panel-pop-out handler.
 const solo = layoutRoute.solo
 const popOutHref = (panel) => (panel.id === 'browse' ? null : layoutRoute.popOutHref(panel.id))
 /** A session tab's ↗: the same move, from a link, so a ⌘/middle click still makes a plain tab. */
@@ -152,8 +152,8 @@ function open(id, { focus = true } = {}) {
 /**
  * A tab of the window's top level, beside the browser and its records as a
  * whole: what a session is, and a game's setup page on the way to one — a game
- * wants the full width, and switching back to the console finds it as it was
- * left. The first one turns the window into tabs: the console (everything there
+ * wants the full width, and switching back to the browser finds it as it was
+ * left. The first one turns the window into tabs: the browser (everything there
  * was, named so its tab says so) and this.
  */
 const topLevel = (o) => o.kind === 'session' || o.kind === 'setup'
@@ -162,12 +162,12 @@ function openTopLevel(id) {
     const peer = opened.value.find(topLevel)
     layout.value = peer
       ? insertPanel(layout.value, id, peer.id, 'center')
-      : group([{ ...layout.value, title: 'Console' }, id], id)
+      : group([{ ...layout.value, title: 'Browser' }, id], id)
   }
   layout.value = setActivePanel(layout.value, id)
 }
 
-/** A session opened inside the console. */
+/** A session opened inside the browser. */
 function openSession(sessionId, { replace } = {}) {
   const id = `play:${sessionId}`
   // A session started from another (a rematch, the next scenario) takes that
@@ -186,7 +186,7 @@ provide(OPEN_SESSION, openSession)
 const openSetup = (gameName, scenario) => openTopLevel(`setup:${gameName}${scenario ? `/${scenario}` : ''}`)
 provide(OPEN_SETUP, openSetup)
 
-// A link from before the console was the only UI — the old play UI's
+// A link from before the browser was the only UI — the old play UI's
 // `#/session/<id>` and `#/game/<name>` — still lands where it pointed (the server
 // sends /ui/design here, and a redirect keeps the fragment); so does a session
 // opened in a browser tab of its own (playUrl.session).
@@ -231,9 +231,9 @@ const sessionIds = computed(() => opened.value.filter((o) => o.kind === 'session
 const lone = (tab) => (typeof tab !== 'string' && tab.kind === 'group' && tab.panels.length === 1 && typeof tab.panels[0] !== 'string' ? tab.panels[0] : null)
 
 /**
- * The window once the last session has gone: the console again, not a strip of
+ * The window once the last session has gone: the browser again, not a strip of
  * one tab still holding it — which the next session would wrap in a strip of
- * its own, a console inside a console. A console tab nested like that already
+ * its own, a Browser inside a Browser. A Browser tab nested like that already
  * (a URL from before this) is lifted out of its extra strip too.
  */
 function settle(node) {
@@ -296,7 +296,7 @@ function closeTabsOfGone(catalog) {
   }
 }
 
-/** Opens a record once a refresh has it — one this console just made. */
+/** Opens a record once a refresh has it — one this browser just made. */
 async function openCreated(rowId, replacing) {
   await refresh()
   const r = rowsById.value.get(rowId)

@@ -2,7 +2,7 @@
 // games/cs/CsGame.js's spriteLayers() for the pattern this follows) built from generic
 // unit-definition tags (domain, special, hp) rather than a per-type shape table, so a
 // new unit in either roster gets a sane sprite for free. `fill: 'team'` defers to the
-// owner's palette color (apps/console/play/SchematicLayer.vue's layerColor), since sc1/sc2
+// owner's palette color (apps/browser/play/SchematicLayer.vue's layerColor), since sc1/sc2
 // player order — and therefore which race sits on which side — isn't fixed the way
 // CS's CT/T always are.
 const BODY_STROKE = '#20242c';
@@ -114,7 +114,7 @@ export function scBuildingImageSpriteLayers(src, { pixelated = false } = {}) {
 }
 
 // How big a structure's token draws, as a multiple of the standard unit token (the
-// renderers' `sizeFrac`, see apps/console/play/SchematicLayer.vue's unitR). A base is the
+// renderers' `sizeFrac`, see apps/browser/play/SchematicLayer.vue's unitR). A base is the
 // landmark you navigate by and reads at a glance; a bunker or a turret is barely more
 // than a unit. Derived from the same generic definition tags scSpriteLayers uses, so a
 // new structure gets a sane size for free: the buildTime-0 town hall and the things it
@@ -132,7 +132,7 @@ export function scBuildingSize(def) {
 // game can keep its units off the ground its structures stand on (games/sc1/placement.js).
 //
 // TOKEN_R is the renderers' standard token radius on a square board wider than ten
-// squares — the only kind SC1/SC2 maps are (unitR in apps/console/play/SchematicLayer.vue
+// squares — the only kind SC1/SC2 maps are (unitR in apps/browser/play/SchematicLayer.vue
 // and HtmlLayer.vue: 0.42 of a square). Every size here is a multiple of it.
 export const TOKEN_R = 0.42;
 

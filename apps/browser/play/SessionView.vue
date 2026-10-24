@@ -1,7 +1,7 @@
 <script setup>
-// One session being played, inside the console: the board (Battlefield) and
+// One session being played, inside the browser: the board (Battlefield) and
 // everything that keeps it in step with the server — the subscription, the turn
-// animations, history, forks. The console opens one per session tab and keeps it
+// animations, history, forks. The browser opens one per session tab and keeps it
 // alive while the tab is behind another (see SessionFrames), so `active` says
 // whether this one is the one on screen, and only that one answers the keyboard.
 import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue';
@@ -20,7 +20,7 @@ const emit = defineEmits(['open-session', 'close']);
 
 // A key is this session's to answer only while it is on screen, and only when the
 // keyboard is with the game: on something inside it, or nowhere in particular
-// (body). A key pressed with the console's tab strip focused belongs to the strip.
+// (body). A key pressed with the browser's tab strip focused belongs to the strip.
 const rootEl = ref(null);
 provide(KEYS_LIVE, (e) => props.active
   && (!e || e.target === document.body || !!rootEl.value?.contains(e.target)));
@@ -1015,7 +1015,7 @@ function buildField(g, s) {
       path:      [[x, y]],
       facing:    c.facing,
       deathTurn: null,
-      // Per-unit field-of-vision overrides (see apps/console/play/vision.js) — a game's toGrid
+      // Per-unit field-of-vision overrides (see apps/browser/play/vision.js) — a game's toGrid
       // may set these; absent, the unit falls back to the game/default FoV cone + range.
       fov:           c.fov,
       visionRange:   c.visionRange,
@@ -1057,7 +1057,7 @@ function buildField(g, s) {
       // the renderer stands it on a plate of its team's colour (battlefield/HtmlUnit.vue).
       origin:        c.origin,
       // Layered composite sprite (body/hands/held weapon/team ring/equipment badges,
-      // each independently offset+rotated) — see apps/console/play/SchematicLayer.vue's
+      // each independently offset+rotated) — see apps/browser/play/SchematicLayer.vue's
       // generic renderer and e.g. games/surviv/SurvivGame.js's spriteLayers().
       spriteLayers:  c.spriteLayers,
       // Token size multiplier (default 1 = the standard piece size both renderers pick
@@ -1168,7 +1168,7 @@ function buildField(g, s) {
     shapes: g.shapes ?? [],
     // Line-of-sight occluders (opaque tile keys) for the fog renderer — the same wall
     // grid the engine's LOS blocks on, so the drawn vision veil stops at walls instead
-    // of bleeding through them (see apps/console/play/vision.js). Absent ⇒ no occlusion.
+    // of bleeding through them (see apps/browser/play/vision.js). Absent ⇒ no occlusion.
     los: g.los ?? null,
     units,
     // A game's toGrid may return a per-state `ui` override (e.g. hideGridLines for shape
@@ -1565,7 +1565,7 @@ async function enterSession(id) {
   }
 }
 
-// A session started from this one, opened in this one's place: the console swaps
+// A session started from this one, opened in this one's place: the browser swaps
 // the tab, and this view (stopped first, so nothing more arrives for it) goes with it.
 async function startInstead(body) {
   try {
@@ -1781,7 +1781,7 @@ function playScenario(scenarioId) {
 </script>
 
 <template>
-  <!-- Focusable (but not in the tab order) so the console can hand it the keyboard,
+  <!-- Focusable (but not in the tab order) so the browser can hand it the keyboard,
        and so a click anywhere on the board keeps the keyboard here. -->
   <div ref="rootEl" class="play app-root" tabindex="-1">
     <div class="app-body">

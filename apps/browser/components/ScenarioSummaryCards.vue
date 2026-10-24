@@ -2,7 +2,7 @@
 // What a query naming a scenario adds to the card-per-type screen, as
 // GameSummaryCards does for a game: a card for the scenario itself — what it
 // is, and the three things to do with it — ahead of the cards of its sessions
-// and recordings. Pressing a scenario anywhere in the console narrows to it,
+// and recordings. Pressing a scenario anywhere in the browser narrows to it,
 // so this card is where a scenario is started from or edited.
 //
 // Rendered in DataShell's #cards-before slot, so it reads the query off the

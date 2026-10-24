@@ -1,6 +1,6 @@
 <script setup>
-// One of the console's settings (settings.js): what it does, and its choices.
-// A change is saved at once; the console rebuilds its rows from it.
+// One of the browser's settings (settings.js): what it does, and its choices.
+// A change is saved at once; the browser rebuilds its rows from it.
 import { settings, setSetting } from '../settings.js'
 
 defineProps({ record: Object })

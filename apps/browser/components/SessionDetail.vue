@@ -1,6 +1,6 @@
 <script setup>
 // A live session: who is seated and how, where it has got to, and the way into
-// it — a browser tab of its own or a tab beside the console, as the settings say. Ending one here deletes it from the server; its recording
+// it — a browser tab of its own or a tab beside the Browser, as the settings say. Ending one here deletes it from the server; its recording
 // stays on disk.
 import { computed, ref } from 'vue'
 import { api, playUrl } from '../api.js'

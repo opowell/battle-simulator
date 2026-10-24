@@ -1,6 +1,6 @@
 // source.js — an appfr DataSource over the catalog's rows, held in memory.
 //
-// The catalog is small (a few hundred records), so the console fetches it whole
+// The catalog is small (a few hundred records), so the browser fetches it whole
 // and filters, sorts and pages here, with appfr's own expression language and
 // facet matching. One departure: the scope terms appfr writes when narrowing to
 // a game, a scenario or a unit are `game:"cs"`, `scenario:"cs/dust2"` and
