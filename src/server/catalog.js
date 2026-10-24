@@ -21,7 +21,7 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { STATS, profilesOf, factorOf, takesPart } from './src/engine/foreignUnits.js';
+import { STATS, profilesOf, factorOf, takesPart } from '../engine/foreignUnits.js';
 
 /**
  * The unit types `game` defines, one record each: what the setup screen would

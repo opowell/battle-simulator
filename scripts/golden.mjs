@@ -21,7 +21,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runGolden } from '../src/engine/golden.js'
-import { GAMES } from '../api-server.js'
+import { GAMES } from '../games/registry.js'
 import { RogueGame } from '../games/rogue/index.js'
 import { SimCityGame } from '../games/simcity/index.js'
 

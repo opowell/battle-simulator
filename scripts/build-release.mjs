@@ -28,12 +28,13 @@ const FORMATS = ['zip', 'tar.gz']
 const APP_ID = 'battle-simulator'
 
 // Files the release build strips out of the app tree, per flavour. The source
-// flavour loses both halves of the server contract: api-server.js itself, and
-// the settings.json that points JAS at it (it would name a file that is gone).
+// flavour loses the server and both halves of its contract: src/server/, the
+// api-server.js that starts it, and the settings.json that points JAS at that
+// (it would name a file that is gone).
 const REMOVE = {
   standalone: [],
   jas: [],
-  source: ['api-server.js', 'settings.json'],
+  source: ['api-server.js', 'settings.json', 'src/server'],
 }
 
 const parseArgs = (argv) => {

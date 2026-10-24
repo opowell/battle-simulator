@@ -1,4 +1,4 @@
-// Which SIDE the analysis API answers for — the rule lives in api-server.js's
+// Which SIDE the analysis API answers for — the rule lives in the server's
 // resolveAnalysisContext, but it is only observable through a real game, so it
 // is exercised here against chess (the only fog game with an analysis panel).
 //
@@ -9,9 +9,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ChessGame } from './index.js';
-import { resolveAnalysisContext } from '../../api-server.js';
+import { createBattleServer, resolveAnalysisContext } from '#core/server/battleServer.js';
 
-// A stand-in for api-server.js's Session, carrying only what the resolver
+// The resolver finds the game by the session's name in the server's registry.
+createBattleServer({ games: { chess: { game: ChessGame, minPlayers: 2, maxPlayers: 2, defaultPlayers: [] } } });
+
+// A stand-in for the server's Session, carrying only what the resolver
 // touches: the engine's replay of a historical ply (GameEngine.replayStates — a
 // fresh `players` array per call, as the real one hands back), plus the live
 // state, fog flag and status that pick the seat.

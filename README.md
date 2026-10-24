@@ -119,7 +119,7 @@ one searchable place for every object the server knows about. It is built on
 
 | Object | What it is | What you can do |
 |---|---|---|
-| **Games** | the registry in `api-server.js` | edit player counts and sides, create, delete |
+| **Games** | the registry, `games/games.json` | edit player counts and sides, create, delete |
 | **Files** | each game's source under `games/<name>/` | edit and save (⌘S) |
 | **Sessions** | games being played right now | start one, play it in a tab, delete it |
 | **Recordings** | finished and interrupted games under `sessions/` | inspect seats, result and moves |
@@ -162,10 +162,14 @@ source take effect when the server next starts.
 
 ### Running a full game
 
+A game imports the core through Node subpath imports (`package.json`'s
+`"imports"`), never by a relative path out of its own folder: `#core/*` is
+`src/*`. Outside a game, plain paths work too.
+
 ```js
-import { GameEngine } from './engine/index.js';
+import { GameEngine } from '#core/engine/index.js';
 import { ChessGame } from './games/chess/index.js';
-import { RandomAgent } from './agents/index.js';
+import { RandomAgent } from '#core/agents/index.js';
 
 const players = [
   { id: 'white', name: 'White', agent: RandomAgent },
@@ -503,6 +507,17 @@ export const MyGame = {
 };
 ```
 
+To serve it, add a line to `games/games.json` (the module, its export and its
+seating; the game editor writes this file too) and restart the server. An app of
+its own builds its server the same way `api-server.js` does:
+
+```js
+import { createBattleServer } from '#core/server/battleServer.js';
+const server = createBattleServer({ games: { mygame: { game: MyGame, minPlayers: 2, maxPlayers: 2, defaultPlayers } } });
+export default server.mount;           // JAS's embedded-mode contract
+// or: server.listen(3333)
+```
+
 ### GameState shape
 
 ```js
@@ -540,10 +555,10 @@ Always include an `end-turn` action when the player may pass.
 ## Tests
 
 ```sh
-node --test test/*.test.js
+npm test
 ```
 
-Runs all game test suites.
+Runs every game's tests (golden replays included) and the core's.
 
 ## Releases
 
@@ -557,7 +572,7 @@ Six archives land in `dist/`, one per combination of two independent choices:
 | --- | --- |
 | `standalone` | `node api-server.js` — the app serves itself |
 | `jas` | bundles the [JAS](../..) server; `./jas.sh`, then pick it from the Launchpad |
-| `source` | no server at all: `api-server.js` and `settings.json` are removed. The engine, games, agents and UI sources, for use as a library or via `demo/*.js` |
+| `source` | no server at all: `src/server/`, `api-server.js` and `settings.json` are removed. The engine, games, agents and UI sources, for use as a library or via `demo/*.js` |
 
 | dependencies | |
 | --- | --- |
