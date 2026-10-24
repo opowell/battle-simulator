@@ -4,6 +4,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Each import URL is a module instance of its own: two copies of the core, as
 // two game repos vendoring it would be.
@@ -141,5 +144,41 @@ test('/library serves a pack\'s pictures, and nothing else of it', async () => {
     assert.equal((await fetch(`${base}/units.json`)).status, 404);
   } finally {
     http.close();
+  }
+});
+
+// A game's database is a module named from the app's root, as a game in its own
+// repo (apps/<game>/games/<game>/) names it, not from this file.
+test('a game database is imported from the app\'s root, and answers on an analysis board', async () => {
+  const five = await import('./battleServer.js?copy=five');
+  const root = mkdtempSync(join(tmpdir(), 'battle-db-root-'));
+  mkdirSync(join(root, 'apps', 'solo'), { recursive: true });
+  writeFileSync(join(root, 'apps', 'solo', 'db.js'), 'export const query = (state, color, { legalActions }) => ({ rows: [color, legalActions.length] });\n');
+  const solo = {
+    name: 'Solo',
+    createInitialState: (players) => ({ players, units: [], board: {}, turnNumber: 1, activePlayers: [players[0].id], gameSpecific: {} }),
+    getLegalActions: () => [{ type: 'end-turn' }],
+    applyActions: (state) => ({ ...state, turnNumber: state.turnNumber + 1 }),
+    getResult: () => null,
+    renderState: () => '',
+    database: { module: 'apps/solo/db.js', export: 'query', label: 'Solo games' },
+  };
+  const one = [{ id: 'p1', name: 'One' }];
+  const server = five.createBattleServer({ games: { solo: { game: solo, minPlayers: 1, maxPlayers: 1, defaultPlayers: one } }, root, sessionsDir: join(root, 'sessions') });
+  const http = server.listen(0);
+  try {
+    if (!http.listening) await once(http, 'listening');
+    const base = `http://localhost:${http.address().port}`;
+    const s = await fetch(`${base}/sessions`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ game: 'solo', players: one.map(p => ({ ...p, agent: 'human' })), config: { analysisBoard: true } }),
+    }).then(r => r.json());
+    const res = await fetch(`${base}/sessions/${s.id}/database?ply=0`);
+    const body = await res.json();
+    assert.equal(res.status, 200, body.error);
+    assert.deepEqual(body.rows, ['p1', 1]);
+  } finally {
+    http.close();
+    rmSync(root, { recursive: true, force: true });
   }
 });
