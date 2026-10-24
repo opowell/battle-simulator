@@ -15,9 +15,15 @@ combination of them:
 | **Turns** | sequential or simultaneous |
 | **Fog of war** | off or on |
 
-Every game in `games/` today (except Arena, which becomes the core's own
-ruleset) moves out to a **standalone JAS app in a repo of its own**, keeping
-everything it can do now. The template is `/Users/op/repos/fog-chess`: JAS as a
+Every game in `games/` today moves out to a **standalone JAS app in a repo of
+its own**, keeping everything it can do now. There are three exceptions:
+
+- **Arena** becomes the core's own ruleset.
+- **csmini** is dropped. It is the less complete of the two Counter-Strikes
+  (2 v 2, one map, one weapon, ~700 lines), and cs has everything it has and
+  more: weapons, an economy, rounds, maps, an Obscuro AI and sound.
+- **tactical** is dropped. FFTA covers it: a grid skirmish of classes and
+  abilities, with more of everything. The template is `/Users/op/repos/fog-chess`: JAS as a
 submodule, the app under `apps/<name>/`, `start.sh`/`start.cmd` on a port of its
 own, `.githooks/` for the submodules, `npm test`.
 
@@ -80,7 +86,7 @@ scenario is a spec. A game repo can then be any of three things:
 
 | Kind | What the repo supplies | Fits |
 |---|---|---|
-| **Spec** | unit types, terrain, abilities, scenarios, art | tactical, xcom, csmini, aow: battles the model can express |
+| **Spec** | unit types, terrain, abilities, scenarios, art | xcom, aow: battles the model can express |
 | **Spec + hooks** | the above, plus JS for the rules data can't say (an ability's effect, a move shape, a victory test) | ffta, sc1/sc2 combat, chess's move shapes, memoir44 |
 | **Custom game** | its own `GameDefinition` on the core SDK, as today | civ1/civ2 (economy), risk/kdice/axisallies (armies as counts), rogue, simcity |
 
@@ -151,7 +157,7 @@ evaluation see the rest: a pool is worth what it can still buy (its abilities'
 simulated value at the margin), and a declaration may carry an explicit `value`
 weight. What the AI will *not* see is an effect hidden behind `fn` that only
 pays off beyond its search depth. That is the honest cost of the escape hatch,
-and it is the same limitation the README already reports for cs-mini.
+and it is the same limitation the generic AI README reports today for cs-mini, the game phase 2's close-quarters scenario replaces.
 
 ### Board
 
@@ -264,22 +270,39 @@ doesn't.
 `agents/`, `apps/` or `src/` imports from a game, or contains a game id as a
 string literal. Comments are exempt; they may keep using civ1 as an example.
 
-### Units across games
+### Units across games: here only
 
-`registerGames(GAMES)` can't survive the split: no process will import every
-game. The interchange format becomes the core unit schema:
+Mixing units from different games is a **core** feature. The standalone games
+don't mix. A civ1 game in its own repo fields civ1 units and nothing else, but
+here a `BattleGame` scenario can field a marine, a knight and a chess rook side
+by side.
 
-- Each game publishes a **unit pack**: its types in core attributes, plus art
-  (`imagePath`, `glyph`, `name`). It is generated from what `foreignUnits`
-  already declares (`profiles()`, `art()`, `scale`, `factor`, `fold`, `absorb`)
-  and served at `/<app>/units.json`. Its tests check the pack against the core
-  schema, which replaces `games/foreignUnits.test.js`.
-- `engine/foreignUnits.js` loads packs instead of game modules: from the other
-  battle apps installed in the same JAS (by route), or from a file.
+`registerGames(GAMES)` can't stay as it is, because the games will no longer be
+here to import. What the core needs from each game is only its units as numbers
+and pictures, so it keeps that as data, in a **unit library**:
 
-So mixing units between games keeps working wherever the games are installed
-side by side. A game played on its own sees only its own units, plus the core's
-presets.
+- `units/<game>/pack.json` holds each type in core attributes, plus the source
+  game's `scale` and `factor` so `engine/foreignUnits.js` can still convert
+  between games. `units/<game>/art/` holds its images.
+- A script (`scripts/export-unit-pack.mjs`) generates a pack from what the game
+  declares today: `foreignUnits.profiles()`, `art()`, `scale`, `factor`,
+  `fold`. It runs once for each game, *before* that game is extracted, while
+  it is still importable here. A later change to a game's units reaches the
+  library only when the export is re-run from the game's repo (the script takes
+  a path).
+- `engine/foreignUnits.js` stays in the core and converts units from the
+  library into `BattleGame`. It no longer converts into other games, so the
+  hosting half of the `foreignUnits` contract (`table` + `write`, `adopt`,
+  `realize`, `absorb`) goes. `games/foreignUnits.test.js` becomes a test that
+  every pack in `units/` meets the core schema and round-trips through
+  `BattleGame`.
+- On extraction, a game drops its `foreignUnits` declaration and the hosting
+  code behind it. Its starting-units editor offers only its own types.
+
+This repo is **public**, and the packs carry original game art (StarCraft
+sprites, civ1 tiles). That is no worse than today, since all of that art is
+already here, but it is the one place where commercial art would stay public
+after the game repos go private (see open decisions).
 
 ## What stays and what goes
 
@@ -287,6 +310,9 @@ presets.
 |---|---|
 | `engine/`, `agents/` (Random, Greedy, Generic, Obscuro adapter, `cfr.js`, `learned/`), `vendor/obscuro`, `vendor/appfr`, `vendor/ws` | stays (into `src/`) |
 | `games/arena/` | stays, becomes `BattleGame` and its scenarios |
+| `engine/foreignUnits.js` | stays, converting only into `BattleGame` |
+| `units/` (new) | the unit library: every game's types and art, exported before the game leaves |
+| `games/tactical/`, `games/csmini/`, `demo/tactical-demo.js`, `demo/csmini-demo.js` | deleted, along with their registry entries and UI branches |
 | `games/spacetime.js`, `coord.js`, `vision.js`, `continuousMove.js`, `terrainShapes.js`, `moveQueue.js`, `planQueue.js`, `formatAction.js`, `renderOptions.js`, `evalHelpers.js`, `types.js`, `mapTypes/hexagon.js` | stays: these are the board, time and turn machinery |
 | `games/starcraftSprite.js` | audit: team-colour recolouring is generic (`ui.recolorTeamSprites`) and moves into the core; the sprite-sheet layout goes to the StarCraft repos |
 | `games/mapTypes/starcraftMap.js` | StarCraft repos |
@@ -337,6 +363,25 @@ against, per game, before anything moves:
    silent rules change the move causes.
 3. Decide what happens to the unregistered `rogue` and `simcity` (see open
    decisions).
+4. **Drop tactical and csmini**, after moving what the core leans on them for.
+   They are its test fixtures, so they can't simply be deleted:
+
+   | Uses | Replace with |
+   |---|---|
+   | `agents/generic/generic.test.js` (reading units, playing a game) | Arena scenarios |
+   | `agents/obscuro.test.js` (Obscuro runs on a non-chess game) | Arena |
+   | `agents/greedy.test.js`, `agents/rollout.test.js` (every game in a list) | drop the two entries now; the lists go with phase 1's per-game tests |
+   | `gameEditor.test.js` (edits tactical's registry entry) | arena's entry |
+   | `agents/learned/train.mjs` (tactical in its game table) | drop the entry |
+   | `demo/generic-ai-bench.mjs`: *Tactical vs Greedy on Tactical's evaluator* | FFTA vs Greedy on FFTA's evaluator, the same comparison against a hand-written evaluator, on the game that replaces tactical |
+   | `demo/generic-ai-bench.mjs`: *CS-mini*, the measured weakness (facing, vision cones, reloading) | cs, until phase 2's facing scenario exists in the core (see phase 2, step 8) |
+   | `apps/browser/play/gameDefaults.js`, `SessionView.vue`, `HtmlLayer.vue`, `Battlefield.vue`, `HtmlUnit.vue`, `source.js` | remove the csmini/tactical branches; keep whatever they made generic |
+   | `agents/generic/README.md`'s *Measured* table, the README games table and demo list | re-measured with the new bench, and the two rows removed |
+
+   Before deleting either, check that nothing it does is missing from its
+   replacement. Most importantly, every csmini mode (all four space × time
+   quadrants, sequential and we-go) must have a counterpart in cs or Arena.
+   Where one is missing, note it in cs's checklist rather than keep csmini.
 
 ### Phase 1: decouple inside this repo
 
@@ -352,8 +397,11 @@ game is *ready to lift out* but nothing has left.
    branch out of `apps/browser` into `games/<game>/ui/`, then turn on the gate
    test. The branches are the slow part: each one becomes either an existing
    `ui.*` flag, a new generic flag (when two or more games want it), or a plugin.
-4. Unit packs replace `registerGames`. `games/foreignUnits.test.js` and
-   `games/startingSetup.test.js` become per-game tests against the schema.
+4. The unit library replaces `registerGames`. Export every game's pack into
+   `units/` and point `engine/foreignUnits.js` at the library, converting into
+   `BattleGame` only. Then remove the cross-game hosting from the games, and
+   turn `games/foreignUnits.test.js` into the library's schema test.
+   `games/startingSetup.test.js` becomes per-game tests.
 5. Split `npm test` per game, so that each game's tests pass from its folder
    alone.
 
@@ -377,7 +425,12 @@ eight modes:
    valuation, facing. Measure as the README does, in seat-swapped pairs.
 8. Reference scenarios that use each feature, with no names or art from other
    games: a magic skirmish (mp, statuses, area spells), a sci-fi one (energy,
-   shields, cloak and detection, air and ground), a hex one, a regions one.
+   shields, cloak and detection, air and ground), a hex one, a regions one, and
+   a **close-quarters** one (vision cones, facing, an `ammo` pool with a
+   reload). That last one inherits csmini's job as the generic AI's measured
+   weak spot, and moves into the bench in place of cs.
+9. A **mixed** scenario that fields units from several packs in `units/`, so
+   the library is tested in play and not only by its schema test.
 
 ### Phase 3: extract the games, one by one
 
@@ -385,7 +438,7 @@ Least coupled first, so the template gets proven on easy cases:
 
 | Wave | Games | Why this order |
 |---|---|---|
-| 1 | tactical, csmini, xcom, aow, memoir44 | small, few or no plugins |
+| 1 | xcom, aow, memoir44 | small, few or no plugins |
 | 2 | doom, surviv, mudandblood, warofdots, combatmission, cs | continuous space, shape maps, sounds |
 | 3 | risk, kdice, axisallies | regions topology, dice overlay, armies as counts |
 | 4 | ffta, sc1, sc2 | big art, abilities, the StarCraft shared code |
@@ -394,17 +447,21 @@ Least coupled first, so the template gets proven on easy cases:
 
 For each game:
 
-1. Create the repo from the template and extract its history with
+1. Check that its unit pack in `units/` is up to date (phase 1, step 4). After
+   this step the game can no longer be imported here to export it.
+2. Create the repo from the template and extract its history with
    `filter-repo`.
-2. Add `vendor/battle-simulator` pinned to the current core commit.
-3. Write `server.js` around `createBattleServer`, and move in its plugins.
-4. Check: its tests pass, its golden replays match, and its capability
+3. Add `vendor/battle-simulator` pinned to the current core commit.
+4. Write `server.js` around `createBattleServer`, move in its plugins, and
+   remove its `foreignUnits` declaration and hosting code.
+5. Check: its tests pass, its golden replays match, and its capability
    checklist holds in the real UI, driven headlessly with Playwright per the
    *prefer headless testing* feedback (a screen lock is needed only for the
-   final real-browser check).
-5. In the same change on this side, delete `games/<game>/` and its registry
+   final real-browser check). Mixing in foreign units is not on the checklist,
+   because it stays here.
+6. In the same change on this side, delete `games/<game>/` and its registry
    entry, plugins, demos and benches. Record the repo in the README's games
-   table.
+   table. Its pack stays in `units/`.
 
 Up to three games can be extracted at once by sub-agents, each in its own
 worktree (the *max three sub-agents* feedback).
@@ -422,7 +479,7 @@ worktree (the *max three sub-agents* feedback).
 ### Phase 5 (optional, per game): rebase onto the spec
 
 Where the model fits, replace a game's own rules with a spec plus hooks:
-tactical, xcom, csmini and aow first, then ffta and sc1/sc2 combat. The golden
+xcom and aow first, then ffta and sc1/sc2 combat. The golden
 replays tell you whether the rebuilt game still plays the same. Each game is
 smaller afterwards and gets every core feature for free.
 
@@ -431,7 +488,7 @@ smaller afterwards and gets every core feature for free.
 - **A core change reaches games only by a bump.** `scripts/bump-games.sh`, in
   the core, clones or updates each game repo, bumps its `vendor/battle-simulator`,
   runs its tests and reports, so that an engine change can be checked against
-  all 21 games before it is tagged.
+  every game before it is tagged.
 - **Contract tests ship with the core** (`src/contract.test.js`: a
   `GameDefinition` is pure, fog leaks nothing, a roster round-trips, a state
   survives reconfigure). Every game repo runs them against its own game.
@@ -443,28 +500,39 @@ smaller afterwards and gets every core feature for free.
   startup; the Browser runs Vue 3.5 while the old apps run 3.4; a worktree has
   no `sessions/`.
 
+## Decided (2026-10-24)
+
+- **cs stays and csmini goes**: csmini is the less complete of the two.
+- **tactical goes**: FFTA covers it.
+- **Units mix only here**, in the core's `BattleGame`, from the unit library.
+  The standalone games don't mix.
+- **Lift and shift** (phase 3), with the rewrite onto the spec left as optional
+  phase 5. Rewriting every game before it moves would put every current
+  capability at risk at once.
+
 ## Open decisions
 
 Each has a recommendation. The plan above assumes it.
 
-1. **Lift and shift, or rewrite on the spec?** *Recommend lift and shift*
-   (phase 3), with the rewrite as optional phase 5. Rewriting 21 games before
-   they move would put every current capability at risk at once.
-2. **Units across games**: unit packs (*recommended*, keeps mix-and-match when
-   games sit side by side), or drop the feature.
-3. **sc1 and sc2 share code.** *Recommend* two repos, with the generic part of
+1. **The unit library's art in a public repo.** battle-simulator is public, and
+   the packs would keep sprites from commercial games in it after their own
+   repos go private. That is no change from today, where all of that art is
+   already here. *Recommend* keeping it as it is for now. The alternatives are
+   glyph-only packs here, with real art only where the game repo is installed
+   alongside, or a private `units-art` submodule.
+2. **sc1 and sc2 share code.** *Recommend* two repos, with the generic part of
    `starcraftSprite.js` moved into the core and the rest (sprite-sheet layout,
    `starcraftMap.js`) living in sc1 and vendored into sc2 as a submodule. The
    alternative is one `battle-starcraft` repo with two apps.
-4. **Chess**: a new `battle-chess` repo (*recommended*: it carries the
+3. **Chess**: a new `battle-chess` repo (*recommended*: it carries the
    simulator's chess, with its four space × time quadrants, analysis panel and
    database), or fold it into `fog-chess`. Later, fog-chess could build on
    battle-chess.
-5. **`rogue` and `simcity`** aren't in the registry, and simcity isn't a battle.
+4. **`rogue` and `simcity`** aren't in the registry, and simcity isn't a battle.
    *Recommend* extracting both as they are, unregistered, so nothing is lost,
    and deciding their future there.
-6. **Names and visibility**: `opowell/battle-<game>`; private wherever there is
+5. **Names and visibility**: `opowell/battle-<game>`; private wherever there is
    original game art.
-7. **This repo's name**: keep `battle-simulator` (*recommended*: links, the
+6. **This repo's name**: keep `battle-simulator` (*recommended*: links, the
    submodule path and fog-chess's README already point at it) or rename it to
    `battle-core`.
