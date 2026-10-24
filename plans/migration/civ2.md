@@ -101,3 +101,18 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-civ2](https://github.com/opowell/battle-civ2), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 25 tests, its 3 golden replays among them,
+plus the app's own 4; the slow rollout skipped) passes; `npm run demo:civ2:auto`
+and `demo:civ2:greedy` play to the turn limit. In the Browser, driven headless,
+the default setup and `standard` draw the isometric world from its terrain
+tiles (`/images/civ2/terrain/…` served) with the units' art in the roster, and a
+turn ends, the AI plays, and turn 2 comes back, with no console error or failed
+request. Its pack was re-exported into `library/civ2/` first: its 51 units
+unchanged, plus its 11 terrain types and three generated worlds at the default
+50×30 (seeds 1–3, wrapping east to west, one unit a square), each with the
+settlers and warriors the game opens with. The generator stays with the game.
