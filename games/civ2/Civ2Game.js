@@ -5,7 +5,6 @@ import { resolveCombat } from './combat.js';
 import { mulberry32, generateMap, findStartPos, findAdjacentFree, getReachableTiles, thirdsLeftAt, renderMap, THIRDS } from './map.js';
 import { assets, cityImg } from './assets/index.js';
 import { getCiv2Belief } from './belief.js';
-import { tableUnits } from '#core/engine/foreignUnits.js';
 
 
 // Shortest horizontal distance between two columns on a map that wraps east/west.
@@ -466,16 +465,6 @@ export const Civ2Game = {
   createSetupUnit(state, { id, ownerId, type, position }) {
     return makeUnit(id, ownerId, type, position?.x ?? 0, position?.y ?? 0);
   },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). Read as
-  // civ1's are: an ancient line unit is one point of each stat, every attack is melee.
-  foreignUnits: tableUnits({
-    table: UNITS,
-    scale: { hp: 10, attack: 2, defense: 2, range: 4, move: 1 },
-    read: (e) => ({ hp: e.hp, attack: e.attack, defense: e.defense, range: 1, move: e.moves, domain: e.domain }),
-    art: (type) => ({ imagePath: assets.units?.[type]?.img ?? null, glyph: type[0].toUpperCase(), name: type }),
-  }),
-
   getLegalActions,
   applyActions,
   getResult,
