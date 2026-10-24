@@ -20,7 +20,7 @@ change that is meant to alter what it does: `node scripts/golden.mjs <game>`.
 
 | Game | Leaves for | Notes |
 |---|---|---|
-| [aow](aow.md) | its own repo, wave 1 | |
+| [aow](aow.md) | [opowell/battle-aow](https://github.com/opowell/battle-aow) | |
 | [arena](arena.md) | stays: becomes `BattleGame` | |
 | [axisallies](axisallies.md) | [opowell/battle-axisallies](https://github.com/opowell/battle-axisallies) | |
 | [chess](chess.md) | its own repo, wave 6 | owns obscuro-chess and the Stockfish cache |
@@ -31,15 +31,15 @@ change that is meant to alter what it does: `node scripts/golden.mjs <game>`.
 | [doom](doom.md) | its own repo, wave 2 | |
 | [ffta](ffta.md) | its own repo, wave 4 | replaces tactical in the generic AI bench |
 | [kdice](kdice.md) | [opowell/battle-kdice](https://github.com/opowell/battle-kdice) | |
-| [memoir44](memoir44.md) | its own repo, wave 1 | |
-| [mudandblood](mudandblood.md) | its own repo, wave 2 | |
+| [memoir44](memoir44.md) | [opowell/battle-memoir44](https://github.com/opowell/battle-memoir44) | |
+| [mudandblood](mudandblood.md) | [opowell/battle-mudandblood](https://github.com/opowell/battle-mudandblood) | |
 | [risk](risk.md) | [opowell/battle-risk](https://github.com/opowell/battle-risk) | |
-| [rogue](rogue.md) | open decision 4 | not registered |
+| [rogue](rogue.md) | [opowell/battle-rogue](https://github.com/opowell/battle-rogue) | not registered |
 | [sc1](sc1.md) | its own repo, wave 4 | shares StarCraft code with sc2 |
 | [sc2](sc2.md) | its own repo, wave 4 | shares StarCraft code with sc1 |
-| [simcity](simcity.md) | open decision 4 | not registered, not a battle |
+| [simcity](simcity.md) | [opowell/battle-simcity](https://github.com/opowell/battle-simcity) | not registered, not a battle |
 | [surviv](surviv.md) | its own repo, wave 2 | |
-| [warofdots](warofdots.md) | its own repo, wave 2 | |
+| [warofdots](warofdots.md) | [opowell/battle-warofdots](https://github.com/opowell/battle-warofdots) | |
 | [xcom](xcom.md) | [opowell/battle-xcom](https://github.com/opowell/battle-xcom) | |
 
 tactical and csmini were dropped in phase 0, step 2. What csmini had that

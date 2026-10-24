@@ -9,13 +9,11 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | `chess` | Chess — plus fog of war and three (space x time) variants | [games/chess/](games/chess/README.md) |
 | `civ1` | Civilization 1 | [games/civ1/](games/civ1/README.md) |
 | `combatmission` | Combat Mission | [games/combatmission/](games/combatmission/README.md) |
-| `aow` | The Ancient Art of War | [games/aow/](games/aow/README.md) |
 | `cs` | Counter-Strike | [games/cs/](games/cs/README.md) |
 | `ffta` | Final Fantasy Tactics Advance | [games/ffta/](games/ffta/README.md) |
 | `sc1` | StarCraft 1 | [games/sc1/](games/sc1/README.md) |
 | `sc2` | StarCraft 2 | [games/sc2/](games/sc2/README.md) |
 | `doom` | Doom | [games/doom/](games/doom/README.md) |
-| `memoir44` | Memoir '44 | [games/memoir44/](games/memoir44/README.md) |
 | `arena` | The generic battle: terrain and units that are only numbers, in all eight (space × time × play) modes | [games/arena/](games/arena/README.md) |
 
 ## Games in repos of their own
@@ -30,6 +28,12 @@ units, terrain and maps in [the library](#library) here.
 | `kdice` | kdice | [opowell/battle-kdice](https://github.com/opowell/battle-kdice) |
 | `axisallies` | Axis & Allies | [opowell/battle-axisallies](https://github.com/opowell/battle-axisallies) |
 | `civ2` | Civilization II | [opowell/battle-civ2](https://github.com/opowell/battle-civ2) |
+| `aow` | The Ancient Art of War | [opowell/battle-aow](https://github.com/opowell/battle-aow) |
+| `memoir44` | Memoir '44 | [opowell/battle-memoir44](https://github.com/opowell/battle-memoir44) |
+| `mudandblood` | mudandblood | [opowell/battle-mudandblood](https://github.com/opowell/battle-mudandblood) |
+| `warofdots` | warofdots | [opowell/battle-warofdots](https://github.com/opowell/battle-warofdots) |
+| `rogue` | rogue | [opowell/battle-rogue](https://github.com/opowell/battle-rogue) |
+| `simcity` | simcity | [opowell/battle-simcity](https://github.com/opowell/battle-simcity) |
 
 ## Quick start
 
@@ -84,7 +88,7 @@ node demo/chess-demo.js --auto
 node demo/civ1-demo.js --auto --greedy
 ```
 
-All demos are in `demo/`: `chess`, `civ1`, `combatmission`, `aow`, `cs`, `ffta`, `sc2`, `doom`, `memoir44`, `rogue`.
+All demos are in `demo/`: `chess`, `civ1`, `combatmission`, `cs`, `ffta`, `sc2`, `doom`, `rogue`.
 
 ### Start the HTTP API server
 
