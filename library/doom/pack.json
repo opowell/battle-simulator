@@ -1,12 +1,16 @@
 {
   "game": "doom",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "a1a5d59b533d9634184e02b7d38d254f27f753d9",
+    "date": "2026-10-24T19:08:10+02:00"
   },
   "units": 7,
   "art": 7,
+  "terrain": 9,
+  "maps": 1,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "pickups (weapons, ammo, armour, health): kept as map features, but the core has no items",
+    "weapons and ammunition: a unit fights with the one weapon its pack reads it as",
+    "the armour platform's oval, drawn as a 16-sided polygon"
   ]
 }
