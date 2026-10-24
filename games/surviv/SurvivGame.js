@@ -30,7 +30,7 @@ function calcDamage(raw, unit) {
   return Math.round(raw * (1 - reduction));
 }
 
-const WEAPON_ICON = w => `/images/surviv/weapons/${w}`;
+export const WEAPON_ICON = w => `/images/surviv/weapons/${w}`;
 const EQUIP_ICON  = (kind, tier) => `/images/surviv/equipment/${kind}${tier}`;
 
 // ── Unit factory ──────────────────────────────────────────────────────────────
@@ -49,10 +49,10 @@ function makeUnit(id, ownerId, pos) {
   };
 }
 
-// ── Its units, as its pack in the core's library reads them (foreignUnits below) ──
+// ── Its units, as its pack in the core's library reads them (pack.js) ──
 // A player's kind is the kind of weapon it holds; each kind is read as the first
 // weapon of it (fists, the Colt, the Vector, …).
-const KIND_WEAPON = {};
+export const KIND_WEAPON = {};
 for (const [id, w] of Object.entries(WEAPONS)) KIND_WEAPON[w.category] ??= id;
 
 function spawnUnits(map) {
@@ -890,22 +890,6 @@ export const SurvivGame = {
     const at = position ?? mate?.position;
     if (!weapon || !at) return null;
     return { ...makeUnit(id, ownerId, at), type, weapon, ammo: fullAmmo(weapon), facing: mate?.facing ?? 0 };
-  },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
-  // conversion factor is the rifleman (the FAMAS: 24 a hit, 8 squares) with his 100
-  // hp and 4 squares a turn. Vests and helmets come off the ground, not with a unit,
-  // so a player has no defense of its own (`fold`): it reads as the standard.
-  foreignUnits: {
-    scale: { hp: STARTING_HP, attack: WEAPONS.famas.damage, defense: 1, range: WEAPONS.famas.range, move: MOVE_RANGE },
-    fold: { defense: 'hp' },
-    profiles: () => Object.fromEntries(Object.entries(KIND_WEAPON).map(([kind, w]) => [kind, {
-      hp: STARTING_HP, attack: WEAPONS[w].damage, range: WEAPONS[w].range, move: MOVE_RANGE, domain: 'land',
-    }])),
-    art: (kind) => ({
-      imagePath: KIND_WEAPON[kind] && KIND_WEAPON[kind] !== 'fists' ? WEAPON_ICON(KIND_WEAPON[kind]) : null,
-      glyph: 'P', name: `${kind} player`,
-    }),
   },
   createInitialState,
   actionKey:        survivActionKey,
