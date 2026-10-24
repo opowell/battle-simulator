@@ -1,0 +1,20 @@
+{
+  "light": {
+    "name": "Light square",
+    "color": "#f0d9b5",
+    "description": "A square of the board. No effect.",
+    "cost": 1,
+    "passable": true,
+    "cover": 0,
+    "blocksSight": false
+  },
+  "dark": {
+    "name": "Dark square",
+    "color": "#b58863",
+    "description": "A square of the board. No effect.",
+    "cost": 1,
+    "passable": true,
+    "cover": 0,
+    "blocksSight": false
+  }
+}

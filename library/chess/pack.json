@@ -1,12 +1,20 @@
 {
   "game": "chess",
   "from": {
-    "commit": "a8927738bf7dcaea44d1a6000b952896f639c5ea",
-    "date": "2026-10-24T12:56:37+02:00"
+    "commit": "ffdc44d279998d3e9e089f2e2ae93a0a4c0f4869",
+    "date": "2026-10-24T22:47:54+02:00"
   },
   "units": 6,
   "art": 12,
+  "terrain": 2,
+  "maps": 4,
   "omitted": [
-    "terrain types and maps: not exported until the core has its board format (phase 2)"
+    "how each piece moves (the knight's jump, the bishop's diagonals, the pawn's single step forward and diagonal capture): a library piece moves and strikes by its move and range like any other unit",
+    "capture by moving onto a piece: the core strikes from a distance and the struck piece loses hit points",
+    "check, checkmate, stalemate and the king as the piece that decides the game: the core plays a chess map to elimination (a placement cannot carry the royal tag)",
+    "castling, en passant, promotion and the double first pawn step",
+    "draws by repetition, the fifty-move rule and insufficient material",
+    "Fog of War's per-square sight and its piece markers: the fog scenario is the standard board, and the core's own fog is a setup switch",
+    "the hit points, grinding contact and hop cooldowns of the clockwork, melee and sliding scenarios: their maps keep only their space and time"
   ]
 }
