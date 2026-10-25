@@ -101,3 +101,30 @@ come from the board's `fill: 'team'`, not from the sprite code), so phase 1 move
 both files into sc1 (`games/sc1/starcraftSprite.js`, `games/sc1/starcraftMap.js`)
 and sc2 imports them from there: the one cross-game import left, which the plan's
 open decision 2 recommends turning into sc1 vendored into sc2.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-sc2](https://github.com/opowell/battle-sc2), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+The StarCraft code it shared with sc1 stays sc1's (open decision 2, as
+recommended): battle-sc1 is its submodule `vendor/battle-sc1`, and
+`starcraftMap.js` and `starcraftSprite.js` are imported as `#sc1/*`
+(package.json's imports), where here they were `../sc1/…`. battle-sc1 carries a
+core of its own, pinned to the same commit as battle-sc2's; the launchers check
+it is checked out. Checked there: `npm test` (the game's 32 tests, its 4 golden
+replays among them, plus the app's own 4; the slow rollout skipped) passes;
+`demo/sc2-demo.js --auto --greedy` plays to its turn limit. In the Browser,
+driven headless, the default setup and `tvz`, `pvt` and `zvp` draw Aiur Crossing
+from sc1's shapes with each race's units in their sprite layers and portraits
+(`/images/sc2/…` served), and a turn ends and the AI's moves play out live, the
+human's turn coming back in seconds, with no console error or failed request. It
+has no `ui` flags, UI plugins or sounds. Its pack was re-exported into
+`library/sc2/` first, while it still imported sc1 here: its 42 units unchanged,
+plus the same 6 terrain types as sc1 (the same table, priced for ground units
+and air) and Aiur Crossing under each of its three scenarios, with the four
+workers and three fighters each race opens with and the main bases as map
+features (`scripts/export/sc2.mjs`, which reuses sc1's exporter).
+
+Pre-existing, not changed by the move: a main base has no portrait in the
+roster (a letter on a blank card), in the core as well; the demo's greedy player
+builds evolution chambers without end. sc2 and sc1 leave the core together.
