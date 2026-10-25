@@ -447,8 +447,11 @@ function chargeActions(state, playerId) {
     const queue = o.queue ?? [];
     const tail = queue.length ? queue[queue.length - 1] : o.position;
     // Where it could go from the end of its queue, on a fresh activation: a stand-in
-    // of its own, so the square it stands on now is in the way like any other.
-    const ahead = { ...o, id: `${o.id}\u0000ahead`, position: { ...tail }, perTurn: { ...freshPerTurn(state, o), moveLeft: stat(state, o, 'speed') } };
+    // of its own, so the square it stands on now is in the way like any other. A
+    // status that holds it still now is no bar to planning for later.
+    const holds = (s) => (rulesOf(state).attrs[s.id] ?? BUILT_IN[s.id])?.blocks?.includes('move');
+    const free = o.statuses?.some(holds) ? { ...o, statuses: o.statuses.filter(s => !holds(s)) } : o;
+    const ahead = { ...free, id: `${o.id}\u0000ahead`, position: { ...tail }, perTurn: { ...freshPerTurn(state, free), moveLeft: stat(state, free, 'speed') } };
     for (const d of destinations(state, ahead)) actions.push({ type: 'queue-move', unitId: o.id, to: d.to });
     if (queue.length) actions.push({ type: 'queue-pop', unitId: o.id });
   }
