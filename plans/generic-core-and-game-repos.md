@@ -684,7 +684,7 @@ worktree (the *max three sub-agents* feedback).
   core without games and its tests run again.
 
 *Done 2026-10-25:* all twenty games are repos of their own,
-`/Users/op/repos/battle-<game>` (not yet on GitHub), each pinned to the core
+`/Users/op/repos/battle-<game>` (private on GitHub as `opowell/battle-<game>`), each pinned to the core
 without games and green there; `games/` holds Arena alone. Each checklist's
 **Moved** section says what was checked and what was already so in the core.
 The open decisions went as recommended: sc1 keeps the StarCraft code and
