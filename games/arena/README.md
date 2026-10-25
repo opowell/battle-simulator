@@ -53,8 +53,9 @@ not sampled.
 
 ## The eight modes
 
-Set on the setup form: **Space** and **Time** are Arena's options; sequential vs
-simultaneous is the engine's **Simultaneous turns** switch.
+Set on the setup form, as Arena's options **Space**, **Time** and **Play**
+(sequential or simultaneous). Only a game built to be played several ways offers
+them: every other game plays in its own structure.
 
 | | Discrete time (turns) | Continuous time (one clock) |
 |---|---|---|

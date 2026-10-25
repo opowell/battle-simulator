@@ -31,7 +31,7 @@ const BASE_SCENARIOS = [
   { id: 'skirmish', name: 'Skirmish', description: '14×10 — a river with two fords, woods, hills; five units a side', config: {} },
   { id: 'open-field', name: 'Open field', description: '12×8 of open ground — nothing but the numbers', config: { width: 12, height: 8, map: 'open' } },
   { id: 'real-time', name: 'Real-time skirmish', description: 'The skirmish on one clock, everyone ordering at once, free movement',
-    config: { space: 'continuous', time: 'continuous', simultaneousTurns: true } },
+    config: { space: 'continuous', time: 'continuous', play: 'simultaneous' } },
 ];
 
 const freshBudget = (u, stats) => (u.perTurn ? { ...u.perTurn, moveLeft: stats.speed, attacksLeft: stats.rate } : u.perTurn);

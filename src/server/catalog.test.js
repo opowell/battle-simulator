@@ -97,6 +97,20 @@ test('engine options are one record each, offered to every game', () => {
   assert.equal(engine.id, 'engine/aiDelay');
 });
 
+test('a game whose pieces are counters lists no units', () => {
+  const dice = { ...registry.duel, game: { ...game, ui: { browseUnits: false } } };
+  const c = build({ games: { duel: dice } });
+  assert.deepEqual(c.units, []);
+  assert.equal(c.games[0].units, 0);
+  assert.equal(build().units.length, 2);
+});
+
+test('a game edits its specs here only when it keeps them in a folder', () => {
+  assert.equal(build().games[0].editsSpecs, false);
+  const specced = { ...registry.duel, game: { ...game, specBook: { dir: '/specs', ids: () => [] } } };
+  assert.equal(build({ games: { duel: specced } }).games[0].editsSpecs, true);
+});
+
 test('a game whose opening position throws still lists, with the reason', () => {
   const c = build({ setupPreview: () => { throw new Error('no board'); } });
   assert.equal(c.games[0].unitsError, 'no board');

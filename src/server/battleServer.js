@@ -1577,14 +1577,12 @@ function dedupeAgents(list) {
 
 // Engine-level options offered for every game — config flags the GameEngine
 // itself interprets (games never see them), so no game has to declare them.
+// Nothing here changes how a game is played — its space, its time, whether its
+// sides take turns: a game plays in its own structure (sequential, or what its
+// defaultConfig says, as SC1's `simultaneousTurns`), and one built to be played
+// several ways offers them as its own options (src/battle: space, time, play).
+// Fog of war is each game's own option too.
 const ENGINE_OPTIONS = [
-  {
-    id: 'simultaneousTurns',
-    label: 'Simultaneous turns',
-    description: 'All players give orders at the same time; once everyone has ended their turn, the orders resolve together and play back.',
-    type: 'boolean',
-    default: false,
-  },
   {
     id: 'analysisBoard',
     label: 'Analysis board',
@@ -1631,8 +1629,8 @@ async function handleGames(res) {
     minPlayers,
     maxPlayers,
     scenarios: game.scenarios ?? [],
-    // An engine option a game sets in its `defaultConfig` (SC1 and CS default to
-    // simultaneous turns) starts the setup form at that value: the form sends every
+    // An engine option a game sets in its `defaultConfig` (a game that wants
+    // observers by default) starts the setup form at that value: the form sends every
     // option it shows, so a form left at the generic default would quietly override
     // the game's own.
     gameOptions: [...(game.gameOptions ?? []), ...ENGINE_OPTIONS.map(o =>

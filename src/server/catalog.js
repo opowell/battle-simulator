@@ -219,9 +219,11 @@ export function buildCatalog({ games, sessions, recordings, files, specs = [], s
       });
     }
 
+    // A game whose pieces are counters (a stack of dice, a pile of armies) rather
+    // than units says so with `ui.browseUnits: false`, and lists none.
     let units = [];
     let unitsError = null;
-    try {
+    if (game.ui?.browseUnits !== false) try {
       const players = (entry.defaultPlayers ?? []).map((p) => ({ id: p.id, name: p.name ?? p.id }));
       const stats = game.unitStats?.() ?? profilesOf(game);
       units = unitRecords(name, setupPreview(game, players, {}), stats);
@@ -264,6 +266,9 @@ export function buildCatalog({ games, sessions, recordings, files, specs = [], s
       scenarios: (game.scenarios ?? []).length,
       units: units.length,
       unitsError,
+      // Whether its battle specs are edited here (src/battle: a BattleGame given a
+      // specs folder); the spec editor is for the games that are.
+      editsSpecs: !!game.specBook?.dir,
       // The general adjustment factor its units' strength is compared with other
       // games' by (src/engine/foreignUnits.js); null for a game that lends none.
       unitFactor: takesPart(game) ? factorOf(game) : null,
@@ -286,7 +291,7 @@ export function buildCatalog({ games, sessions, recordings, files, specs = [], s
     out.games.push({
       id: entry.name, game: entry.name, name: entry.name, title: entry.name,
       minPlayers: entry.minPlayers, maxPlayers: entry.maxPlayers, defaultPlayers: entry.defaultPlayers ?? [],
-      scenarios: 0, units: 0, unitsError: null, options: 0, agents: 0,
+      scenarios: 0, units: 0, unitsError: null, editsSpecs: false, options: 0, agents: 0,
       files: (files[entry.name] ?? []).length, sessions: 0, recordings: count(out.recordings, entry.name),
       fog: false, live: false,
     });

@@ -322,7 +322,22 @@ export function buildSchema(catalog, { Art }) {
     },
   ]
 
-  for (const entity of entities) {
+  // Only what this server's games have: one game is the whole app, so it needs
+  // no list of games nor a column or facet naming the game; a spec editor only
+  // where a game's specs are edited; units only where a game lists them.
+  const oneGame = catalog.games.length === 1
+  const hidden = new Set([
+    ...(oneGame ? ['games'] : []),
+    ...(catalog.games.some((g) => g.editsSpecs) ? [] : ['specs']),
+    ...(catalog.units.length ? [] : ['units']),
+  ])
+  const shown = entities.filter((e) => !hidden.has(e.key))
+  for (const entity of shown) {
+    if (oneGame) {
+      entity.columns = entity.columns.filter((c) => c !== gameColumn)
+      entity.facets = entity.facets.filter((f) => f.key !== 'game')
+      entity.sorts = entity.sorts.filter((s) => s.key !== 'game')
+    }
     entity.tabs = ['Information']
     entity.samples = []
   }
@@ -342,7 +357,7 @@ export function buildSchema(catalog, { Art }) {
       gameColumn,
       { ...started, label: 'Date' },
       state,
-    ],
-    entities,
+    ].filter((c) => !(oneGame && c === gameColumn)),
+    entities: shown,
   }
 }

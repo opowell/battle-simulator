@@ -1563,7 +1563,11 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
       options: [{ value: 'discrete', label: 'Discrete (cells)' }, { value: 'continuous', label: 'Continuous (points)' }] },
     { id: 'time', label: 'Time', description: 'Discrete (turns of move/act budgets) or continuous (one clock; orders take time)', type: 'select', default: 'discrete',
       options: [{ value: 'discrete', label: 'Discrete (turns)' }, { value: 'continuous', label: 'Continuous (clock)' }] },
-    // Sequential vs simultaneous is the engine's Simultaneous Turns switch.
+    // Simultaneous play is the engine's we-go path; `play` is its unified spelling
+    // (src/kit/spacetime.js), offered here because only a game built to be played
+    // either way should offer it — every other game plays in its own structure.
+    { id: 'play', label: 'Play', description: 'Sequential (sides take turns) or simultaneous (every side gives its orders at once, and they resolve together)', type: 'select', default: 'sequential',
+      options: [{ value: 'sequential', label: 'Sequential (turns)' }, { value: 'simultaneous', label: 'Simultaneous (we-go)' }] },
     { id: 'unitsPerTurn', label: 'Units per turn', description: 'How many of its units a side may use in a turn (discrete time); its turn ends by itself once they are done. The scenario says, unless this does.', type: 'select', default: '',
       options: [{ value: '', label: "Scenario's own" }, { value: '0', label: 'Every unit' }, { value: '1', label: 'One' }, { value: '2', label: 'Two' }, { value: '3', label: 'Three' }] },
   ];

@@ -155,13 +155,13 @@ There is no lobby or authentication — the share link is the full credential. A
 
 ### Changing settings mid-game
 
-Every setting can be changed while a game is being played: the game's own options (fog of war, AI difficulty, the space and time models, a map), the engine's (simultaneous turns, observers, AI pacing, turn limit), who plays each seat, and the units on the board. Open the in-game menu (Esc) → **Game settings**. It is the setup form, opened on the game's current settings; only what you change is sent (`POST /sessions/:id/reconfigure`).
+Every setting can be changed while a game is being played: the game's own options (fog of war, AI difficulty, the space and time models, a map), the engine's (observers, AI pacing, turn limit), who plays each seat, and the units on the board. Open the in-game menu (Esc) → **Game settings**. It is the setup form, opened on the game's current settings; only what you change is sent (`POST /sessions/:id/reconfigure`).
 
 How each change lands is worked out generically, without game-specific code (`src/engine/reconfigure.js`):
 
 | A setting that… | e.g. | lands as |
 |---|---|---|
-| the engine reads on every step | simultaneous turns, turn limit | the config changes, nothing else |
+| the engine reads on every step | observers, turn limit | the config changes, nothing else |
 | the game copied into its state at the start | fog of war, AI difficulty | those fields are patched into the live position |
 | decides what the world is | space, time, map, board size | the position is **rebuilt** from where every unit stands now |
 
