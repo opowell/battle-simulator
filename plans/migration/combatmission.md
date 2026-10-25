@@ -101,3 +101,23 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-combatmission](https://github.com/opowell/battle-combatmission),
+built by `scripts/extract-game.mjs` and pinned to the core at the commit it left
+from. Checked there: `npm test` (the game's 57 tests, its 10 golden replays among
+them, plus the app's own 4) passes, the one skip being the `SLOW_TESTS` rollout;
+in the Browser, driven headless, the default setup, `bocage`, `river_line`,
+`hill_woods` and `ambush` draw the map with its art and every unit's portrait,
+and a turn ends by End Turn and comes back, with no console error or failed
+request. Combat Mission has no sounds. Its pack (14 units, 11 terrain types and
+all four maps, from the new `scripts/export/combatmission.mjs`) was re-exported
+into `library/combatmission/` first; its units did not change.
+
+The three hedgerow maps are shape boards and Ambush a square one. Every square's
+terrain reads by the game's rules exactly (passable, sight, cover, cost: no
+square differs on any map). Sight does not: the game casts a Bresenham line
+over squares and the core an exact segment, and they disagree on 4% (Ambush) to
+12% (Hill & Woods) of pairs of squares. The core's api-server tests no longer
+use Combat Mission (they play Arena on `library:cs/de_dust2`).

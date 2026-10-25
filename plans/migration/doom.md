@@ -95,3 +95,27 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-doom](https://github.com/opowell/battle-doom), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 31 tests, its 3 golden replays among them,
+plus the app's own 4) passes, the one skip being the `SLOW_TESTS` rollout; in
+the Browser, driven headless, the default setup and `e1m1` draw the level with
+the marine's portrait and vision cone, and eight turns end (Escape, then End
+Turn) with the demons' hidden moves coming back, with no console error or
+failed request. Doom has no sounds. Its pack (7 units, 9 terrain types and the
+`e1m1` map, from the new `scripts/export/doom.mjs`) was re-exported into
+`library/doom/` first; its units did not change.
+
+The map is rock with the level's shapes on it: the wall props (crates,
+terminals, columns, barrels), then the nukage pools (impassable, see-through),
+then the floor, so the core reads it by the game's own rules. Sampled against
+the game, walkability differs on 6 points in 20,000 (the armour platform's oval,
+a 16-sided polygon here) and sight on 3 lines in 20,000 (grazed corners). The
+pickups are map features; the core has no items.
+
+Pre-existing, the same in the core today: a turn opens with the marine in hand,
+so End Turn is only offered once it is put down (Escape), and the headless
+check could not end a turn by its button without that.
