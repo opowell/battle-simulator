@@ -2,9 +2,6 @@
   "chess":         { "module": "./chess/index.js", "export": "ChessGame", "minPlayers": 2, "maxPlayers": 2, "defaultPlayers": [{ "id": "white", "name": "White" }, { "id": "black", "name": "Black" }] },
   "combatmission": { "module": "./combatmission/index.js", "export": "CombatMissionGame", "minPlayers": 2, "maxPlayers": 2, "defaultPlayers": [{ "id": "p1", "name": "Player 1" }, { "id": "p2", "name": "Player 2" }] },
   "cs":            { "module": "./cs/index.js", "export": "CsGame", "minPlayers": 2, "maxPlayers": 10, "defaultPlayers": [{ "id": "ct", "name": "CT" }, { "id": "t", "name": "T" }] },
-  "ffta":          { "module": "./ffta/index.js", "export": "FFTAGame", "minPlayers": 2, "maxPlayers": 2, "defaultPlayers": [{ "id": "p1", "name": "Player 1" }, { "id": "p2", "name": "Player 2" }] },
-  "sc1":           { "module": "./sc1/index.js", "export": "Sc1Game", "minPlayers": 2, "maxPlayers": 4, "defaultPlayers": [{ "id": "p1", "name": "Player 1" }, { "id": "p2", "name": "Player 2" }] },
-  "sc2":           { "module": "./sc2/index.js", "export": "Sc2Game", "minPlayers": 2, "maxPlayers": 4, "defaultPlayers": [{ "id": "p1", "name": "Player 1" }, { "id": "p2", "name": "Player 2" }] },
   "doom":          { "module": "./doom/index.js", "export": "DoomGame", "minPlayers": 2, "maxPlayers": 2, "defaultPlayers": [{ "id": "marine", "name": "Marine" }, { "id": "demons", "name": "Demons" }] },
   "surviv":        { "module": "./surviv/index.js", "export": "SurvivGame", "minPlayers": 2, "maxPlayers": 2, "defaultPlayers": [{ "id": "blue", "name": "Blue" }, { "id": "red", "name": "Red" }] },
   "arena":         { "module": "./arena/index.js", "export": "ArenaGame", "minPlayers": 2, "maxPlayers": 4, "defaultPlayers": [{ "id": "p1", "name": "Player 1" }, { "id": "p2", "name": "Player 2" }] }

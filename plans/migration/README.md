@@ -29,14 +29,14 @@ change that is meant to alter what it does: `node scripts/golden.mjs <game>`.
 | [combatmission](combatmission.md) | its own repo, wave 2 | |
 | [cs](cs.md) | its own repo, wave 2 | inherits csmini's gaps; sequential play stalls |
 | [doom](doom.md) | its own repo, wave 2 | |
-| [ffta](ffta.md) | its own repo, wave 4 | replaces tactical in the generic AI bench |
+| [ffta](ffta.md) | [opowell/battle-ffta](https://github.com/opowell/battle-ffta) | replaces tactical in the generic AI bench |
 | [kdice](kdice.md) | [opowell/battle-kdice](https://github.com/opowell/battle-kdice) | |
 | [memoir44](memoir44.md) | [opowell/battle-memoir44](https://github.com/opowell/battle-memoir44) | |
 | [mudandblood](mudandblood.md) | [opowell/battle-mudandblood](https://github.com/opowell/battle-mudandblood) | |
 | [risk](risk.md) | [opowell/battle-risk](https://github.com/opowell/battle-risk) | |
 | [rogue](rogue.md) | [opowell/battle-rogue](https://github.com/opowell/battle-rogue) | not registered |
-| [sc1](sc1.md) | its own repo, wave 4 | shares StarCraft code with sc2 |
-| [sc2](sc2.md) | its own repo, wave 4 | shares StarCraft code with sc1 |
+| [sc1](sc1.md) | [opowell/battle-sc1](https://github.com/opowell/battle-sc1) | shares StarCraft code with sc2 |
+| [sc2](sc2.md) | [opowell/battle-sc2](https://github.com/opowell/battle-sc2) | shares StarCraft code with sc1 |
 | [simcity](simcity.md) | [opowell/battle-simcity](https://github.com/opowell/battle-simcity) | not registered, not a battle |
 | [surviv](surviv.md) | its own repo, wave 2 | |
 | [warofdots](warofdots.md) | [opowell/battle-warofdots](https://github.com/opowell/battle-warofdots) | |

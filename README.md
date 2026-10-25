@@ -9,9 +9,6 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | `chess` | Chess — plus fog of war and three (space x time) variants | [games/chess/](games/chess/README.md) |
 | `combatmission` | Combat Mission | [games/combatmission/](games/combatmission/README.md) |
 | `cs` | Counter-Strike | [games/cs/](games/cs/README.md) |
-| `ffta` | Final Fantasy Tactics Advance | [games/ffta/](games/ffta/README.md) |
-| `sc1` | StarCraft 1 | [games/sc1/](games/sc1/README.md) |
-| `sc2` | StarCraft 2 | [games/sc2/](games/sc2/README.md) |
 | `doom` | Doom | [games/doom/](games/doom/README.md) |
 | `arena` | The generic battle: terrain and units that are only numbers, in all eight (space × time × play) modes | [games/arena/](games/arena/README.md) |
 
@@ -34,6 +31,9 @@ units, terrain and maps in [the library](#library) here.
 | `rogue` | rogue | [opowell/battle-rogue](https://github.com/opowell/battle-rogue) |
 | `simcity` | simcity | [opowell/battle-simcity](https://github.com/opowell/battle-simcity) |
 | `civ1` | Civilization I | [opowell/battle-civ1](https://github.com/opowell/battle-civ1) |
+| `ffta` | Final Fantasy Tactics Advance | [opowell/battle-ffta](https://github.com/opowell/battle-ffta) |
+| `sc1` | StarCraft I | [opowell/battle-sc1](https://github.com/opowell/battle-sc1) |
+| `sc2` | StarCraft II | [opowell/battle-sc2](https://github.com/opowell/battle-sc2) |
 
 ## Quick start
 
@@ -88,7 +88,7 @@ node demo/chess-demo.js --auto
 node demo/generic-ai-bench.mjs --game=close-quarters
 ```
 
-All demos are in `demo/`: `chess`, `combatmission`, `cs`, `ffta`, `sc2`, `doom`.
+All demos are in `demo/`: `chess`, `combatmission`, `cs`, `doom`.
 
 ### Start the HTTP API server
 

@@ -1,2 +1,0 @@
-- damage calculations: are they correct? compare to original game.
-- preview success rate / expected damage from an attack, before confirming. -> same way it is done in original game.

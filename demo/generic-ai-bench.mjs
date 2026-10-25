@@ -4,25 +4,24 @@
 //
 //   node demo/generic-ai-bench.mjs                        # Arena, all 8 modes, vs random
 //   node demo/generic-ai-bench.mjs --vs=greedy-generic    # vs 1-ply greedy on the same evaluation
-//   node demo/generic-ai-bench.mjs --game=ffta --vs=greedy --pairs=5
 //   node demo/generic-ai-bench.mjs --game=close-quarters --vs=greedy-generic
 //   node demo/generic-ai-bench.mjs --modes=dd-seq,cc-sim --fog
 //
-// Games: arena (all 8 modes); ffta, a grid skirmish with a hand-written evaluator
-// to measure against; and Arena's reference scenarios (games/arena/specs): magic,
+// Games: arena (all 8 modes), and Arena's reference scenarios (games/arena/specs): magic,
 // scifi, hex, regions (discrete space only) and close-quarters, where facing,
 // vision cones and reloading decide fights — the generic AI's measured weak spot.
 // Opponents: random | greedy (the game's own evaluateState) | greedy-generic
 // (GreedyAgent on the generic evaluation) | generic.
 // Modes: <space><time>-<play>, d/c for discrete/continuous, e.g. dc-sim. A game
-// with a board and clock of its own (ffta) takes the play alone: seq or sim.
+// with a board and clock of its own takes the play alone: seq or sim. (FFTA, the
+// grid skirmish with a hand-written evaluator this bench once measured against,
+// is in a repo of its own now: opowell/battle-ffta.)
 
 import { GameEngine } from '#core/engine/index.js';
 import { RandomAgent } from '#core/agents/RandomAgent.js';
 import { makeGreedyAgent } from '#core/agents/GreedyAgent.js';
 import { makeGenericAgent, genericEvaluateState } from '#core/agents/generic/GenericAgent.js';
 import { ArenaGame } from '../games/arena/index.js';
-import { FFTAGame } from '../games/ffta/index.js';
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => {
   const [k, v] = a.replace(/^--/, '').split('=');
@@ -31,7 +30,6 @@ const args = Object.fromEntries(process.argv.slice(2).map(a => {
 const ALL = ['dd-seq', 'dd-sim', 'dc-seq', 'dc-sim', 'cd-seq', 'cd-sim', 'cc-seq', 'cc-sim'];
 const GAMES = {
   arena: { game: ArenaGame, ids: ['p1', 'p2'], modes: ALL, maxTurns: 40 },
-  ffta: { game: FFTAGame, ids: ['p1', 'p2'], modes: ['seq', 'sim'], maxTurns: 100 },
   ...Object.fromEntries(['magic', 'scifi', 'hex', 'regions', 'close-quarters'].map(spec => [spec, {
     game: ArenaGame, ids: ['p1', 'p2'], maxTurns: 40, config: { spec },
     modes: ['hex', 'regions'].includes(spec) ? ALL.filter(m => m.startsWith('d')) : ALL,
