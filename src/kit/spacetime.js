@@ -39,10 +39,9 @@
 // corner).
 //
 // Not every game's movement is a distance budget, and those use this module for the
-// quadrant and the time arithmetic only. Chess is the example: what a piece may
-// reach is its move SHAPE, never how far it can travel, so battle-chess's spacetime.js
-// enumerates its own destinations and asks only `resolveSpaceTime` which world it is
-// in — and then implements what that world does to a rook's move (see its header).
+// quadrant and the time arithmetic only: a game whose pieces reach by move SHAPE
+// (a chess rook), never by how far they can travel, enumerates its own
+// destinations and asks only `resolveSpaceTime` which world it is in.
 
 import { movePointLattice } from './continuousMove.js';
 

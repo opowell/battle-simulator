@@ -8,7 +8,6 @@
 //   • CONTINUOUS time — a player may act at any instant, so planning IS acting.
 //     An order given now that resolves later is an ordinary game action, it
 //     belongs to the piece it commands, and every piece has a queue of its own.
-//     (battle-chess's spacetime.js.)
 //   • DISCRETE time — a player may only act on their own turn, so a move meant
 //     for a LATER turn cannot be an action of this one. It is out-of-band state,
 //     like a map annotation: set whenever the player likes, including while the

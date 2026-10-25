@@ -448,8 +448,7 @@ function exitFork() { emit('exit-fork'); }
 
 // Position analysis and an opening book both assume the position IS a board and a
 // move is atomic — one side plays, the other answers. Neither holds in a game
-// played on a clock or in continuous space (chess's own other quadrants, see
-// battle-chess's spacetime.js), where a piece can be halfway through a move and both
+// played on a clock or in continuous space, where a piece can be halfway through a move and both
 // sides can be moving at once, so both panels stay shut there. Read off the axes
 // toGrid already stamps, so it holds for any game that grows such a mode.
 const atomicMoves = computed(() =>
@@ -2122,8 +2121,8 @@ function handleSqClick(col, row, x, y, mods) {
     // explicit "Move…" button + aim overlay instead (see startAim/aiming above), so a
     // bare click on a selected unit's own square shouldn't also slide it.
     // `ui.gridDestinations` is the exception to that: a game whose UNITS live at
-    // exact points but whose DESTINATIONS are still squares (chess in continuous
-    // space — see battle-chess's spacetime.js). A free point is not a legal order
+    // exact points but whose DESTINATIONS are still squares (a BattleGame in
+    // discrete space on a clock, its units drawn where they are mid-move). A free point is not a legal order
     // there, so such a click has to be matched against the enumerated list like
     // any grid game's, even though the tokens are positioned continuously.
     if (props.field.locationType === 'continuous' && !ui.value.gridDestinations
