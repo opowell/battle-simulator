@@ -24,12 +24,6 @@
     "demo:chess:melee": "node demo/chess-demo.js --auto --scenario=melee",
     "demo:chess:sliding": "node demo/chess-demo.js --auto --scenario=sliding",
     "bench:generic": "node demo/generic-ai-bench.mjs",
-    "demo:combatmission": "node demo/combatmission-demo.js",
-    "demo:combatmission:auto": "node demo/combatmission-demo.js --auto",
-    "demo:cs": "node demo/cs-demo.js",
-    "demo:cs:auto": "node demo/cs-demo.js --auto",
-    "demo:doom": "node demo/doom-demo.js",
-    "demo:doom:auto": "node demo/doom-demo.js --auto",
     "build-release": "node scripts/build-release.mjs",
     "test": "node scripts/test.mjs",
     "kill:port:3333": "lsof -i tcp:3333 | awk 'NR!=1 {print $2}' | xargs kill -9"

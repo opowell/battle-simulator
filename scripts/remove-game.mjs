@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseRegistry, removeRegistryEntry } from '../src/server/gameEditor.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const args = process.argv.slice(2);
@@ -41,13 +42,8 @@ const demos = readdirSync(path.join(ROOT, 'demo'))
   .filter(f => f.startsWith(`${game}-`) || MORE_DEMOS[game]?.includes(f)).map(f => `demo/${f}`);
 git('rm', '-r', '-q', `games/${game}`, ...demos);
 
-// The registry: one line per game.
-edit('games/games.json', (s) => {
-  const lines = s.split('\n').filter(l => !l.startsWith(`  ${JSON.stringify(game)}:`));
-  const last = lines.findLastIndex(l => l.startsWith('  "'));
-  lines[last] = lines[last].replace(/,\s*$/, '');
-  return lines.join('\n');
-});
+// The registry, as the game editor writes it.
+edit('games/games.json', (s) => (parseRegistry(s)[game] ? removeRegistryEntry(s, game) : s));
 
 edit('package.json', (s) => {
   const pkg = JSON.parse(s);

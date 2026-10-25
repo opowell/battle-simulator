@@ -7,9 +7,6 @@ A turn-based game engine for running and building strategy games in JavaScript (
 | Key | Game | Docs |
 |---|---|---|
 | `chess` | Chess — plus fog of war and three (space x time) variants | [games/chess/](games/chess/README.md) |
-| `combatmission` | Combat Mission | [games/combatmission/](games/combatmission/README.md) |
-| `cs` | Counter-Strike | [games/cs/](games/cs/README.md) |
-| `doom` | Doom | [games/doom/](games/doom/README.md) |
 | `arena` | The generic battle: terrain and units that are only numbers, in all eight (space × time × play) modes | [games/arena/](games/arena/README.md) |
 
 ## Games in repos of their own
@@ -34,6 +31,10 @@ units, terrain and maps in [the library](#library) here.
 | `ffta` | Final Fantasy Tactics Advance | [opowell/battle-ffta](https://github.com/opowell/battle-ffta) |
 | `sc1` | StarCraft I | [opowell/battle-sc1](https://github.com/opowell/battle-sc1) |
 | `sc2` | StarCraft II | [opowell/battle-sc2](https://github.com/opowell/battle-sc2) |
+| `doom` | Doom | [opowell/battle-doom](https://github.com/opowell/battle-doom) |
+| `surviv` | surviv | [opowell/battle-surviv](https://github.com/opowell/battle-surviv) |
+| `combatmission` | Combat Mission | [opowell/battle-combatmission](https://github.com/opowell/battle-combatmission) |
+| `cs` | Counter-Strike | [opowell/battle-cs](https://github.com/opowell/battle-cs) |
 
 ## Quick start
 
@@ -88,7 +89,7 @@ node demo/chess-demo.js --auto
 node demo/generic-ai-bench.mjs --game=close-quarters
 ```
 
-All demos are in `demo/`: `chess`, `combatmission`, `cs`, `doom`.
+All demos are in `demo/`: `chess`.
 
 ### Start the HTTP API server
 

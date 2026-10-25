@@ -26,9 +26,9 @@ change that is meant to alter what it does: `node scripts/golden.mjs <game>`.
 | [chess](chess.md) | its own repo, wave 6 | owns obscuro-chess and the Stockfish cache |
 | [civ1](civ1.md) | [opowell/battle-civ1](https://github.com/opowell/battle-civ1) | |
 | [civ2](civ2.md) | [opowell/battle-civ2](https://github.com/opowell/battle-civ2) | |
-| [combatmission](combatmission.md) | its own repo, wave 2 | |
-| [cs](cs.md) | its own repo, wave 2 | inherits csmini's gaps; sequential play stalls |
-| [doom](doom.md) | its own repo, wave 2 | |
+| [combatmission](combatmission.md) | [opowell/battle-combatmission](https://github.com/opowell/battle-combatmission) | |
+| [cs](cs.md) | [opowell/battle-cs](https://github.com/opowell/battle-cs) | inherits csmini's gaps; sequential play stalls |
+| [doom](doom.md) | [opowell/battle-doom](https://github.com/opowell/battle-doom) | |
 | [ffta](ffta.md) | [opowell/battle-ffta](https://github.com/opowell/battle-ffta) | replaces tactical in the generic AI bench |
 | [kdice](kdice.md) | [opowell/battle-kdice](https://github.com/opowell/battle-kdice) | |
 | [memoir44](memoir44.md) | [opowell/battle-memoir44](https://github.com/opowell/battle-memoir44) | |
@@ -38,7 +38,7 @@ change that is meant to alter what it does: `node scripts/golden.mjs <game>`.
 | [sc1](sc1.md) | [opowell/battle-sc1](https://github.com/opowell/battle-sc1) | shares StarCraft code with sc2 |
 | [sc2](sc2.md) | [opowell/battle-sc2](https://github.com/opowell/battle-sc2) | shares StarCraft code with sc1 |
 | [simcity](simcity.md) | [opowell/battle-simcity](https://github.com/opowell/battle-simcity) | not registered, not a battle |
-| [surviv](surviv.md) | its own repo, wave 2 | |
+| [surviv](surviv.md) | [opowell/battle-surviv](https://github.com/opowell/battle-surviv) | |
 | [warofdots](warofdots.md) | [opowell/battle-warofdots](https://github.com/opowell/battle-warofdots) | |
 | [xcom](xcom.md) | [opowell/battle-xcom](https://github.com/opowell/battle-xcom) | |
 
