@@ -777,8 +777,41 @@ smaller afterwards and gets every core feature for free.
 
 *xcom done 2026-10-25:* `spec.json` on `BattleGame`; `XComGame.js` keeps only
 the fog belief for Obscuro and the isometric drawing, and its default CPU stays
-Obscuro. 400 differential games (about 9,500 shots) identical. aow, ffta and
-sc1/sc2 combat are next.
+Obscuro. 400 differential games (about 9,500 shots) identical.
+
+*sc1 and sc2 combat done 2026-10-25 (core v1.2.0):* their combat is data,
+`combat.json` (ordered steps — a d100 miss chance, or a blow that can't land —
+a damage formula, shields soaking first with a cap, armor on what gets
+through), worked out by the core's new `src/battle/strike.js`; `combat.js` only
+reads the two sides into numbers. Only combat moved (the user's choice): their
+economy, buildings and production stay their own, so their state keeps its
+shape and their golden replays pass unchanged. An exhaustive differential test
+against the old `combat.js` (every attacker × defender × domain × ground ×
+mode × shields, the same dice: 40,000+ cases in sc1, 100,000+ in sc2) holds
+the data to it, dice thrown included.
+
+*ffta done 2026-10-25 (core v1.2.0):* `spec.json` (written from the old rules'
+own tables by `test/oracle/make-spec.mjs`) on `BattleGame`, with FFTA's
+arithmetic — its float damage and heals with their random spread, the
+reactions, knockback — kept in hooks (`act`, `speed`): the plan's "spec + hooks"
+kind. The core gained, all opt-in: the charge order (a unit at a time by
+initiative, undo-move, a facing chosen at an activation's end, statuses ticking
+at a unit's own activation's end, queued moves for waiting units), `targets:
+'fallen'`, `area.shape: 'line'` and `aim: 'cells'`, permanent statuses with
+`expire` effects and formula ticks, `orientation` `ties`/`awareness`/
+`strikeCone`, `sightLine: 'none'`, facing toward a ground aim, and the Browser
+naming facings (`ui.facingNames`). 540 differential games over all nine
+scenarios (about 25,000 ability uses) identical; under fog a side can aim only
+at what it sees, and after the battle is decided nothing more happens.
+
+*aow stays its own game (the user's choice, 2026-10-25).* It doesn't fit the
+model: its unit is a squad of mixed men with supply and morale, its fights start
+when marching squads touch and roll attrition round by round until one side is
+wiped out or routs, and villages, forts and flags feed, reinforce and win. A
+spec would either bring four aow-only mechanics into the core (composite units,
+contact encounters with attrition and routs, upkeep from terrain and features,
+capturable features) or be a shell around aow's own code in hooks. If a second
+game ever wants composite units or contact encounters, that is the time.
 
 ## Living with the split
 

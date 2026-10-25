@@ -1,18 +1,15 @@
 {
   "game": "ffta",
   "from": {
-    "commit": "d0141f5847d15d72cde06e1342e6c88e10a0c0cb",
-    "date": "2026-10-25T06:03:28+01:00"
+    "commit": "0f358711aaed15f0c20e1efb283145260e1f15c3",
+    "date": "2026-10-25T17:38:27+01:00"
   },
   "units": 29,
   "art": 29,
   "terrain": 5,
   "maps": 9,
   "omitted": [
-    "the clock (CT): each unit acts when its speed fills it, not a side at a time",
-    "laws, MP, statuses, reactions and supports: the core's abilities carry none of these jobs' own",
-    "height: FFTA adds 20% damage a level the attacker stands above its target; the core gives the higher defender cover instead",
-    "a blow from the side or the back hitting harder: the jobs carry no facing arcs here",
+    "FFTA's own rules — the charge order, MP, statuses, reactions and supports, damage by height and by the side struck — are its spec's; a library map plays by the sandbox's",
     "sight: a unit sees two squares in a cone in front of it, whatever stands between; here it sees by its type's vision"
   ]
 }

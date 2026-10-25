@@ -549,3 +549,142 @@ test('checkSpec reads the new keys, and a die is only thrown where it is evaluat
   assert.throws(() => formula('roll(6)')({}), /needs the battle's dice/);
   assert.equal(toNumber(formula('if(1, 2, roll(6))')({})), 2, 'the branch not taken throws no die');
 });
+
+// ── The charge order, and what a tile tactics game asks of the spec (phase 5) ──
+
+// Two units a side on open ground, acting a unit at a time by speed.
+const CHARGED = (extra = {}) => ({
+  turn: { order: 'charge', charge: 100 },
+  orientation: { fov: 360, ties: 'horizontal' },
+  unitTypes: {
+    quick: { ...MAN, speed: 3, rate: 1 },
+    slow: { ...MAN, speed: 2, rate: 1 },
+  },
+  board: OPEN(8, 5, { neighbours: 4, passFriends: false }),
+  units: [
+    { type: 'quick', seat: 0, at: [1, 1], facing: 0 }, { type: 'slow', seat: 0, at: [1, 3], facing: 0 },
+    { type: 'quick', seat: 1, at: [6, 1], facing: 180 }, { type: 'slow', seat: 1, at: [6, 3], facing: 180 },
+  ],
+  ...extra,
+});
+const activeOf = (s) => unit(s, s.gameSpecific.activeUnitId);
+const endActivation = (s, facing) => G.applyActions(s, [{ playerId: s.activePlayers[0], action: { type: 'end-turn', unitId: s.gameSpecific.activeUnitId, ...(facing != null ? { facing } : {}) } }]);
+
+test('the charge order: units act one at a time, the fastest first, ties by id', () => {
+  const s = start(CHARGED());
+  // Speed 3 against 2: the quick ones are ready at 102 after 34 ticks, first by id.
+  assert.equal(s.gameSpecific.activeUnitId, 'p1-1');
+  assert.deepEqual(s.gameSpecific.turnQueue, ['p2-1']);
+  assert.deepEqual(s.activePlayers, ['p1']);
+  assert.equal(s.turnNumber, 1);
+  const legal = G.getLegalActions(s, 'p1');
+  assert.ok(legal.every(a => a.unitId === 'p1-1' || a.type === 'queue-move'), 'only the active unit acts');
+  assert.deepEqual(legal.filter(a => a.type === 'end-turn').map(a => a.facing), [0, 90, 180, 270], 'its activation ends with a facing');
+  assert.deepEqual(G.getLegalActions(s, 'p2'), [{ type: 'end-turn', unitId: '__player__' }]);
+  const t = endActivation(s, 90);
+  assert.equal(unit(t, 'p1-1').facing, 90);
+  assert.equal(unit(t, 'p1-1').ct, 2, 'its charge drops by 100');
+  assert.equal(t.gameSpecific.activeUnitId, 'p2-1');
+  assert.deepEqual(t.activePlayers, ['p2']);
+  assert.equal(t.turnNumber, 2, 'turnNumber counts activations');
+});
+
+test('the charge order: a move and an act in either order, the move taken back until it acts', () => {
+  const s = start(CHARGED());
+  const move = G.getLegalActions(s, 'p1').find(a => a.type === 'move' && a.to.x === 2 && a.to.y === 1);
+  const moved = act(s, 'p1', move);
+  assert.equal(unit(moved, 'p1-1').facing, 0, 'faces the way it went');
+  assert.ok(G.getLegalActions(moved, 'p1').some(a => a.type === 'undo-move'));
+  assert.ok(!G.getLegalActions(moved, 'p1').some(a => a.type === 'move'), 'one move an activation');
+  const back = act(moved, 'p1', { type: 'undo-move', unitId: 'p1-1' });
+  assert.deepEqual(unit(back, 'p1-1').position, { x: 1, y: 1 });
+  assert.ok(G.getLegalActions(back, 'p1').some(a => a.type === 'move'), 'the move is back');
+});
+
+test('the charge order: a waiting unit can have its next move queued, made as its turn comes', () => {
+  const s = start(CHARGED());
+  const q = G.getLegalActions(s, 'p1').find(a => a.type === 'queue-move' && a.unitId === 'p1-2' && a.to.x === 2 && a.to.y === 3);
+  assert.ok(q, 'the other unit of the side to act can queue');
+  let t = act(s, 'p1', q);
+  assert.deepEqual(unit(t, 'p1-2').queue, [{ x: 2, y: 3 }]);
+  while (t.gameSpecific.activeUnitId !== 'p1-2') t = endActivation(t);
+  assert.deepEqual(unit(t, 'p1-2').position, { x: 2, y: 3 }, 'moved as its activation began');
+  assert.deepEqual(unit(t, 'p1-2').queue, []);
+  assert.ok(G.getLegalActions(t, 'p1').some(a => a.type === 'undo-move'), 'and it can take that back too');
+});
+
+test('the charge order: a unit\'s statuses tick and run out at the end of its own activation', () => {
+  const spec = CHARGED({
+    attributes: {
+      poison: { kind: 'status', permanent: true, tick: [{ damage: { formula: 'max(1, floor(maxHp / 10))' } }] },
+      curse: { kind: 'status', turns: 2, expire: [{ damage: { formula: 'hp' } }] },
+    },
+  });
+  const s0 = start(spec);
+  const s = { ...s0, units: s0.units.map(u => (u.id === 'p1-1' ? { ...u, statuses: [{ id: 'poison', left: 1, stacks: 1 }, { id: 'curse', left: 2, stacks: 1 }] } : u)) };
+  let t = endActivation(s);
+  assert.equal(unit(t, 'p1-1').hp, 9, 'poison: a tenth of 10, at least 1');
+  assert.deepEqual(unit(t, 'p1-1').statuses.map(x => [x.id, x.left]), [['poison', 1], ['curse', 1]], 'permanent stays, curse runs down');
+  assert.equal(unit(t, 'p2-1').hp, 10, 'nobody else ticks');
+  while (t.gameSpecific.activeUnitId !== 'p1-1') t = endActivation(t);
+  t = endActivation(t);
+  assert.equal(unit(t, 'p1-1').alive, false, 'curse ran out');
+});
+
+test('a revival aims at a fallen ally; a line runs from the caster; an area can be aimed at any cell it would hit', () => {
+  const spec = CHARGED({
+    abilities: {
+      raise: { targets: 'fallen', range: 2, minRange: 1, effects: [{ heal: { amount: 1 } }] },
+      gust: { targets: 'ground', affects: 'enemy', area: { shape: 'line', radius: 3 }, aim: 'cells', range: 3, effects: [{ damage: { amount: 2 } }] },
+      flood: { targets: 'ground', affects: 'enemy', area: { radius: 1 }, aim: 'cells', range: 4, effects: [{ damage: { amount: 1 } }] },
+    },
+    unitTypes: { quick: { ...MAN, speed: 3, abilities: ['raise', 'gust', 'flood'] }, slow: { ...MAN, speed: 2 } },
+  });
+  const s0 = start(spec);
+  const s = { ...s0, units: s0.units.map(u => (u.id === 'p1-2' ? { ...u, alive: false, hp: 0, position: { x: 2, y: 1 } }
+    : u.id === 'p2-1' ? { ...u, position: { x: 3, y: 1 } } : u.id === 'p2-2' ? { ...u, position: { x: 4, y: 1 } } : u)) };
+  const legal = G.getLegalActions(s, 'p1');
+  assert.ok(legal.some(a => a.ability === 'raise' && a.targetId === 'p1-2'), 'the fallen ally');
+  assert.ok(!legal.some(a => a.ability === 'raise' && a.targetId !== 'p1-2'));
+  assert.deepEqual(legal.filter(a => a.ability === 'gust').map(a => `${a.at.x},${a.at.y}`), ['2,1'], 'a line is aimed at a neighbour, where it hits someone');
+  const gusted = act(s, 'p1', legal.find(a => a.ability === 'gust'));
+  assert.deepEqual([unit(gusted, 'p2-1').hp, unit(gusted, 'p2-2').hp], [8, 8], 'everyone on the line');
+  const floods = legal.filter(a => a.ability === 'flood').map(a => `${a.at.x},${a.at.y}`).sort();
+  assert.ok(floods.includes('3,0') && floods.includes('5,1') && !floods.includes('6,3'), floods.join(' '));
+});
+
+test('facing options: horizontal ties, a ground aim turns the caster, a cone for sight alone, no awareness, no sight lines', () => {
+  const spec = (orientation, board = {}) => ({
+    orientation, abilities: { bolt: { targets: 'ground', area: { radius: 0 }, range: 5, effects: [{ damage: { amount: 1 } }] } },
+    unitTypes: { man: { ...MAN, abilities: ['bolt'], range: 5, vision: 3 } },
+    board: OPEN(6, 6, { neighbours: 4, generator: undefined, rows: ['......', '..#...', '......', '......', '......', '......'], ...board }),
+    units: [{ type: 'man', seat: 0, at: [1, 1], facing: 0 }, { type: 'man', seat: 1, at: [2, 2], facing: 0 }],
+  });
+  // Two steps to (2,2) end on the diagonal: east with ties 'horizontal', south without.
+  const diagonal = (o) => {
+    const s0 = start(spec({ fov: 360, ...o }));
+    const s = { ...s0, units: s0.units.map(u => (u.id === 'p2-1' ? { ...u, position: { x: 5, y: 5 } } : u)) };
+    const move = G.getLegalActions(s, 'p1').find(a => a.type === 'move' && a.to.x === 2 && a.to.y === 2);
+    return unit(act(s, 'p1', move), 'p1-1').facing;
+  };
+  assert.equal(diagonal({ ties: 'horizontal' }), 0);
+  assert.equal(diagonal({}), 90);
+  // Aiming at a cell turns the caster to it.
+  const aimed = act(start(spec({ fov: 360 })), 'p1', { type: 'ability', ability: 'bolt', unitId: 'p1-1', at: { x: 1, y: 4 } });
+  assert.equal(unit(aimed, 'p1-1').facing, 90);
+  // A 90° cone hides what is beside the unit, unless it senses within `awareness`.
+  const cone = (o) => start(spec({ fov: 90, ...o }));
+  const beside = (s) => ({ ...s, units: s.units.map(u => (u.id === 'p2-1' ? { ...u, position: { x: 1, y: 2 } } : u)) });
+  assert.equal(seenBy(beside(cone({})), 'p1', unit(beside(cone({})), 'p2-1')), true, 'one square away: sensed');
+  assert.equal(seenBy(beside(cone({ awareness: 0 })), 'p1', unit(beside(cone({ awareness: 0 })), 'p2-1')), false, 'no awareness: hidden');
+  // The cone limits strikes too, unless strikeCone is false.
+  const strikes = (o) => G.getLegalActions(beside(cone(o)), 'p1').some(a => a.type === 'attack');
+  assert.equal(strikes({ awareness: 0 }), false);
+  assert.equal(strikes({ awareness: 0, strikeCone: false }), true);
+  // sightLine 'none': the rock at (2,1) hides nothing.
+  const far = (s) => ({ ...s, units: s.units.map(u => (u.id === 'p2-1' ? { ...u, position: { x: 3, y: 1 } } : u)) });
+  const rock = far(start(spec({ fov: 360 })));
+  assert.equal(seenBy(rock, 'p1', unit(rock, 'p2-1')), false, 'the rock blocks sight');
+  const open = far(start(spec({ fov: 360 }, { sightLine: 'none' })));
+  assert.equal(seenBy(open, 'p1', unit(open, 'p2-1')), true, 'with no sight lines it does not');
+});

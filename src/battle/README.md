@@ -43,6 +43,7 @@ scenarios replay exactly as they did before BattleGame existed.
 | [world.js](world.js) | what every rule asks of a state: rules, distance, stats, sight, damage |
 | [exact.js](exact.js) | formulas, evaluated in exact rationals |
 | [library.js](library.js) | the library's maps as specs |
+| [strike.js](strike.js) | one blow from rules that are data, for a game whose combat alone is the core's |
 
 Every axis of the plan is covered in every combination its board allows: space
 (discrete cells, or exact points on square and shape boards), time (turns, or
@@ -68,13 +69,15 @@ with the base table, and every other key replaces the base's.
                         abilities: ['fira'], strike: false | { …attack overrides },
                         jump, count, points, glyph, name, imagePath } },
   strike:     { …attack overrides },     // every type's attack, unless it has its own
-  turn:       { actionPoints: 2, move: 1 },  // action points instead of move + rate budgets
+  turn:       { actionPoints: 2, move: 1 }   // action points instead of move + rate budgets
+            | { order: 'charge', charge: 100, initiative: 'spd' | { fn } },  // a unit at a time, by speed
   formulas:   { damage: 'expression' | { fn: 'name' } },
   board:      { topology, width, height, … },
   armies:     [['knight', 'mage'], …]    // per seat, along its edge
   units:      [{ type, seat, at: [x, y] | 'regionId', facing, hp, count, game }],
   victory:    [{ type: 'eliminate' }, …],
-  orientation:{ fov, arcs, turnCost },   // facing for every type without its own
+  orientation:{ fov, arcs, turnCost,     // facing for every type without its own
+                ties, awareness, strikeCone },
   modes:      { space, time, play },     // where the setup form starts
   fog:        'off' | 'on' | 'remembered',
   map:        'civ1/two-rivers',         // play on a library map (its board, terrain, distances)
@@ -144,7 +147,31 @@ from the use — no damage, no other effect. A damage formula may throw more dic
 with `roll(n)`. All of them come from the engine's seeded rng, so a replay
 throws the same, and what they showed rides on the action: `hitChance`, `roll`,
 `hit`, `crit` and `damage` for one target, or a `rolls` list for several. A
-ruleset without either stays exactly as deterministic as before. In continuous time it lands after its `windup` (an attack's
+ruleset without either stays exactly as deterministic as before.
+
+`targets: 'fallen'` aims at a fallen unit of the caster's side, for a revival
+(its effect is usually a hook). An area is every cell within its `radius` of the
+point aimed at, or with `area.shape: 'line'` the `radius` cells running straight
+out from the caster (aimed at a neighbouring cell). A ground-aimed ability is
+offered where the units it could hit stand, or with `aim: 'cells'` at every cell
+in range whose area would hit someone the caster's side can see. An effect hook
+is handed `before` as well: the battle as it was when the ability was used.
+
+### The charge order
+
+`turn: { order: 'charge', charge: 100, initiative }` gives each unit its own
+turn, as a tactics RPG does. Every living unit gains its `initiative` (a stat or
+declared number, its speed by default, or a hook) in charge until one holds
+`charge`; the ready ones act most charge first (then most initiative, then id),
+one activation each: a move and an act in either order, the move taken back
+with `undo-move` until it acts, then `end-turn` (with a `facing`, where units
+face). The activation is the unit's window: its statuses tick and run down at
+its end, and its charge drops by `charge`. A side may queue a waiting unit's
+next move (`queue-move`, `queue-pop`); it is made as that unit's activation
+begins. `turnNumber` counts activations. The charge order is discrete time, one
+side at a time.
+
+In continuous time a use lands after its `windup` (an attack's
 is `0.5 / rate` windows), when range, line and sight are checked again. Effects:
 `damage` (`power`, `type` against the target's `resist`, or a fixed `amount`),
 `heal`, `modify` (a pool's value, or a stat for `turns` or for good), `status`,
@@ -194,6 +221,16 @@ Bresenham line between the two cells, blocked by a sight-blocker on it other
 than its ends), `visionMetric: 'chebyshev'` or `'manhattan'` (how far a unit
 sees, measured apart from how it moves), and `passFriends: false` (a unit can't
 walk through its own side, as well as the enemy).
+
+A status may be `permanent` (it never runs down; something must remove it),
+`expire` effects happen when one runs out (Doom: `[{ damage: { formula: 'hp' } }]`),
+and a `tick` damage may be a `formula` of the unit's numbers
+(`max(1, floor(maxHp / 10))`). `orientation` may say `ties: 'horizontal'` (a
+bearing exactly between two facings takes the one nearer the horizontal, as a
+4-way grid game turns), `awareness` (how near a unit senses another whichever
+way it faces; 1 by default) and `strikeCone: false` (the cone limits sight, not
+what a unit can strike). A square board's `sightLine: 'none'` blocks no sight
+at all.
 
 `stacking`: `one` (a unit a cell), `stack` (friends share; a blow lands on the
 stack's best defender, and with `stackDeath` the stack dies with it) or `count`
