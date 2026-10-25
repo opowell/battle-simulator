@@ -15,8 +15,11 @@ Browser (`apps/browser/`). Run on its own it is the battle sandbox: Arena
 `games/arena/specs/`, edited in the Browser's **Specs**.
 
 Every other game is a standalone app in a repo of its own, `opowell/battle-<game>`
-(cloned at `/Users/op/repos/battle-<game>`), which vendors this repo as
-`vendor/battle-simulator` and imports it as `#core/*`. So:
+(cloned at `/Users/op/repos/jas-repo/apps/battle-<game>`, beside this repo), which
+vendors this repo as `vendor/battle-simulator` and imports it as `#core/*`. Each is
+a JAS app as it stands: its root `settings.json` names `apps/<game>/server.js`, so
+the JAS this repo sits in serves it at `/battle-<game>` (and its `start.sh` runs it
+alone on its bundled JAS). So:
 
 - **No game code here.** `src/gate.test.js` fails if anything under `src/` or
   `apps/` imports a game or names one in code (comments may use one as an
