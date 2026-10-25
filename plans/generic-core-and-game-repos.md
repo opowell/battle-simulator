@@ -739,8 +739,10 @@ onto Arena (what was particular to a game went with it).
 4. Tag a release (`v1.0.0`) so game repos pin tags, not commits.
 
    *Done 2026-10-25:* `package.json` is 1.0.0 and `v1.0.0` is tagged on main
-   (locally; pushing it, and moving each game repo's pin onto it, are separate
-   steps, since those repos are on GitHub).
+   and pushed. All twenty game repos pin it (battle-sc2's `vendor/battle-sc1`
+   too), each green on it and pushed; the non-chess ones dropped their dead
+   `#obscuro-chess/*` mapping on the way. Each game's items in the core's
+   TODO.md moved to a TODO.md in its repo.
 
 ### Phase 5 (optional, per game): rebase onto the spec
 
