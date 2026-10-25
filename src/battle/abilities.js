@@ -14,7 +14,22 @@
 //
 // A unit type may also reshape its own attack (`strike: { cost: { ammo: 1 } }`)
 // or have none (`strike: false`). Using any ability spends one of the unit's
-// strikes for the window (`rate`), plus its cost.
+// strikes for the window (`rate`), plus its cost — or, where the ruleset counts
+// action points (`turn.actionPoints`), its `ap` (1 unless it says; 'all' spends
+// what the unit has left).
+//
+// Chance, where an ability asks for it (none does unless it says):
+//
+//   hit: 'clamp(a.aim - 4 * dist - cover, 5, 95)'   percent; a d100 is rolled
+//                                                   per target, a hit when it is
+//                                                   at most this
+//   crit: 'floor(hit / 4)'                          percent, on the same roll
+//                                                   (`hit` is the chance above)
+//   critPower: 2                                    a crit's damage multiplier
+//
+// A target missed takes nothing from the use, damage or any other effect. The
+// dice are the battle's (world.js `dice`), and a damage formula may throw more
+// of them with roll(n); everything thrown is recorded on the action.
 //
 // The effect vocabulary is closed — damage, heal, modify, status, cleanse, move,
 // spawn, transform, reveal, conceal — with `{ fn: 'name' }` as the way out: the
@@ -24,8 +39,9 @@
 
 import {
   rulesOf, typeOf, stat, gap, gapBetween, pointOf, isContinuousSpace, boardIn, seenBy, hiddenFrom,
-  inCone, blocked, matches, strikeDamage, callHook, bearing, EPS, passableFor, domainOf,
+  inCone, blocked, matches, strikeDamage, strikeEnv, dice, callHook, bearing, EPS, passableFor, domainOf,
 } from './world.js';
+import { formula, whole, R } from './exact.js';
 import { addStatus, removeStatuses, adjustPool, takeDamage, canPay, makeUnit, dress, withUnits, freshPerTurn } from './units.js';
 import { STAT_KEYS } from './spec.js';
 
@@ -36,7 +52,9 @@ export function abilitiesOf(state, u) {
   const r = rulesOf(state);
   const t = typeOf(state, u);
   const out = [];
-  if (t.strike !== false) out.push(t.strike && typeof t.strike === 'object' ? { ...ATTACK, ...t.strike, id: 'attack' } : ATTACK);
+  // A type's own strike, else the ruleset's (`spec.strike`), else the plain attack.
+  const strike = t.strike !== undefined ? t.strike : r.spec.strike;
+  if (strike !== false) out.push(strike && typeof strike === 'object' ? { ...ATTACK, ...strike, id: 'attack' } : ATTACK);
   for (const id of t.abilities ?? []) if (r.abilities[id]) out.push({ ...r.abilities[id], id });
   return out;
 }
@@ -58,9 +76,15 @@ export function canUseNow(state, u, ab, { landing = false } = {}) {
   if (ab.id === 'attack' && !(stat(state, u, 'attack') > 0) && !ab.effects?.some(e => !e.damage)) return false;
   if (landing) return true;
   if (blocked(state, u, 'act')) return false;
-  if (!state.gameSpecific.rt && !(u.perTurn?.attacksLeft > 0)) return false;
+  if (!state.gameSpecific.rt) {
+    const ap = rulesOf(state).actionPoints;
+    if (ap ? !(u.perTurn?.ap >= Math.max(1, apCost(ab, u.perTurn.ap))) : !(u.perTurn?.attacksLeft > 0)) return false;
+  }
   return canPay(u, ab.cost) && ready(state, u, ab);
 }
+
+/** The action points `ab` costs a unit holding `left` of them. */
+export const apCost = (ab, left) => (ab.ap === 'all' ? left : ab.ap ?? 1);
 
 const sideOk = (u, t, targets) => (targets === 'enemy' ? t.ownerId !== u.ownerId
   : targets === 'ally' ? t.ownerId === u.ownerId : targets === 'self' ? t.id === u.id : true);
@@ -197,22 +221,49 @@ export function defenderFor(state, t) {
 }
 
 /**
- * The damage each target takes from `ab` used by `u`, worked out against
- * `state` as it is: [{ targetId, amount }]. Every strike that lands at one
- * instant is worked out before any is applied.
+ * Whether a use of `ab` by `u` lands on each target, where it asks for chance:
+ * Map(targetId → { hitChance, roll, hit, crit }), thrown with the battle's dice.
+ * Empty for an ability without `hit`, which always lands.
  */
-export function damageOf(state, u, ab, targets) {
+export function chanceOf(state, u, ab, targets) {
+  const out = new Map();
+  if (ab.hit == null) return out;
+  for (const t of targets) {
+    const env = strikeEnv(state, u, t);
+    const hitChance = whole(formula(ab.hit)(env));
+    const crit = ab.crit != null ? whole(formula(ab.crit)({ ...env, hit: hitChance })) : 0;
+    const roll = Math.floor((dice.rng ?? Math.random)() * 100) + 1;
+    out.set(t.id, { hitChance, roll, hit: roll <= hitChance, crit: roll <= hitChance && roll <= crit });
+  }
+  return out;
+}
+
+/**
+ * The damage each target takes from `ab` used by `u`, worked out against
+ * `state` as it is: [{ targetId, amount }], with the roll that decided it where
+ * the ability throws one (a miss is an amount of 0). Every strike that lands at
+ * one instant is worked out before any is applied.
+ */
+export function damageOf(state, u, ab, targets, chance = chanceOf(state, u, ab, targets)) {
   const hits = [];
   for (const e of ab.effects ?? []) {
     if (!e.damage) continue;
     for (const t0 of targets) {
       const t = targets.length === 1 && !ab.area ? defenderFor(state, t0) : t0;
-      const amount = e.damage.amount ?? strikeDamage(state, u, t, e.damage);
-      hits.push({ targetId: t.id, amount });
+      const c = chance.get(t0.id);
+      if (c && !c.hit) { hits.push({ targetId: t.id, amount: 0, ...c }); continue; }
+      let amount = e.damage.amount ?? strikeDamage(state, u, t, e.damage);
+      if (c?.crit) amount = whole(R.mul(R.rat(amount), R.rat(ab.critPower ?? 2)));
+      hits.push({ targetId: t.id, amount, ...(c ?? {}) });
     }
   }
+  // An ability with no damage still throws its dice: who it lands on.
+  if (!hits.length) for (const [targetId, c] of chance) hits.push({ targetId, amount: 0, ...c });
   return hits;
 }
+
+/** The targets a use's dice let it land on (all of them, for one that throws none). */
+export const landed = (targets, hits) => targets.filter(t => !hits.some(h => h.targetId === t.id && h.hit === false));
 
 /** Apply damage hits; a stack whose defender falls dies with it where the ruleset says so. */
 export function dealDamage(state, hits) {

@@ -56,12 +56,16 @@ export function compile(spec, hooks = {}) {
     victory: spec.victory ?? [{ type: 'eliminate' }],
     orientation,
     stacking: spec.board?.stacking ?? (spec.board?.topology === 'regions' ? 'stack' : 'one'),
+    // Action points (`turn: { actionPoints, move }`): a unit's turn is that many
+    // points, a move costs `move` of them and an ability its `ap`.
+    actionPoints: spec.turn?.actionPoints ?? null,
+    moveAp: spec.turn?.move ?? 1,
     // Anything that happens at a window's end beyond fresh budgets: pools that
     // regenerate, statuses that run out or tick, cooldowns, objectives counted
     // in windows.
     periodic: kinds('status').length > 0 || kinds('pool').some(id => (attrs[id].regen ?? 0) !== 0 || Object.values(types).some(t => t.pools?.[id]?.regen))
       || Object.values(spec.abilities ?? {}).some(a => a.cooldown > 0)
-      || Object.values(types).some(t => t.strike?.cooldown > 0)
+      || Object.values(types).some(t => t.strike?.cooldown > 0) || spec.strike?.cooldown > 0
       || (spec.victory ?? []).some(v => ['hold', 'survive', 'points'].includes(v.type) || v.fn),
   };
   byHooks.set(hooks, r);
@@ -224,7 +228,8 @@ export const AWARENESS = 1;
 
 /** Can `viewer` see `target` (range, cone, line, concealment)? Cloak is detection's business. */
 export function sees(state, viewer, target) {
-  const d = gap(state, viewer, target);
+  const B = boardIn(state);
+  const d = !isContinuousSpace(state) && B.visionDist ? B.visionDist(viewer.position, target.position) : gap(state, viewer, target);
   const vision = stat(state, viewer, 'vision');
   if (d > vision + EPS) return false;
   // Concealing ground hides a unit from anyone farther than its concealment.
@@ -252,7 +257,33 @@ export function seenBy(state, playerId, target) {
 
 // ── Damage ───────────────────────────────────────────────────────────────────
 
+/**
+ * The battle's dice while an action is applied: BattleGame.applyActions sets
+ * `rng` to the engine's seeded one for the length of the call, and everything
+ * that throws a die — a strike's `hit` roll, `roll()` in a formula — draws from
+ * it, so a replay throws the same. Null outside an action: a formula with a die
+ * in it can't be evaluated then (a preview, the AI's estimate) — see chanceOf.
+ */
+export const dice = { rng: null };
+
 const coverOf = (state, u) => terrainOfUnit(state, u)?.cover ?? 0;
+
+/**
+ * What a formula about `a` striking `d` may read: both sides' numbers, the
+ * blow's `power`, the defender's `cover`, `height` (attacker's ground over the
+ * defender's), `arc` (the defense modifier for the side it's struck on) and
+ * `dist` (how far apart they are, in the board's own measure).
+ */
+export function strikeEnv(state, a, d, power = 1) {
+  const arcs = facingOf(state, d)?.arcs;
+  return {
+    a: attrsEnv(state, a), d: attrsEnv(state, d),
+    power, cover: coverOf(state, d),
+    height: elevationOf(state, a) - elevationOf(state, d),
+    arc: arcs ? arcs[arcOf(state, d, a)] ?? 0 : 0,
+    dist: gap(state, a, d),
+  };
+}
 
 /** The formula environment for a unit: its stats, numbers, pools and hit points. */
 export function attrsEnv(state, u) {
@@ -270,15 +301,9 @@ export function attrsEnv(state, u) {
  */
 export function strikeDamage(state, a, d, { power = 1, type = null, formula: own = null } = {}) {
   const r = rulesOf(state);
-  const arcs = facingOf(state, d)?.arcs;
-  const env = {
-    a: attrsEnv(state, a), d: attrsEnv(state, d),
-    power, cover: coverOf(state, d),
-    height: elevationOf(state, a) - elevationOf(state, d),
-    arc: arcs ? arcs[arcOf(state, d, a)] ?? 0 : 0,
-  };
+  const env = strikeEnv(state, a, d, power);
   const f = own ? (typeof own === 'string' ? formula(own) : (e) => rat(callHook(r.hooks, own, e, state, a, d))) : r.damage;
-  let dmg = whole(f(env));
+  let dmg = whole(f(env, dice.rng));
   if (type) {
     const resist = typeOf(state, d).resist?.[type] ?? 0;
     if (resist) dmg = Math.max(0, whole(Q.mul(rat(dmg), Q.div(rat(100 - resist), rat(100)))));

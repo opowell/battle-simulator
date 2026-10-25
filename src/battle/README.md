@@ -59,13 +59,16 @@ with the base table, and every other key replaces the base's.
 {
   id, name, description,
   terrain:    { forest: { cost: { land: 2, air: 1 }, passable: { sea: false }, cover: 50,
-                          blocksSight: false, concealment: 2, elevation: 0, color, name } },
+                          blocksSight: false, concealment: 2, elevation: 0, color, name,
+                          extrude } },                // drawn height on an isometric board
   attributes: { mp: { kind: 'pool', max: 20, regen: 4 }, … },
   abilities:  { fira: { … } },
   unitTypes:  { mage: { hp, attack, defense, range, speed, rate, vision, domain,
                         facing: { fov, arcs, turnCost }, attrs, pools, tags, resist,
                         abilities: ['fira'], strike: false | { …attack overrides },
                         jump, count, points, glyph, name, imagePath } },
+  strike:     { …attack overrides },     // every type's attack, unless it has its own
+  turn:       { actionPoints: 2, move: 1 },  // action points instead of move + rate budgets
   formulas:   { damage: 'expression' | { fn: 'name' } },
   board:      { topology, width, height, … },
   armies:     [['knight', 'mage'], …]    // per seat, along its edge
@@ -127,7 +130,21 @@ fira: { cost: { mp: 12 }, cooldown: 0, range: 4, minRange: 0,
 ```
 
 Each use spends one of the unit's strikes for the window (`rate`), its cost, and
-starts its cooldown. In continuous time it lands after its `windup` (an attack's
+starts its cooldown. Where the ruleset counts action points instead (`turn:
+{ actionPoints, move }`), a unit's turn is that many points: a move costs
+`move` of them (default 1) and may go up to its `speed` each time, and a use
+costs its `ap` (default 1; `'all'` spends whatever is left, so nothing follows
+it).
+
+An ability may throw dice. `hit` is a percent formula: a d100 is rolled for
+each target, and the use lands where the roll is at most the chance. `crit` is a
+percent formula on the same roll (it may read `hit`, the chance), and a crit
+multiplies the damage by `critPower` (default 2). A target missed takes nothing
+from the use — no damage, no other effect. A damage formula may throw more dice
+with `roll(n)`. All of them come from the engine's seeded rng, so a replay
+throws the same, and what they showed rides on the action: `hitChance`, `roll`,
+`hit`, `crit` and `damage` for one target, or a `rolls` list for several. A
+ruleset without either stays exactly as deterministic as before. In continuous time it lands after its `windup` (an attack's
 is `0.5 / rate` windows), when range, line and sight are checked again. Effects:
 `damage` (`power`, `type` against the target's `resist`, or a fixed `amount`),
 `heal`, `modify` (a pool's value, or a stat for `turns` or for good), `status`,
@@ -140,7 +157,8 @@ or `{ type }`.
 The damage formula is an expression over `a.*` (the attacker's stats, numbers,
 pools, `hp`, `count`), `d.*` (the defender's), `power`, `cover` (the defender's
 terrain, percent), `height` (attacker's elevation minus the defender's) and `arc`
-(the defense modifier of the side struck). The base is Arena's strike:
+(the defense modifier of the side struck) and `dist` (how far apart the two
+are, in the board's measure). The base is Arena's strike:
 
 ```
 max(1, floor(power * a.attack^2 / (a.attack + d.defense * (1 + (cover + 25 * max(0, -height)) / 100) * (1 + arc / 100))))
@@ -148,7 +166,9 @@ max(1, floor(power * a.attack^2 / (a.attack + d.defense * (1 + (cover + 25 * max
 
 It is worked out in exact rationals ([exact.js](exact.js)); a written `0.1` is a
 tenth. The language has `+ - * / ^`, comparisons, `&& || !`, and `floor ceil
-round abs min max clamp if`: nothing that leaves the rationals.
+round abs min max clamp if`, and `roll(n)`, a die from 0 to n−1 thrown from
+the battle's dice (only in a formula evaluated during an action; `if` evaluates
+just the branch it takes).
 
 ### Boards
 
@@ -168,6 +188,12 @@ taller than a type's `jump`, and gives a defender above its attacker 25% cover a
 level. Sight runs straight from one end's height to the other's, and ground
 blocks it where it rises above the line (a sight-blocker standing a level above
 its ground). `concealment` hides a unit from anyone farther than it.
+
+A square board may also say `sightLine: 'bresenham'` (sight runs along the
+Bresenham line between the two cells, blocked by a sight-blocker on it other
+than its ends), `visionMetric: 'chebyshev'` or `'manhattan'` (how far a unit
+sees, measured apart from how it moves), and `passFriends: false` (a unit can't
+walk through its own side, as well as the enemy).
 
 `stacking`: `one` (a unit a cell), `stack` (friends share; a blow lands on the
 stack's best defender, and with `stackDeath` the stack dies with it) or `count`

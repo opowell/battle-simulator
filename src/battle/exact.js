@@ -18,8 +18,14 @@
 //   operators      + - * /, ^ (whole exponents only), unary -,
 //                  comparisons < <= > >= == != (1 or 0), and/or/not via && || !
 //   functions      floor ceil round abs min max clamp(x, lo, hi) if(c, a, b)
+//                  roll(n) — a die: a whole number from 0 to n-1
 //
 // Nothing else — no square roots, no logs — because nothing else stays rational.
+//
+// `roll(n)` is the one thing that is not a function of its inputs: each time it
+// is evaluated it draws from the battle's dice (the engine's seeded rng, handed
+// to the formula by whoever evaluates it), so a replay rolls the same. Only the
+// branch `if` takes is evaluated, so a die in the other is never thrown.
 // ---------------------------------------------------------------------------
 
 const ZERO = { n: 0n, d: 1n };
@@ -158,6 +164,7 @@ const FUNCS = {
   max: (xs) => xs.reduce((m, x) => (cmp(x, m) > 0 ? x : m)),
   clamp: ([x, lo, hi]) => (cmp(x, lo) < 0 ? lo : cmp(x, hi) > 0 ? hi : x),
   if: ([c, a, b]) => (truth(c) ? a : b),
+  roll: () => { throw new Error('exact: roll() is evaluated by evaluate()'); },
 };
 
 const OPS = {
@@ -170,28 +177,45 @@ const OPS = {
   '&&': ([a, b]) => bool(truth(a) && truth(b)), '||': ([a, b]) => bool(truth(a) || truth(b)),
 };
 
-function evaluate(node, lookup) {
+function evaluate(node, lookup, rng) {
   if (node.val) return node.val;
   if (node.name != null) {
     const v = lookup(node.name);
     if (v == null) throw new Error(`exact: no value for "${node.name}"`);
     return rat(v);
   }
-  const args = node.args.map(a => evaluate(a, lookup));
+  if (node.fn === 'if') {
+    const [c, a, b] = node.args;
+    return evaluate(truth(evaluate(c, lookup, rng)) ? a : b, lookup, rng);
+  }
+  const args = node.args.map(a => evaluate(a, lookup, rng));
+  if (node.fn === 'roll') {
+    if (!rng) throw new Error('exact: roll() needs the battle\'s dice, and this formula was evaluated without them');
+    const sides = floorR(args[0]);
+    if (sides.n < 1n) throw new Error('exact: roll() needs at least one side');
+    return { n: BigInt(Math.floor(rng() * Number(sides.n))), d: 1n };
+  }
   return node.fn ? FUNCS[node.fn](args) : OPS[node.op](args);
 }
 
 const compiled = new Map();
 
 /**
- * A formula compiled once: `(env) => rational`. `env` is an object whose values
- * are numbers or nested objects (`a.attack` reads env.a.attack), or a function
- * of the dotted name.
+ * A formula compiled once: `(env, rng?) => rational`. `env` is an object whose
+ * values are numbers or nested objects (`a.attack` reads env.a.attack), or a
+ * function of the dotted name. `rng` (floats in [0, 1)) is what `roll()` draws
+ * from; a formula with a die in it can't be evaluated without one.
  */
 export function formula(src) {
   let tree = compiled.get(src);
   if (!tree) { tree = parse(String(src)); compiled.set(src, tree); }
-  return (env) => evaluate(tree, typeof env === 'function' ? env : (name) => dig(env, name));
+  return (env, rng = null) => evaluate(tree, typeof env === 'function' ? env : (name) => dig(env, name), rng);
+}
+
+/** Does the formula throw a die (`roll()`) anywhere? */
+export function rolls(src) {
+  const walk = (n) => n.fn === 'roll' || (n.args ?? []).some(walk);
+  return walk(parse(String(src)));
 }
 
 function dig(env, name) {

@@ -446,3 +446,106 @@ test('reach, survive, points and a hook decide battles too', () => {
   s = endBoth(endBoth(s));
   assert.equal(G.getResult(s)?.reason, 'hook');
 });
+
+// ── Action points, chance, and grid sight (phase 5: rules a game rebuilt on a spec needs) ──
+
+// The rng a test throws its dice with: a fixed list of draws, then 0.
+const draws = (...xs) => { const left = [...xs]; return () => left.shift() ?? 0; };
+
+test('action points: a move costs one, a shot all that is left, and nothing moves after it', () => {
+  const s = start({
+    turn: { actionPoints: 2, move: 1 }, strike: { ap: 'all' },
+    unitTypes: { man: { ...MAN, range: 9 } }, board: OPEN(10, 3), armies: [['man']],
+    units: [{ type: 'man', seat: 0, at: [0, 1] }, { type: 'man', seat: 1, at: [9, 1] }],
+  });
+  assert.deepEqual(unit(s, 'p1-1').perTurn, { ap: 2, moveLeft: 3, attacksLeft: 1 });
+  let t = act(s, 'p1', { type: 'move', unitId: 'p1-1', from: { x: 0, y: 1 }, to: { x: 3, y: 1 } });
+  assert.equal(unit(t, 'p1-1').perTurn.ap, 1);
+  t = act(t, 'p1', { type: 'move', unitId: 'p1-1', from: { x: 3, y: 1 }, to: { x: 6, y: 1 } });
+  assert.deepEqual(unit(t, 'p1-1').perTurn, { ap: 0, moveLeft: 0, attacksLeft: 0 }, 'two moves of a full speed each');
+  const u = act(s, 'p1', { type: 'attack', unitId: 'p1-1', targetId: 'p2-1' });
+  assert.equal(unit(u, 'p1-1').perTurn.ap, 0, 'a shot spends every point left');
+  assert.ok(!has(u, 'p1', a => a.unitId === 'p1-1'), 'so nothing follows it');
+  assert.equal(unit(endBoth(u), 'p1-1').perTurn.ap, 2, 'a new turn, a full purse');
+});
+
+test('chance: a d100 against the hit chance, a crit on the same roll, damage dice from roll(n), all on the action', () => {
+  const spec = {
+    attributes: { aim: { kind: 'number' } },
+    strike: { hit: 'clamp(a.aim - 4 * dist - cover, 5, 95)', crit: 'floor(hit / 4)', effects: [{ damage: { formula: '3 + roll(3)' } }] },
+    unitTypes: { gun: { ...MAN, hp: 40, range: 9, attrs: { aim: 75 } } }, board: OPEN(10, 3),
+    units: [{ type: 'gun', seat: 0, at: [0, 1] }, { type: 'gun', seat: 1, at: [5, 1] }],
+  };
+  const s = start(spec);
+  const shoot = (rng) => G.applyActions(s, [{ playerId: 'p1', action: { type: 'attack', unitId: 'p1-1', targetId: 'p2-1' } }], rng);
+  // 75 − 4·5 = 55%. A roll of 13 is under ⌊55/4⌋ = 13: a crit, (3 + 2) × 2.
+  const crit = shoot(draws(0.12, 0.99));
+  assert.equal(unit(crit, 'p2-1').hp, 30);
+  assert.deepEqual(crit.lastActions[0].action, { type: 'attack', unitId: 'p1-1', targetId: 'p2-1', hitChance: 55, roll: 13, hit: true, crit: true, damage: 10 });
+  const hit = shoot(draws(0.5, 0));
+  assert.equal(unit(hit, 'p2-1').hp, 37, 'roll 51: a plain hit, 3 + 0');
+  const miss = shoot(draws(0.55, 0.99));
+  assert.equal(unit(miss, 'p2-1').hp, 40, 'roll 56 misses');
+  assert.equal(miss.lastActions[0].action.damage, 0);
+  assert.equal(miss.lastActions[0].action.hit, false);
+});
+
+test('a missed blow lands none of its other effects', () => {
+  const spec = {
+    attributes: { slow: { kind: 'status', turns: 2, modifiers: { speed: '-1' } } },
+    strike: { hit: '50', effects: [{ damage: {} }, { status: 'slow' }] },
+    unitTypes: { man: MAN }, board: OPEN(4, 1),
+    units: [{ type: 'man', seat: 0, at: [0, 0] }, { type: 'man', seat: 1, at: [1, 0] }],
+  };
+  const shoot = (rng) => G.applyActions(start(spec), [{ playerId: 'p1', action: { type: 'attack', unitId: 'p1-1', targetId: 'p2-1' } }], rng);
+  assert.ok(unit(shoot(draws(0.1)), 'p2-1').statuses?.some(x => x.id === 'slow'));
+  assert.ok(!unit(shoot(draws(0.9)), 'p2-1').statuses?.length);
+});
+
+test('passFriends: false keeps a unit from walking through its own side', () => {
+  const spec = (passFriends) => ({
+    unitTypes: { man: MAN }, board: OPEN(5, 1, { neighbours: 4, passFriends }),
+    units: [{ type: 'man', seat: 0, at: [0, 0] }, { type: 'man', seat: 0, at: [1, 0] }, { type: 'man', seat: 1, at: [4, 0] }],
+  });
+  const goes = (s) => legal(s, 'p1').filter(a => a.type === 'move' && a.unitId === 'p1-1').map(a => a.to.x).sort();
+  assert.deepEqual(goes(start(spec(undefined))), [2, 3]);
+  assert.deepEqual(goes(start(spec(false))), []);
+});
+
+test('sightLine bresenham and visionMetric chebyshev: grid sight as a tile game draws it', () => {
+  const rows = ['.....', '.#...', '.....'];
+  const spec = (extra) => ({
+    unitTypes: { man: { ...MAN, vision: 2 } }, board: OPEN(5, 3, { generator: undefined, rows, neighbours: 4, ...extra }),
+    units: [{ type: 'man', seat: 0, at: [0, 0] }, { type: 'man', seat: 1, at: [2, 2] }],
+  });
+  // (0,0)→(2,2): the Bresenham line runs through the rock at (1,1); the two are
+  // 4 apart by Manhattan, 2 by Chebyshev.
+  const open = (s) => ({ ...s, board: { ...s.board, terrain: {} } });
+  const manhattan = open(start(spec({ sightLine: 'bresenham' })));
+  assert.equal(seenBy(manhattan, 'p1', unit(manhattan, 'p2-1')), false, 'Manhattan: 4 squares, beyond vision 2');
+  const cheb = open(start(spec({ sightLine: 'bresenham', visionMetric: 'chebyshev' })));
+  assert.equal(seenBy(cheb, 'p1', unit(cheb, 'p2-1')), true, 'Chebyshev: 2 squares');
+  const walled = start(spec({ sightLine: 'bresenham', visionMetric: 'chebyshev' }));
+  assert.equal(seenBy(walled, 'p1', unit(walled, 'p2-1')), false, 'the rock on the line');
+});
+
+test('a terrain\'s extrude is the height an isometric board draws it at', () => {
+  const s = start({ terrain: { crate: { name: 'Crate', cover: 20, extrude: 0.35, color: '#c8943a' } }, unitTypes: { man: MAN },
+    board: OPEN(3, 1, { generator: undefined, rows: ['.c.'], legend: { c: 'crate' } }) });
+  const cells = G.toGrid(s).cells;
+  assert.equal(cells[1].height, 0.35);
+  assert.equal(cells[0].height, undefined);
+});
+
+test('checkSpec reads the new keys, and a die is only thrown where it is evaluated', () => {
+  const errs = checkSpec(resolveSpec({
+    turn: { actionPoints: 0 }, strike: { hit: 'roll(100)', crit: 'nope(', ap: 'some' },
+    abilities: { zap: { crit: '5', effects: [{ damage: {} }] } },
+    board: { width: 4, height: 4, sightLine: 'ray', visionMetric: 'euclid' },
+  }), hooks);
+  for (const want of [/turn.actionPoints/, /strike.hit: a chance is a percent/, /strike.crit/, /strike.ap/, /zap.crit: needs a hit chance/, /sightLine/, /visionMetric/]) {
+    assert.ok(errs.some(e => want.test(e)), `${want} in ${errs.join(' | ')}`);
+  }
+  assert.throws(() => formula('roll(6)')({}), /needs the battle's dice/);
+  assert.equal(toNumber(formula('if(1, 2, roll(6))')({})), 2, 'the branch not taken throws no die');
+});

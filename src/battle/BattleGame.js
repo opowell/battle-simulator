@@ -50,10 +50,10 @@ import { resolveSpec, checkSpec, STAT_KEYS, BASE_SPEC } from './spec.js';
 import {
   registerBattleGame, rulesOf, st, isContinuousTime, isContinuousSpace, live, seatIds, boardIn, pointOf,
   gap, gapBetween, typeOf, domainOf, stat, statusesOf, blocked, facingOf, bearing, angleBetween,
-  seenBy, hiddenFrom, aliveCounts, costFor, passableFor, membersOf, EPS,
+  seenBy, hiddenFrom, aliveCounts, costFor, passableFor, membersOf, dice, EPS,
 } from './world.js';
-import { makeUnit, dress, freshPerTurn, addStatus, adjustPool, regenOf, withUnits, BUILT_IN } from './units.js';
-import { abilityActions, abilityLegal, abilityOf, damageOf, dealDamage, applyOtherEffects, affected, canUseNow, canTarget, canTargetPoint, abilitiesOf } from './abilities.js';
+import { makeUnit, dress, freshPerTurn, apBudget, addStatus, adjustPool, regenOf, withUnits, BUILT_IN } from './units.js';
+import { abilityActions, abilityLegal, abilityOf, damageOf, dealDamage, applyOtherEffects, affected, canUseNow, canTarget, canTargetPoint, abilitiesOf, apCost, landed } from './abilities.js';
 import { judgeNow, judgeWindow, resultOf, keepsVerdict } from './victory.js';
 import { callHook } from './world.js';
 import { mintForeign } from '../engine/foreignUnits.js';
@@ -111,14 +111,16 @@ export const kinematics = {
   turnDuration: TURN_DURATION,
   speed: (u, state) => (state ? stat(state, u, 'speed') : u.stats.speed),
   // Discrete space: neighbour steps priced by the entered cell. A unit may pass
-  // through friends but not enemies; where it may STOP is filtered afterwards.
+  // through friends (unless the board says `passFriends: false`) but not
+  // enemies; where it may STOP is filtered afterwards.
   neighbors(pos, unit, state) {
     const out = [];
     const B = boardIn(state);
+    const throughFriends = rulesOf(state).spec.board?.passFriends !== false;
     for (const to of B.adjacent(pos)) {
       const cost = stepCost(state, unit, pos, to);
       if (cost === Infinity) continue;
-      if (state.units.some(o => o.alive && o.ownerId !== unit.ownerId && o.position.x === to.x && o.position.y === to.y)) continue;
+      if (state.units.some(o => o.alive && o.id !== unit.id && (!throughFriends || o.ownerId !== unit.ownerId) && o.position.x === to.x && o.position.y === to.y)) continue;
       out.push({ to, cost });
     }
     return out;
@@ -290,6 +292,8 @@ function buildBoard(b, config) {
     ...(b.elevation ? { elevation: b.elevation } : {}),
     ...(b.wrap ? { wrap: true } : {}),
     ...(b.neighbours === 4 ? { neighbours: 4 } : {}),
+    ...(b.sightLine ? { sightLine: b.sightLine } : {}),
+    ...(b.visionMetric ? { visionMetric: b.visionMetric } : {}),
   };
 }
 
@@ -464,7 +468,8 @@ function mergeGroups(state, mover) {
 function useAbility(state, u, ab, action) {
   const target = action.targetId != null ? state.units.find(x => x.id === action.targetId) : null;
   const point = action.at ?? null;
-  let me = { ...u, perTurn: { ...u.perTurn, attacksLeft: u.perTurn.attacksLeft - 1 } };
+  const ap = rulesOf(state).actionPoints;
+  let me = { ...u, perTurn: ap ? { ...u.perTurn, ...apBudget(state, u, u.perTurn.ap - apCost(ab, u.perTurn.ap)) } : { ...u.perTurn, attacksLeft: u.perTurn.attacksLeft - 1 } };
   me = payFor(state, me, ab);
   if (target && target.id !== u.id && me.facing != null) me = { ...me, facing: faceToward(state, me, target) };
   const next = replaceUnit(state, me);
@@ -490,8 +495,9 @@ function resolveUse(state, casterId, ab, target, point, before = state) {
   const caster = state.units.find(x => x.id === casterId);
   const targets = affected(before, caster, ab, target, point);
   const hits = damageOf(before, caster, ab, targets);
+  dice.thrown?.push(...hits.filter(h => h.roll != null));
   let next = hits.length ? dealDamage(state, hits) : state;
-  next = applyOtherEffects(next, casterId, ab, targets.map(t => t.id), point);
+  next = applyOtherEffects(next, casterId, ab, landed(targets, hits).map(t => t.id), point);
   return next;
 }
 
@@ -505,8 +511,10 @@ function applyDiscrete(state, playerId, action) {
     const cost = moveCost(state, u, action);
     if (!(cost <= u.perTurn.moveLeft + EPS)) return state;
     // One move a turn: what it didn't spend is gone (a budget that could be spent
-    // in slivers would let a unit edge about a continuous board for ever).
-    const moved = { ...u, position: { x: action.to.x, y: action.to.y }, perTurn: { ...u.perTurn, moveLeft: 0 } };
+    // in slivers would let a unit edge about a continuous board for ever). With
+    // action points a move spends the ruleset's price for one instead.
+    const ap = rulesOf(state).actionPoints;
+    const moved = { ...u, position: { x: action.to.x, y: action.to.y }, perTurn: ap ? { ...u.perTurn, ...apBudget(state, u, u.perTurn.ap - rulesOf(state).moveAp) } : { ...u.perTurn, moveLeft: 0 } };
     if (u.facing != null) moved.facing = facingAfter(state, u, routeOf(state, u, action));
     return mergeGroups(replaceUnit(state, moved), moved);
   }
@@ -763,20 +771,29 @@ function resolveInstant(state, t) {
     if (u.task.type === 'attack') {
       const target = next.units.find(x => x.id === u.task.targetId);
       const ab = abilityOf(next, u, 'attack');
-      if (ab && canUseNow(next, u, ab, { landing: true }) && canTarget(next, u, ab, target)) hits.push(...damageOf(next, u, ab, affected(next, u, ab, target, null)));
-      if (ab?.effects?.some(e => !e.damage)) later.push({ u, ab, target, point: null });
+      // Where its dice said who it landed on, its other effects go to them alone.
+      let onlyTo = null;
+      if (ab && canUseNow(next, u, ab, { landing: true }) && canTarget(next, u, ab, target)) {
+        const targets = affected(next, u, ab, target, null);
+        const mine = damageOf(next, u, ab, targets);
+        hits.push(...mine);
+        if (mine.some(h => h.roll != null)) onlyTo = landed(targets, mine);
+      }
+      if (ab?.effects?.some(e => !e.damage)) later.push({ u, ab, target, point: null, ...(onlyTo ? { targets: onlyTo } : {}) });
     } else if (u.task.type === 'ability') {
       const ab = abilityOf(next, u, u.task.ability);
       const target = u.task.targetId != null ? next.units.find(x => x.id === u.task.targetId) : null;
       const ok = ab && (target ? canTarget(next, u, ab, target) : canTargetPoint(next, u, ab, u.task.at));
       if (ok) {
         const targets = affected(next, u, ab, target, u.task.at ?? null);
-        hits.push(...damageOf(next, u, ab, targets));
-        later.push({ u, ab, target, point: u.task.at ?? null, targets });
+        const mine = damageOf(next, u, ab, targets);
+        hits.push(...mine);
+        later.push({ u, ab, target, point: u.task.at ?? null, targets: landed(targets, mine) });
       }
     }
   }
   units = next.units.map(u => (done(u) ? { ...u, task: null } : u));
+  dice.thrown?.push(...hits.filter(h => h.roll != null));
   next = dealDamage({ ...next, units }, hits);
   for (const { u, ab, target, point, targets } of later) {
     const ids = (targets ?? affected(next, u, ab, target, point)).map(x => x.id);
@@ -818,18 +835,46 @@ function applyContinuous(state, playerActions) {
   return advanceClock(state);
 }
 
-function applyActions(state, playerActions) {
+// The engine's seeded rng is the battle's dice for the length of the call (see
+// world.js `dice`); an action that threw any carries what they showed:
+// `hitChance`, `roll`, `hit`, `crit` and `damage` for one target, or `rolls`, a
+// list of those with `targetId`, for several. In continuous time a blow lands
+// later than its order, so its dice are on the action of the moment it lands.
+function applyActions(state, playerActions, rng = Math.random) {
+  const was = { rng: dice.rng, thrown: dice.thrown };
+  dice.rng = rng;
+  const thrown = [];
   let next;
-  if (isContinuousTime(state)) next = applyContinuous(state, playerActions);
-  else {
-    next = state;
-    for (const { playerId, action } of playerActions) next = applyDiscrete(next, playerId, action);
+  try {
+    if (isContinuousTime(state)) {
+      dice.thrown = [];
+      next = applyContinuous(state, playerActions);
+      thrown.push(dice.thrown);
+    } else {
+      next = state;
+      for (const { playerId, action } of playerActions) {
+        dice.thrown = [];
+        next = applyDiscrete(next, playerId, action);
+        thrown.push(dice.thrown);
+      }
+    }
+  } finally {
+    dice.rng = was.rng;
+    dice.thrown = was.thrown;
   }
   next = keepsVerdict(next) ? judgeNow(next) : next;
   if (next.gameSpecific.fogOfWar && next.gameSpecific.fogMemory) next = remember(next);
   if (isContinuousTime(next) && getResult(next) && next.activePlayers.length) next = { ...next, activePlayers: [] };
-  return { ...next, lastActions: playerActions };
+  const lastActions = playerActions.map((pa, i) => (thrown[i]?.length ? { ...pa, action: { ...pa.action, ...shown(thrown[i]) } } : pa));
+  return { ...next, lastActions };
 }
+
+const shown = (hits) => {
+  const one = ({ targetId, hitChance, roll, hit, crit, amount }) => ({ targetId, hitChance, roll, hit, crit, damage: amount });
+  if (hits.length > 1) return { rolls: hits.map(one) };
+  const { targetId: _t, ...rest } = one(hits[0]);
+  return rest;
+};
 
 // ── Result ───────────────────────────────────────────────────────────────────
 // Reads the common-knowledge survivor counts and verdict, never `units`: under
@@ -972,7 +1017,7 @@ function toGrid(state) {
   for (let y = 0; y < board.height; y++) {
     for (let x = 0; x < board.width; x++) {
       const t = B.terrainAt(x, y);
-      cells.push({ x, y, color: ground ?? t.color, terrain: { name: t.name, description: t.description } });
+      cells.push({ x, y, color: ground ?? t.color, terrain: { name: t.name, description: t.description }, ...(t.extrude ? { height: t.extrude } : {}) });
     }
   }
   const grid = {
@@ -1179,7 +1224,7 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
     const ids = players.map(p => p.id);
     const fogOfWar = !!(config.fogOfWar ?? (sp.fog && sp.fog !== 'off'));
     const fogMemory = fogOfWar && !!(config.fogMemory ?? sp.fog === 'remembered');
-    const rules = full ? (({ armies: _a, units: _u, board: b, ...rest }) => ({ ...rest, board: { topology: b.topology ?? 'square', ...(b.stacking ? { stacking: b.stacking } : {}), ...(b.stackDeath ? { stackDeath: true } : {}), ...(b.climb != null ? { climb: b.climb } : {}) } }))(full) : null;
+    const rules = full ? (({ armies: _a, units: _u, board: b, ...rest }) => ({ ...rest, board: { topology: b.topology ?? 'square', ...(b.stacking ? { stacking: b.stacking } : {}), ...(b.stackDeath ? { stackDeath: true } : {}), ...(b.climb != null ? { climb: b.climb } : {}), ...(b.passFriends === false ? { passFriends: false } : {}) } }))(full) : null;
     let state = {
       gameName: name,
       turnNumber: 1,

@@ -140,11 +140,19 @@ export function checkSpec(spec, hooks = {}) {
     for (const k of Object.keys(t.attrs ?? {})) if (attrs[k]?.kind !== 'number') errs.push(`unitTypes.${type}.attrs.${k}: not a declared number`);
     if (t.strike && typeof t.strike === 'object') checkAbility(`unitTypes.${type}.strike`, t.strike, true);
   }
+  if (spec.strike && typeof spec.strike === 'object') checkAbility('strike', spec.strike, true);
+  const turn = spec.turn;
+  if (turn != null) {
+    if (!(Number.isInteger(turn.actionPoints) && turn.actionPoints > 0)) errs.push('turn.actionPoints: a whole number > 0');
+    if (turn.move != null && !(Number.isInteger(turn.move) && turn.move > 0)) errs.push('turn.move: a whole number > 0');
+  }
   const dmg = spec.formulas?.damage;
   if (typeof dmg === 'string') { try { checkFormula(dmg); } catch (e) { errs.push(`formulas.damage: ${e.message}`); } } else fnOk('formulas.damage', dmg);
   const b = spec.board ?? {};
   if (!TOPOLOGIES.includes(b.topology ?? 'square')) errs.push(`board.topology: "${b.topology}" is not one of ${TOPOLOGIES.join(', ')}`);
   if ((b.topology ?? 'square') !== 'regions' && !(b.width > 0 && b.height > 0)) errs.push('board: needs a width and height');
+  if (b.sightLine != null && b.sightLine !== 'bresenham') errs.push(`board.sightLine: "${b.sightLine}" is not bresenham`);
+  if (b.visionMetric != null && !['chebyshev', 'manhattan'].includes(b.visionMetric)) errs.push(`board.visionMetric: "${b.visionMetric}" is not one of chebyshev, manhattan`);
   for (const id of new Set([...Object.values(b.terrain ?? {}), ...(b.shapes ?? []).map(s => s.terrain), ...Object.values(b.regions ?? {}).map(r => r.terrain)].filter(Boolean))) {
     if (!spec.terrain?.[id]) errs.push(`board: no terrain "${id}"`);
   }
@@ -160,6 +168,14 @@ export function checkSpec(spec, hooks = {}) {
     if (ab.targets && !TARGETS.has(ab.targets)) errs.push(`${where}.targets: "${ab.targets}" is not one of ${[...TARGETS].join(', ')}`);
     for (const k of Object.keys(ab.cost ?? {})) if (attrs[k]?.kind !== 'pool' && k !== 'hp') errs.push(`${where}.cost.${k}: not a declared pool`);
     if (!isAttack && !Array.isArray(ab.effects)) errs.push(`${where}.effects: missing`);
+    for (const k of ['hit', 'crit']) {
+      if (ab[k] == null) continue;
+      try { checkFormula(ab[k]); } catch (e) { errs.push(`${where}.${k}: ${e.message}`); }
+      if (/\broll\s*\(/.test(String(ab[k]))) errs.push(`${where}.${k}: a chance is a percent, not a roll — the d100 is thrown for it`);
+    }
+    if (ab.crit != null && ab.hit == null) errs.push(`${where}.crit: needs a hit chance`);
+    if (ab.critPower != null && !(typeof ab.critPower === 'number' && ab.critPower >= 0)) errs.push(`${where}.critPower: not a number ≥ 0`);
+    if (ab.ap != null && ab.ap !== 'all' && !(Number.isInteger(ab.ap) && ab.ap >= 0)) errs.push(`${where}.ap: a whole number ≥ 0, or "all"`);
     for (const e of ab.effects ?? []) checkEffect(`${where}.effects`, e);
   }
   function checkEffect(where, e) {

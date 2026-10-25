@@ -100,9 +100,20 @@ export function dress(state, u, preset = typeOf(state, u), facing = null) {
 
 /** A unit's budgets for one turn window (discrete time). */
 export function freshPerTurn(state, u) {
-  const p = { moveLeft: stat(state, u, 'speed'), attacksLeft: stat(state, u, 'rate') };
+  const ap = rulesOf(state).actionPoints;
+  const p = ap ? apBudget(state, u, ap) : { moveLeft: stat(state, u, 'speed'), attacksLeft: stat(state, u, 'rate') };
   if (rulesOf(state).orientation) p.faced = false;
   return p;
+}
+
+/**
+ * A unit's budgets with `ap` action points left, where the ruleset counts them
+ * (`turn.actionPoints`): every move is a fresh one of up to `speed` while a
+ * move's points are left, and it may act while any are.
+ */
+export function apBudget(state, u, ap) {
+  const r = rulesOf(state);
+  return { ap, moveLeft: ap >= r.moveAp ? stat(state, u, 'speed') : 0, attacksLeft: ap > 0 ? Math.max(1, stat(state, u, 'rate')) : 0 };
 }
 
 // ── Statuses ─────────────────────────────────────────────────────────────────

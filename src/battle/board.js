@@ -144,6 +144,21 @@ const cache = new WeakMap();
  * The board interface for `board` (state.board) under terrain table `terrain`.
  * Built once per board object and table.
  */
+/** The cells strictly between `a` and `b` on the Bresenham line from a to b. */
+export function bresenham(a, b) {
+  const out = [];
+  const dx = Math.abs(b.x - a.x), dy = -Math.abs(b.y - a.y);
+  const sx = Math.sign(b.x - a.x), sy = Math.sign(b.y - a.y);
+  let err = dx + dy, x = a.x, y = a.y;
+  while (x !== b.x || y !== b.y) {
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+    if (x !== b.x || y !== b.y) out.push({ x, y });
+  }
+  return out;
+}
+
 export function boardOf(board, terrain) {
   let byTable = cache.get(board);
   if (!byTable) { byTable = new WeakMap(); cache.set(board, byTable); }
@@ -211,6 +226,25 @@ function build(board, terrain) {
       }
       return true;
     };
+    // `sightLine: 'bresenham'`: sight runs along the Bresenham line between the two
+    // cells instead, blocked by a sight-blocking cell on it other than its ends —
+    // the classic grid rule, for a game whose own sight is that.
+    if (board.sightLine === 'bresenham') {
+      B.sight = (a, b) => {
+        const from = { x: Math.floor(a.x), y: Math.floor(a.y) }, to = { x: Math.floor(b.x), y: Math.floor(b.y) };
+        for (const c of bresenham(from, to)) {
+          const t = B.terrainAt(c.x, c.y);
+          if (!t || t.blocksSight) return false;
+        }
+        return true;
+      };
+    }
+    // `visionMetric`: how far a unit sees, measured otherwise than the board's
+    // moves are (a 4-neighbour board that sees in Chebyshev squares, say).
+    if (board.visionMetric) {
+      const metric = { chebyshev: (a, b) => Math.max(dxOf(a, b), Math.abs(a.y - b.y)), manhattan: (a, b) => dxOf(a, b) + Math.abs(a.y - b.y) }[board.visionMetric];
+      if (metric) B.visionDist = metric;
+    }
     B.cells = () => { const out = []; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) out.push({ x, y }); return out; };
   }
 
