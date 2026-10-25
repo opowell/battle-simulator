@@ -130,3 +130,46 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 - Its four (space × time) quadrants are scenarios (`clockwork`, `melee`,
   `sliding`) as well as options; the golden replays cover both, and each mode
   in sequential and we-go play.
+
+## Moved (2026-10-25)
+
+To [opowell/battle-chess](https://github.com/opowell/battle-chess) (open
+decision 3: a new repo, not fog-chess), built by `scripts/extract-game.mjs` and
+pinned to the core at the commit it left from. Chess owns the fog-chess AI
+there: `vendor/obscuro-chess` is a submodule of the repo's own, at the core's
+pin (008841f, with its own `vendor/obscuro` at fd91cda), and `#obscuro-chess/*`
+maps to it rather than to the core's copy, so nothing there needs the core's
+`vendor/obscuro-chess` when phase 4 drops it. The Stockfish cache is
+git-ignored there as here, and was copied in from the main checkout. Its module
+pointers (`clientAnalyze`, `clientGame`, `database`) name their modules from the
+repo's root, `apps/chess/games/chess/…`, where /lib/ serves from; the core now
+imports a `database` module from the app's root too (it had resolved against
+src/server/ since phase 1, so the database panel 500ed here as well).
+
+Checked there: `npm test` passes, 158 tests: the game's 144 (its 15 golden
+replays among them), the app's own 4, and 10 new. Eight are the core's old
+api-server tests of chess (`test/midgame.test.js`: the opening roster with the
+queen on d4, the refused roster, fog switched on mid-game, continuous space
+mid-game, the seat handed to an AI, units added and removed, the fog units
+editor, the refused change), which left the core when its api-server.test.js
+moved to Arena. Two (`test/analysis.test.js`) check that /lib serves the
+analysis worker's whole import graph, its obscuro-chess the repo's own, and that
+the database answers on an analysis board. `demo/chess-demo.js --auto` and
+`obscuro-demo.js` run from `apps/chess/demo/`. In the Browser, driven headless,
+the default setup and all 5 scenarios draw the board with its pieces, with no
+console error or failed request (chess has no End Turn button: a move is the
+turn). The sound plugin is served (its clack is synthesised, so there are no
+sound files). The analysis panel runs in the browser Web Worker on the standard
+board (86 /lib requests, every one 200, Stockfish's wasm worker started, moves
+suggested); under fog, in a session made over the API with
+`showAnalysisPanel: true`, it analyses over the server's stream and steps
+through the belief boards; on a fog analysis board the Fog of War games panel
+answers (3,154 games for the opening). Its pack was re-exported into
+`library/chess/` first: its 6 units unchanged, plus 2 terrain types (the light
+and dark squares, which carry no rule) and the board of 4 scenarios, each with
+its space and time as the map's `modes`; fog is the standard board.
+
+Pre-existing, the same with the core's own server: a finished all-AI session
+made over the API stays on "Loading…" when opened in the Browser. Not checked:
+playing moves by drag in the UI, the continuous quadrants beyond their first
+position, and the slow rollouts (`SLOW_TESTS=1`).
