@@ -222,6 +222,7 @@ function facingAfter(state, u, path) {
   if (u.facing == null || path.length < 2) return u.facing;
   const B = boardIn(state);
   const a = path[0], b = path[path.length - 1];
+  if (a.x === b.x && a.y === b.y) return u.facing;           // no way went, no turn
   const pa = isContinuousSpace(state) ? a : B.centre(a), pb = isContinuousSpace(state) ? b : B.centre(b);
   return snap(state, bearing(pa, B.near?.(pa, pb) ?? pb));
 }
@@ -691,7 +692,10 @@ function endActivation(state, action) {
   if (u?.alive && action.facing != null && u.facing != null) next = replaceUnit(next, { ...u, facing: snap(next, action.facing) });
   // Its window ends: its statuses tick and run down, its pools regenerate.
   if (u?.alive) next = unitWindowEnds(next, id);
-  next = withUnits(next, next.units.map(x => (x.id === id ? (({ movedFrom: _m, ...rest }) => ({ ...rest, ct: Math.max(0, (x.ct ?? 0) - CHARGE(next)) }))(x) : x)));
+  // Its activation is spent until its next one comes round.
+  next = withUnits(next, next.units.map(x => (x.id === id ? (({ movedFrom: _m, ...rest }) => ({
+    ...rest, ct: Math.max(0, (x.ct ?? 0) - CHARGE(next)), ...(rest.perTurn ? { perTurn: { ...rest.perTurn, moveLeft: 0, attacksLeft: 0 } } : {}),
+  }))(x) : x)));
   if (getResult(next)) return { ...next, turnNumber: state.turnNumber + 1 };
   let queue = (gs.turnQueue ?? []).filter(q => next.units.find(x => x.id === q)?.alive);
   if (!queue.length) {

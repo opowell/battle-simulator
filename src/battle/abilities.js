@@ -116,7 +116,9 @@ export function canTarget(state, u, ab, t) {
     if (hiddenFrom(state, u.ownerId, t)) return false;
     // Under fog a side can only strike what it can see.
     if (state.gameSpecific.fogOfWar && !seenBy(state, u.ownerId, t)) return false;
-    if (!inCone(state, u, t)) return false;
+    // A unit strikes only within its cone, unless the ruleset's cone is for
+    // sight alone (`orientation.strikeCone: false`).
+    if (rulesOf(state).spec.orientation?.strikeCone !== false && !inCone(state, u, t)) return false;
   }
   return true;
 }
