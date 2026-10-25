@@ -23,7 +23,7 @@ import { readFile, readdir, writeFile, mkdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { extname, resolve, sep, dirname, posix } from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath }         from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 
 import { WebSocketServer } from '../../vendor/ws/wrapper.mjs';
@@ -2386,12 +2386,13 @@ async function handleForkMove(req, res, id) {
 // Cached `game.database` query functions, keyed by module pointer — the module
 // is imported the first time somebody opens the panel, not at startup, because
 // a game database can be tens of megabytes of corpus that most sessions never
-// touch.
+// touch. The module is named from the app's root, as a `clientAnalyze` pointer
+// is for /lib/.
 const databaseQueries = new Map();
 async function resolveDatabaseQuery(pointer) {
   const cacheKey = `${pointer.module}#${pointer.export}`;
   if (!databaseQueries.has(cacheKey)) {
-    const mod = await import(new URL(pointer.module, import.meta.url).href);
+    const mod = await import(pathToFileURL(resolve(ROOT_DIR, pointer.module)).href);
     const fn = pointer.export.split('.').reduce((o, k) => o?.[k], mod);
     if (typeof fn !== 'function') throw new Error(`${cacheKey} is not a function`);
     databaseQueries.set(cacheKey, fn);
