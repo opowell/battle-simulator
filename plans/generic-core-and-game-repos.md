@@ -683,6 +683,21 @@ worktree (the *max three sub-agents* feedback).
   explicit step. When every game has left, each repo's pin is bumped to the
   core without games and its tests run again.
 
+*Done 2026-10-25:* all twenty games are repos of their own,
+`/Users/op/repos/battle-<game>` (not yet on GitHub), each pinned to the core
+without games and green there; `games/` holds Arena alone. Each checklist's
+**Moved** section says what was checked and what was already so in the core.
+The open decisions went as recommended: sc1 keeps the StarCraft code and
+battle-sc2 vendors battle-sc1 (both carry the core, so their pins move
+together); chess is a new battle-chess that vendors obscuro-chess itself and
+carries the Stockfish cache; rogue and simcity left as they were, registered one
+seat each in their own repos (simcity still has no board in the Browser). On the
+way the core gained: the session socket at `/` under `JAS_DEFAULT_APP` (without
+it no AI turn reached the page in any game repo), a registry's `minPlayers`, a
+game's `database` module named from the app root, a map placement's `count` on
+counted boards, and its server tests moved from civ1, chess and Combat Mission
+onto Arena (what was particular to a game went with it).
+
 ### Phase 4: clean up the core
 
 1. Drop `vendor/obscuro-chess` and anything else only a game used.
