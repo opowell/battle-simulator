@@ -203,7 +203,8 @@ export class GenericAgent {
     if (action?.targetId != null) this._calibrate(g, parent, child, action);
     const battle = readBattle(g, child);
     const ready = ctx.probeReady ? readiness(g, child, me) : null;
-    return evaluateBattle(battle, me, { ...ctx, ready, damageScale: this._calib.k ?? undefined, turn: child.turnNumber ?? 0 });
+    const captures = battle.units.some(u => u.exactThreats) ? threatsOf(g, child) : null;
+    return evaluateBattle(battle, me, { ...ctx, ready, captures, damageScale: this._calib.k ?? undefined, turn: child.turnNumber ?? 0 });
   }
 
   // One observed strike: how much did the game really take off the target,
@@ -285,6 +286,12 @@ function readiness(g, state, me) {
   return out;
 }
 
+// What every side's pieces threaten to take (game.threats: attacker id → target
+// ids), for the units whose threats are exact (battleView `exactThreats`).
+function threatsOf(g, state) {
+  try { return g.threats?.(state) ?? null; } catch { return null; }
+}
+
 /** Which seat this decision is for: whoever owns the units the legal actions name. */
 export function whoAmI(state, legalActions) {
   const byId = new Map((state.units ?? []).map(u => [u.id, u]));
@@ -318,5 +325,9 @@ export function makeGenericAgent(game, opts = {}) {
  * evaluator of its own.
  */
 export function genericEvaluateState(game) {
-  return (state, playerId) => evaluateBattle(readBattle(game, state), playerId, { objective: objectiveOf(game, state, playerId), turn: state.turnNumber ?? 0 });
+  return (state, playerId) => {
+    const battle = readBattle(game, state);
+    const captures = battle.units.some(u => u.exactThreats) ? threatsOf(game, state) : null;
+    return evaluateBattle(battle, playerId, { objective: objectiveOf(game, state, playerId), turn: state.turnNumber ?? 0, captures });
+  };
 }

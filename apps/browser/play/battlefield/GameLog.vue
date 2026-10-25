@@ -11,7 +11,18 @@ const props = defineProps({
   earlierLog:    { type: Array, default: () => [] },
   // The game's ui flags, for its own words for its own action types (ui.actionLabels).
   ui:            { type: Object, default: null },
+  // The board's names for its columns and rows (a–h, 8–1), when it has them: a move
+  // between cells is then written square to square.
+  xLabels:       { type: Array, default: null },
+  yLabels:       { type: Array, default: null },
 });
+
+// A cell by the board's own names for it, or null where it has none.
+function squareName(p) {
+  if (!props.xLabels || !props.yLabels || !p || typeof p !== 'object') return null;
+  const x = props.xLabels[p.x], y = props.yLabels[p.y];
+  return Number.isInteger(p.x) && Number.isInteger(p.y) && x != null && y != null ? `${x}${y}` : null;
+}
 defineEmits(['seek']);
 
 function fmtAction(action) {
@@ -25,6 +36,8 @@ function fmtAction(action) {
   if (t === 'move') {
     if (typeof action.from === 'string' && typeof action.to === 'string')
       return action.from + ' → ' + action.to;
+    const from = squareName(action.from), to = squareName(action.to);
+    if (from && to) return `${from} ${action.capture ? '×' : '→'} ${to}`;
     if (action.to && typeof action.to === 'object')
       return `Move → (${Number(action.to.x).toFixed(2)},${Number(action.to.y).toFixed(2)})`;
     if (action.unitId) return `Move ${action.unitId}`;

@@ -128,11 +128,14 @@ for (const [name, id, p] of maps) {
     assert.equal(p.pack.maps, Object.keys(p.maps).length);
     const spec = resolveSpec(librarySpec(`${name}/${id}`));
     assert.deepEqual(checkSpec(spec), [], `${name}/${id}`);
-    for (const u of m.units ?? []) assert.ok(p.units.units[u.type], `${name}/${id}: no ${u.type} in ${name}'s pack`);
+    // A map that brings its own unit types (chess's pieces, with their moves) fields
+    // those; any other fields its game's units from the pack.
+    const own = m.unitTypes ?? null;
+    for (const u of m.units ?? []) assert.ok(own?.[u.type] ?? p.units.units[u.type], `${name}/${id}: no ${u.type} in ${name}'s pack or the map's own types`);
     for (const space of ['discrete', 'continuous']) for (const time of ['discrete', 'continuous']) {
       const engine = new GameEngine(ArenaGame, players.map(pl => ({ ...pl, agent: RandomAgent })), { spec: `library:${name}/${id}`, space, time, maxTurns: 3, stepLimit: 60 });
       await engine.run();
-      assert.ok(engine.state.units.every(u => !u.alive || originOf(u)?.game === name), 'its own game\'s units');
+      assert.ok(engine.state.units.every(u => !u.alive || (own ? own[u.type] && !originOf(u) : originOf(u)?.game === name)), 'its own game\'s units');
       for (const pl of players) ArenaGame.toGrid(ArenaGame.getVisibleState(engine.state, pl.id));
     }
   });

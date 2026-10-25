@@ -33,6 +33,11 @@
 // strikes; an attacker with none counts its geometric reach at NOT_READY. So
 // reloading, or turning to face the enemy, is worth what it makes possible.
 //
+// Captures: a game whose units take by moving onto their victims says exactly
+// what each threatens (game.threats, ctx.captures: attacker id → target ids, for
+// every side, whoever is on move). Such a unit's pressure is those captures and
+// nothing else, each one taking its target whole: there is no damage to guess.
+//
 // Facing (when the game says how its units face): an attacker whose vision cone
 // does not hold its target must turn first, so its threat counts at NOT_READY.
 // Defense arcs are left out on purpose: counting a blow from behind at the rear
@@ -93,13 +98,14 @@ const inCone = (a, d) => a.facing == null || a.fov >= 360 || !a.point || !d.poin
 
 // Greedy one-turn assignment of attackers to targets; returns the total worth
 // the attackers could take off the defenders.
-function pressure(attackers, defenders, metric, sc, k, ready = null) {
+function pressure(attackers, defenders, metric, sc, k, ready = null, captures = null) {
   const assigned = new Map();
   let total = 0;
   const order = attackers.filter(a => a.point && a.attack > 0).sort((a, b) => b.attack - a.attack);
   for (const a of order) {
     const reach = a.speed + a.range;
-    const now = ready?.get(a.id) ?? null;
+    const takes = a.exactThreats ? captures?.get(a.id) ?? new Set() : null;
+    const now = takes ?? ready?.get(a.id) ?? null;
     let best = 0, bestId = null, bestDmg = 0;
     for (const d of defenders) {
       if (!d.point) continue;
@@ -107,7 +113,7 @@ function pressure(attackers, defenders, metric, sc, k, ready = null) {
       if (now ? !now.has(d.id) : dist > reach + 1e-9) continue;
       const left = d.hp - (assigned.get(d.id) ?? 0);
       if (left <= 0) continue;
-      const dmg = Math.min(left, strikeDamage(a, d, k) * Math.max(1, a.rate));
+      const dmg = takes ? left : Math.min(left, strikeDamage(a, d, k) * Math.max(1, a.rate));
       const sure = now ? 1 : ready || !inCone(a, d) ? NOT_READY : dist <= a.range + 1e-9 ? 1 : MOVE_DISCOUNT;
       const v = (worthAt(d, left, sc) - worthAt(d, left - dmg, sc)) * sure;
       if (v > best) { best = v; bestId = d.id; bestDmg = dmg; }
@@ -141,7 +147,9 @@ function bookStrikes(mine, theirs, k) {
  * ctx: { ghosts: unitView[] of enemies remembered but not seen, damageScale,
  *        turn, aggression (default 1), objective: {x,y} to march on when no
  *        enemy position is known, ready: Map(my attacker id → Set(target ids))
- *        of the strikes the game allows me right now, when known }
+ *        of the strikes the game allows me right now, when known,
+ *        captures: Map(attacker id → Set(target ids)) of what every side's
+ *        exactThreats units threaten (game.threats) }
  */
 export function evaluateBattle(battle, me, ctx = {}) {
   const { metric, scale: sc, mode } = battle;
@@ -164,8 +172,8 @@ export function evaluateBattle(battle, me, ctx = {}) {
   const w = WEIGHTS[mode.play === 'simultaneous' || mode.time === 'continuous' ? 'simultaneous' : 'sequential'];
   // A unit in the middle of a strike can't start another before it lands.
   const free = (us) => us.filter(u => !u.striking);
-  const exposure = pressure(free(theirs), mine, metric, sc, k);
-  const threat = pressure(free(mine), theirs, metric, sc, k, ctx.ready ?? null);
+  const exposure = pressure(free(theirs), mine, metric, sc, k, null, ctx.captures ?? null);
+  const threat = pressure(free(mine), theirs, metric, sc, k, ctx.ready ?? null, ctx.captures ?? null);
 
   // Initiative: fighters close on the nearest known enemy (or the objective)
   // until it is in range — harder when ahead, and harder as the game drags on.

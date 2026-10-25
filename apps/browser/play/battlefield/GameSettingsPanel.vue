@@ -7,6 +7,7 @@
 // A panel (see PanelDesk): `close` asks the host to close it once applied.
 import { ref, computed } from 'vue';
 import GameSetupFields from '../GameSetupFields.vue';
+import { displayFlags } from '../display.js';
 
 const props = defineProps({
   liveState: { type: Object, default: null },
@@ -32,6 +33,12 @@ if (props.liveState) {
   };
   liveSession.value = { id: props.liveState.id, by: props.liveState.viewerId ?? null };
 }
+
+// How the game shows before the session's own `display`: the game's ui, what
+// this position adds, and the scenario's display (display.js).
+const displayBase = computed(() => ({
+  ...(props.gameDef?.ui ?? {}), ...(props.liveState?.grid?.ui ?? {}), ...displayFlags(props.liveState?.grid?.display),
+}));
 
 const body = computed(() => {
   const f = form.value;
@@ -77,6 +84,7 @@ async function apply() {
     <div class="gso-sub">Changes apply to the game in progress, and everyone in it is told what changed.</div>
     <div class="gso-body">
       <GameSetupFields :game="gameDef" :initial="initial" :live-session="liveSession"
+                       :display-base="displayBase"
                        @update:config="form = $event"/>
     </div>
     <div class="gso-foot">

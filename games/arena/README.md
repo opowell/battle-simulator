@@ -110,6 +110,7 @@ reference specs, none with names or art from another game:
 | `hex` | a hex board with a two-level hill, facing with flank and rear arcs, bowmen with a 180° cone, horses that can't climb two levels; `hold` the summit for three turns |
 | `regions` | twelve territories, armies as counts (`stacking: 'count'`) that merge; `points` after 12 turns, two a turn for each city held |
 | `close-quarters` | a shape board: a building of walls, doors and windows, crates, rubble; vision cones, facing, and ammo that must be reloaded |
+| `pieces` | a board game: pieces that move by patterns (`moves`: a slider, a leaper, a step that takes only diagonally) and take by moving, a promotion, one piece a turn (`turn.units`), a warden under the check rule (mate wins, stalemate draws), file and rank labels, shown as a board game (`display`) |
 
 With the library loaded (the server does), four **mixed** scenarios put units of
 several games on library maps: a square (`mixed-two-rivers`, civ1's), a hex

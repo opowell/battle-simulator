@@ -58,6 +58,7 @@ import { judgeNow, judgeWindow, resultOf, keepsVerdict } from './victory.js';
 import { formula, whole } from './exact.js';
 import { callHook } from './world.js';
 import { mintForeign } from '../engine/foreignUnits.js';
+import { patternsOf, pieceTargets, legalPieceMoves, pieceAction, matchPieceMove, passingOf, occupancy, occAfter, inCheck, checkTag } from './patterns.js';
 
 /** Body radius in continuous space: two units stand at least 2R apart. */
 export const UNIT_R = 0.35;
@@ -311,6 +312,7 @@ function buildBoard(b, config) {
     ...(b.neighbours === 4 ? { neighbours: 4 } : {}),
     ...(b.sightLine ? { sightLine: b.sightLine } : {}),
     ...(b.visionMetric ? { visionMetric: b.visionMetric } : {}),
+    ...(b.labels ? { labels: b.labels } : {}),
   };
 }
 
@@ -401,23 +403,83 @@ function getLegalActions(state, playerId) {
   if (chargeOf(state)) return chargeActions(state, playerId);
   const contTime = isContinuousTime(state);
   const actions = [];
+  // A side that moves only so many units a turn (`turn.units`) has, once it has
+  // used them, only what those units still have left to do.
+  const done = actedThisTurn(state, playerId);
+  const limit = unitsPerTurn(state);
+  const occ = checkTag(state) ? occupancy(state) : null;
+  const checked = occ ? inCheck(state, playerId, occ) : false;
   for (const u of state.units) {
     if (!u.alive || u.ownerId !== playerId) continue;
-    if (contTime && u.task) continue;                       // busy: orders only when idle
-    for (const d of destinations(state, u)) {
-      actions.push({ type: 'move', unitId: u.id, from: { ...u.position }, to: d.to, ...(d.path.length > 2 ? { path: d.path } : {}) });
-    }
-    actions.push(...abilityActions(state, u));
-    if (u.facing != null && facingOf(state, u) && !blocked(state, u, 'move') && (contTime || !u.perTurn.faced)) {
-      for (const a of facingChoices(state, u)) if (contTime || turnCost(state, u, a) <= u.perTurn.moveLeft + EPS) actions.push({ type: 'face', unitId: u.id, facing: a });
-    }
-    if (contTime) {
-      for (const duration of [0.25, 1]) actions.push(waitAction(u.id, duration));
-    }
+    if (limit && done.length >= limit && !done.includes(u.id)) continue;
+    actions.push(...unitActions(state, u, occ, checked));
   }
   // Discrete time: end your turn. Continuous time: let the clock run (pass).
-  actions.push({ type: 'end-turn', unitId: '__player__' });
+  // Under the check rule a side may not pass a turn it could move in: it has to
+  // play, and a side left with no move at all is mated or stalemated.
+  if (!occ || done.length || !actions.length) actions.push({ type: 'end-turn', unitId: '__player__' });
   return actions;
+}
+
+// What one unit may do now. Under the check rule (`occ` given) no move may leave
+// its side's royal units threatened, and while they are, it may do nothing else.
+function unitActions(state, u, occ = null, checked = false) {
+  const contTime = isContinuousTime(state);
+  if (contTime && u.task) return [];                       // busy: orders only when idle
+  const actions = [];
+  if (patternsOf(state, u)) {
+    if (u.perTurn.moveLeft > EPS && !blocked(state, u, 'move')) for (const t of legalPieceMoves(state, u, occ ?? undefined)) actions.push(pieceAction(u, t));
+    // A piece takes by moving: its other abilities are its own, but it never strikes.
+    actions.push(...abilityActions(state, u).filter(a => a.type !== 'attack' && !checked));
+    return actions;
+  }
+  for (const d of destinations(state, u)) {
+    if (occ && inCheck(state, u.ownerId, occAfter(occ, u, d.to))) continue;
+    actions.push({ type: 'move', unitId: u.id, from: { ...u.position }, to: d.to, ...(d.path.length > 2 ? { path: d.path } : {}) });
+  }
+  if (checked) return actions;
+  actions.push(...abilityActions(state, u));
+  if (u.facing != null && facingOf(state, u) && !blocked(state, u, 'move') && (contTime || !u.perTurn.faced)) {
+    for (const a of facingChoices(state, u)) if (contTime || turnCost(state, u, a) <= u.perTurn.moveLeft + EPS) actions.push({ type: 'face', unitId: u.id, facing: a });
+  }
+  if (contTime) {
+    for (const duration of [0.25, 1]) actions.push(waitAction(u.id, duration));
+  }
+  return actions;
+}
+
+// ── Units a turn ─────────────────────────────────────────────────────────────
+// `turn: { units: n }` (or the session's `unitsPerTurn`, which overrides it; 0
+// for no limit): a side moves n of its units a turn, and its turn ends by itself
+// once they have nothing left to do. Discrete time, sides in turn (not the
+// charge order, and not we-go, whose orders resolve together).
+
+/** How many units a side may use a turn, or null for every one. */
+export function unitsPerTurn(state) {
+  if (isContinuousTime(state) || chargeOf(state) || st(state).play === 'simultaneous') return null;
+  const n = state.gameSpecific.unitsPerTurn ?? rulesOf(state).spec.turn?.units ?? null;
+  return n > 0 ? n : null;
+}
+
+// The units `pid` has used this turn, while it is on move.
+const actedThisTurn = (state, pid) => (state.gameSpecific.acted?.by === pid ? state.gameSpecific.acted.ids : []);
+
+// Kept only where something reads it: a units limit, or the check rule (which
+// lets a side pass once it has played).
+const tracksActed = (state) => !isContinuousTime(state) && !chargeOf(state) && (unitsPerTurn(state) != null || checkTag(state) != null);
+
+// `u` has acted: note it, and end its side's turn if that was all it had.
+function acted(state, playerId, unitId) {
+  if (!tracksActed(state) || getResult(state)) return state;
+  const ids = actedThisTurn(state, playerId);
+  const next = ids.includes(unitId) ? state : { ...state, gameSpecific: { ...state.gameSpecific, acted: { by: playerId, ids: [...ids, unitId] } } };
+  const limit = unitsPerTurn(next);
+  const done = actedThisTurn(next, playerId);
+  if (limit && done.length >= limit) {
+    const left = done.some(id => { const x = next.units.find(o => o.id === id); return x?.alive && unitActions(next, x).length; });
+    if (!left) return endTurn(next, playerId);
+  }
+  return next;
 }
 
 // The charge order: the active unit's move (or taking it back), its acts and the
@@ -563,9 +625,38 @@ function resolveUse(state, casterId, ab, target, point, before = state) {
 // Discrete time ─────────────────────────────────────────────────────────────
 
 function applyDiscrete(state, playerId, action) {
+  const before = state;
+  const next = applyDiscreteAction(state, playerId, action);
+  if (next === before || action.type === 'end-turn' || !['move', 'attack', 'ability', 'face'].includes(action.type)) return next;
+  return acted(next, playerId, action.unitId);
+}
+
+// A piece's move (patterns.js): onto its square, taking whatever stood there (or
+// slid past it), its partner alongside when it castles, promoted at the far edge.
+// A move is all a piece does in a turn.
+function movePiece(state, u, action) {
+  const t = matchPieceMove(state, u, action);
+  if (!t || !(u.perTurn.moveLeft > EPS)) return state;
+  let units = state.units;
+  if (t.captured) units = units.map(x => (x.id === t.captured.id ? { ...x, hp: 0, alive: false, task: null } : x));
+  if (t.castle) units = units.map(x => (x.id === t.castle.unit.id ? { ...x, position: { ...t.castle.to }, moved: true } : x));
+  let moved = { ...u, position: { x: t.to.x, y: t.to.y }, moved: true, perTurn: { ...u.perTurn, moveLeft: 0, attacksLeft: 0 } };
+  if (u.facing != null) moved.facing = facingAfter(state, u, t.path);
+  if (t.promote) {
+    const fresh = makeUnit(state, { id: u.id, ownerId: u.ownerId, type: t.promote, position: moved.position, facing: moved.facing });
+    moved = { ...fresh, moved: true, perTurn: { ...freshPerTurn(state, fresh), moveLeft: 0, attacksLeft: 0 } };
+  }
+  units = units.map(x => (x.id === u.id ? moved : x));
+  const passing = passingOf(state, u, t);
+  const { passing: _p, ...gs } = state.gameSpecific;
+  return withUnits({ ...state, gameSpecific: passing ? { ...gs, passing } : gs }, units);
+}
+
+function applyDiscreteAction(state, playerId, action) {
   const u = state.units.find(x => x.id === action.unitId);
   if (action.type === 'end-turn') return chargeOf(state) ? endActivation(state, action) : endTurn(state, playerId);
   if (!u?.alive) return state;
+  if (action.type === 'move' && patternsOf(state, u)) return movePiece(state, u, action);
   if (action.type === 'undo-move') {
     if (!u.movedFrom || !(u.perTurn.attacksLeft > 0)) return state;
     const { movedFrom, ...rest } = u;
@@ -603,7 +694,8 @@ function applyDiscrete(state, playerId, action) {
 // whether the seats took turns (sequential) or planned together (we-go), and
 // whatever order the we-go resolver plays their end-turns in.
 function endTurn(state, playerId) {
-  const gs = state.gameSpecific;
+  // What the side used this turn is spent with it.
+  const { acted: _a, ...gs } = state.gameSpecific;
   const ended = gs.ended.includes(playerId) ? gs.ended : [...gs.ended, playerId];
   const ids = seatIds(state);
   const standing = ids.filter(id => (gs.alive[id] ?? 0) > 0);
@@ -1037,10 +1129,29 @@ function applyActions(state, playerActions, rng = Math.random) {
     dice.thrown = was.thrown;
   }
   next = keepsVerdict(next) ? judgeNow(next) : next;
+  if (checkTag(next) && !isContinuousTime(next)) next = judgeMate(next);
   if (next.gameSpecific.fogOfWar && next.gameSpecific.fogMemory) next = remember(next);
   if (isContinuousTime(next) && getResult(next) && next.activePlayers.length) next = { ...next, activePlayers: [] };
   const lastActions = playerActions.map((pa, i) => (thrown[i]?.length ? { ...pa, action: { ...pa.action, ...shown(thrown[i]) } } : pa));
   return { ...next, lastActions };
+}
+
+// The check rule's end: the side on move, before it has played, with no move at
+// all. Threatened, it is mated — the last side standing beside it wins, or with
+// more sides left it is out and leaves the field; not threatened, the game is
+// drawn (stalemate).
+function judgeMate(state) {
+  if (getResult(state) || chargeOf(state)) return state;
+  const pid = state.activePlayers[0];
+  if (pid == null || actedThisTurn(state, pid).length) return state;
+  if (getLegalActions(state, pid).some(a => a.type !== 'end-turn')) return state;
+  const gs = state.gameSpecific;
+  if (!inCheck(state, pid)) return { ...state, gameSpecific: { ...gs, verdict: { outcome: 'draw', winnerId: null, reason: 'stalemate' } } };
+  const others = seatIds(state).filter(id => id !== pid && (gs.alive[id] ?? 0) > 0 && !(gs.out ?? []).includes(id));
+  if (others.length === 1) return { ...state, gameSpecific: { ...gs, verdict: { outcome: 'win', winnerId: others[0], reason: 'checkmate' } } };
+  const out = withUnits({ ...state, gameSpecific: { ...gs, out: [...(gs.out ?? []), pid] } },
+    state.units.map(u => (u.alive && u.ownerId === pid ? { ...u, hp: 0, alive: false, task: null } : u)));
+  return judgeMate(endTurn(out, pid));
 }
 
 const shown = (hits) => {
@@ -1093,6 +1204,12 @@ function getVisibleState(state, playerId) {
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
+// How a unit looks to its side: its type's `art` for its seat (a piece of each
+// colour), else the type's own picture.
+const lookOf = (state, u) => {
+  const t = typeOf(state, u);
+  return t.art?.[Math.max(0, seatIds(state).indexOf(u.ownerId)) % t.art.length] ?? { imagePath: t.imagePath };
+};
 const glyphOf = (state, u) => rulesOf(state).types[u.type]?.glyph ?? (u.type?.[0] ?? '?').toUpperCase();
 const nameOf = (state, u) => rulesOf(state).types[u.type]?.name ?? u.type;
 
@@ -1161,8 +1278,9 @@ function toGrid(state) {
       x: u.position.x, y: u.position.y,
       owner: pidIdx[u.ownerId] ?? 0,
       hp: u.hp, maxHp: u.maxHp,
-      glyph: glyphOf(state, u),
-      unitName: `${nameOf(state, u)} (atk ${stat(state, u, 'attack')} def ${stat(state, u, 'defense')} rng ${stat(state, u, 'range')} spd ${stat(state, u, 'speed')})`,
+      glyph: lookOf(state, u).glyph ?? glyphOf(state, u),
+      // A piece is what it is: its numbers say nothing about how it moves.
+      unitName: patternsOf(state, u) ? nameOf(state, u) : `${nameOf(state, u)} (atk ${stat(state, u, 'attack')} def ${stat(state, u, 'defense')} rng ${stat(state, u, 'range')} spd ${stat(state, u, 'speed')})`,
       type: u.type,
       moveRange: contTime ? (u.task ? 0 : stat(state, u, 'speed')) : (u.perTurn?.moveLeft ?? 0),
       radius: s.space === 'continuous' ? UNIT_R : undefined,
@@ -1170,7 +1288,7 @@ function toGrid(state) {
       queue: contTime && u.task?.type === 'move' ? [{ x: u.task.to.x, y: u.task.to.y }] : undefined,
       statusEffects: statusOf(state, u, clock),
       ...(f ? { facing: (u.facing * Math.PI) / 180, ...(f.fov < 360 ? { fov: f.fov } : {}), visionRange: stat(state, u, 'vision') } : {}),
-      ...(typeOf(state, u).imagePath ? { imagePath: typeOf(state, u).imagePath } : {}),
+      ...(lookOf(state, u).imagePath ? { imagePath: lookOf(state, u).imagePath } : {}),
     };
   };
   const ui = {
@@ -1202,10 +1320,15 @@ function toGrid(state) {
     locationType: 'continuous',
     cells, units: [...live(state).map(unitOut), ...ghosts(state, pidIdx)],
     ...(contTime ? { clock } : {}),
+    ...(board.labels?.x ? { xLabels: board.labels.x } : {}),
+    ...(board.labels?.y ? { yLabels: board.labels.y } : {}),
     los: { blocked: B.topology === 'shapes'
       ? B.cells().filter(c => B.terrainAt(c.x, c.y)?.blocksSight).map(c => `${c.x},${c.y}`)
       : Object.entries(board.terrain).filter(([, k]) => terr[k]?.blocksSight).map(([key]) => key) },
     ui,
+    // How the scenario wants to be shown (its `display`: a preset and flags), which
+    // the client lays over the game's ui and a session's own choice lays over that.
+    ...(rulesOf(state).spec.display ? { display: rulesOf(state).spec.display } : {}),
   };
   if (B.topology === 'shapes') {
     grid.shapes = [
@@ -1414,6 +1537,8 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
         spacetime: space,
         fogOfWar,
         ...(fogMemory ? { fogMemory: true } : {}),
+        // The session's own units-a-turn, over the spec's `turn.units` (0: no limit).
+        ...(config.unitsPerTurn != null && config.unitsPerTurn !== '' ? { unitsPerTurn: Math.max(0, Math.floor(Number(config.unitsPerTurn)) || 0) } : {}),
         ended: [],
         rt: space.time === 'continuous' ? { clock: 0, passed: [], initiative: 0, idleTicks: 0, standoff: false } : null,
       },
@@ -1439,6 +1564,8 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
     { id: 'time', label: 'Time', description: 'Discrete (turns of move/act budgets) or continuous (one clock; orders take time)', type: 'select', default: 'discrete',
       options: [{ value: 'discrete', label: 'Discrete (turns)' }, { value: 'continuous', label: 'Continuous (clock)' }] },
     // Sequential vs simultaneous is the engine's Simultaneous Turns switch.
+    { id: 'unitsPerTurn', label: 'Units per turn', description: 'How many of its units a side may use in a turn (discrete time); its turn ends by itself once they are done. The scenario says, unless this does.', type: 'select', default: '',
+      options: [{ value: '', label: "Scenario's own" }, { value: '0', label: 'Every unit' }, { value: '1', label: 'One' }, { value: '2', label: 'Two' }, { value: '3', label: 'Three' }] },
   ];
 
   const game = {
@@ -1491,6 +1618,20 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
       if (f) { out.facing = u.facing; if (f.arcs) out.arcs = f.arcs; if (f.fov < 360) out.fov = f.fov; }
       const bonus = unitWorthBonus(state, u);
       if (bonus) out.worthBonus = bonus;
+      if (patternsOf(state, u)) out.exactThreats = true;
+      return out;
+    },
+    // What every piece could take on its next move, whatever is left of this turn
+    // (attacker id → Set of target ids): the generic AI's exact threats for units
+    // that take by moving (patterns.js), where speed and range say nothing.
+    threats(state) {
+      const occ = occupancy(state);
+      const out = new Map();
+      for (const u of state.units) {
+        if (!u.alive || !patternsOf(state, u)) continue;
+        const ids = pieceTargets(state, u, occ).filter(t => t.captured).map(t => t.captured.id);
+        if (ids.length) out.set(u.id, new Set(ids));
+      }
       return out;
     },
     // The point a unit stands on, for the generic AI's distances: its cell on a
@@ -1515,8 +1656,10 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
     // sets: the units (where, how hurt, what they're doing, what's left of their
     // turn) and, on a clock, the time and who has passed. `board` is only terrain.
     identityOf: (state) => ({
-      units: state.units.map(u => [u.id, u.alive, u.hp, u.position, u.perTurn, u.task, ...(u.facing != null || u.pools || u.statuses ? [u.facing ?? null, u.pools ?? null, u.statuses ?? null] : [])]),
+      units: state.units.map(u => [u.id, u.alive, u.hp, u.position, u.perTurn, u.task, ...(u.facing != null || u.pools || u.statuses ? [u.facing ?? null, u.pools ?? null, u.statuses ?? null] : []), ...(u.moved ? [u.type, true] : [])]),
       ended: state.gameSpecific.ended,
+      ...(state.gameSpecific.passing ? { passing: state.gameSpecific.passing } : {}),
+      ...(state.gameSpecific.acted ? { acted: state.gameSpecific.acted } : {}),
       rt: state.gameSpecific.rt ? { clock: state.gameSpecific.rt.clock, passed: state.gameSpecific.rt.passed } : null,
     }),
 

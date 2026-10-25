@@ -4,6 +4,7 @@
 // the session's `changes` (Session.reconfigure records one per change), named
 // from the game's own option labels, so it is the same for every game.
 import { ref, watch, onBeforeUnmount } from 'vue';
+import { displayText } from '../display.js';
 
 const props = defineProps({
   liveState: { type: Object, default: null },
@@ -22,6 +23,7 @@ const agentName = (id) => (id === 'human' ? 'a human'
 
 function valueText(key, v) {
   const opt = optionOf(key);
+  if (opt?.type === 'display') return displayText(v);
   if (v === null || v === undefined || v === '') return key === 'maxTurns' ? 'no limit' : 'default';
   if (typeof v === 'boolean') return v ? 'on' : 'off';
   const choice = opt?.options?.find(o => o.value === v);

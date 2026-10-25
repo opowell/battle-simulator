@@ -1,0 +1,42 @@
+{
+  "id": "pieces",
+  "name": "Pieces (board game)",
+  "description": "Six by six, one piece a turn. Each piece moves by its pattern and takes by moving onto an enemy, and nothing has hit points. A warden may never be left where it could be taken: trap the other side's and you win, leave it no move without trapping it and the game is drawn.",
+  "board": {
+    "topology": "square", "width": 6, "height": 6,
+    "rows": ["......", "......", "..#...", "...#..", "......", "......"],
+    "stacking": "one",
+    "labels": { "x": ["a", "b", "c", "d", "e", "f"], "y": ["6", "5", "4", "3", "2", "1"] }
+  },
+  "unitTypes": {
+    "warden": { "name": "Warden", "glyph": "W", "hp": 1, "attack": 4, "defense": 4, "range": 1, "speed": 1, "rate": 1, "vision": 2, "tags": ["royal"],
+      "moves": [{ "steps": [[0, 1], [1, 1]] }] },
+    "lancer": { "name": "Lancer", "glyph": "L", "hp": 1, "attack": 5, "defense": 5, "range": 1, "speed": 3, "rate": 1, "vision": 6,
+      "moves": [{ "steps": [[0, 1]], "slides": true }] },
+    "rider": { "name": "Rider", "glyph": "R", "hp": 1, "attack": 3, "defense": 3, "range": 1, "speed": 2, "rate": 1, "vision": 3,
+      "moves": [{ "steps": [[1, 2]] }] },
+    "skirmisher": { "name": "Skirmisher", "glyph": "S", "hp": 1, "attack": 3, "defense": 3, "range": 1, "speed": 2, "rate": 1, "vision": 3,
+      "moves": [{ "steps": [[1, 1]], "slides": true, "range": 2 }] },
+    "footman": { "name": "Footman", "glyph": "F", "hp": 1, "attack": 1, "defense": 1, "range": 1, "speed": 1, "rate": 1, "vision": 2,
+      "moves": [
+        { "steps": [[0, 1]], "symmetric": false, "capture": false },
+        { "steps": [[1, 1]], "symmetric": "mirror", "capture": "only" }
+      ],
+      "promote": { "to": ["lancer", "rider"] } }
+  },
+  "units": [
+    { "type": "lancer", "seat": 0, "at": [0, 5] }, { "type": "rider", "seat": 0, "at": [1, 5] }, { "type": "warden", "seat": 0, "at": [2, 5] },
+    { "type": "skirmisher", "seat": 0, "at": [3, 5] }, { "type": "rider", "seat": 0, "at": [4, 5] }, { "type": "lancer", "seat": 0, "at": [5, 5] },
+    { "type": "footman", "seat": 0, "at": [0, 4] }, { "type": "footman", "seat": 0, "at": [1, 4] }, { "type": "footman", "seat": 0, "at": [2, 4] },
+    { "type": "footman", "seat": 0, "at": [3, 4] }, { "type": "footman", "seat": 0, "at": [4, 4] }, { "type": "footman", "seat": 0, "at": [5, 4] },
+    { "type": "lancer", "seat": 1, "at": [0, 0] }, { "type": "rider", "seat": 1, "at": [1, 0] }, { "type": "skirmisher", "seat": 1, "at": [2, 0] },
+    { "type": "warden", "seat": 1, "at": [3, 0] }, { "type": "rider", "seat": 1, "at": [4, 0] }, { "type": "lancer", "seat": 1, "at": [5, 0] },
+    { "type": "footman", "seat": 1, "at": [0, 1] }, { "type": "footman", "seat": 1, "at": [1, 1] }, { "type": "footman", "seat": 1, "at": [2, 1] },
+    { "type": "footman", "seat": 1, "at": [3, 1] }, { "type": "footman", "seat": 1, "at": [4, 1] }, { "type": "footman", "seat": 1, "at": [5, 1] }
+  ],
+  "forward": ["up", "down"],
+  "turn": { "units": 1 },
+  "victory": [{ "type": "royal", "tag": "royal", "check": true }],
+  "display": { "preset": "board" },
+  "modes": { "space": "discrete", "time": "discrete", "play": "sequential" }
+}

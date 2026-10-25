@@ -44,6 +44,7 @@ scenarios replay exactly as they did before BattleGame existed.
 | [exact.js](exact.js) | formulas, evaluated in exact rationals |
 | [library.js](library.js) | the library's maps as specs |
 | [strike.js](strike.js) | one blow from rules that are data, for a game whose combat alone is the core's |
+| [patterns.js](patterns.js) | pieces: move patterns, taking by moving, promotion, castling, the check rule |
 
 Every axis of the plan is covered in every combination its board allows: space
 (discrete cells, or exact points on square and shape boards), time (turns, or
@@ -67,10 +68,14 @@ with the base table, and every other key replaces the base's.
   unitTypes:  { mage: { hp, attack, defense, range, speed, rate, vision, domain,
                         facing: { fov, arcs, turnCost }, attrs, pools, tags, resist,
                         abilities: ['fira'], strike: false | { …attack overrides },
-                        jump, count, points, glyph, name, imagePath } },
+                        jump, count, points, glyph, name, imagePath,
+                        art: [{ imagePath, glyph }, …],   // a look a seat
+                        moves: [{ steps, slides, … }], promote, castle } },  // a piece
   strike:     { …attack overrides },     // every type's attack, unless it has its own
   turn:       { actionPoints: 2, move: 1 }   // action points instead of move + rate budgets
             | { order: 'charge', charge: 100, initiative: 'spd' | { fn } },  // a unit at a time, by speed
+            | { units: 1 },                // a side moves this many units a turn
+  forward:    ['up', 'down'],               // the way each seat's pieces advance
   formulas:   { damage: 'expression' | { fn: 'name' } },
   board:      { topology, width, height, … },
   armies:     [['knight', 'mage'], …]    // per seat, along its edge
@@ -81,6 +86,7 @@ with the base table, and every other key replaces the base's.
   modes:      { space, time, play },     // where the setup form starts
   fog:        'off' | 'on' | 'remembered',
   map:        'civ1/two-rivers',         // play on a library map (its board, terrain, distances)
+  display:    { preset: 'board', showRoster: true },  // how the Browser shows it
 }
 ```
 
@@ -179,6 +185,51 @@ is `0.5 / rate` windows), when range, line and sight are checked again. Effects:
 `conceal`, and `fn`. Filters are a tag, `{ tag }`, `{ not }`, `{ any }`, `{ all }`
 or `{ type }`.
 
+### Pieces
+
+A unit type with `moves` is a board game's piece ([patterns.js](patterns.js)):
+it moves by patterns of steps instead of a budget of movement points, and
+takes an enemy by moving onto it instead of striking it.
+
+```js
+moves: [{ steps: [[0, 1], [1, 1]],   // [across, ahead], ahead being its side's `forward`
+          symmetric: true,          // every rotation and reflection (default) | 'mirror' | false
+          slides: false,            // repeat the step until something is in the way
+          range,                    // most repeats of a slide
+          capture: true,            // may end on an enemy | false: never | 'only'
+          unmoved: false,           // only while the piece has not moved yet
+          enPassant: false }],      // may take an enemy that just slid past this square
+promote: { to: ['queen', 'knight'] },  // what it may become on the far edge (the first on a plain click)
+castle:  { with: 'rook', steps: 2 },   // both unmoved, the squares between empty: moves
+                                       // `steps` toward it, and it lands on the square crossed
+```
+
+A piece's move is its whole turn; it never strikes. Patterns are how pieces
+play in discrete space and discrete time on squares; elsewhere they move by
+their speed and strike by their stats like any unit. Two patterns that reach
+one square are one move. `forward` names each seat's direction (`up`, `down`,
+`left`, `right`; by default each seat faces in from its edge).
+
+`turn: { units: n }` (or a session's `unitsPerTurn`, 0 for no limit): a side
+uses n of its units a turn, and its turn ends by itself once they have nothing
+left to do. A victory entry `{ type: 'royal', tag, check: true }` is the check
+rule: no move may leave one of a side's royal units where an enemy piece could
+take it, a side must move while it can, and a side left with no move has lost
+if one of its royals is threatened (checkmate) and drawn if not (stalemate).
+Only pieces threaten. `game.threats(state)` lists what every piece could take
+next, which the generic AI reads as exact, lethal threats.
+
+### How it is shown
+
+`display` is how the Browser shows a battle: a `preset` (`board`: no hit
+points, no unit plates, no roster or actions panel, the selected square tinted;
+`tactics`: all of them) and any option over it, as
+[apps/browser/play/display.js](../../apps/browser/play/display.js) defines
+them. A session's own `display` option (in setup and in play) lays over the
+spec's. `board.labels: { x: [...], y: [...] }` names the columns and rows (and
+the log writes a move square to square by them); a type's `art` gives each seat
+its own picture.
+
 ### Formulas
 
 The damage formula is an expression over `a.*` (the attacker's stats, numbers,
@@ -241,7 +292,7 @@ type's, and a library unit's member is that unit, whatever its chassis.
 ### Victory
 
 `eliminate` (always true in the end); `royal` (a side whose `tag` units are all
-dead is out); `hold` (alone on all of `cells` or `regions` for `windows` windows
+dead is out; with `check: true`, the check rule of [Pieces](#pieces)); `hold` (alone on all of `cells` or `regions` for `windows` windows
 running, optionally only `side`); `reach` (a unit of `side`, with `tag`, on one
 of them); `survive` (`side` standing after `windows`); `points` (after
 `windows`: a point each surviving unit, its type's `points`, plus `hold.per` a

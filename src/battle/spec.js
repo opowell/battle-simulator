@@ -16,7 +16,9 @@
 //                         vision, domain, facing: { fov, arcs, turnCost },
 //                         attrs, pools, tags, resist, abilities: [ids],
 //                         strike: false | { …overrides of the default attack },
-//                         jump, points, value } }
+//                         jump, points, value,
+//                         moves: [patterns], promote: { to }, castle: { with, steps },
+//                         art: [{ imagePath, glyph } a seat] } }      see patterns.js
 //   formulas    { damage: 'expression' | { fn } }                         see exact.js
 //   board       { topology: 'square' | 'hex' | 'regions' | 'shapes', width,
 //                 height, terrain: { 'x,y': id } | rows: ['..ff..'] + legend,
@@ -27,6 +29,9 @@
 //   victory     [{ type: 'eliminate' | 'royal' | 'hold' | 'reach' | 'survive' |
 //                  'points', … } | { fn }]                                 see victory.js
 //   orientation { fov, arcs, turnCost }  facing for every unit type that has none
+//   turn        { actionPoints, move } | { order: 'charge', … } | { units: n }
+//   forward     ['up' | 'down' | 'left' | 'right' a seat]  the way its pieces advance
+//   display     { preset, …flags }  how the Browser shows it (apps/browser/play/display.js)
 //   modes       { space, time, play }  the defaults the setup form starts at
 //   fog         'off' | 'on' | 'remembered'
 //
@@ -112,6 +117,7 @@ export function resolveSpec(spec = {}, base = BASE_SPEC) {
 const KINDS = new Set(['number', 'pool', 'tag', 'status']);
 const TARGETS = new Set(['enemy', 'ally', 'self', 'any', 'ground', 'fallen']);
 const EFFECTS = new Set(['damage', 'heal', 'modify', 'status', 'cleanse', 'move', 'spawn', 'transform', 'reveal', 'conceal', 'fn']);
+const FORWARDS = ['up', 'down', 'left', 'right'];
 const VICTORY = new Set(['eliminate', 'royal', 'hold', 'reach', 'survive', 'points']);
 
 /**
@@ -140,6 +146,7 @@ export function checkSpec(spec, hooks = {}) {
     for (const k of Object.keys(t.pools ?? {})) if (attrs[k]?.kind !== 'pool') errs.push(`unitTypes.${type}.pools.${k}: not a declared pool`);
     for (const k of Object.keys(t.attrs ?? {})) if (attrs[k]?.kind !== 'number') errs.push(`unitTypes.${type}.attrs.${k}: not a declared number`);
     if (t.strike && typeof t.strike === 'object') checkAbility(`unitTypes.${type}.strike`, t.strike, true);
+    checkPiece(`unitTypes.${type}`, t);
   }
   if (spec.strike && typeof spec.strike === 'object') checkAbility('strike', spec.strike, true);
   const turn = spec.turn;
@@ -152,9 +159,15 @@ export function checkSpec(spec, hooks = {}) {
         else if (!STAT_KEYS.includes(turn.initiative) && attrs[turn.initiative]?.kind !== 'number') errs.push(`turn.initiative: "${turn.initiative}" is not a stat or a declared number`);
       }
       if (turn.actionPoints != null) errs.push('turn: action points and the charge order don\'t mix');
-    } else if (!(Number.isInteger(turn.actionPoints) && turn.actionPoints > 0)) errs.push('turn.actionPoints: a whole number > 0');
+      if (turn.units != null) errs.push('turn: units a turn and the charge order don\'t mix');
+    } else if (turn.actionPoints != null || turn.units == null) {
+      if (!(Number.isInteger(turn.actionPoints) && turn.actionPoints > 0)) errs.push('turn.actionPoints: a whole number > 0');
+    }
+    if (turn.units != null && !(Number.isInteger(turn.units) && turn.units > 0)) errs.push('turn.units: a whole number > 0');
     if (turn.move != null && !(Number.isInteger(turn.move) && turn.move > 0)) errs.push('turn.move: a whole number > 0');
   }
+  for (const [i, f] of (spec.forward ?? []).entries()) if (!FORWARDS.includes(f)) errs.push(`forward[${i}]: "${f}" is not one of ${FORWARDS.join(', ')}`);
+  if (spec.display != null && (typeof spec.display !== 'object' || Array.isArray(spec.display))) errs.push('display: an object of display options');
   const dmg = spec.formulas?.damage;
   if (typeof dmg === 'string') { try { checkFormula(dmg); } catch (e) { errs.push(`formulas.damage: ${e.message}`); } } else fnOk('formulas.damage', dmg);
   const b = spec.board ?? {};
@@ -188,6 +201,24 @@ export function checkSpec(spec, hooks = {}) {
     if (ab.area?.shape != null && !['radius', 'line'].includes(ab.area.shape)) errs.push(`${where}.area.shape: "${ab.area.shape}" is not one of radius, line`);
     if (ab.aim != null && !['units', 'cells'].includes(ab.aim)) errs.push(`${where}.aim: "${ab.aim}" is not one of units, cells`);
     for (const e of ab.effects ?? []) checkEffect(`${where}.effects`, e);
+  }
+  // A piece's patterns (patterns.js), promotion and castling.
+  function checkPiece(where, t) {
+    if (t.moves != null) {
+      if (!Array.isArray(t.moves)) errs.push(`${where}.moves: a list of patterns`);
+      for (const [i, p] of (Array.isArray(t.moves) ? t.moves : []).entries()) {
+        const at = `${where}.moves[${i}]`;
+        if (!Array.isArray(p.steps) || !p.steps.length || !p.steps.every(v => Array.isArray(v) && v.length === 2 && v.every(Number.isInteger) && (v[0] || v[1]))) errs.push(`${at}.steps: a list of [across, ahead] whole-number steps, not [0, 0]`);
+        if (p.symmetric != null && ![true, false, 'mirror'].includes(p.symmetric)) errs.push(`${at}.symmetric: true, false or "mirror"`);
+        if (p.capture != null && ![true, false, 'only'].includes(p.capture)) errs.push(`${at}.capture: true, false or "only"`);
+        if (p.range != null && !(Number.isInteger(p.range) && p.range > 0)) errs.push(`${at}.range: a whole number > 0`);
+      }
+    }
+    for (const to of t.promote?.to ?? []) if (!types[to]) errs.push(`${where}.promote.to: no unit type "${to}"`);
+    if (t.promote && !t.promote.to?.length) errs.push(`${where}.promote.to: the types it may become`);
+    if (t.castle && !types[t.castle.with]) errs.push(`${where}.castle.with: no unit type "${t.castle.with}"`);
+    if (t.castle?.steps != null && !(Number.isInteger(t.castle.steps) && t.castle.steps >= 2)) errs.push(`${where}.castle.steps: a whole number ≥ 2`);
+    if (t.art != null && !(Array.isArray(t.art) && t.art.length && t.art.every(a => a && typeof a === 'object'))) errs.push(`${where}.art: a list of { imagePath, glyph }, one a seat`);
   }
   function checkEffect(where, e) {
     const kinds = Object.keys(e).filter(k => EFFECTS.has(k));

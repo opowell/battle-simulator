@@ -8,6 +8,7 @@ import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue';
 import Battlefield from './Battlefield.vue';
 import { nextScenarioRequest } from '../sessions.js';
 import { KEYS_LIVE, OVERLAY_TARGET } from './sessionScope.js';
+import { resolveDisplay } from './display.js';
 
 const props = defineProps({
   sessionId: { type: String, required: true },
@@ -1175,8 +1176,10 @@ function buildField(g, s) {
     los: g.los ?? null,
     units,
     // A game's toGrid may return a per-state `ui` override (e.g. hideGridLines for shape
-    // maps); it layers on top of the game's static ui.
-    ui:       { ...(apiGame?.ui ?? {}), ...(g.ui ?? {}) },
+    // maps); it layers on top of the game's static ui. Then how the scenario wants
+    // to be shown (`g.display`), then how this session does (its `display` option,
+    // changeable in play) — see display.js.
+    ui:       resolveDisplay({ ...(apiGame?.ui ?? {}), ...(g.ui ?? {}) }, g.display, s.params?.config?.display),
     xLabels:  g.xLabels ?? null,
     yLabels:  g.yLabels ?? null,
     // Authoritative fog visibility from the server (computed on the full board). When

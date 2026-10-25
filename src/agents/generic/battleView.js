@@ -111,6 +111,9 @@ export function unitView(game, state, u) {
     fov: finite(hook.fov) ? num(hook.fov) : 360,
     arcs: hook.arcs ?? null,
     worthBonus: finite(hook.worthBonus) ? num(hook.worthBonus) : 0,
+    // A piece that takes by moving onto its victim (chess's): what it threatens is
+    // exactly what the game's `threats` lists, never a guess from speed and range.
+    exactThreats: hook.exactThreats === true,
   };
 }
 

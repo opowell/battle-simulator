@@ -2,6 +2,8 @@
 import { ref, computed, watch } from 'vue';
 import AiDifficultyField from './AiDifficultyField.vue';
 import StartingUnitsField from './StartingUnitsField.vue';
+import DisplayField from './DisplayField.vue';
+import { DISPLAY_PRESETS, displayFlags } from './display.js';
 
 const props = defineProps({
   game:     { type: Object, default: null },
@@ -15,6 +17,9 @@ const props = defineProps({
   initial:     { type: Object, default: null },
   // { id, by } of that session — the units editor then edits its board.
   liveSession: { type: Object, default: null },
+  // That session's ui flags as the game and its scenario show it, before its own
+  // `display` — what the display switches read as while left alone.
+  displayBase: { type: Object, default: null },
 });
 // The whole form as one object, re-emitted on every change; the parent decides
 // what to do with it (start a session, open an analysis board, …).
@@ -109,6 +114,22 @@ watch([turnsLimited, maxTurns, gameOpts, slots, startingUnits, () => props.scena
 // the choice never runs out before the seats do (teamPalette generates them).
 const palette = computed(() => teamPalette.seatColors(props.game, props.game?.maxPlayers ?? 8));
 
+// The display switches read the game's ui and its scenario's display (setting
+// up), or the session's as it is shown (in play).
+const displayBase = computed(() => props.displayBase
+  ?? { ...(props.game?.ui ?? {}), ...displayFlags(props.game?.scenarios?.find(s => s.id === props.scenario)?.display) });
+
+// A kind of screen comes with the rules that go with it where the game has them
+// (a board game moves one piece a turn); back to the scenario's own, they go back
+// to their defaults too.
+function presetRules(id) {
+  for (const opt of props.game?.gameOptions ?? []) {
+    const rules = DISPLAY_PRESETS[id]?.rules;
+    if (rules && opt.id in rules) gameOpts.value[opt.id] = rules[opt.id];
+    else if (!id && Object.values(DISPLAY_PRESETS).some(p => opt.id in (p.rules ?? {}))) gameOpts.value[opt.id] = opt.default ?? '';
+  }
+}
+
 function addSlot() {
   const max = props.game?.maxPlayers ?? 8;
   if (slots.value.length >= max) return;
@@ -193,6 +214,8 @@ function cycleColor(i) {
           v-model:power="gameOpts[opt.id]"
           v-model:time="gameOpts[opt.timeKey ?? 'aiTimeMs']"
           v-model:mode="gameOpts[opt.id + 'Mode']"/>
+        <DisplayField v-else-if="opt.type === 'display'" :opt="opt" :base="displayBase"
+          v-model="gameOpts[opt.id]" @preset="presetRules"/>
       </template>
       <div class="field">
         <label>Turn limit</label>

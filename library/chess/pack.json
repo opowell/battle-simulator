@@ -1,20 +1,18 @@
 {
   "game": "chess",
   "from": {
-    "commit": "0d55e5974a73c891a672c5215aa113997087ee0d",
-    "date": "2026-10-25T06:03:23+01:00"
+    "commit": "86e9f412b874464a43068f591a047ede189fbe29",
+    "date": "2026-10-25T06:08:36+01:00"
   },
   "units": 6,
   "art": 12,
   "terrain": 2,
   "maps": 4,
   "omitted": [
-    "how each piece moves (the knight's jump, the bishop's diagonals, the pawn's single step forward and diagonal capture): a library piece moves and strikes by its move and range like any other unit",
-    "capture by moving onto a piece: the core strikes from a distance and the struck piece loses hit points",
-    "check, checkmate, stalemate and the king as the piece that decides the game: the core plays a chess map to elimination (a placement cannot carry the royal tag)",
-    "castling, en passant, promotion and the double first pawn step",
     "draws by repetition, the fifty-move rule and insufficient material",
+    "choosing what a pawn promotes to from the board: a click promotes to a queen, and the actions panel lists the rest",
     "Fog of War's per-square sight and its piece markers: the fog scenario is the standard board, and the core's own fog is a setup switch",
-    "the hit points, grinding contact and hop cooldowns of the clockwork, melee and sliding scenarios: their maps keep only their space and time"
+    "the hit points, grinding contact and hop cooldowns of the clockwork, melee and sliding scenarios: there the pieces move by speed and strike, one blow taking a piece",
+    "the game's own AIs (Stockfish, Obscuro): the core plays a chess map with its generic AI"
   ]
 }

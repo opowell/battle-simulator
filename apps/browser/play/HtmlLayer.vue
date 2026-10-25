@@ -766,7 +766,7 @@ function handleUnitClick(e, u) {
           :unit="u" :r="unitR(u)" :rdr="rdr" :shape="unitShape(u)"
           :tween="unitTween(u)"
           :showHp="showHpBars"
-          :recolor="field.ui?.recolorTeamSprites"
+          :recolor="field.ui?.recolorTeamSprites" :plate="field.ui?.unitPlates !== false"
           :active="u.id === highlightUnitId && !field.ui?.blinkActiveUnit"
           :selected="u.id === selectedId && !field.ui?.highlightSelectedSquare"
           :hovered="u.id === hoveredId"
@@ -794,7 +794,7 @@ function handleUnitClick(e, u) {
         </div>
         <div class="hl-abs-token">
           <HtmlUnit :unit="a.u" :r="a.r" :rdr="rdr" :shape="unitShape(a.u)"
-            :showHp="showHpBars" :recolor="field.ui?.recolorTeamSprites"
+            :showHp="showHpBars" :recolor="field.ui?.recolorTeamSprites" :plate="field.ui?.unitPlates !== false"
             :active="a.u.id === highlightUnitId && !field.ui?.blinkActiveUnit"
             :selected="a.u.id === selectedId"
             :hovered="a.u.id === hoveredId"
@@ -824,7 +824,7 @@ function handleUnitClick(e, u) {
          :style="{ left: dragPos.x+'px', top: dragPos.y+'px' }">
       <HtmlUnit :unit="dragUnit" :r="unitR(dragUnit)" :rdr="rdr" :shape="unitShape(dragUnit)"
         :showHp="false"
-        :recolor="field.ui?.recolorTeamSprites"/>
+        :recolor="field.ui?.recolorTeamSprites" :plate="field.ui?.unitPlates !== false"/>
     </div>
 
     <!-- Grid lines -->

@@ -33,7 +33,8 @@ const byId = (list) => Object.fromEntries(list.map(s => [s.id, s]));
 export const SPECS = byId(all.filter(s => !s.map));
 export const MIXED_SPECS = byId(all.filter(s => s.map));
 
-const scenarioOf = (s) => ({ id: s.id, name: s.name ?? s.id, description: s.description ?? '', config: { spec: s.id, ...(s.modes ?? {}) } });
+// A spec's `display` rides along, so a setup form can show how it will look.
+const scenarioOf = (s) => ({ id: s.id, name: s.name ?? s.id, description: s.description ?? '', config: { spec: s.id, ...(s.modes ?? {}) }, ...(s.display ? { display: s.display } : {}) });
 
 /**
  * The scenarios of the specs a BattleGame holds now (its specBook, which the

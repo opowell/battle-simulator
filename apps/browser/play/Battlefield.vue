@@ -979,6 +979,8 @@ watch(() => props.liveState?.id, (id) => {
     showAiAnalysis.value = ui.value.showAiAnalysis !== false;
   }
 }, { immediate: true });
+// A session's display can change in play (display.js): the bars follow it.
+watch(() => ui.value.showHpBars, (on, was) => { if (on !== was) showHpBars.value = on ?? true; });
 
 // ── board renderer (HtmlLayer vs SchematicLayer/IsoLayer) ──────
 // There is no HTML-vs-SVG choice: the HTML renderer is used wherever it can fully draw
@@ -1293,6 +1295,13 @@ const overviewPlayerId = computed(() => {
 // for whichever side forkPlayMove would move next, so a suggested/forked line
 // can be played out on the board the same way a live turn is.
 const canMove = computed(() => isPending.value || (canExplore.value && (forking.value || !atLatest.value)));
+// The end-turn action, when it is all this seat may do and no actions panel is
+// shown to offer it (ui.showActionsPanel off).
+const onlyEndLeft = computed(() => {
+  if (ui.value.showActionsPanel !== false || !isPending.value || !atLatest.value || forking.value) return null;
+  const acts = legalActions.value;
+  return acts.length && acts.every(a => a.type === 'end-turn') ? acts[0] : null;
+});
 
 // Chime when control passes to a human — i.e. isPending flips false→true (an AI or the
 // other player just finished). The watcher isn't `immediate`, so opening a game that's
@@ -1604,10 +1613,9 @@ const lastMoveSquares = computed(() => {
   }
   const action = lastEntry?.playerActions?.[0]?.action;
   if (!action) return [];
-  const squares = [];
-  if (action.gridFrom) squares.push(action.gridFrom);
-  if (action.gridTo)   squares.push(action.gridTo);
-  return squares;
+  // Its squares as the move arrows read them: the game's own gridFrom/gridTo, else
+  // an {x, y} cell at either end.
+  return [actionGridCoord(action, 'from'), actionGridCoord(action, 'to')].filter(Boolean);
 });
 
 const displayLog = computed(() => {
@@ -2815,7 +2823,10 @@ onUnmounted(() => {
           </button>
           <!-- A map that zooms has its orders (and minimap) in panels of their own,
                docked beside the board (GamePanels' hostPanels, below). -->
-          <ActionsPanel v-if="isLive && !ordersDocked" v-bind="ordersProps" v-on="ordersOn"/>
+          <ActionsPanel v-if="isLive && !ordersDocked && ui.showActionsPanel !== false" v-bind="ordersProps" v-on="ordersOn"/>
+          <!-- With no actions panel, a turn with nothing left in it but ending still
+               has to be ended somewhere (its rules changed mid-turn, say). -->
+          <button v-if="onlyEndLeft" class="action-btn bf-inspect-btn" @click="submitAction(onlyEndLeft)">End turn</button>
           <StandingsPanel v-if="standings && !hostPanels.includes('standings')" v-bind="standingsProps" titled/>
         </div>
       </div>
@@ -2935,6 +2946,7 @@ onUnmounted(() => {
         <GameLog v-if="isLive"
           :log="logForDisplay" :historyLength="histLength" :histPos="histPos"
           :units="displayUnits" :earlier-log="liveState?.earlierLog ?? []" :ui="ui"
+          :x-labels="field.xLabels" :y-labels="field.yLabels"
           @seek="seekTo"/>
 
         <AiAnalysisPanel v-if="isLive && showAiAnalysis && liveState?.aiAnalysis"
@@ -2976,7 +2988,7 @@ onUnmounted(() => {
     :orders-subtitle="liveState?.phase ?? ''"
     @menu="onMenu" @arm="placingUnit = $event">
     <template #orders>
-      <ActionsPanel v-if="isLive && ordersDocked" v-bind="ordersProps" v-on="ordersOn"/>
+      <ActionsPanel v-if="isLive && ordersDocked && ui.showActionsPanel !== false" v-bind="ordersProps" v-on="ordersOn"/>
     </template>
     <!-- Overview map + jump-to control, for the same games that get zoom/pan. -->
     <template #minimap>

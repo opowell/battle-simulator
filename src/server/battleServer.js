@@ -1613,6 +1613,15 @@ const ENGINE_OPTIONS = [
     type: 'integer',
     default: 0,
   },
+  // Read by the Browser alone (apps/browser/play/display.js), never by a game: so
+  // changing it in play changes how the game looks and nothing else.
+  {
+    id: 'display',
+    label: 'Display',
+    description: 'How the game is shown: a kind of screen (board game, tactics), and any of its options switched one by one. Left alone, the scenario\'s own.',
+    type: 'display',
+    default: null,
+  },
 ];
 
 async function handleGames(res) {

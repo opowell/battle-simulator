@@ -7,7 +7,9 @@
 //                                                 true in the end: a side with nothing
 //                                                 left is out, whatever else is listed)
 //   { type: 'royal', tag: 'royal' }               a side whose royal units are all
-//                                                 dead is out (chess's king, a VIP)
+//                                                 dead is out (chess's king, a VIP);
+//                                                 `check: true` adds the check rule
+//                                                 (patterns.js: mate and stalemate)
 //   { type: 'hold', cells: [[x, y]…] | regions: [id…], windows: 3, side }
 //                                                 a side (or only `side`, a seat
 //                                                 number) that alone stands on every

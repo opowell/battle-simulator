@@ -20,6 +20,9 @@ const props = defineProps({
   showLetter: { type: Boolean, default: true },
   showHp:     { type: Boolean, default: true },
   recolor:    { type: Boolean, default: false },
+  // Whether a unit from another game stands on its team's plate (ui.unitPlates;
+  // off, it is drawn as its own game draws it).
+  plate:      { type: Boolean, default: true },
   active:     Boolean,
   selected:   Boolean,
   hovered:    Boolean,
@@ -107,14 +110,14 @@ const stackOffset = computed(() => Math.max(1, Math.round(props.r * 2 / 16)) + '
     <div v-else class="hl-body"
          :class="[
            unit.imagePath ? 'hl-body--sprite' : 'hl-marker hl-marker--' + shape,
-           unit.imagePath && unit.origin ? 'hl-body--plate' : '',
+           unit.imagePath && unit.origin && plate ? 'hl-body--plate' : '',
            ringClass,
          ]"
          :style="{
            width: r*2+'px', height: r*2+'px',
            // A unit from another game stands on a plate of its team's colour: its
            // picture is its own game's, drawn with no idea which side it is on here.
-           ...(unit.imagePath && unit.origin ? { '--plate': unit.teamObj?.raw ?? '#888' } : {}),
+           ...(unit.imagePath && unit.origin && plate ? { '--plate': unit.teamObj?.raw ?? '#888' } : {}),
            ...(unit.imagePath ? {} : {
              background: shape === 'triangle' ? 'transparent' : (active ? unit.teamObj.raw : rdr.unitFill),
              borderColor: active ? 'white' : unit.teamObj.raw,
