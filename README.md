@@ -1,17 +1,41 @@
 # Battle Simulator
 
-A generic battle core in JavaScript (ESM): the engine, its own ruleset (Arena, driven by battle specs), generic AIs, an HTTP and WebSocket server, and the Browser to play in. Every game that used to live here is now a repo of its own built on this core (below). No install required; works offline or online.
+A generic battle core in JavaScript (ESM): the engine, its own ruleset
+(`BattleGame`, driven by battle specs), generic AIs, an HTTP and WebSocket
+server, and the Browser to play in. Run on its own it is a **battle sandbox**:
+write a battle as data, play it at once against the generic AI, and mix in units
+and maps from every game built on the core. Works offline or online.
 
-## Games
+A battle is defined along six axes, and the core plays every combination:
+
+| Axis | Values |
+|---|---|
+| **Units** | hit points, attack, defense, range, rate, speed, vision, facing, plus any attributes a battle declares (pools such as mana or ammo, tags, statuses) |
+| **Actions** | move, strike, and any ability a battle defines, from a small closed set of effects |
+| **Board** | discrete (square, hex or region cells) or continuous (exact points on a plane), with terrain that changes movement, cover and sight |
+| **Time** | discrete (turns) or continuous (one clock; actions take time) |
+| **Turns** | sequential or simultaneous |
+| **Fog of war** | off, on, or on with last-seen memory |
+
+## The sandbox
 
 | Key | Game | Docs |
 |---|---|---|
-| `arena` | The generic battle: terrain and units that are only numbers, in all eight (space × time × play) modes | [games/arena/](games/arena/README.md) |
+| `arena` | The core's own battles: Arena's skirmishes, a scenario per battle spec in [games/arena/specs/](games/arena/specs/), and every library map | [games/arena/](games/arena/README.md) |
 
-## Games in repos of their own
+A **battle spec** is JSON: unit types, terrain, board, abilities, attributes,
+objectives ([the format](src/battle/README.md)). Each one in
+`games/arena/specs/` is a scenario. The Browser's **Specs** edits them: a spec is
+checked as it is typed, saved only when it can be played, and played by the next
+session started, with no restart. **New spec…** starts one from a copy or from
+two small armies on open ground.
 
-Each plays on this core, vendored as `vendor/battle-simulator`, and keeps its
-units, terrain and maps in [the library](#library) here.
+## Games built on the core
+
+Every game that once lived here is a standalone app in a repo of its own, which
+vendors this one as `vendor/battle-simulator` and pins a release of it. Its
+units, terrain and maps stay here, in [the library](#library), for the sandbox
+to mix.
 
 | Key | Game | Repo |
 |---|---|---|
@@ -38,16 +62,18 @@ units, terrain and maps in [the library](#library) here.
 
 ## Quick start
 
-Requires Node.js ≥ 18. No install step — `node_modules` is committed.
-
-The Obscuro AI lives in its own repositories and is vendored here as git
-submodules — the generic search at `vendor/obscuro`, the fog-chess AI at
-`vendor/obscuro-chess` (which carries the search as a submodule of its own) — so
-clone with them:
+Requires Node.js ≥ 18. Two repositories are vendored as git submodules: the
+Obscuro search at `vendor/obscuro`
+([opowell/obscuro-ai](https://github.com/opowell/obscuro-ai)) and the UI
+framework at `vendor/appfr` ([opowell/appfr](https://github.com/opowell/appfr)).
+So clone with them, and install the one npm dependency (bignumber.js):
 
 ```sh
 git clone --recurse-submodules https://github.com/opowell/battle-simulator.git
+cd battle-simulator
 git config core.hooksPath .githooks    # keeps the submodules in sync from here on
+npm install
+node api-server.js                     # then open http://localhost:3000/
 
 # already cloned:
 git config core.hooksPath .githooks
@@ -57,9 +83,7 @@ git submodule update --init --recursive
 `core.hooksPath` points git at the tracked hooks in `.githooks/`, which re-run
 `git submodule update --init --recursive` after every merge, checkout and rebase.
 Without it a submodule silently stays empty the first time you pull a branch that
-adds one, and every Obscuro import fails with a confusing module-not-found.
-`--recursive` matters: it is what fills in `vendor/obscuro-chess/vendor/obscuro`,
-the search the chess AI actually runs on.
+adds one, and every import from it fails with a confusing module-not-found.
 
 ### What is where
 
@@ -73,10 +97,11 @@ The repo is a generic **core**; the games built on it are repos of their own
 | `apps/` | the Browser and the play UI, which know no game (`src/gate.test.js` holds them to it) |
 | `src/battle/` | the core's ruleset, `BattleGame`, driven by battle specs |
 | `library/` | every game's units, terrain and maps as data, which the core's own ruleset fields (see [Library](#library)) |
-| `games/arena/` | Arena: `BattleGame` with its specs and scenarios |
+| `games/arena/` | Arena: `BattleGame` with its specs (`specs/*.json`, one scenario each) |
 | `games/games.json` | the registry: which games this app serves (`games/registry.js` loads it) |
 | `api-server.js` | this app: the core's server with every game in the registry |
-| `scripts/extract-game.mjs`, `scripts/remove-game.mjs` | how a game left for a repo of its own |
+| `scripts/export-pack.mjs`, `scripts/export/` | how a game's repo writes its pack into the library |
+| `scripts/extract-game.mjs`, `scripts/remove-game.mjs` | how a game made here leaves for a repo of its own (every game so far has) |
 
 A game repo vendors this one as `vendor/battle-simulator` and imports the core as
 `#core/...` (its `package.json`'s subpath imports).
@@ -130,7 +155,7 @@ There is no lobby or authentication — the share link is the full credential. A
 
 ### Changing settings mid-game
 
-Every setting can be changed while a game is being played: the game's own options (fog of war, AI difficulty, chess's space and time models, a map), the engine's (simultaneous turns, observers, AI pacing, turn limit), who plays each seat, and the units on the board. Open the in-game menu (Esc) → **Game settings**. It is the setup form, opened on the game's current settings; only what you change is sent (`POST /sessions/:id/reconfigure`).
+Every setting can be changed while a game is being played: the game's own options (fog of war, AI difficulty, the space and time models, a map), the engine's (simultaneous turns, observers, AI pacing, turn limit), who plays each seat, and the units on the board. Open the in-game menu (Esc) → **Game settings**. It is the setup form, opened on the game's current settings; only what you change is sent (`POST /sessions/:id/reconfigure`).
 
 How each change lands is worked out generically, without game-specific code (`src/engine/reconfigure.js`):
 
@@ -154,10 +179,11 @@ one searchable place for every object the server knows about. It is built on
 | Object | What it is | What you can do |
 |---|---|---|
 | **Games** | the registry, `games/games.json` | edit player counts and sides, create, delete |
+| **Specs** | each BattleGame's battle specs (Arena's `games/arena/specs/`) | edit with a live check, play, copy, create, delete — no restart |
 | **Files** | each game's source under `games/<name>/` | edit and save (⌘S) |
 | **Sessions** | games being played right now | start one, play it in a tab, delete it |
 | **Recordings** | finished and interrupted games under `sessions/` | inspect seats, result and moves |
-| **Scenarios** | each game's `scenarios` | start a session from one |
+| **Scenarios** | each game's `scenarios` | start a session from one; edit its spec |
 | **Units** | each game's unit types, read from its opening position | browse, with the game's own art |
 | **Sides** | each game's default seats | browse; edit them on the game |
 | **Agents** | the built-in AIs and the ones a game adds | browse |
@@ -190,7 +216,8 @@ form has them, the button wears a `*` and its tooltip says so.
 The data comes from one endpoint, `GET /catalog` (`src/server/catalog.js`), which derives
 it all generically: units come from the same `setupPreview` the setup screen
 uses, so no game needs code for the Browser. Edits to a game's definition or
-source take effect when the server next starts.
+source take effect when the server next starts; a spec's take effect at once
+(`src/server/specEditor.js`).
 
 ## Library
 
@@ -331,30 +358,19 @@ It contains no game knowledge, so it lives in **its own repository** —
 here as a submodule at `vendor/obscuro`. `src/agents/ObscuroAgent.js` is a one-line
 re-export of it.
 
-The **fog-chess** specialisation on top of it — the Stockfish leaf evaluator, the
-exact belief tracker, the fitted move prior, chess's own difficulty dial — is a
-second repository,
-[github.com/opowell/obscuro-chess](https://github.com/opowell/obscuro-chess),
-vendored at `vendor/obscuro-chess` until phase 4 of the plan drops it: chess,
-which hands it its rules with `setGame`, is now
-[opowell/battle-chess](https://github.com/opowell/battle-chess), which vendors
-obscuro-chess itself.
-
 ```sh
 git submodule update --remote vendor/obscuro         # pull the latest upstream
 git add vendor/obscuro && git commit                 # pin the new commit
-git submodule update --remote vendor/obscuro-chess   # same, for the chess AI
-git add vendor/obscuro-chess && git commit
 ```
 
 A game opts into stronger play by implementing the optional hooks in
 [src/kit/types.js](src/kit/types.js) — `evaluateState` for leaf values,
 `getVisibleState` + `sampleWorlds` for real fog reasoning. Upstream's
 [docs/GAME-INTERFACE.md](vendor/obscuro/docs/GAME-INTERFACE.md) is the guide, and
-[docs/PARAMETERS.md](vendor/obscuro/docs/PARAMETERS.md) documents every knob; the
-fog-chess specialisation on top of it (Stockfish leaf eval, the exact belief
-tracker) has its own docs at
-[vendor/obscuro-chess/docs/PARAMETERS.md](vendor/obscuro-chess/docs/PARAMETERS.md).
+[docs/PARAMETERS.md](vendor/obscuro/docs/PARAMETERS.md) documents every knob. The
+fog-chess specialisation built on it (a Stockfish leaf evaluator, an exact belief
+tracker) is [opowell/obscuro-chess](https://github.com/opowell/obscuro-chess),
+which [battle-chess](https://github.com/opowell/battle-chess) vendors.
 
 ## HTTP API
 
@@ -558,7 +574,10 @@ export const MyGame = {
 ```
 
 To serve it, add a line to `games/games.json` (the module, its export and its
-seating; the game editor writes this file too) and restart the server. An app of
+seating; the Browser's **Games** writes this file too) and restart the server.
+A battle the spec format can describe needs no code at all: write it as a spec
+(see [The sandbox](#the-sandbox)), or make a `BattleGame` of your own
+([src/battle/README.md](src/battle/README.md)). An app of
 its own builds its server the same way `api-server.js` does:
 
 ```js
@@ -608,7 +627,18 @@ Always include an `end-turn` action when the player may pass.
 npm test
 ```
 
-Runs every game's tests (golden replays included) and the core's.
+Runs the core's tests and Arena's (golden replays included): `npm test -- core`
+or `npm test -- arena` for one half. Each game's tests are in its own repo, and
+run there against the core it pins.
+
+## Versions
+
+The core is released as tags (`v1.0.0`, …), and a game repo pins its
+`vendor/battle-simulator` to one. A minor release adds; a major one changes what
+a game repo builds on (`createBattleServer`, the `GameDefinition` contract in
+[src/kit/types.js](src/kit/types.js), the spec format, the `#core/*` paths). To
+move a game onto a newer core, check the tag out in its `vendor/battle-simulator`
+and run its tests and golden replays.
 
 ## Releases
 
@@ -622,7 +652,7 @@ Six archives land in `dist/`, one per combination of two independent choices:
 | --- | --- |
 | `standalone` | `node api-server.js` — the app serves itself |
 | `jas` | bundles the [JAS](../..) server; `./jas.sh`, then pick it from the Launchpad |
-| `source` | no server at all: `src/server/`, `api-server.js` and `settings.json` are removed. The engine, games, agents and UI sources, for use as a library or via `demo/*.js` |
+| `source` | no server at all: `src/server/`, `api-server.js` and `settings.json` are removed. The engine, Arena, the agents and the UI sources, for use as a library or via `demo/*.js` |
 
 | dependencies | |
 | --- | --- |
@@ -645,13 +675,13 @@ at that ref, minus the paths marked `export-ignore` in
 archive cannot know about them:
 
 - **The submodules.** `git archive` treats a submodule as a single tree entry
-  and leaves the directory empty, so `vendor/obscuro` and `vendor/obscuro-chess`
-  (and the checkout of the search nested inside the latter) are archived from
-  their own repositories at their pinned commits and unpacked into place. A
+  and leaves the directory empty, so `vendor/obscuro` and `vendor/appfr` are
+  archived from their own repositories at their pinned commits and unpacked
+  into place. A
   build fails loudly if a submodule is missing or is not at its pin — run
   `git submodule update --init --recursive`.
 - **`node_modules`**, from `package-lock.json`, for the `-with-deps` half. The
   build strips whatever a git archive supplied first, so the two halves really
-  do differ: JAS commits its dependencies on purpose, and this repo still tracks
-  a stray `node_modules/.package-lock.json`.
+  do differ (JAS, bundled into the `jas` flavour, commits its dependencies on
+  purpose).
 

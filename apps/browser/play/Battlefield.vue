@@ -449,7 +449,7 @@ function exitFork() { emit('exit-fork'); }
 // Position analysis and an opening book both assume the position IS a board and a
 // move is atomic — one side plays, the other answers. Neither holds in a game
 // played on a clock or in continuous space (chess's own other quadrants, see
-// games/chess/spacetime.js), where a piece can be halfway through a move and both
+// battle-chess's spacetime.js), where a piece can be halfway through a move and both
 // sides can be moving at once, so both panels stay shut there. Read off the axes
 // toGrid already stamps, so it holds for any game that grows such a mode.
 const atomicMoves = computed(() =>
@@ -1364,7 +1364,7 @@ function playLoseSound() {
 }
 
 // A game's sound effects as the board plays a turn (its sound plugin, e.g.
-// games/cs/ui/sound.js). Keyed on `log.length` growing — same trigger as the fieldHistory watcher above — so replay
+// battle-cs's ui/sound.js). Keyed on `log.length` growing — same trigger as the fieldHistory watcher above — so replay
 // scrubbing (which doesn't change log.length) never re-fires a shot that already
 // played live. Which sound an entry makes is the game's sound plugin's to say
 // (plugins.js's onEntry); this only times them.
@@ -2115,7 +2115,7 @@ function handleSqClick(col, row, x, y, mods) {
     // bare click on a selected unit's own square shouldn't also slide it.
     // `ui.gridDestinations` is the exception to that: a game whose UNITS live at
     // exact points but whose DESTINATIONS are still squares (chess in continuous
-    // space — see games/chess/spacetime.js). A free point is not a legal order
+    // space — see battle-chess's spacetime.js). A free point is not a legal order
     // there, so such a click has to be matched against the enumerated list like
     // any grid game's, even though the tokens are positioned continuously.
     if (props.field.locationType === 'continuous' && !ui.value.gridDestinations
@@ -2279,7 +2279,7 @@ function cityAt(x, y) {
   return (props.field.cities ?? []).find(c => c.x === x && c.y === y) ?? null;
 }
 
-// A city standing on the selected square (field.cities — see games/civ1/Civ1Game.js for
+// A city standing on the selected square (field.cities — see battle-civ1's Civ1Game.js for
 // the full per-city detail) means the selection is that CITY: the City Inspector overlay
 // takes over instead of the generic SelectedUnitDetail sidebar. It is the SQUARE that
 // decides, not the token on it, because a game may draw either one there — civ1 draws

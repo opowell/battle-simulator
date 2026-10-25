@@ -1,7 +1,7 @@
 # Learned leaf evaluation for non-chess games — plan
 
 Standalone working doc. Written 2026-07-17. Safe to read cold in a new session.
-Companion to `vendor/obscuro-chess/docs/FOG-AI-FIX-PLAN.md` (the chess/Obscuro history); this
+Companion to `obscuro-chess's docs/FOG-AI-FIX-PLAN.md` (the chess/Obscuro history); this
 executes the paper's closing suggestion (Zhang & Sandholm 2026, §5): *"merging
 our techniques with deep reinforcement learning to learn the evaluation
 function, instead of using a perfect-information-game evaluation function."*
@@ -12,7 +12,7 @@ The generic ObscuroAgent runs the full paper machinery (exact-ish belief, KLUSS
 gadget, one-sided GT-CFR, PCFR+, purification) for EVERY game, but only chess
 plugs a strong evaluator (Stockfish) into the leaves. The other ~15 games ride
 hand-written `evaluateState` heuristics (typically material-count one-liners,
-e.g. `games/tactical/TacticalGame.js:240`). The paper's ablation shows the
+e.g. the since-deleted tactical game's `TacticalGame.js:240`). The paper's ablation shows the
 evaluation function is a major strength lever (Obscuro beat simple-eval Obscuro
 81.9%) — a learned value function is the biggest remaining strength win for the
 non-chess games, and unlike chess there is no off-the-shelf engine to borrow.

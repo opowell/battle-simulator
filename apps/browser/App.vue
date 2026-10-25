@@ -335,6 +335,7 @@ const gameRows = computed(() => rows.value?.games ?? [])
 const scenarioRows = computed(() => rows.value?.scenarios ?? [])
 const unitRows = computed(() => rows.value?.units ?? [])
 const fileRows = computed(() => rows.value?.files ?? [])
+const specRows = computed(() => rows.value?.specs ?? [])
 </script>
 
 <template>
@@ -367,7 +368,7 @@ const fileRows = computed(() => rows.value?.files ?? [])
                heads the cards. -->
           <template #cards-before>
             <GameSummaryCards :games="gameRows" @open="openRow" @changed="refresh" />
-            <ScenarioSummaryCards :scenarios="scenarioRows" :files="fileRows" @open="openRow" @changed="refresh" />
+            <ScenarioSummaryCards :scenarios="scenarioRows" :files="fileRows" :specs="specRows" @open="openRow" @changed="refresh" />
             <UnitSummaryCards :units="unitRows" @open="openRow" />
           </template>
           <template #actions>
@@ -508,7 +509,7 @@ const fileRows = computed(() => rows.value?.files ?? [])
 /* Status words appfr's pill does not colour itself: the domain's own, mapped
    onto the same four tokens its ok / running / review / failed use. */
 .dc-pill[data-dc-status='active'] { background: var(--dc-accent-bg); color: var(--dc-accent); }
-.dc-pill[data-dc-status='done'], .dc-pill[data-dc-status='loaded'] { background: var(--dc-ok-bg); color: var(--dc-ok); }
+.dc-pill[data-dc-status='done'], .dc-pill[data-dc-status='loaded'], .dc-pill[data-dc-status='playable'] { background: var(--dc-ok-bg); color: var(--dc-ok); }
 .dc-pill[data-dc-status='interrupted'], .dc-pill[data-dc-status='closed'], .dc-pill[data-dc-status='restart'] { background: var(--dc-warn-bg); color: var(--dc-warn); }
 .dc-pill[data-dc-status='error'] { background: var(--dc-danger-bg); color: var(--dc-danger); }
 </style>

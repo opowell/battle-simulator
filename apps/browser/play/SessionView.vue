@@ -1058,7 +1058,7 @@ function buildField(g, s) {
       origin:        c.origin,
       // Layered composite sprite (body/hands/held weapon/team ring/equipment badges,
       // each independently offset+rotated) — see apps/browser/play/SchematicLayer.vue's
-      // generic renderer and e.g. games/surviv/SurvivGame.js's spriteLayers().
+      // generic renderer and e.g. battle-surviv's SurvivGame.js's spriteLayers().
       spriteLayers:  c.spriteLayers,
       // Token size multiplier (default 1 = the standard piece size both renderers pick
       // for the board). A game's toGrid may set it where one token stands for a bigger

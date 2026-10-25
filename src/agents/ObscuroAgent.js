@@ -16,8 +16,8 @@
 //   • how a game describes itself to it (sampleWorlds, evaluateState, …)
 //     → src/kit/types.js here, vendor/obscuro/src/types.js upstream
 //   • the fog-chess specialisation (Stockfish leaf eval, the exact belief
-//     tracker) → its own repo too, vendored at vendor/obscuro-chess; what stays
-//     in this one is games/chess/ChessGame.js, the engine's game definition
+//     tracker) → opowell/obscuro-chess, which battle-chess vendors; the core
+//     carries none of it
 // ---------------------------------------------------------------------------
 
 export { ObscuroAgent, compactAction } from '../../vendor/obscuro/src/ObscuroAgent.js';

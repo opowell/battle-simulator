@@ -178,6 +178,30 @@ export function buildSchema(catalog, { Art }) {
       facets: [byGame, toggle('fog', 'Fog of war', 'Only fog-of-war scenarios')],
     },
     {
+      // A battle spec: the data a BattleGame scenario is (src/battle/spec.js),
+      // edited here and played from the next session on.
+      key: 'specs',
+      label: 'Specs',
+      count: count(catalog.specs.length),
+      create: 'New spec…',
+      columns: [
+        ordinal,
+        identity('Spec'),
+        reference('Id', { mono: true, width: '150px' }),
+        gameColumn,
+        { key: 'board', label: 'Board', width: '150px', hideBelow: 760 },
+        metric('unitTypes', 'Unit types', { width: '96px', hideBelow: 620 }),
+        metric('abilities', 'Abilities', { width: '90px', hideBelow: 900 }),
+        { ...state, label: 'Check' },
+      ],
+      sorts: [{ key: 'name', label: 'name' }, { key: 'game', label: 'game' }, { key: 'unitTypes', label: 'unit types' }],
+      facets: [
+        byGame,
+        chips('topology', 'Board', distinct(catalog.specs.map((s) => s.board.split(' ')[0]))),
+        toggle('broken', 'Errors', 'Only specs that can\'t be played as they stand'),
+      ],
+    },
+    {
       key: 'units',
       label: 'Units',
       count: count(catalog.units.length),

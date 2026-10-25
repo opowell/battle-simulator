@@ -1,6 +1,6 @@
 // Tests for the generic player-level move queue (src/kit/planQueue.js), driven by a
 // toy game rather than chess, so what is being tested is the mechanic and not any
-// one game's move rules. (Chess's own wiring is games/chess/plan.test.js.)
+// one game's move rules. (Chess's own wiring is battle-chess's plan.test.js.)
 
 import { test } from 'node:test';
 import assert from 'node:assert';

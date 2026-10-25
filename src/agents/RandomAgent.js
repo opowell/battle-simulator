@@ -10,7 +10,7 @@
  * the hook ActionValidator falls back to when an action isn't a structural match
  * in `legalActions` (see src/engine/ActionValidator.js), and it's only defined on the
  * continuous-location games above. A discrete game can define getSearchActions
- * too (civ1 does, for its own AI-search pruning — see games/civ1/searchActions.js)
+ * too (civ1 does, for its own AI-search pruning — see battle-civ1's searchActions.js)
  * without its output being validator-compatible with the real getLegalActions —
  * picking from it there produced actions the validator rejected as illegal,
  * ending the game early.

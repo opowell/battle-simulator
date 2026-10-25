@@ -14,8 +14,17 @@ export const MyGame = makeBattleGame({
   specs: { siege: { … } },    // named specs: config.spec = 'siege'
   scenarios: [{ id: 'siege', name: 'Siege', config: { spec: 'siege' } }],
   hooks: { psionicStorm },    // the functions its specs may name with { fn }
+  specsDir,                   // optional: where its named specs are kept as files
 });
 ```
+
+With a `specsDir` (one `<id>.json` per named spec), its specs can be edited
+while the server runs: the Browser's **Specs** reads and writes them through
+`game.specBook` (`ids`, `get`, `check`, `put`, `drop`; the files are
+[src/server/specEditor.js](../server/specEditor.js)'s). A saved spec is played by
+the next session started; a running one keeps the rules it started with. A game
+whose scenarios should follow the edits lists them from `specBook` rather than
+from a fixed list, as Arena does.
 
 A session picks its spec with `config.spec`: an id, or a whole spec inline. The
 resolved spec travels in the state (`gameSpecific.rules`), so a saved or

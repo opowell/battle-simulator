@@ -126,13 +126,16 @@ function main() {
   }
   git(to, 'remote', 'remove', 'origin');
   const demos = readdirSync(path.join(ROOT, 'demo')).filter(f => f.startsWith(`${game}-`) || MORE_DEMOS[game]?.includes(f));
+  // Its capability checklist goes with it, where it has one (every game that
+  // left in phase 3 did; their checklists left with them).
+  const checklist = `plans/migration/${game}.md`;
+  const withChecklist = existsSync(path.join(ROOT, checklist)) ? ['--path', checklist, '--path-rename', `${checklist}:plans/capabilities.md`] : [];
   run(to, 'git-filter-repo', '--force', '--quiet',
     '--path', `games/${game}/`,
     ...demos.flatMap(f => ['--path', `demo/${f}`]),
-    '--path', `plans/migration/${game}.md`,
     '--path-rename', `games/${game}/:apps/${game}/games/${game}/`,
     '--path-rename', 'demo/:apps/' + game + '/demo/',
-    '--path-rename', `plans/migration/${game}.md:plans/capabilities.md`);
+    ...withChecklist);
   git(to, 'remote', 'add', 'origin', `https://github.com/opowell/battle-${game}.git`);
 
   // 2. The two submodules, from local clones, pointed at GitHub.
@@ -246,7 +249,6 @@ function scaffold({ game, title, port, entry, demos }) {
       imports: {
         '#core/*': './vendor/battle-simulator/src/*',
         '#obscuro/*': './vendor/battle-simulator/vendor/obscuro/src/*',
-        '#obscuro-chess/*': './vendor/battle-simulator/vendor/obscuro-chess/src/*',
         '#browser/*': './vendor/battle-simulator/apps/browser/*',
       },
       scripts: {

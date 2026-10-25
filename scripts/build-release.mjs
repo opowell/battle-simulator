@@ -12,9 +12,8 @@
 //
 // Contents come from `git archive`, so an archive holds exactly what is
 // committed at the chosen ref — plus the vendored submodules (the Obscuro
-// search and the fog-chess AI), which git archive does not descend into and
-// which are unpacked at their pinned commits afterwards. Never the Stockfish
-// evaluation cache: it does not ship, in any flavour.
+// search and appfr), which git archive does not descend into and which are
+// unpacked at their pinned commits afterwards.
 
 import { execFileSync } from 'child_process'
 import fs from 'fs'
@@ -96,9 +95,8 @@ const bytes = (file) => {
 
 // git archive stops at submodule boundaries: a submodule is one tree entry in
 // the parent, so the checkout comes out empty. Each one is therefore archived
-// from its own repository at the commit the parent pins, recursively — the
-// fog-chess AI carries its own checkout of the generic search, and nothing
-// chess imports resolves without it.
+// from its own repository at the commit the parent pins, recursively, so a
+// submodule that carries submodules of its own comes out whole.
 const extractSubmodules = (repoDir, ref, intoDir) => {
   let gitmodules
   try {

@@ -1261,12 +1261,12 @@ const fxR = computed(() => Math.max(6, props.fit.len(props.field.grid === 'squar
                 :stroke="u.id === highlightUnitId ? 'white' : u.teamObj.raw" stroke-width="2"/>
           <!-- Layered composite sprite: an ordered stack of independently offset/rotated images
                OR primitive shapes (body, hands, held weapon, ring, equipment badges — see a
-               game's toGrid, e.g. games/surviv/SurvivGame.js's spriteLayers()). Each layer's
+               game's toGrid, e.g. battle-surviv's SurvivGame.js's spriteLayers()). Each layer's
                dx/dy/rot are precomputed server-side (already rotated for facing), so this stays
                a dumb draw loop: any game can opt in by putting `spriteLayers` on a unit instead
                of `imagePath`. A layer with `shape: 'circle'|'rect'` draws a flat-color primitive
                (fill/stroke/strokeWidth, circle uses rFrac, rect reuses wFrac/hFrac/anchorX/anchorY)
-               instead of an `<image>` — see games/cs/CsGame.js's spriteLayers() for a
+               instead of an `<image>` — see battle-cs's CsGame.js's spriteLayers() for a
                surviv.io-style all-primitive unit (no sourced art at all). -->
           <template v-if="u.spriteLayers">
             <!-- u.hitRFrac (default 1) lets a game widen the clickable area past the body

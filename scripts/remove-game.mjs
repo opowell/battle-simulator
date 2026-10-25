@@ -6,8 +6,9 @@
 //   node scripts/remove-game.mjs <game> --repo <owner/name>
 //
 // Removes games/<game>/, its demos and benches, its registry entry and its npm
-// scripts; moves its row in README.md's games table to the table of games in
-// repos of their own; and records the repo in plans/migration/. Its pack stays in
+// scripts; moves its row in README.md's games table to the table of games built
+// on the core; and records the repo in plans/migration/, where it has a
+// checklist there. Its pack stays in
 // library/. Then it lists every other mention of the game, for a person to read:
 // most are comments, which may stay.
 import { execFileSync } from 'node:child_process';
@@ -51,30 +52,18 @@ edit('package.json', (s) => {
   return JSON.stringify(pkg, null, 2) + '\n';
 });
 
-// README: out of the games table, into the table of games in their own repos.
+// README: out of the sandbox's table, into the table of games built on the core.
 edit('README.md', (s) => {
   const row = `| \`${game}\` | ${title} | [${repo}](${url}) |`;
   s = s.replace(new RegExp(`^\\| \`${game}\` \\|.*\\n`, 'm'), '');
-  if (!s.includes('## Games in repos of their own')) {
-    s = s.replace(/\n## Quick start/, `
-## Games in repos of their own
-
-Each plays on this core, vendored as \`vendor/battle-simulator\`, and keeps its
-units, terrain and maps in [the library](#library) here.
-
-| Key | Game | Repo |
-|---|---|---|
-${row}
-
-## Quick start`);
-  } else {
-    s = s.replace(/(## Games in repos of their own[\s\S]*?\|---\|---\|---\|\n(?:\|.*\|\n)*)/, `$1${row}\n`);
-  }
+  s = s.replace(/(## Games built on the core[\s\S]*?\|---\|---\|---\|\n(?:\|.*\|\n)*)/, `$1${row}\n`);
   return s.replace(new RegExp(`(All demos are in \`demo/\`: .*?)(\`${game}\`, |, \`${game}\`(?=\\.))`), '$1');
 });
 
-edit('plans/migration/README.md', (s) => s.replace(
-  new RegExp(`^(\\| \\[${game}\\]\\(${game}\\.md\\) \\| )[^|]*\\|`, 'm'), `$1[${repo}](${url}) |`));
+if (existsSync(path.join(ROOT, 'plans/migration/README.md'))) {
+  edit('plans/migration/README.md', (s) => s.replace(
+    new RegExp(`^(\\| \\[${game}\\]\\(${game}\\.md\\) \\| )[^|]*\\|`, 'm'), `$1[${repo}](${url}) |`));
+}
 
 let left = [];
 try {

@@ -182,3 +182,40 @@ test('a game database is imported from the app\'s root, and answers on an analys
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// The Browser's Specs: a spec saved over HTTP is in the catalog and plays in the
+// next session, from the same running server.
+test('a battle spec saved through /admin/specs is played by the next session', async () => {
+  const six = await import('./battleServer.js?copy=six');
+  const { makeBattleGame } = await import('../battle/BattleGame.js');
+  const root = mkdtempSync(join(tmpdir(), 'battle-specs-root-'));
+  const duel = { id: 'duel', name: 'Duel', unitTypes: { pike: { hp: 9, attack: 3, defense: 3, range: 1, speed: 2, rate: 1, vision: 4 } }, board: { width: 8, height: 6 } };
+  writeFileSync(join(root, 'duel.json'), JSON.stringify(duel));
+  const game = makeBattleGame({ name: 'Spec server', specs: { duel }, specsDir: root, scenarios: () => game.specBook.ids().map(id => ({ id, config: { spec: id } })) });
+  const seats = [{ id: 'p1', name: 'One' }, { id: 'p2', name: 'Two' }];
+  const server = six.createBattleServer({ games: { duel: { game, minPlayers: 2, maxPlayers: 2, defaultPlayers: seats } }, sessionsDir: join(root, 'sessions') });
+  const http = server.listen(0);
+  try {
+    if (!http.listening) await once(http, 'listening');
+    const base = `http://localhost:${http.address().port}`;
+    const call = (method, path, body) => fetch(base + path, { method, headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }).then(async r => ({ status: r.status, body: await r.json() }));
+    const text = JSON.stringify({ ...duel, unitTypes: { pike: { ...duel.unitTypes.pike, hp: 20 } } });
+    const broken = JSON.stringify({ ...duel, unitTypes: { pike: { hp: 0 } } });
+    assert.deepEqual((await call('POST', '/admin/specs/duel/duel/check', { text: broken })).body.errors, ['unitTypes.pike.hp: must be > 0']);
+    assert.equal((await call('PUT', '/admin/specs/duel/duel', { text: broken })).status, 400);
+    assert.equal((await call('PUT', '/admin/specs/duel/duel', { text })).status, 200);
+    assert.equal((await call('GET', '/admin/specs/duel/duel')).body.text, text + '\n');
+    const made = await call('POST', '/admin/specs/duel', { id: 'twin', from: 'duel' });
+    assert.equal(made.status, 201, made.body.error);
+    assert.deepEqual((await call('GET', '/catalog')).body.specs.map(s => s.id), ['duel/duel', 'duel/twin']);
+    const s = await call('POST', '/sessions', { game: 'duel', players: seats.map(p => ({ ...p, agent: 'human' })), config: { scenario: 'twin', spec: 'twin' } });
+    assert.ok(s.body.id, s.body.error);
+    const state = (await call('GET', `/sessions/${s.body.id}/state`)).body;
+    assert.equal((state.state ?? state).units[0].hp, 20);
+    assert.equal((await call('DELETE', '/admin/specs/duel/twin')).status, 200);
+    assert.equal((await call('GET', '/admin/specs/nope')).status, 404);
+  } finally {
+    http.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

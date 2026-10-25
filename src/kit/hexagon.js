@@ -1,6 +1,6 @@
 // Generic hexagon map type: axial-coordinate hex grids, pixel layout, and
 // growing contiguous multi-hex "territories" onto them. Any game can build a
-// hex board on top of this (see games/kdice/map.js for the first user) instead
+// hex board on top of this (see battle-kdice's map.js for the first user) instead
 // of reinventing axial math/adjacency/map generation per game.
 
 const HEX_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]];

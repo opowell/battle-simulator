@@ -15,11 +15,13 @@ import { defaultSeats, sessionRequest } from '../sessions.js'
 import { useSessionOpener, useSetupOpener } from '../opener.js'
 import Art from './Art.vue'
 
-// The scenario rows and the file rows (rows.js): a scenario is edited in the
-// game source that defines it.
+// The scenario rows, the file rows and the spec rows (rows.js): a scenario that
+// is a battle spec is edited as that spec, and any other in the game source
+// that defines it.
 const props = defineProps({
   scenarios: { type: Array, default: () => [] },
   files: { type: Array, default: () => [] },
+  specs: { type: Array, default: () => [] },
 })
 // open: (row, { line }) — a record to open beside the browser, at a line of it.
 const emit = defineEmits(['open', 'changed'])
@@ -95,6 +97,8 @@ async function findDefinition(s) {
 }
 
 async function edit(s) {
+  const spec = props.specs.find((r) => r.id === `specs:${s.id}`)
+  if (spec) return emit('open', spec)
   busy.value = `edit:${s.id}`; error.value = ''
   try {
     const found = await findDefinition(s)
@@ -121,7 +125,7 @@ async function edit(s) {
       </div>
     </template>
     <template #aside>
-      <button type="button" class="cx-btn cx-btn--quiet" :disabled="busy === `edit:${s.id}`" title="Open the game source that defines this scenario" @click="edit(s)">
+      <button type="button" class="cx-btn cx-btn--quiet" :disabled="busy === `edit:${s.id}`" :title="specs.some((r) => r.id === `specs:${s.id}`) ? 'Edit the battle spec this scenario is' : 'Open the game source that defines this scenario'" @click="edit(s)">
         {{ busy === `edit:${s.id}` ? 'Finding…' : 'Edit' }}
       </button>
     </template>

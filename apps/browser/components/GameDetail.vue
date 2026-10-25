@@ -1,8 +1,7 @@
 <script setup>
 // A game's definition: its registry entry (player counts and the sides it
-// seats), its source files, and the way to delete it. Saves go through the same
-// admin endpoints /ui/game-editor uses, which rewrite api-server.js — so they
-// take effect when the server next starts.
+// seats), its source files, and the way to delete it. Saves rewrite the
+// registry (games.json), so they take effect when the server next starts.
 import { computed, ref } from 'vue'
 import { api } from '../api.js'
 import { useSetupOpener } from '../opener.js'
@@ -34,7 +33,7 @@ async function save() {
   try {
     await api.updateGame(props.record.name, form.value)
     baseline.value = JSON.stringify(form.value)
-    saved.value = 'Saved to api-server.js — restart the server for it to take effect.'
+    saved.value = 'Saved to the registry — restart the server for it to take effect.'
     emit('changed')
   } catch (e) { error.value = e.message }
   busy.value = false

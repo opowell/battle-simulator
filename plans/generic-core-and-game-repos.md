@@ -447,7 +447,8 @@ them:
    demos and benches. Drawn from its README, its tests and its `toGrid`.
 
    *Done 2026-10-24:* `plans/migration/` has one for each of the 21 games
-   (`README.md` indexes them). Each has a generated part and hand-written
+   (`README.md` indexes them; since phase 4 each is in its game's repo, as
+   `plans/capabilities.md`, and the folder is gone from here). Each has a generated part and hand-written
    **Notes**: so far cs's sequential play stalling with AI seats, FFTA's
    undecided battles, and what chess owns outside its folder.
 
@@ -701,12 +702,45 @@ onto Arena (what was particular to a game went with it).
 ### Phase 4: clean up the core
 
 1. Drop `vendor/obscuro-chess` and anything else only a game used.
+
+   *Done 2026-10-25:* the submodule and its `#obscuro-chess/*` import are gone
+   (battle-chess vendors obscuro-chess itself; no other game repo imports it, so
+   their leftover `#obscuro-chess/*` mapping is dead and harmless), and so are
+   `plans/migration/` (each checklist went with its game) and the old
+   `apps/game-editor`, which had not loaded since `apps/design` went: the
+   Browser already did all it did. `/ui/game-editor` redirects to the Browser.
+   Comments that pointed at a departed game's files name its repo instead.
+   `scripts/extract-game.mjs`, `remove-game.mjs`, `export-pack.mjs` and
+   `export/` stay: game repos re-export their packs through the vendored core,
+   and a game made here can still leave the same way.
 2. The core app is the battle sandbox: `BattleGame` scenarios, the spec editor
    (the game editor, retargeted from files to specs), the generic AIs, the
    Browser.
+
+   *Done 2026-10-25:* the spec editor is the Browser's **Specs**. A BattleGame
+   made with a `specsDir` keeps its named specs there as `<id>.json`, and
+   `game.specBook` is the live copy a session's `config.spec` is looked up in;
+   `src/server/specEditor.js` (`/admin/specs/…`) writes both, so a save is played
+   by the next session started, with no restart. A spec is checked as it is
+   typed (the game's own `checkSpec`, with its hooks and the library's maps) and
+   saved only when it can be played; its file keeps the layout it was written
+   in. New specs start from a copy or a starter; a scenario's **Edit** opens its
+   spec. Arena reads every file in `games/arena/specs/` and lists its scenarios
+   from its `specBook`, so the scenario picker now orders them by id.
 3. Rewrite README and CLAUDE.md for the core. The game list becomes a list of
    links to repos.
+
+   *Done 2026-10-25:* the README opens with the six axes and the sandbox, lists
+   the games as links to their repos, and says how a game repo moves onto a newer
+   core (Versions). It no longer claims `node_modules` is committed: the core
+   needs `npm install` (bignumber.js); the game repos commit theirs. CLAUDE.md
+   says the core knows no game, a core change reaches a game only by a bump, and
+   releases are tags.
 4. Tag a release (`v1.0.0`) so game repos pin tags, not commits.
+
+   *Done 2026-10-25:* `package.json` is 1.0.0 and `v1.0.0` is tagged on main
+   (locally; pushing it, and moving each game repo's pin onto it, are separate
+   steps, since those repos are on GitHub).
 
 ### Phase 5 (optional, per game): rebase onto the spec
 

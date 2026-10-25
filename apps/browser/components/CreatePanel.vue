@@ -2,11 +2,12 @@
 // Making a new one of something — whatever a type's card offers to create.
 import NewGameForm from './NewGameForm.vue'
 import NewSessionForm from './NewSessionForm.vue'
+import NewSpecForm from './NewSpecForm.vue'
 
 defineProps({ entityKey: String, rows: Object })
 const emit = defineEmits(['created'])
 
-const forms = { games: NewGameForm, sessions: NewSessionForm }
+const forms = { games: NewGameForm, sessions: NewSessionForm, specs: NewSpecForm }
 </script>
 
 <template>
