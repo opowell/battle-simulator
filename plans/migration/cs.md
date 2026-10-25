@@ -153,3 +153,30 @@ Also from csmini, kept but now without a game that uses them:
   civ1 still uses the hook, below 1.
 - A grid board with a positioned unit channel (`field.positioned` on a square
   grid, in both discrete and continuous space). Arena now carries this.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-cs](https://github.com/opowell/battle-cs), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 77 tests, its 10 golden replays among
+them, plus the app's own 4) passes, the one skip being the `SLOW_TESTS` rollout;
+`fog.test.js`'s veil test imports `#browser/play/vision.js`, which the repo
+resolves into the vendored core. In the Browser, driven headless, the default
+setup and all eight maps draw with the players' portraits and vision cones; the
+`sound` plugin (`/play/cs/ui/sound.js`) is served, and so are the sounds
+(`/sounds/cs/rifle`, `pistol`, `footstep`, `death`: 200, `audio/wav`). On
+`de_dust2` the buy phase ends by Done Buying and the next turn by End Turn,
+the terrorists' moves coming back hidden, with no console error or failed
+request; no sound played in those turns, as nobody met. Its pack (7 units, 4
+terrain types and all 8 maps) was re-exported into `library/cs/` first: its
+units did not change; `scripts/export/cs.mjs` now names each map as the game
+does and opens it with the five pistols a side the game deals (it had invented a
+loadout), and its boards are unchanged.
+
+Sampled against the game, walkability and sight agree exactly on `de_dust2`
+(convex polygons and rects only) and differ only on the rims of the other maps'
+ovals (16-sided polygons here): under 0.5% of points and 0.3% of lines.
+
+Pre-existing, not fixed: sequential play still stalls with AI seats (see Notes),
+and a turn opens with a player in hand, so Done Buying and End Turn are offered
+only once it is put down (Escape).

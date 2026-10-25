@@ -1,0 +1,70 @@
+{
+  "rock": {
+    "name": "Rock",
+    "color": "#3b3632",
+    "description": "Solid rock: impassable, blocks sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "floor": {
+    "name": "Floor",
+    "color": "#a2916b",
+    "description": "Techbase floor.",
+    "cost": 1,
+    "cover": 0
+  },
+  "metal": {
+    "name": "Metal floor",
+    "color": "#6f7b8a",
+    "description": "Raised steel platform.",
+    "cost": 1,
+    "cover": 0
+  },
+  "walkway": {
+    "name": "Walkway",
+    "color": "#8f8560",
+    "description": "Grated walkway.",
+    "cost": 1,
+    "cover": 0
+  },
+  "nukage": {
+    "name": "Nukage",
+    "color": "#7cae3a",
+    "description": "Toxic slime: impassable, but see-through.",
+    "cost": 1,
+    "passable": false
+  },
+  "crate": {
+    "name": "Crate",
+    "color": "#7a5a30",
+    "description": "Supply crate: impassable, blocks sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "computer": {
+    "name": "Computer bank",
+    "color": "#26424c",
+    "description": "Wall terminals: impassable, block sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "column": {
+    "name": "Support column",
+    "color": "#31363d",
+    "description": "Structural column: impassable, blocks sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "barrel": {
+    "name": "Fuel barrel",
+    "color": "#8a4a24",
+    "description": "Explosive barrel: impassable, blocks sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "open": {
+    "name": "Open ground",
+    "color": "#7d8f5c",
+    "description": "Open ground.",
+    "cost": 1,
+    "cover": 0
+  },
+  "border": {
+    "name": "Map edge",
+    "color": "#3a3a30",
+    "description": "The edge of the map: impassable, blocks sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "field": {
+    "name": "Field",
+    "color": "#c2b34e",
+    "description": "Open ground.",
+    "cost": 1,
+    "cover": 0
+  },
+  "hedge": {
+    "name": "Hedgerow",
+    "color": "#4d6b3a",
+    "description": "Passable but slow; +30% cover, does not block LOS.",
+    "cost": 2,
+    "cover": 30
+  },
+  "stonewall": {
+    "name": "Stone wall",
+    "color": "#8f8a80",
+    "description": "Passable but slow (climb over); +30% cover, does not block LOS.",
+    "cost": 2,
+    "cover": 30
+  },
+  "road": {
+    "name": "Road",
+    "color": "#9c8f6b",
+    "description": "Passable, no cover.",
+    "cost": 1,
+    "cover": 0
+  },
+  "woods": {
+    "name": "Woods",
+    "color": "#2f5c2f",
+    "description": "Passable but slow; blocks LOS, +20% cover.",
+    "cost": 2,
+    "cover": 20,
+    "blocksSight": true
+  },
+  "building": {
+    "name": "Building",
+    "color": "#5a5045",
+    "description": "Impassable, blocks line of sight.",
+    "cost": 1,
+    "passable": false,
+    "blocksSight": true
+  },
+  "pond": {
+    "name": "Pond",
+    "color": "#35617a",
+    "description": "Impassable, but does not block line of sight.",
+    "cost": 1,
+    "passable": false
+  },
+  "water": {
+    "name": "Water",
+    "color": "#35617a",
+    "description": "Impassable, but does not block line of sight.",
+    "cost": 1,
+    "passable": false
+  },
+  "bridge": {
+    "name": "Bridge",
+    "color": "#8e8574",
+    "description": "Passable, no cover.",
+    "cost": 1,
+    "cover": 0
+  }
+}

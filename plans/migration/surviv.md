@@ -80,3 +80,26 @@ Since phase 1 each is a `#core/…` import (or moved into the game).
 ## Notes
 
 None yet.
+
+## Moved (2026-10-24)
+
+To [opowell/battle-surviv](https://github.com/opowell/battle-surviv), built by
+`scripts/extract-game.mjs` and pinned to the core at the commit it left from.
+Checked there: `npm test` (the game's 28 tests, its 3 golden replays among them,
+plus the app's own 4) passes; in the Browser, driven headless, the default setup
+and `sandbar_island` draw the island with both squads, vision cones and hp bars,
+and turns end and come back (Escape, then End Turn: ten turns, red's moves
+hidden). Its pack (6 units, 10 terrain types and the `sandbar_island` map, from
+the new `scripts/export/surviv.mjs`) was re-exported into `library/surviv/`
+first; its units did not change.
+
+The map is grass with the game's shapes on it in its own order; bushes conceal
+(the core's `concealment`, at the game's spotting range of 1.6). Sampled against
+the game, walkability differs on 0.7% of points (the rims of the ovals, 16-sided
+polygons here) and sight on 8 lines in 9,000 between open points; a unit
+standing in a bush on a forest's rim is blind in surviv and not here. Loot is
+kept as map features, and crates and barrels don't break.
+
+Pre-existing, the same in the core today: every page asks for
+`/images/surviv/weapons/fists`, which does not exist (404), for the fists a
+player starts with.

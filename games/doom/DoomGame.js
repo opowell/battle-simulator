@@ -2,7 +2,6 @@ import { unitStrengthEval } from '#core/kit/evalHelpers.js';
 import { MAP_WIDTH, MAP_HEIGHT, RENDER_SHAPES, LOS_OPEN_SHAPES, hasLOS, getReachable, renderMap, isWalkableContinuous } from './map.js';
 import { WEAPONS, AMMO_CAPS, WEAPON_RANK } from './weapons.js';
 import { createMarine, createMonster, MONSTER_DEFS } from './units.js';
-import { meanOf } from '#core/engine/foreignUnits.js';
 import { getDoomBelief, DOOM_VISION } from './belief.js';
 import { hasClearLine, isClearOfUnits, latticeActions } from '#core/kit/continuousMove.js';
 import { filterVisibleUnits, orientToEnemies } from '#core/kit/vision.js';
@@ -502,7 +501,7 @@ function createInitialState(players, config = {}) {
 // crates, computer banks, columns, barrels) — 100+ terrain objects in all.
 
 // Side-panel portraits (single sprite frame each, sourced from doom.fandom.com).
-const UNIT_PORTRAITS = new Set(['doomguy', 'zombieman', 'shotgunner', 'imp', 'demon', 'cacodemon', 'baron']);
+export const UNIT_PORTRAITS = new Set(['doomguy', 'zombieman', 'shotgunner', 'imp', 'demon', 'cacodemon', 'baron']);
 
 // Marine loadout for the design UI's SelectedUnitDetail equipment list (weapon,
 // ammo for that weapon, and armor) — monsters carry no inventory to show.
@@ -612,23 +611,6 @@ export const DoomGame = {
     if (!position) return null;
     if (type === 'doomguy') return createMarine(id, position);
     return MONSTER_DEFS[type] ? createMonster(id, type, position) : null;
-  },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
-  // conversion factor is the zombieman: 20 hp, 7.5 damage a shot, range 6, 6 tiles
-  // of AP a turn; there is no armour to read (only the marine wears any, and only
-  // what it picks up), so no unit has a defense of its own (`fold`). A shot's
-  // damage is every pellet of it.
-  foreignUnits: {
-    scale: { hp: 20, attack: 7.5, defense: 1, range: 6, move: 6 },
-    fold: { defense: 'hp' },
-    profiles: () => ({
-      doomguy: { hp: 100, attack: meanOf(WEAPONS.shotgun.damage) * WEAPONS.shotgun.pellets, range: WEAPONS.shotgun.range, move: 8, domain: 'land' },
-      ...Object.fromEntries(Object.entries(MONSTER_DEFS).map(([type, d]) => [type, {
-        hp: d.hp, attack: meanOf(d.damage) * d.pellets, range: d.range, move: d.maxAP, domain: 'land',
-      }])),
-    }),
-    art: (type) => ({ imagePath: UNIT_PORTRAITS.has(type) ? `/images/doom/units/${type}` : null, glyph: type === 'doomguy' ? '@' : MONSTER_DEFS[type]?.symbol, name: type }),
   },
   actionKey:        doomActionKey,
   getLegalActions:  withTeam(getLegalActions),

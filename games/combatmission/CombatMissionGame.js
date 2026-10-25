@@ -14,7 +14,6 @@ import { terrainArt, unitArt } from './art.js';
 import { tilesToShapes } from '#core/kit/terrainShapes.js';
 import { num, posToWire } from '#core/kit/coord.js';
 import { MAP_ZOOM_OPTION } from '#core/kit/renderOptions.js';
-import { tableUnits } from '#core/engine/foreignUnits.js';
 
 // ── Scenario ──────────────────────────────────────────────────────────────────
 
@@ -199,7 +198,7 @@ const CM_TILE_SHAPE_STYLES = {
 // line-art/photos for the tanks, weapon product photos for the infantry teams).
 // german-sniper has no clean distinct source (only generic combat-scene archive photos
 // of K98k-with-scope were found) so it's left without a portrait.
-const UNIT_PORTRAITS = new Set([
+export const UNIT_PORTRAITS = new Set([
   'rifle-squad', 'mg-team', 'sniper', 'bazooka-team', 'mortar-team', 'sherman', 'stuart',
   'volks-squad', 'mg42-team', 'panzerschreck', 'mortar-ger', 'panzer-iv', 'tiger',
 ]);
@@ -344,20 +343,6 @@ export const CombatMissionGame = {
     if (!UNIT_DEFS[type] || !position) return null;
     return { ...createUnit(id, type, ownerId, position), perTurn: freshPerTurn(spaceTimeOf(state), UNIT_DEFS[type]) };
   },
-  // Its units in the common vocabulary, which its pack in the core's library is
-  // exported from (scripts/export-pack.mjs; src/engine/foreignUnits.js). The
-  // conversion factor is the rifle squad: 10 hp, 5 attack, range 5, 2 moves; armour
-  // is read one higher than it is, so a squad's 0 is one point of defence and a
-  // Tiger's 7 is eight.
-  foreignUnits: tableUnits({
-    table: UNIT_DEFS,
-    scale: { hp: 10, attack: 5, defense: 1, range: 5, move: 2 },
-    read: (e) => ({ hp: e.hp, attack: e.attack, defense: (e.armor ?? 0) + 1, range: e.range, move: e.moveRange, domain: 'land' }),
-    art: (type) => ({
-      imagePath: UNIT_PORTRAITS.has(type) ? `/images/combatmission/units/${type}` : null,
-      glyph: UNIT_DEFS[type]?.symbol, name: UNIT_DEFS[type]?.label ?? type,
-    }),
-  }),
   getLegalActions,
   isActionLegal,
   getSearchActions,
