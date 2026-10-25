@@ -22,6 +22,10 @@ defineProps({
   state: { type: String, default: '' },
 });
 
+// The server hands out `/images/…`; under a mount prefix (an app in JAS) it has to be
+// resolved like every other sprite, or it 404s at the host's root.
+const imgSrc = window.api.imgSrc;
+
 // Ink for the count: the plaque is a solid block of the owner colour, so pick whichever
 // of black/white stays readable on it (sRGB relative luminance, the usual 0.55 cut).
 function ink(hex) {
@@ -64,7 +68,7 @@ function haloRing(hex, w) {
 <template>
   <div class="bt-plaque" :class="state && 'bt-plaque--' + state"
        :style="{ width: size + 'px', height: size + 'px', backgroundColor: unit.teamObj.raw, ...edges(unit, size) }">
-    <img v-if="unit.imagePath" class="bt-sprite" :src="unit.imagePath" draggable="false"/>
+    <img v-if="unit.imagePath" class="bt-sprite" :src="imgSrc(unit.imagePath)" draggable="false"/>
     <span class="bt-count"
           :style="{ color: ink(unit.teamObj.raw), fontFamily: rdr.font,
                     fontSize: Math.round(size * 0.55) + 'px',
