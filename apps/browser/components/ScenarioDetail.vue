@@ -2,13 +2,16 @@
 // A scenario: what it sets up, and a session started from it in one click —
 // with the seats the setup page's form would open with, straight into play.
 // Anyone wanting other seats or options goes through the game's setup page.
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { api } from '../api.js'
 import { defaultSeats, sessionRequest } from '../sessions.js'
 import { useSessionOpener, useSetupOpener } from '../opener.js'
 
-const props = defineProps({ record: Object })
-const emit = defineEmits(['created'])
+const props = defineProps({ record: Object, rows: Object })
+const emit = defineEmits(['created', 'open'])
+
+// A scenario that is a battle spec is edited as one.
+const spec = computed(() => props.rows?.specs?.find((r) => r.id === `specs:${props.record.id}`) ?? null)
 
 const game = ref(null)
 const error = ref('')
@@ -47,6 +50,7 @@ async function start() {
         {{ busy ? 'Starting…' : 'Start session' }}{{ opener.inNewTab() ? ' ↗' : '' }}
       </button>
       <button v-if="game" type="button" class="cx-btn" @click="openSetup(game.name)">Other seats or options</button>
+      <button v-if="spec" type="button" class="cx-btn" @click="emit('open', spec)">Edit spec</button>
     </div>
     <p v-if="error" class="cx-error">{{ error }}</p>
     <h3>What it configures</h3>

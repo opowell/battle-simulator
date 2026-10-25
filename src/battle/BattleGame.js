@@ -1112,10 +1112,14 @@ function actionKey(a) {
  * @param {object[]|() => object[]} [opts.scenarios]  the setup form's scenarios
  * @param {object} [opts.hooks]         the functions `{ fn }` in its specs may name
  * @param {(id: string) => object|null} [opts.findSpec]  specs found elsewhere (the library)
+ * @param {string} [opts.specsDir]      the folder its named specs are kept in, one
+ *   `<id>.json` each, which makes them editable (src/server/specEditor.js)
  */
-export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], hooks = {}, findSpec = null, extend = {} }) {
+export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], hooks = {}, findSpec = null, specsDir = null, extend = {} }) {
   const base = resolveSpec(spec, BASE_SPEC);
   registerBattleGame(name, base, hooks);
+  // Its own copy: the spec editor changes it while the server runs.
+  const named = { ...specs };
   const resolved = new Map();
 
   // The spec a session plays: config.spec as an id or an inline spec, resolved
@@ -1125,7 +1129,7 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
     if (want == null) return null;
     if (typeof want === 'object') return resolveSpec(onMap(want), base);
     if (!resolved.has(want)) {
-      const raw = specs[want] ?? findSpec?.(want);
+      const raw = named[want] ?? findSpec?.(want);
       if (!raw) throw new Error(`${name}: no spec "${want}"`);
       resolved.set(want, resolveSpec(onMap(raw), base));
     }
@@ -1223,6 +1227,21 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
     spacetime: { space: 'discrete', time: 'discrete', play: 'sequential' },
     kinematics,
     get scenarios() { return typeof scenarios === 'function' ? scenarios() : scenarios; },
+    // Its named specs, as the spec editor reads and changes them: a session
+    // started after a change plays the changed spec, and one already running
+    // keeps the rules it started with (they travel in its state).
+    specBook: {
+      dir: specsDir,
+      ids: () => Object.keys(named),
+      get: (id) => named[id] ?? null,
+      /** What is wrong with a spec, as checkSpec says; empty when it can be played. */
+      check(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['a spec is a JSON object'];
+        try { return checkSpec(resolveSpec(onMap(raw), base), hooks); } catch (e) { return [e.message]; }
+      },
+      put(id, raw) { named[id] = raw; resolved.delete(id); },
+      drop(id) { delete named[id]; resolved.delete(id); },
+    },
     gameOptions: modeOptions,
     // No evaluateState on purpose: a BattleGame is played by the generic AI
     // (src/agents/generic), which needs none.

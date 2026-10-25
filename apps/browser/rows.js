@@ -131,6 +131,20 @@ export function buildRows(catalog, values) {
       scenario: s.id,
     })),
 
+    // A spec is its scenario's (they share an id), so narrowing to the scenario
+    // keeps its spec.
+    specs: catalog.specs.map((s) => row('specs', 'Spec', s, {
+      name: s.name,
+      ref: s.spec,
+      board: s.board,
+      topology: s.board.split(' ')[0],
+      unitTypes: s.unitTypes,
+      abilities: s.abilities,
+      status: s.errors.length ? 'error' : 'playable',
+      broken: s.errors.length > 0,
+      scenario: s.id,
+    })),
+
     units: catalog.units.map((u) => row('units', 'Unit', u, {
       name: u.label,
       ref: u.type,

@@ -13,7 +13,8 @@
  *     so a unit type is named and pictured exactly as that game's renderer does;
  *   • sessions — the live Session objects;
  *   • recordings — the session records persisted under sessions/;
- *   • files — gameEditor's listing of each game's editable source.
+ *   • files — gameEditor's listing of each game's editable source;
+ *   • specs — specEditor's listing of each BattleGame's battle specs.
  *
  * Every record carries `game` (a list for an agent, which several games offer),
  * the key the browser narrows by.
@@ -179,11 +180,12 @@ export function createRecordingReader(dir) {
  * @param {(game, players, config) => object} p.setupPreview
  * @param {{id, name}[]} p.builtinAgents   agents every game offers
  * @param {object[]} p.engineOptions       options every game offers
+ * @param {object[]} [p.specs]             the battle specs (specEditor.listSpecs)
  * @param {object[]} [p.pending]           registry entries this process has not
  *   loaded — created (or edited) since it started, so live only after a restart
  */
-export function buildCatalog({ games, sessions, recordings, files, setupPreview, builtinAgents, engineOptions, pending = [] }) {
-  const out = { games: [], sides: [], scenarios: [], units: [], agents: [], options: [], files: [], sessions: [], recordings: [] };
+export function buildCatalog({ games, sessions, recordings, files, specs = [], setupPreview, builtinAgents, engineOptions, pending = [] }) {
+  const out = { games: [], sides: [], scenarios: [], specs, units: [], agents: [], options: [], files: [], sessions: [], recordings: [] };
   const agentsById = new Map();
   const count = (list, name) => list.filter((r) => r.game === name).length;
 

@@ -9,6 +9,7 @@ import FileEditor from './FileEditor.vue'
 import SessionDetail from './SessionDetail.vue'
 import RecordingDetail from './RecordingDetail.vue'
 import ScenarioDetail from './ScenarioDetail.vue'
+import SpecEditor from './SpecEditor.vue'
 import SettingDetail from './SettingDetail.vue'
 import FieldList from './FieldList.vue'
 
@@ -23,6 +24,7 @@ const detailFor = {
   sessions: SessionDetail,
   recordings: RecordingDetail,
   scenarios: ScenarioDetail,
+  specs: SpecEditor,
   settings: SettingDetail,
 }
 </script>

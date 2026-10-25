@@ -98,7 +98,10 @@ never `units`, so a side hidden by fog is not mistaken for a dead one.
 | `open-field` | 12×8 of open ground |
 | `real-time` | the skirmish in continuous space and time, simultaneous |
 
-The reference specs, none with names or art from another game:
+Every spec is a file in [specs/](specs/), `<id>.json`, and every file there is a
+scenario: the Browser's **Specs** edits them, makes new ones and deletes them,
+and a change is played by the next session started, without a restart. The
+reference specs, none with names or art from another game:
 
 | Id | Shows |
 |---|---|

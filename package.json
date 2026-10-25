@@ -1,14 +1,13 @@
 {
   "name": "battle-simulator",
   "type": "module",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "engines": {
     "node": ">=18"
   },
   "imports": {
     "#core/*": "./src/*",
     "#obscuro/*": "./vendor/obscuro/src/*",
-    "#obscuro-chess/*": "./vendor/obscuro-chess/src/*",
     "#browser/*": "./apps/browser/*"
   },
   "workspaces": [

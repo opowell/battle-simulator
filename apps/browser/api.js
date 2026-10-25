@@ -26,12 +26,20 @@ export const api = {
   catalog: () => request('/catalog'),
   games: () => request('/games'),
 
-  // Game definitions — the same admin endpoints /ui/game-editor uses.
+  // Game definitions: the registry (games.json) and each game's source files.
   updateGame: (name, meta) => request(`/admin/games/${name}`, json('PUT', meta)),
   createGame: (meta) => request('/admin/games', json('POST', meta)),
   deleteGame: (name) => request(`/admin/games/${name}`, { method: 'DELETE' }),
   readFile: (name, path) => request(`/admin/games/${name}/file?path=${encodeURIComponent(path)}`),
   writeFile: (name, path, content) => request(`/admin/games/${name}/file`, json('PUT', { path, content })),
+
+  // Battle specs, saved as files and played from the next session on.
+  specs: () => request('/admin/specs'),
+  readSpec: (game, id) => request(`/admin/specs/${game}/${id}`),
+  checkSpec: (game, id, text) => request(`/admin/specs/${game}/${id}/check`, json('POST', { text })),
+  writeSpec: (game, id, text) => request(`/admin/specs/${game}/${id}`, json('PUT', { text })),
+  createSpec: (game, body) => request(`/admin/specs/${game}`, json('POST', body)),
+  deleteSpec: (game, id) => request(`/admin/specs/${game}/${id}`, { method: 'DELETE' }),
 
   createSession: (body) => request('/sessions', json('POST', body)),
   deleteSession: (id) => request(`/sessions/${id}`, { method: 'DELETE' }),

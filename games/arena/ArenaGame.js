@@ -21,7 +21,7 @@ import { BASE_UNIT_TYPES, STAT_KEYS } from '#core/battle/spec.js';
 import { strikeDamage as damage, seenBy as seen, gapBetween as between, pointOf as point } from '#core/battle/world.js';
 import { whole } from '#core/engine/foreignUnits.js';
 import { libraryScenarios, librarySpec, libraryMaps } from '#core/battle/library.js';
-import { SPECS, SPEC_SCENARIOS, MIXED_SPECS, MIXED_SCENARIOS } from './specs/index.js';
+import { SPECS, MIXED_SPECS, SPECS_DIR, specScenarios } from './specs/index.js';
 import * as hooks from './hooks.js';
 
 export const UNIT_TYPES = BASE_UNIT_TYPES;
@@ -39,9 +39,13 @@ const freshBudget = (u, stats) => (u.perTurn ? { ...u.perTurn, moveLeft: stats.s
 export const ArenaGame = makeBattleGame({
   name: 'Arena',
   specs: { ...SPECS, ...MIXED_SPECS },
+  // Kept as files there, so the Browser's spec editor can change them.
+  specsDir: SPECS_DIR,
   hooks,
-  // The library's maps, and the mixed scenarios on them, once the library is loaded.
-  scenarios: () => [...BASE_SCENARIOS, ...SPEC_SCENARIOS, ...(libraryMaps().length ? MIXED_SCENARIOS : []), ...libraryScenarios()],
+  // Its specs as they stand now (the editor adds and changes them while the
+  // server runs), and the library's maps, with the mixed scenarios on them,
+  // once the library is loaded.
+  scenarios: () => [...BASE_SCENARIOS, ...specScenarios(ArenaGame.specBook, { mixed: libraryMaps().length > 0 }), ...libraryScenarios()],
   findSpec: librarySpec,
   extend: {
     // Units from every game in the library (src/engine/foreignUnits.js): Arena, the

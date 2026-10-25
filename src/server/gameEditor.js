@@ -1,6 +1,6 @@
 /**
  * gameEditor.js — CRUD for game *definitions* (the registry, games/games.json)
- * and their raw source files, for the /ui/game-editor app.
+ * and their raw source files, for the Browser's Games and Files.
  *
  * The registry is JSON (see registry.js): each entry names the module and export
  * that hold the game, and its seating. Every edit writes the whole file back the
@@ -9,7 +9,7 @@
  *
  * Because the running process has already imported everything, changes only
  * take effect after a server restart — the API flags `restartRequired: true`
- * and the editor shows a banner. (Per project conventions the dev server
+ * and the Browser says so. (Per project conventions the dev server
  * restarts freely.)
  */
 

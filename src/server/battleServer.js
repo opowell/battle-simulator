@@ -35,6 +35,7 @@ import { dressGrid } from '../engine/foreignUnits.js';
 import { planReconfigure, carriedRoster, rebuiltState, editedState, livePreview } from '../engine/reconfigure.js';
 import { validate as validateAction } from '../engine/ActionValidator.js';
 import * as gameEditor from './gameEditor.js';
+import * as specEditor from './specEditor.js';
 import { buildCatalog, createRecordingReader } from './catalog.js';
 import { gameImageFiles } from './gameImages.js';
 import { loadLibrary } from './library.js';
@@ -136,7 +137,7 @@ async function serveApp(appName, req, res) {
 // Worker (apps/browser/play/analysis-worker.js), which imports the real chess + CFR
 // code directly instead of a bundle. Restricted to JS/WASM so it can't read
 // arbitrary source, with path-escape protection. The worker imports absolute
-// URLs like /lib/games/chess/ChessGame.js; those modules' own relative imports
+// URLs like /lib/games/<game>/<Game>.js; those modules' own relative imports
 // (./board.js, ../../vendor/obscuro/src/search.js) then resolve under /lib/ too.
 //
 // An npm package imported by its bare name ('bignumber.js', from src/kit/coord.js)
@@ -1680,6 +1681,7 @@ async function handleCatalog(res) {
       sessions: [...sessions.values()],
       recordings: await readRecordings(),
       files,
+      specs: specEditor.listSpecs(GAMES),
       setupPreview,
       builtinAgents: BUILTIN_AGENTS,
       engineOptions: ENGINE_OPTIONS,
@@ -1701,7 +1703,7 @@ async function handleSetupPreview(req, res, gameName) {
 }
 
 // ---------------------------------------------------------------------------
-// Game-definition CRUD (for the /ui/game-editor app). These edit the registry
+// Game-definition CRUD (for the Browser's Games and Files). These edit the registry
 // file the server was started from (games/games.json) and the games/<name>/
 // source files on disk; metadata / create / delete changes need a server restart
 // to take effect (flagged in the response).
@@ -1761,6 +1763,26 @@ async function handleAdminWriteFile(req, res, name) {
     const body = await readBody(req);
     const info = await gameEditor.writeGameFile(GAMES_DIR, name, body.path, body.content ?? '');
     send(res, 200, info);
+  } catch (e) { err(res, 400, e.message); }
+}
+
+// ---------------------------------------------------------------------------
+// Battle specs (for the Browser's Specs): every BattleGame with a specsDir keeps
+// its named specs as files there; specEditor.js reads and writes them, and a
+// save is played by the next session started — no restart.
+// ---------------------------------------------------------------------------
+
+async function handleAdminSpecs(req, res, method, [game, id, action]) {
+  try {
+    if (method === 'GET' && !game) return send(res, 200, { specs: specEditor.listSpecs(GAMES) });
+    if (method === 'POST' && game && !id) return send(res, 201, await specEditor.createSpec(GAMES, game, await readBody(req)));
+    if (method === 'POST' && id && action === 'check') return send(res, 200, specEditor.checkSpecText(GAMES, game, (await readBody(req)).text ?? ''));
+    if (id && !action) {
+      if (method === 'GET') return send(res, 200, await specEditor.readSpec(GAMES, game, id));
+      if (method === 'PUT') return send(res, 200, await specEditor.writeSpec(GAMES, game, id, (await readBody(req)).text ?? ''));
+      if (method === 'DELETE') return send(res, 200, await specEditor.deleteSpec(GAMES, game, id));
+    }
+    err(res, 404, 'Not found');
   } catch (e) { err(res, 400, e.message); }
 }
 
@@ -2169,7 +2191,7 @@ function replayStateAtPly(game, session, ply) {
 // Every position from the start of the game up to and including `ply`, from the
 // same replay. Imperfect-information questions are asked of a HISTORY, not of a
 // position — what a fog player knows is the sequence of boards they were handed
-// (see games/chess/fowDatabase.js) — and reconstructing that with one
+// (see battle-chess's fowDatabase.js) — and reconstructing that with one
 // replayStateAtPly call per ply would be quadratic for no reason.
 function replayStatesToPly(game, session, ply) {
   return session.engine.replayStates(ply);
@@ -2232,7 +2254,7 @@ export function resolveAnalysisContext(session, { playerId, agentId, ply }) {
 // Read-only "what's good here" analysis for a live or replayed position — the
 // single-shot form (see handleAnalyzeStream below for the live-progress SSE
 // version). Hands the resolved position to the chosen AI's `analyze` function
-// (see games/chess/ChessGame.js `agents[].analyze`).
+// (see battle-chess's ChessGame.js `agents[].analyze`).
 async function handleAnalyze(req, res, id) {
   const session = sessions.get(id);
   if (!session) return err(res, 404, 'Session not found');
@@ -2330,7 +2352,7 @@ async function handleAnalyzeStream(req, res, id, url) {
       // fog analysis, which can always sample another belief-world batch) keep
       // refining until the viewer actually stops watching this position,
       // instead of settling for one fixed-size batch — see analyzeObscuro's
-      // isCancelled-driven progressive mode in vendor/obscuro-chess/src/ObscuroAgent.js.
+      // isCancelled-driven progressive mode in obscuro-chess's src/ObscuroAgent.js.
       isCancelled: () => closed,
     });
     // A finished (exhaustive) walk has nothing left to resume into, and keeping
@@ -2404,7 +2426,7 @@ async function resolveDatabaseQuery(pointer) {
 // POST /sessions/:id/database  { ply, line: [action, …] }
 //
 // "What did recorded human players do from here?", for games that declare a
-// `database` (see games/chess/ChessGame.js).
+// `database` (see battle-chess's ChessGame.js).
 //
 // NOT DURING A LIVE MATCH, and that is a rule about the feature, not a
 // technicality: an opening book consulted mid-game is an outside engine playing
@@ -2423,7 +2445,7 @@ async function resolveDatabaseQuery(pointer) {
 // viewer, so scrubbing through a game shows each side's own book in turn. Under
 // fog the game's query decides what "from here" means — for chess it is
 // everything the mover has watched up to this point, never the true position
-// (games/chess/fowDatabase.js), which is why the whole prefix is handed over
+// (battle-chess's fowDatabase.js), which is why the whole prefix is handed over
 // and not just one board.
 async function handleDatabase(req, res, id, url) {
   const session = sessions.get(id);
@@ -2446,7 +2468,7 @@ async function handleDatabase(req, res, id, url) {
 
   // The whole prefix, not just the position: under fog what a player knows is
   // the sequence of boards they have been handed, so the game's query needs the
-  // plies before this one to reconstruct that (see games/chess/fowDatabase.js's
+  // plies before this one to reconstruct that (see battle-chess's fowDatabase.js's
   // observation trail). One replay produces all of them.
   let states;
   try {
@@ -2605,11 +2627,12 @@ async function handleRequest(req, res) {
       return await serveBrowserIndex(base, res);
 
     // Older addresses of the UI — the Browser's own /ui/browser/, its former
-    // name /ui/console, and the old play UI's /ui/design and /design — land on
-    // the root: a redirect keeps the URL's fragment, and the Browser opens the
-    // `#/session/<id>` or `#/game/<name>` it names.
+    // name /ui/console, the old play UI's /ui/design and /design, and the old
+    // game editor's /ui/game-editor (the Browser's Games and Specs now) — land
+    // on the root: a redirect keeps the URL's fragment, and the Browser opens
+    // the `#/session/<id>` or `#/game/<name>` it names.
     if (method === 'GET' && (parts[0] === 'design'
-        || (parts[0] === 'ui' && ['design', 'console'].includes(parts[1]))
+        || (parts[0] === 'ui' && ['design', 'console', 'game-editor'].includes(parts[1]))
         || (parts[0] === 'ui' && parts[1] === 'browser' && parts.length === 2))) {
       res.writeHead(302, { Location: `${base}/${url.search}` });
       return res.end();
@@ -2620,7 +2643,7 @@ async function handleRequest(req, res) {
       return await serveLibModule(res, parts.slice(1).join('/'));
 
     // Static UI apps — GET /ui/<name>/*
-    const UI_APPS = ['game-editor', 'browser'];
+    const UI_APPS = ['browser'];
     if (method === 'GET' && parts[0] === 'ui' && UI_APPS.includes(parts[1])) {
       // Redirect /ui/<name> (no trailing slash) so relative asset paths resolve correctly
       if (parts.length === 2 && !url.pathname.endsWith('/')) {
@@ -2684,7 +2707,7 @@ async function handleRequest(req, res) {
     if (method === 'POST' && parts[0] === 'games' && parts.length === 3 && parts[2] === 'setup')
       return await handleSetupPreview(req, res, parts[1]);
 
-    // Game-definition CRUD for the editor — /admin/games…
+    // Game-definition CRUD for the Browser — /admin/games…
     if (parts[0] === 'admin' && parts[1] === 'games') {
       // GET /admin/games
       if (method === 'GET' && parts.length === 2) return await handleAdminGamesList(res);
@@ -2701,6 +2724,10 @@ async function handleRequest(req, res) {
         if (method === 'DELETE') return await handleAdminDeleteGame(res, parts[2]);
       }
     }
+
+    // Battle specs for the Browser's Specs — /admin/specs[/:game[/:id[/check]]]
+    if (parts[0] === 'admin' && parts[1] === 'specs' && parts.length <= 5)
+      return await handleAdminSpecs(req, res, method, parts.slice(2));
 
     // POST /sessions
     if (method === 'POST' && parts[0] === 'sessions' && parts.length === 1)

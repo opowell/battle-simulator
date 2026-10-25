@@ -9,7 +9,7 @@
 //               unit tests (see keyBindings.test.js).
 //
 // Nothing in this file knows any game. A game declares its own bindings in its
-// `ui.keys` (see games/civ1/Civ1Game.js for the real one) and Battlefield.vue
+// `ui.keys` (see battle-civ1's Civ1Game.js for the real one) and Battlefield.vue
 // executes whatever this resolver reports:
 //
 //   ui.keys = {

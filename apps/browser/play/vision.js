@@ -77,7 +77,7 @@ function blockedSet(field) {
 }
 
 // Grid line-of-sight between two world points: false if a blocked tile lies strictly
-// between the endpoints. Mirrors the engine's Bresenham LOS (e.g. games/doom/map.js
+// between the endpoints. Mirrors the engine's Bresenham LOS (e.g. battle-doom's map.js
 // hasLOS) so the rendered fog matches the server's — snap to the tile each point sits in.
 function hasLineOfSight(blocked, x0, y0, x1, y1) {
   x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.floor(x1); y1 = Math.floor(y1);

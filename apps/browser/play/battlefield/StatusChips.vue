@@ -1,7 +1,7 @@
 <script setup>
 // Domain-agnostic status-chip row for GameHeader's optional strip. This component
 // has no idea what a chip's value means — the game that populates field.statusChips
-// (see e.g. games/civ1/Civ1Game.js's toGrid) decides what to show and how to label it.
+// (see e.g. battle-civ1's Civ1Game.js's toGrid) decides what to show and how to label it.
 defineProps({
   chips: { type: Array, default: () => [] }, // [{ icon?, value, title?, warn? }]
 });

@@ -10,7 +10,7 @@ import DatabaseMoveList from './DatabaseMoveList.vue';
 // Generic on purpose: what counts as "from here" is the game's business, not
 // this component's. Under fog it is not a position at all — the chess database
 // groups games by everything the seat to move had been SHOWN by this point (see
-// games/chess/fowDatabase.js) — so the answer arrives describing its own
+// battle-chess's fowDatabase.js) — so the answer arrives describing its own
 // grouping in `label`/`hint`, and this file just renders rows and says which
 // question they answer.
 //
