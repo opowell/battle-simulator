@@ -228,6 +228,13 @@ const territoryHint = computed(() => {
     : 'Select a territory, then click a neighbour.';
 });
 
+// A facing in degrees (screen y down: 0 east, 90 south) by its compass name, or
+// the game's own (ui.facingNames — an isometric board names them after the
+// screen's diagonals).
+const COMPASS = { 0: 'E', 45: 'SE', 90: 'S', 135: 'SW', 180: 'W', 225: 'NW', 270: 'N', 315: 'NE' };
+const facingName = (deg) => props.ui?.facingNames?.[deg] ?? COMPASS[deg] ?? `${deg}°`;
+const chipText = (a, field) => (field === 'facing' ? facingName(a.facing) : a[field]);
+
 function fmtAction(action) {
   const t = action.type ?? '';
   // A game that knows how to say what one of its actions does says it (getLegalActions
@@ -265,7 +272,7 @@ function fmtAction(action) {
   if (t === 'build-road')     return 'Build Road';
   if (t === 'skip-unit')      return 'Skip Unit';
   if (t === 'fortify')        return 'Fortify';
-  if (t === 'end-turn')  return action.direction ? `End Turn · Face ${action.direction}` : 'End Turn';
+  if (t === 'end-turn')  return action.direction ? `End Turn · Face ${action.direction}` : action.facing != null ? `End Turn · Face ${facingName(action.facing)}` : 'End Turn';
   if (t === 'end-phase') return 'End Phase';
   if (t === 'pass')      return 'Pass';
   if (t === 'ability') {
@@ -356,7 +363,7 @@ function fmtAction(action) {
           <div v-for="g in numericChoices" :key="'nc' + g.type" class="ap-variant">
             <span class="mono ap-variant-label">{{g.label ?? ui?.actionGroupLabels?.[g.type] ?? g.type.replace(/-/g, ' ')}}</span>
             <button v-for="a in g.actions" :key="a[g.field]" :title="a.label"
-                    class="ap-chip" @click="$emit('submit', a)">{{a[g.field]}}</button>
+                    class="ap-chip" @click="$emit('submit', a)">{{chipText(a, g.field)}}</button>
           </div>
           <!-- A length of time, typed (ui.timeEntry): chess's hold, in continuous time. -->
           <div v-for="g in timeEntries" :key="g.key" class="ap-variant ap-time">
