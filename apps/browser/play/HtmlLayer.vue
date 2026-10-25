@@ -712,10 +712,17 @@ function handleRootClick() {
 
 // Unhandled clicks fall through to the cell below (→ sq-click), matching SchematicLayer:
 // aiming and legal-target clicks are "a click at that point", not a selection.
+// A legal target is clicked as its square outright: a positioned token is not inside
+// a cell, so letting its click bubble would reach the root, which deselects — taking
+// a piece by clicking it worked only by dragging onto it.
 function handleUnitClick(e, u) {
   if (props.aiming) return;
-  const isLegalTarget = props.legalSquares.some(([lc, lr]) => lc === Math.floor(u.x) && lr === Math.floor(u.y));
-  if (isLegalTarget) return;
+  const col = Math.floor(u.x), row = Math.floor(u.y);
+  if (props.legalSquares.some(([lc, lr]) => lc === col && lr === row)) {
+    e.stopPropagation();
+    if (!dragJustEnded) emit('sq-click', col, row, col + 0.5, row + 0.5);
+    return;
+  }
   // Drag mode already selected on mousedown; just don't let it read as a board click.
   if (props.dragToMove) { e.stopPropagation(); return; }
   e.stopPropagation();
