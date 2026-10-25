@@ -1,15 +1,15 @@
 {
   "game": "xcom",
   "from": {
-    "commit": "3ab287cc341d0b8628bbef34d45a02336cf7e5ea",
-    "date": "2026-10-24T18:57:13+02:00"
+    "commit": "74c5c7b5a4bdef39188f73c78d80691dc8ec4dba",
+    "date": "2026-10-25T14:26:56+01:00"
   },
   "units": 7,
   "art": 7,
   "terrain": 5,
   "maps": 1,
   "omitted": [
-    "action points, hit chances and reaction fire: the core's strikes are deterministic and spend a turn window",
+    "action points and hit chances: X-Com's spec has them, a library map plays by the sandbox's strikes",
     "cover is X-Com's defence against a shot from any side; the core reads it the same way"
   ]
 }

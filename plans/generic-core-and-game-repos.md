@@ -751,6 +751,35 @@ xcom and aow first, then ffta and sc1/sc2 combat. The golden
 replays tell you whether the rebuilt game still plays the same. Each game is
 smaller afterwards and gets every core feature for free.
 
+*How, as decided and built (2026-10-25, proven on xcom):*
+
+- **Golden replays can't be the check.** They hash the whole state, the log,
+  `toGrid` and each fogged view, and a game rebuilt on `BattleGame` holds its
+  units differently, so its hashes differ even where play is identical. The
+  check is a **differential test** instead: the old rules stay in the game repo
+  as `test/oracle/`, and `test/differential.test.js` drives old and new with
+  the same seed and the same (mapped) actions, comparing every unit's side,
+  type, hit points, square and life, the action points of the side to move,
+  what each side sees, the legal moves, every die and the result, at every
+  step. Once it holds, the goldens are re-recorded from the spec game.
+- **Dice are a spec feature** (the user's choice): every game in this phase
+  rolls them. A ruleset without them stays exactly as deterministic as before,
+  which Arena's unchanged goldens prove.
+- What xcom needed from the core became generic features, released as
+  **v1.1.0**: action points (`turn: { actionPoints, move }`, an ability's
+  `ap`, `'all'`), chance (`hit`, `crit`, `critPower`, `roll(n)`, `dist` in a
+  formula), board `sightLine: 'bresenham'`, `visionMetric`, `passFriends:
+  false`, a spec-level `strike`, and a terrain's drawn `extrude`.
+- A difference the differential test finds is either a gap in the core (fix
+  it there) or a bug in the old game (keep the fix, list it in the game's
+  `plans/capabilities.md`, and let the test tolerate exactly that). xcom had
+  one: under fog it offered shots at enemies its side couldn't see.
+
+*xcom done 2026-10-25:* `spec.json` on `BattleGame`; `XComGame.js` keeps only
+the fog belief for Obscuro and the isometric drawing, and its default CPU stays
+Obscuro. 400 differential games (about 9,500 shots) identical. aow, ffta and
+sc1/sc2 combat are next.
+
 ## Living with the split
 
 - **A core change reaches games only by a bump.** `scripts/bump-games.sh`, in
