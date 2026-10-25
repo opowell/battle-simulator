@@ -23,7 +23,7 @@ change that is meant to alter what it does: `node scripts/golden.mjs <game>`.
 | [aow](aow.md) | [opowell/battle-aow](https://github.com/opowell/battle-aow) | |
 | [arena](arena.md) | stays: becomes `BattleGame` | |
 | [axisallies](axisallies.md) | [opowell/battle-axisallies](https://github.com/opowell/battle-axisallies) | |
-| [chess](chess.md) | its own repo, wave 6 | owns obscuro-chess and the Stockfish cache |
+| [chess](chess.md) | [opowell/battle-chess](https://github.com/opowell/battle-chess) | owns obscuro-chess and the Stockfish cache |
 | [civ1](civ1.md) | [opowell/battle-civ1](https://github.com/opowell/battle-civ1) | |
 | [civ2](civ2.md) | [opowell/battle-civ2](https://github.com/opowell/battle-civ2) | |
 | [combatmission](combatmission.md) | [opowell/battle-combatmission](https://github.com/opowell/battle-combatmission) | |

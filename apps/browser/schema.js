@@ -307,7 +307,7 @@ export function buildSchema(catalog, { Art }) {
     key: 'battle-simulator',
     label: 'Battle Simulator',
     kicker: 'Games, sessions and everything they define',
-    placeholder: 'game:chess fog:true   ·   status:active   ·   starting>4',
+    placeholder: 'game:arena fog:true   ·   status:active   ·   starting>4',
     // The mixed result set: what every kind of record has in common.
     columns: [
       ordinal,

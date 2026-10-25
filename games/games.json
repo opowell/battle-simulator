@@ -1,4 +1,3 @@
 {
-  "chess": { "module": "./chess/index.js", "export": "ChessGame", "minPlayers": 2, "maxPlayers": 2, "defaultPlayers": [{ "id": "white", "name": "White" }, { "id": "black", "name": "Black" }] },
   "arena": { "module": "./arena/index.js", "export": "ArenaGame", "minPlayers": 2, "maxPlayers": 4, "defaultPlayers": [{ "id": "p1", "name": "Player 1" }, { "id": "p2", "name": "Player 2" }] }
 }

@@ -143,18 +143,6 @@ const stageFromGit = (repoDir, ref, stageDir) => {
   fs.rmSync(tarball, { force: true })
 }
 
-// Releases never carry the Stockfish evaluation cache. It is derived data, it
-// is tens of MB, and it is ours — see games/chess/stockfish.js. It is not
-// committed, so git archive does not supply it either; this is the belt to that
-// braces, so re-committing the cache one day cannot quietly put it in a release.
-const stripChessCache = (appDir) => {
-  const dir = path.join(appDir, 'games', 'chess', 'vendor')
-  if (!fs.existsSync(dir)) return
-  for (const file of fs.readdirSync(dir)) {
-    if (file.startsWith('sf-cache.')) fs.rmSync(path.join(dir, file), { force: true })
-  }
-}
-
 const installDeps = (dir) => {
   run(npm, ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: dir })
 }
@@ -213,8 +201,7 @@ ${install}
 Then open the URL it prints (http://localhost:3333 by default). The port comes
 from \`--port\`, then \`$PORT\`, then \`settings.json\`.
 
-Requires Node.js 18 or newer. Node 22.5+ additionally enables the sqlite-backed
-Stockfish evaluation cache, which makes the fog-chess AI noticeably faster.
+Requires Node.js 18 or newer.
 `,
     jas: `# Battle Simulator ${version} — JAS bundle
 
@@ -241,10 +228,10 @@ nothing here starts on its own.
 
 ${install}
 
-Use it as a library — \`src/engine/index.js\` is the entry point, \`games/*/index.js\`
-are the game definitions — or run a match from the command line:
+Use it as a library — \`src/engine/index.js\` is the entry point, \`games/arena/index.js\`
+the core's own battle — or pit the AIs against each other from the command line:
 
-    node demo/chess-demo.js --auto
+    node demo/generic-ai-bench.mjs --pairs=1
 
 For something you can open in a browser, take the \`standalone\` or \`jas\`
 archive instead.
@@ -290,7 +277,6 @@ const main = async () => {
   stageFromGit(projectRoot, args.ref, pristine)
   extractSubmodules(projectRoot, args.ref, pristine)
   stripNodeModules(pristine)
-  stripChessCache(pristine)
 
   let jasPristine = null
   if (needsJas) {

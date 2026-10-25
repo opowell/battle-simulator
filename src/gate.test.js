@@ -14,7 +14,10 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const GAMES_DIR = join(ROOT, 'games');
 const CORE_RULESETS = new Set(['arena']);
-const GAMES = readdirSync(GAMES_DIR).filter(n => statSync(join(GAMES_DIR, n)).isDirectory() && !CORE_RULESETS.has(n));
+// The games are the ones still here and the ones that left, whose packs are in
+// library/: having left is no licence for the core to name them.
+const dirsIn = (dir) => readdirSync(dir).filter(n => statSync(join(dir, n)).isDirectory());
+const GAMES = [...new Set([...dirsIn(GAMES_DIR), ...dirsIn(join(ROOT, 'library'))])].filter(n => !CORE_RULESETS.has(n));
 
 const SKIP_DIRS = new Set(['vendor', 'node_modules']);
 function files(dir, out = []) {

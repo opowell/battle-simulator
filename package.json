@@ -17,12 +17,6 @@
   ],
   "scripts": {
     "start": "node api-server.js",
-    "demo:chess": "node demo/chess-demo.js",
-    "demo:chess:auto": "node demo/chess-demo.js --auto",
-    "demo:chess:fog": "node demo/chess-demo.js --auto --scenario=fog",
-    "demo:chess:clockwork": "node demo/chess-demo.js --auto --scenario=clockwork",
-    "demo:chess:melee": "node demo/chess-demo.js --auto --scenario=melee",
-    "demo:chess:sliding": "node demo/chess-demo.js --auto --scenario=sliding",
     "bench:generic": "node demo/generic-ai-bench.mjs",
     "build-release": "node scripts/build-release.mjs",
     "test": "node scripts/test.mjs",

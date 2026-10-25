@@ -1,12 +1,11 @@
 # Battle Simulator
 
-A turn-based game engine for running and building strategy games in JavaScript (ESM). Comes with 15 game implementations, three agent types, and an HTTP API server. No install required; works offline or online.
+A generic battle core in JavaScript (ESM): the engine, its own ruleset (Arena, driven by battle specs), generic AIs, an HTTP and WebSocket server, and the Browser to play in. Every game that used to live here is now a repo of its own built on this core (below). No install required; works offline or online.
 
 ## Games
 
 | Key | Game | Docs |
 |---|---|---|
-| `chess` | Chess — plus fog of war and three (space x time) variants | [games/chess/](games/chess/README.md) |
 | `arena` | The generic battle: terrain and units that are only numbers, in all eight (space × time × play) modes | [games/arena/](games/arena/README.md) |
 
 ## Games in repos of their own
@@ -16,25 +15,26 @@ units, terrain and maps in [the library](#library) here.
 
 | Key | Game | Repo |
 |---|---|---|
-| `xcom` | XCOM | [opowell/battle-xcom](https://github.com/opowell/battle-xcom) |
-| `risk` | Risk | [opowell/battle-risk](https://github.com/opowell/battle-risk) |
-| `kdice` | kdice | [opowell/battle-kdice](https://github.com/opowell/battle-kdice) |
-| `axisallies` | Axis & Allies | [opowell/battle-axisallies](https://github.com/opowell/battle-axisallies) |
-| `civ2` | Civilization II | [opowell/battle-civ2](https://github.com/opowell/battle-civ2) |
-| `aow` | The Ancient Art of War | [opowell/battle-aow](https://github.com/opowell/battle-aow) |
-| `memoir44` | Memoir '44 | [opowell/battle-memoir44](https://github.com/opowell/battle-memoir44) |
-| `mudandblood` | mudandblood | [opowell/battle-mudandblood](https://github.com/opowell/battle-mudandblood) |
-| `warofdots` | warofdots | [opowell/battle-warofdots](https://github.com/opowell/battle-warofdots) |
-| `rogue` | rogue | [opowell/battle-rogue](https://github.com/opowell/battle-rogue) |
-| `simcity` | simcity | [opowell/battle-simcity](https://github.com/opowell/battle-simcity) |
+| `chess` | Chess, plus fog of war and three (space × time) variants | [opowell/battle-chess](https://github.com/opowell/battle-chess) |
 | `civ1` | Civilization I | [opowell/battle-civ1](https://github.com/opowell/battle-civ1) |
+| `civ2` | Civilization II | [opowell/battle-civ2](https://github.com/opowell/battle-civ2) |
+| `risk` | Risk | [opowell/battle-risk](https://github.com/opowell/battle-risk) |
+| `axisallies` | Axis & Allies | [opowell/battle-axisallies](https://github.com/opowell/battle-axisallies) |
+| `kdice` | KDice | [opowell/battle-kdice](https://github.com/opowell/battle-kdice) |
+| `combatmission` | Combat Mission | [opowell/battle-combatmission](https://github.com/opowell/battle-combatmission) |
+| `xcom` | XCOM | [opowell/battle-xcom](https://github.com/opowell/battle-xcom) |
+| `aow` | The Ancient Art of War | [opowell/battle-aow](https://github.com/opowell/battle-aow) |
+| `cs` | Counter-Strike | [opowell/battle-cs](https://github.com/opowell/battle-cs) |
 | `ffta` | Final Fantasy Tactics Advance | [opowell/battle-ffta](https://github.com/opowell/battle-ffta) |
 | `sc1` | StarCraft I | [opowell/battle-sc1](https://github.com/opowell/battle-sc1) |
-| `sc2` | StarCraft II | [opowell/battle-sc2](https://github.com/opowell/battle-sc2) |
+| `sc2` | StarCraft II (vendors battle-sc1) | [opowell/battle-sc2](https://github.com/opowell/battle-sc2) |
 | `doom` | Doom | [opowell/battle-doom](https://github.com/opowell/battle-doom) |
-| `surviv` | surviv | [opowell/battle-surviv](https://github.com/opowell/battle-surviv) |
-| `combatmission` | Combat Mission | [opowell/battle-combatmission](https://github.com/opowell/battle-combatmission) |
-| `cs` | Counter-Strike | [opowell/battle-cs](https://github.com/opowell/battle-cs) |
+| `memoir44` | Memoir '44 | [opowell/battle-memoir44](https://github.com/opowell/battle-memoir44) |
+| `mudandblood` | Mud and Blood | [opowell/battle-mudandblood](https://github.com/opowell/battle-mudandblood) |
+| `warofdots` | War of Dots | [opowell/battle-warofdots](https://github.com/opowell/battle-warofdots) |
+| `surviv` | surviv.io | [opowell/battle-surviv](https://github.com/opowell/battle-surviv) |
+| `rogue` | Rogue (one seat; never registered here) | [opowell/battle-rogue](https://github.com/opowell/battle-rogue) |
+| `simcity` | SimCity (one seat, not a battle; no board in the Browser) | [opowell/battle-simcity](https://github.com/opowell/battle-simcity) |
 
 ## Quick start
 
@@ -63,33 +63,35 @@ the search the chess AI actually runs on.
 
 ### What is where
 
-The repo is a generic **core** and the games built on it, on their way to repos
-of their own (see [plans/generic-core-and-game-repos.md](plans/generic-core-and-game-repos.md)):
+The repo is a generic **core**; the games built on it are repos of their own
+(see [plans/generic-core-and-game-repos.md](plans/generic-core-and-game-repos.md)):
 
 | Path | What it is |
 |---|---|
 | `src/engine/`, `src/agents/`, `src/kit/` | the engine, the generic AIs, and the board, time and turn machinery games build on |
 | `src/server/` | the HTTP and WebSocket server, which an app constructs with its games: `createBattleServer({ games, … })` |
 | `apps/` | the Browser and the play UI, which know no game (`src/gate.test.js` holds them to it) |
-| `library/` | every game's units as data, which the core's own ruleset fields (see [Library](#library)) |
-| `games/<name>/` | a game: its rules, its art, its tests, and its own UI plugins in `ui/` |
+| `src/battle/` | the core's ruleset, `BattleGame`, driven by battle specs |
+| `library/` | every game's units, terrain and maps as data, which the core's own ruleset fields (see [Library](#library)) |
+| `games/arena/` | Arena: `BattleGame` with its specs and scenarios |
 | `games/games.json` | the registry: which games this app serves (`games/registry.js` loads it) |
 | `api-server.js` | this app: the core's server with every game in the registry |
+| `scripts/extract-game.mjs`, `scripts/remove-game.mjs` | how a game left for a repo of its own |
 
-A game imports the core as `#core/...` (`package.json`'s subpath imports), never
-by a relative path out of its own folder, so it can be lifted out as it is.
+A game repo vendors this one as `vendor/battle-simulator` and imports the core as
+`#core/...` (its `package.json`'s subpath imports).
 
-### Run a demo
+### Run the AI bench
 
-Each game has an interactive demo (you vs random AI) and an `--auto` mode (random vs random):
+The generic AI against random (or greedy) play, in seat-swapped pairs, in every
+mode of Arena or one of its reference scenarios:
 
 ```sh
-node demo/chess-demo.js
-node demo/chess-demo.js --auto
-node demo/generic-ai-bench.mjs --game=close-quarters
+node demo/generic-ai-bench.mjs
+node demo/generic-ai-bench.mjs --game=close-quarters --vs=greedy-generic
 ```
 
-All demos are in `demo/`: `chess`.
+Each game's own demos are in its repo.
 
 ### Start the HTTP API server
 
@@ -192,22 +194,23 @@ source take effect when the server next starts.
 
 ## Library
 
-`library/<game>/` keeps each game's units as data: `units.json` (each unit type in
-the common vocabulary — hp, attack, defense, range, move, domain — with the game's
-conversion factor, and how it looks for each seat), its pictures in `art/`, and
+`library/<game>/` keeps each game's units, terrain and maps as data: `units.json`
+(each unit type in the common vocabulary — hp, attack, defense, range, move,
+domain — with the game's conversion factor, and how it looks for each seat), its
+pictures in `art/`, `terrain.json` and `maps/` in the core's board format, and
 `pack.json` (which commit of the game it came from, and what it leaves out).
 Arena, the core's own ruleset, fields any of them: its setup screen's units editor
 offers every unit of every pack, each playing as the nearest Arena type with its
 stats converted, drawn as itself. The games themselves don't mix.
 
-A pack is written from a game's folder, and rewritten when the game changes:
+Every game has left for a repo of its own, so a pack is rewritten from there when
+the game changes: the game's `pack.js` says how its units read, and this repo's
+`scripts/export/<game>.mjs` maps its terrain and maps.
 
 ```sh
-node scripts/export-pack.mjs games/civ1     # one game (or a game repo's game folder)
-node scripts/export-packs.mjs               # every game still here
+# in a game's repo (its vendored core runs the export):
+npm run export-pack -- --out <battle-simulator>/library
 ```
-
-Terrain types and maps join the packs once the core has its board format.
 
 ## Engine API
 
@@ -219,15 +222,15 @@ A game imports the core through Node subpath imports (`package.json`'s
 
 ```js
 import { GameEngine } from '#core/engine/index.js';
-import { ChessGame } from './games/chess/index.js';
+import { ArenaGame } from './games/arena/index.js';
 import { RandomAgent } from '#core/agents/index.js';
 
 const players = [
-  { id: 'white', name: 'White', agent: RandomAgent },
-  { id: 'black', name: 'Black', agent: RandomAgent },
+  { id: 'p1', name: 'One', agent: RandomAgent },
+  { id: 'p2', name: 'Two', agent: RandomAgent },
 ];
 
-const engine = new GameEngine(ChessGame, players, { maxTurns: 200 });
+const engine = new GameEngine(ArenaGame, players, { maxTurns: 200 });
 const { result, log, finalState } = await engine.run();
 console.log(result); // { outcome: 'win'|'draw', winnerId, reason }
 ```
@@ -239,7 +242,7 @@ engine._init();
 while (!engine.result) {
   const { done } = await engine.step();
   if (done) break;
-  console.log(ChessGame.renderState(engine.state));
+  console.log(ArenaGame.renderState(engine.state));
 }
 ```
 
@@ -332,10 +335,10 @@ The **fog-chess** specialisation on top of it — the Stockfish leaf evaluator, 
 exact belief tracker, the fitted move prior, chess's own difficulty dial — is a
 second repository,
 [github.com/opowell/obscuro-chess](https://github.com/opowell/obscuro-chess),
-vendored at `vendor/obscuro-chess`. What stays here is
-[games/chess/ChessGame.js](games/chess/ChessGame.js): this engine's rules
-definition plus the renderer, fog markers and difficulty menu, handed to the
-vendored agent with `setGame`.
+vendored at `vendor/obscuro-chess` until phase 4 of the plan drops it: chess,
+which hands it its rules with `setGame`, is now
+[opowell/battle-chess](https://github.com/opowell/battle-chess), which vendors
+obscuro-chess itself.
 
 ```sh
 git submodule update --remote vendor/obscuro         # pull the latest upstream
@@ -367,10 +370,10 @@ Create a new game session.
 
 ```json
 {
-  "game": "chess",
+  "game": "arena",
   "players": [
-    { "id": "white", "name": "White", "agent": "human" },
-    { "id": "black", "name": "Black", "agent": "random" }
+    { "id": "p1", "name": "One", "agent": "human" },
+    { "id": "p2", "name": "Two", "agent": "random" }
   ],
   "config": { "maxTurns": 300 }
 }
@@ -444,7 +447,7 @@ are a restatement of what that side can see); available in replay and on an
 analysis board.
 
 #### `GET /sessions/:id/database?ply=` · `POST /sessions/:id/database`
-For games that declare one (chess: recorded Fog of War games), what human players
+For games that declare one (battle-chess: recorded Fog of War games), what human players
 who knew what this seat knows went on to play from here. `POST` takes
 `{ ply, line: [action, …] }`, where `line` is a fictional continuation off that
 ply, so an explored variation can be looked up too. Same availability rule as
@@ -476,13 +479,13 @@ Three ways to go back, which do different things:
 | playing a move from a past ply | branches a "what if" line beside the game (a fork) |
 | **Undo** | drops the move from the game, and play continues from before it |
 
-### Example: play a chess game via curl
+### Example: play a battle via curl
 
 ```sh
 # Create session (one human vs random AI)
 SESSION=$(curl -s -X POST localhost:3000/sessions \
   -H 'Content-Type: application/json' \
-  -d '{"game":"chess","players":[{"id":"white","agent":"human"},{"id":"black","agent":"random"}]}' \
+  -d '{"game":"arena","players":[{"id":"p1","agent":"human"},{"id":"p2","agent":"random"}]}' \
   | jq -r '.id')
 
 # See board + legal actions
@@ -491,10 +494,10 @@ curl -s localhost:3000/sessions/$SESSION | jq '{rendered, legalActions}'
 # Submit an action
 curl -s -X POST localhost:3000/sessions/$SESSION/action \
   -H 'Content-Type: application/json' \
-  -d '{"playerId":"white","action":{"type":"move","unitId":"wN","from":"b1","to":"c3"}}'
+  -d '{"playerId":"p1","action":{"type":"move","unitId":"p1-1","from":{"x":1,"y":1},"to":{"x":2,"y":1}}}'
 ```
 
-### Example: two-human chess game via curl
+### Example: a two-human battle via curl
 
 Both players post actions to the same session; each waits until `pendingPlayer` matches their own ID.
 
@@ -502,22 +505,18 @@ Both players post actions to the same session; each waits until `pendingPlayer` 
 # Create session — both players are human
 SESSION=$(curl -s -X POST localhost:3000/sessions \
   -H 'Content-Type: application/json' \
-  -d '{"game":"chess","players":[{"id":"white","agent":"human"},{"id":"black","agent":"human"}]}' \
+  -d '{"game":"arena","players":[{"id":"p1","agent":"human"},{"id":"p2","agent":"human"}]}' \
   | jq -r '.id')
 
-# White moves (pendingPlayer is "white")
+# p1 moves a unit, then ends its turn (pendingPlayer is "p1")
 curl -s -X POST localhost:3000/sessions/$SESSION/action \
   -H 'Content-Type: application/json' \
-  -d '{"playerId":"white","action":{"type":"move","unitId":"wN","from":"b1","to":"c3"}}' \
-  | jq '{pendingPlayer, turn}'
-# → pendingPlayer: "black"
-
-# Black responds
+  -d '{"playerId":"p1","action":{"type":"move","unitId":"p1-1","from":{"x":1,"y":1},"to":{"x":2,"y":1}}}'
 curl -s -X POST localhost:3000/sessions/$SESSION/action \
   -H 'Content-Type: application/json' \
-  -d '{"playerId":"black","action":{"type":"move","unitId":"bN","from":"b8","to":"c6"}}' \
+  -d '{"playerId":"p1","action":{"type":"end-turn","unitId":"__player__"}}' \
   | jq '{pendingPlayer, turn}'
-# → pendingPlayer: "white"
+# → pendingPlayer: "p2"
 ```
 
 Submitting an action out of turn returns a 409 error.
@@ -656,7 +655,3 @@ archive cannot know about them:
   do differ: JAS commits its dependencies on purpose, and this repo still tracks
   a stray `node_modules/.package-lock.json`.
 
-The Stockfish evaluation cache under `games/chess/vendor/` never ships, in any
-flavour. It is not committed, so a `git archive` does not supply it — and the
-build deletes `sf-cache.*` from the staged tree anyway, so re-committing it one
-day cannot quietly put tens of MB of derived data into a release.
