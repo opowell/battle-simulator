@@ -235,7 +235,9 @@ export function sees(state, viewer, target) {
   // Concealing ground hides a unit from anyone farther than its concealment.
   const conceal = terrainOfUnit(state, target)?.concealment;
   if (conceal != null && d > conceal + EPS && !revealed(state, target)) return false;
-  if (d > AWARENESS + EPS && !inCone(state, viewer, target)) return false;
+  // Within `orientation.awareness` (1 unless the ruleset says) a unit senses
+  // another whichever way it faces.
+  if (d > (rulesOf(state).spec.orientation?.awareness ?? AWARENESS) + EPS && !inCone(state, viewer, target)) return false;
   const a = pointOf(state, viewer), b = pointOf(state, target);
   return boardIn(state).sight(a, b);
 }

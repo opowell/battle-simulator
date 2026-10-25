@@ -50,11 +50,12 @@ import { resolveSpec, checkSpec, STAT_KEYS, BASE_SPEC } from './spec.js';
 import {
   registerBattleGame, rulesOf, st, isContinuousTime, isContinuousSpace, live, seatIds, boardIn, pointOf,
   gap, gapBetween, typeOf, domainOf, stat, statusesOf, blocked, facingOf, bearing, angleBetween,
-  seenBy, hiddenFrom, aliveCounts, costFor, passableFor, membersOf, dice, EPS,
+  seenBy, hiddenFrom, aliveCounts, costFor, passableFor, membersOf, dice, attrsEnv, EPS,
 } from './world.js';
 import { makeUnit, dress, freshPerTurn, apBudget, addStatus, adjustPool, regenOf, withUnits, BUILT_IN } from './units.js';
 import { abilityActions, abilityLegal, abilityOf, damageOf, dealDamage, applyOtherEffects, affected, canUseNow, canTarget, canTargetPoint, abilitiesOf, apCost, landed } from './abilities.js';
 import { judgeNow, judgeWindow, resultOf, keepsVerdict } from './victory.js';
+import { formula, whole } from './exact.js';
 import { callHook } from './world.js';
 import { mintForeign } from '../engine/foreignUnits.js';
 
@@ -205,7 +206,15 @@ const facingStep = (state) => (isContinuousSpace(state) ? 45 : 360 / (boardIn(st
 const snap = (state, deg) => {
   if (isContinuousSpace(state)) return ((deg % 360) + 360) % 360;
   const step = facingStep(state);
-  return ((Math.round(deg / step) * step) % 360 + 360) % 360;
+  const k = deg / step;
+  let n = Math.round(k);
+  // `orientation.ties: 'horizontal'`: a bearing exactly between two facings
+  // takes the one nearer the horizontal (a diagonal step faces east or west).
+  if (rulesOf(state).spec.orientation?.ties === 'horizontal' && Math.abs(k - Math.floor(k) - 0.5) < 1e-9) {
+    const level = (m) => Math.abs(Math.cos((m * step * Math.PI) / 180));
+    n = level(Math.floor(k)) >= level(Math.ceil(k)) - 1e-12 ? Math.floor(k) : Math.ceil(k);
+  }
+  return ((n * step) % 360 + 360) % 360;
 };
 
 /** The facing a move leaves a unit with: the way it went, start to end. */
@@ -226,6 +235,13 @@ function turnCost(state, u, to) {
 }
 
 const faceToward = (state, u, t) => (u.facing == null ? u.facing : snap(state, bearing(pointOf(state, u), pointOf(state, t))));
+// Toward a point aimed at (a cell's centre in discrete space).
+const faceTowardPoint = (state, u, p) => {
+  if (u.facing == null) return u.facing;
+  const at = isContinuousSpace(state) ? p : boardIn(state).centre(p);
+  const from = pointOf(state, u);
+  return Math.hypot(at.x - from.x, at.y - from.y) < EPS ? u.facing : snap(state, bearing(from, at));
+};
 
 // The facings a unit is offered: every direction of the board (and, in
 // continuous space, straight at each enemy it sees).
@@ -381,6 +397,7 @@ export const waitAction = (unitId, duration) => ({ type: 'wait', unitId, duratio
 
 function getLegalActions(state, playerId) {
   if (getResult(state)) return [];
+  if (chargeOf(state)) return chargeActions(state, playerId);
   const contTime = isContinuousTime(state);
   const actions = [];
   for (const u of state.units) {
@@ -399,6 +416,41 @@ function getLegalActions(state, playerId) {
   }
   // Discrete time: end your turn. Continuous time: let the clock run (pass).
   actions.push({ type: 'end-turn', unitId: '__player__' });
+  return actions;
+}
+
+// The charge order: the active unit's move (or taking it back), its acts and the
+// end of its activation; and for its side's other units, a move queued for when
+// their own activations come.
+function chargeActions(state, playerId) {
+  const u = state.units.find(x => x.id === state.gameSpecific.activeUnitId && x.alive);
+  if (!u || u.ownerId !== playerId) return [{ type: 'end-turn', unitId: '__player__' }];
+  if (blocked(state, u, 'move') && blocked(state, u, 'act')) return [{ type: 'end-turn', unitId: u.id }];
+  const actions = [];
+  if (u.perTurn.moveLeft > 0) {
+    for (const d of destinations(state, u)) {
+      actions.push({ type: 'move', unitId: u.id, from: { ...u.position }, to: d.to, ...(d.path.length > 2 ? { path: d.path } : {}) });
+    }
+  } else if (u.movedFrom && u.perTurn.attacksLeft > 0) {
+    actions.push({ type: 'undo-move', unitId: u.id });
+  }
+  actions.push(...abilityActions(state, u));
+  if (u.facing != null) {
+    const step = facingStep(state);
+    for (let a = 0; a < 360; a += step) actions.push({ type: 'end-turn', unitId: u.id, facing: a });
+  } else {
+    actions.push({ type: 'end-turn', unitId: u.id });
+  }
+  for (const o of state.units) {
+    if (!o.alive || o.ownerId !== playerId || (o.id === u.id && u.perTurn.moveLeft > 0)) continue;
+    const queue = o.queue ?? [];
+    const tail = queue.length ? queue[queue.length - 1] : o.position;
+    // Where it could go from the end of its queue, on a fresh activation: a stand-in
+    // of its own, so the square it stands on now is in the way like any other.
+    const ahead = { ...o, id: `${o.id}\u0000ahead`, position: { ...tail }, perTurn: { ...freshPerTurn(state, o), moveLeft: stat(state, o, 'speed') } };
+    for (const d of destinations(state, ahead)) actions.push({ type: 'queue-move', unitId: o.id, to: d.to });
+    if (queue.length) actions.push({ type: 'queue-pop', unitId: o.id });
+  }
   return actions;
 }
 
@@ -472,6 +524,9 @@ function useAbility(state, u, ab, action) {
   let me = { ...u, perTurn: ap ? { ...u.perTurn, ...apBudget(state, u, u.perTurn.ap - apCost(ab, u.perTurn.ap)) } : { ...u.perTurn, attacksLeft: u.perTurn.attacksLeft - 1 } };
   me = payFor(state, me, ab);
   if (target && target.id !== u.id && me.facing != null) me = { ...me, facing: faceToward(state, me, target) };
+  else if (!target && point && me.facing != null) me = { ...me, facing: faceTowardPoint(state, me, point) };
+  // Acting fixes where a move left the unit: it can no longer be taken back.
+  if (me.movedFrom) { const { movedFrom: _m, ...rest } = me; me = rest; }
   const next = replaceUnit(state, me);
   return resolveUse(next, me.id, ab, target, point, state);
 }
@@ -497,7 +552,7 @@ function resolveUse(state, casterId, ab, target, point, before = state) {
   const hits = damageOf(before, caster, ab, targets);
   dice.thrown?.push(...hits.filter(h => h.roll != null));
   let next = hits.length ? dealDamage(state, hits) : state;
-  next = applyOtherEffects(next, casterId, ab, landed(targets, hits).map(t => t.id), point);
+  next = applyOtherEffects(next, casterId, ab, landed(targets, hits).map(t => t.id), point, before);
   return next;
 }
 
@@ -505,8 +560,15 @@ function resolveUse(state, casterId, ab, target, point, before = state) {
 
 function applyDiscrete(state, playerId, action) {
   const u = state.units.find(x => x.id === action.unitId);
-  if (action.type === 'end-turn') return endTurn(state, playerId);
+  if (action.type === 'end-turn') return chargeOf(state) ? endActivation(state, action) : endTurn(state, playerId);
   if (!u?.alive) return state;
+  if (action.type === 'undo-move') {
+    if (!u.movedFrom || !(u.perTurn.attacksLeft > 0)) return state;
+    const { movedFrom, ...rest } = u;
+    return replaceUnit(state, { ...rest, position: { ...movedFrom }, perTurn: { ...u.perTurn, moveLeft: stat(state, u, 'speed') } });
+  }
+  if (action.type === 'queue-move') return replaceUnit(state, { ...u, queue: [...(u.queue ?? []), { x: action.to.x, y: action.to.y }] });
+  if (action.type === 'queue-pop') return replaceUnit(state, { ...u, queue: (u.queue ?? []).slice(0, -1) });
   if (action.type === 'move') {
     const cost = moveCost(state, u, action);
     if (!(cost <= u.perTurn.moveLeft + EPS)) return state;
@@ -515,6 +577,8 @@ function applyDiscrete(state, playerId, action) {
     // action points a move spends the ruleset's price for one instead.
     const ap = rulesOf(state).actionPoints;
     const moved = { ...u, position: { x: action.to.x, y: action.to.y }, perTurn: ap ? { ...u.perTurn, ...apBudget(state, u, u.perTurn.ap - rulesOf(state).moveAp) } : { ...u.perTurn, moveLeft: 0 } };
+    // In the charge order a move can be taken back until the unit acts.
+    if (chargeOf(state)) moved.movedFrom = { x: u.position.x, y: u.position.y };
     if (u.facing != null) moved.facing = facingAfter(state, u, routeOf(state, u, action));
     return mergeGroups(replaceUnit(state, moved), moved);
   }
@@ -555,6 +619,96 @@ function endTurn(state, playerId) {
   return out;
 }
 
+// ── Charge time ──────────────────────────────────────────────────────────────
+// `turn: { order: 'charge', charge: 100, initiative }`: no side has a turn —
+// each unit does. Every living unit gains its initiative (a stat's name, its
+// speed by default, or a hook) in charge until one holds `charge`; those that
+// do act in turn, most charge first (then most initiative, then id), each one
+// activation: a move and an act, in either order, the move taken back with
+// `undo-move` until it acts. Its activation ends when its side ends it (with a
+// facing, where units face), which is also its window: its statuses tick and
+// run down then, as a side's do at a turn's end in the turn order. Its charge
+// drops by `charge`, the next ready unit acts, and when none is left, everyone
+// charges again. A side may queue a waiting unit's next move (`queue-move`); it
+// is made as that unit's activation begins. turnNumber counts activations.
+
+export const chargeOf = (state) => (rulesOf(state).spec.turn?.order === 'charge' ? rulesOf(state).spec.turn : null);
+const CHARGE = (state) => chargeOf(state).charge ?? 100;
+
+function initiativeOf(state, u) {
+  const i = chargeOf(state).initiative ?? 'speed';
+  return typeof i === 'object' ? callHook(rulesOf(state).hooks, i, state, u) : stat(state, u, i);
+}
+
+// Everyone charges until someone is ready; then the ready, in the order they act.
+function chargeUp(state) {
+  const full = CHARGE(state);
+  let units = state.units.map(u => (u.alive && u.ct == null ? { ...u, ct: 0 } : u));
+  const gain = new Map(units.filter(u => u.alive).map(u => [u.id, initiativeOf({ ...state, units }, u)]));
+  if (![...gain.values()].some(g => g > 0)) throw new Error('battle: no unit gains any charge');
+  while (!units.some(u => u.alive && u.ct >= full)) units = units.map(u => (u.alive ? { ...u, ct: u.ct + gain.get(u.id) } : u));
+  const ready = units.filter(u => u.alive && u.ct >= full)
+    .sort((a, b) => b.ct - a.ct || gain.get(b.id) - gain.get(a.id) || a.id.localeCompare(b.id)).map(u => u.id);
+  return { units, ready };
+}
+
+// `id` begins its activation: fresh budgets, and the first move it had queued.
+function activate(state, id, queue) {
+  let units = state.units.map(u => (u.id === id ? (({ movedFrom: _m, ...rest }) => ({ ...rest, perTurn: freshPerTurn(state, u) }))(u) : u));
+  const u = units.find(x => x.id === id);
+  const to = u?.queue?.[0];
+  if (to) {
+    const B = boardIn(state);
+    const free = passableFor(B.terrainAt(to.x, to.y), domainOf(state, u))
+      && !units.some(o => o.alive && o.id !== u.id && o.position.x === to.x && o.position.y === to.y);
+    if (free) {
+      const moved = { ...u, position: { x: to.x, y: to.y }, movedFrom: { ...u.position }, queue: u.queue.slice(1), perTurn: { ...u.perTurn, moveLeft: 0 } };
+      if (u.facing != null) moved.facing = facingAfter(state, u, [u.position, to]);
+      units = units.map(x => (x.id === id ? moved : x));
+    }
+  }
+  return {
+    ...state,
+    units,
+    activePlayers: [u?.ownerId ?? state.players[0].id],
+    gameSpecific: { ...state.gameSpecific, activeUnitId: id, turnQueue: queue },
+  };
+}
+
+// The first activation of a battle in the charge order.
+function startCharge(state) {
+  const { units, ready } = chargeUp(state);
+  const [first, ...queue] = ready;
+  return activate({ ...state, units }, first, queue);
+}
+
+// The active unit's side ends its activation (facing `action.facing`, where units face).
+function endActivation(state, action) {
+  const gs = state.gameSpecific;
+  const id = gs.activeUnitId;
+  let next = state;
+  let u = next.units.find(x => x.id === id);
+  if (u?.alive && action.facing != null && u.facing != null) next = replaceUnit(next, { ...u, facing: snap(next, action.facing) });
+  // Its window ends: its statuses tick and run down, its pools regenerate.
+  if (u?.alive) next = unitWindowEnds(next, id);
+  next = withUnits(next, next.units.map(x => (x.id === id ? (({ movedFrom: _m, ...rest }) => ({ ...rest, ct: Math.max(0, (x.ct ?? 0) - CHARGE(next)) }))(x) : x)));
+  if (getResult(next)) return { ...next, turnNumber: state.turnNumber + 1 };
+  let queue = (gs.turnQueue ?? []).filter(q => next.units.find(x => x.id === q)?.alive);
+  if (!queue.length) {
+    const up = chargeUp(next);
+    next = { ...next, units: up.units };
+    queue = up.ready;
+  }
+  const [nextId, ...rest] = queue;
+  return activate({ ...next, turnNumber: state.turnNumber + 1 }, nextId, rest);
+}
+
+// One unit's window ends (the charge order: its own activation is its window).
+function unitWindowEnds(state, id) {
+  const next = unitEnds(state, id, isContinuousTime(state));
+  return withUnits(next, next.units);
+}
+
 // The end of window `n`: pools regenerate, statuses tick and run down,
 // cooldowns count down, and the objectives counted in windows are judged.
 function windowEnds(state, n) {
@@ -562,38 +716,51 @@ function windowEnds(state, n) {
   if (!r.periodic) return state;
   const contTime = isContinuousTime(state);
   let next = state;
-  for (const u0 of state.units) {
-    let u = next.units.find(x => x.id === u0.id);
-    if (!u?.alive) continue;
-    for (const id of Object.keys(u.pools ?? {})) {
-      const g = regenOf(next, u, id);
-      if (g) u = adjustPool(u, id, g);
-    }
-    if (!contTime && u.cooldowns) {
-      const cds = Object.fromEntries(Object.entries(u.cooldowns).map(([k, v]) => [k, v - 1]).filter(([, v]) => v > 0));
-      u = Object.keys(cds).length ? { ...u, cooldowns: cds } : (({ cooldowns: _c, ...rest }) => rest)(u);
-    }
-    next = replaceUnit(next, u);
-    // Each status's tick, then one window less of it.
-    for (const s of statusesOf(u)) {
-      const decl = r.attrs[s.id] ?? BUILT_IN[s.id] ?? {};
-      for (const e of decl.tick ?? []) next = tickEffect(next, u.id, e, s.stacks ?? 1);
-    }
-    u = next.units.find(x => x.id === u0.id);
-    if (u?.alive && u.statuses?.length) {
-      const ss = u.statuses.map(s => ({ ...s, left: s.left - 1 })).filter(s => s.left > 0);
-      next = replaceUnit(next, { ...u, statuses: ss });
-    }
-  }
+  for (const u0 of state.units) next = unitEnds(next, u0.id, contTime);
   next = withUnits(next, next.units);
   return judgeNow(judgeWindow(next, n));
+}
+
+// What a window's end does to one unit.
+function unitEnds(state, id, contTime) {
+  const r = rulesOf(state);
+  let next = state;
+  let u = next.units.find(x => x.id === id);
+  if (!u?.alive) return next;
+  for (const pool of Object.keys(u.pools ?? {})) {
+    const g = regenOf(next, u, pool);
+    if (g) u = adjustPool(u, pool, g);
+  }
+  if (!contTime && u.cooldowns) {
+    const cds = Object.fromEntries(Object.entries(u.cooldowns).map(([k, v]) => [k, v - 1]).filter(([, v]) => v > 0));
+    u = Object.keys(cds).length ? { ...u, cooldowns: cds } : (({ cooldowns: _c, ...rest }) => rest)(u);
+  }
+  next = replaceUnit(next, u);
+  // Each status's tick, then one window less of it.
+  const decl = (s) => r.attrs[s.id] ?? BUILT_IN[s.id] ?? {};
+  for (const s of statusesOf(u)) {
+    for (const e of decl(s).tick ?? []) next = tickEffect(next, u.id, e, s.stacks ?? 1);
+  }
+  u = next.units.find(x => x.id === id);
+  if (u?.alive && u.statuses?.length) {
+    // A permanent status stays until something removes it; any other runs down,
+    // and one that runs out does what it does then (`expire`).
+    const ss = u.statuses.map(s => (decl(s).permanent ? s : { ...s, left: s.left - 1 }));
+    const out = ss.filter(s => !decl(s).permanent && s.left <= 0);
+    next = replaceUnit(next, { ...u, statuses: ss.filter(s => decl(s).permanent || s.left > 0) });
+    for (const s of out) for (const e of decl(s).expire ?? []) next = tickEffect(next, u.id, e, s.stacks ?? 1);
+  }
+  return next;
 }
 
 // A status's effect at a window's end, on the unit that has it.
 function tickEffect(state, unitId, e, stacks) {
   const u = state.units.find(x => x.id === unitId);
   if (!u?.alive) return state;
-  if (e.damage) return dealDamage(state, [{ targetId: u.id, amount: (e.damage.amount ?? 1) * stacks }]);
+  if (e.damage) {
+    const each = e.damage.formula != null ? whole(formula(e.damage.formula)(attrsEnv(state, u), dice.rng)) : e.damage.amount ?? 1;
+    return dealDamage(state, [{ targetId: u.id, amount: each * stacks }]);
+  }
   if (e.heal) return replaceUnit(state, { ...u, hp: Math.min(u.maxHp, u.hp + (e.heal.amount ?? 1) * stacks) });
   if (e.modify && u.pools?.[e.modify.attr]) return replaceUnit(state, adjustPool(u, e.modify.attr, (e.modify.by ?? 0) * stacks));
   if (e.fn != null) return callHook(rulesOf(state).hooks, e, state, { caster: u, targets: [u], effect: e });
@@ -1218,6 +1385,7 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
     const errs = full ? checkSpec(full, hooks) : [];
     if (errs.length) throw new Error(`${name}: spec "${full.id ?? '(inline)'}": ${errs.join('; ')}`);
     let space = ST.resolveSpaceTime(game, { ...(sp.modes ?? {}), ...config });
+    if (sp.turn?.order === 'charge') space = { ...space, time: 'discrete', play: 'sequential' };
     const board = buildBoard(sp.board, full ? {} : config);
     // A board with no plane under it is played in discrete space, whatever was asked.
     if (space.space === 'continuous' && !['square', 'shapes'].includes(board.topology ?? 'square')) space = { ...space, space: 'discrete' };
@@ -1250,6 +1418,7 @@ export function makeBattleGame({ name, spec = {}, specs = {}, scenarios = [], ho
     };
     let settled = settle(state);
     if (keepsVerdict(settled)) settled = judgeNow(settled);
+    if (chargeOf(settled)) settled = startCharge(settled);
     if (fogMemory) settled = remember(settled);
     // On a clock, who is on move first is whoever has a decision at t=0.
     return space.time === 'continuous' ? advanceClock(settled) : settled;

@@ -229,6 +229,8 @@ function build(board, terrain) {
     // `sightLine: 'bresenham'`: sight runs along the Bresenham line between the two
     // cells instead, blocked by a sight-blocking cell on it other than its ends —
     // the classic grid rule, for a game whose own sight is that.
+    // `sightLine: 'none'`: nothing on the board blocks sight.
+    if (board.sightLine === 'none') B.sight = () => true;
     if (board.sightLine === 'bresenham') {
       B.sight = (a, b) => {
         const from = { x: Math.floor(a.x), y: Math.floor(a.y) }, to = { x: Math.floor(b.x), y: Math.floor(b.y) };

@@ -6,8 +6,9 @@
 // `spec.abilities` and given to unit types by id:
 //
 //   { id: 'fira', name, cost: { mp: 12 }, cooldown: 0, range: 4, minRange: 0,
-//     targets: 'enemy' | 'ally' | 'self' | 'any' | 'ground',
-//     filter: { not: 'flying' }, area: { radius: 1 }, affects: 'enemy' | 'ally' | 'all',
+//     targets: 'enemy' | 'ally' | 'self' | 'any' | 'ground' | 'fallen',
+//     filter: { not: 'flying' }, area: { radius: 1, shape: 'radius' | 'line' },
+//     aim: 'units' | 'cells', affects: 'enemy' | 'ally' | 'all',
 //     los: true | false | 'missile',          // 'missile': only beyond arm's length
 //     windup: 0.5,                            // continuous time: windows until it lands
 //     effects: [{ damage: { power: 1.1, type: 'fire' } }, { status: { id: 'blind', turns: 2 } }] }
@@ -30,6 +31,13 @@
 // A target missed takes nothing from the use, damage or any other effect. The
 // dice are the battle's (world.js `dice`), and a damage formula may throw more
 // of them with roll(n); everything thrown is recorded on the action.
+//
+// `targets: 'fallen'` aims at a fallen unit of the caster's side (a revival).
+// An area is every cell within its `radius` of the point aimed at, in the
+// board's measure, or with `shape: 'line'` the `radius` cells running straight
+// out from the caster toward it (aimed at a neighbouring cell). A ground-aimed
+// ability is offered where the units it could hit stand, or with `aim: 'cells'`
+// at every cell in range whose area would hit someone.
 //
 // The effect vocabulary is closed — damage, heal, modify, status, cleanse, move,
 // spawn, transform, reveal, conceal — with `{ fn: 'name' }` as the way out: the
@@ -87,12 +95,12 @@ export function canUseNow(state, u, ab, { landing = false } = {}) {
 export const apCost = (ab, left) => (ab.ap === 'all' ? left : ab.ap ?? 1);
 
 const sideOk = (u, t, targets) => (targets === 'enemy' ? t.ownerId !== u.ownerId
-  : targets === 'ally' ? t.ownerId === u.ownerId : targets === 'self' ? t.id === u.id : true);
+  : targets === 'ally' || targets === 'fallen' ? t.ownerId === u.ownerId : targets === 'self' ? t.id === u.id : true);
 
 /** Can `u` aim `ab` at unit `t` (range, side, filter, line, sight, cone)? */
 export function canTarget(state, u, ab, t) {
-  if (!t?.alive) return false;
   const targets = ab.targets ?? 'enemy';
+  if (!t || (targets === 'fallen' ? t.alive : !t.alive)) return false;
   if (!sideOk(u, t, targets)) return false;
   if (!matches(state, t, ab.filter)) return false;
   if (t.id === u.id) return targets === 'self' || targets === 'any' || targets === 'ally';
@@ -128,6 +136,8 @@ export function canTargetPoint(state, u, ab, p) {
     if (!B.sight(pointOf(state, u), at)) return false;
   }
   if (teleports(ab) && !landingFree(state, u, p)) return false;
+  // A line runs out from the caster: it is aimed at a neighbouring cell.
+  if (ab.area?.shape === 'line' && !isContinuousSpace(state) && !B.adjacent(u.position).some(c => c.x === p.x && c.y === p.y)) return false;
   return true;
 }
 
@@ -173,6 +183,17 @@ function groundTargets(state, u, ab) {
     for (const c of B.cells()) if ((c.x !== u.position.x || c.y !== u.position.y) && canTargetPoint(state, u, ab, c)) out.push(c);
     return out;
   }
+  // Every cell in range whose area would hit a unit the caster's side can see.
+  if (ab.aim === 'cells' && !isContinuousSpace(state)) {
+    const cells = ab.area?.shape === 'line' ? B.adjacent(u.position) : B.cells();
+    for (const c of cells) {
+      if ((c.x === u.position.x && c.y === u.position.y) || !canTargetPoint(state, u, ab, c)) continue;
+      const hits = affected(state, u, ab, null, c).filter(t => t.ownerId === u.ownerId
+        || !(hiddenFrom(state, u.ownerId, t) || (state.gameSpecific.fogOfWar && !seenBy(state, u.ownerId, t))));
+      if (hits.length) out.push({ x: c.x, y: c.y });
+    }
+    return out;
+  }
   const seen = new Set();
   for (const t of state.units) {
     if (!t.alive || !sideOk(u, t, ab.affects ?? 'enemy') || t.id === u.id) continue;
@@ -198,10 +219,22 @@ export function abilityLegal(state, u, action) {
 /** The units an ability lands on: its target, or everyone in its area. */
 export function affected(state, u, ab, target, point) {
   const at = target ? target.position : point;
+  if (ab.area?.shape === 'line' && at) return lineOf(state, u, ab, at);
   if (!ab.area) return target ? [target] : state.units.filter(x => x.alive && x.position.x === at?.x && x.position.y === at?.y && sideOk(u, x, ab.affects ?? 'enemy'));
   const affects = ab.affects ?? (ab.targets === 'ally' || ab.targets === 'self' ? 'ally' : ab.targets === 'any' ? 'all' : 'enemy');
   return state.units.filter(x => x.alive && sideOk(u, x, affects) && matches(state, x, ab.filter)
     && gapBetween(state, x.position, at) <= ab.area.radius + EPS);
+}
+
+// The units on a line from the caster toward `at`: `radius` cells along the
+// stronger axis of the way to it (the horizontal, where they are level).
+function lineOf(state, u, ab, at) {
+  const dx = at.x - u.position.x, dy = at.y - u.position.y;
+  if (!dx && !dy) return [];
+  const sx = Math.abs(dx) >= Math.abs(dy) ? Math.sign(dx) : 0, sy = sx ? 0 : Math.sign(dy);
+  const cells = new Set(Array.from({ length: ab.area.radius }, (_, i) => `${u.position.x + sx * (i + 1)},${u.position.y + sy * (i + 1)}`));
+  const affects = ab.affects ?? (ab.targets === 'ally' ? 'ally' : ab.targets === 'any' ? 'all' : 'enemy');
+  return state.units.filter(x => x.alive && sideOk(u, x, affects) && matches(state, x, ab.filter) && cells.has(`${x.position.x},${x.position.y}`));
 }
 
 /**
@@ -284,22 +317,29 @@ export function dealDamage(state, hits) {
   return withUnits(state, units);
 }
 
-/** Everything but the damage: the ability's other effects, in order. */
-export function applyOtherEffects(state, casterId, ab, targetIds, point) {
+/**
+ * Everything but the damage: the ability's other effects, in order. `before` is
+ * the battle as it was when the ability was used, for a hook that asks.
+ */
+export function applyOtherEffects(state, casterId, ab, targetIds, point, before = state) {
   for (const e of ab.effects ?? []) {
     if (e.damage) continue;
     const caster = state.units.find(x => x.id === casterId);
-    const targets = targetIds.map(id => state.units.find(x => x.id === id)).filter(t => t?.alive);
-    state = applyEffect(state, caster, ab, e, targets, point);
+    const targets = targetIds.map(id => state.units.find(x => x.id === id)).filter(t => t && (t.alive || ab.targets === 'fallen'));
+    state = applyEffect(state, caster, ab, e, targets, point, before);
   }
   return state;
 }
 
 const replace = (state, u) => withUnits(state, state.units.map(x => (x.id === u.id ? u : x)));
 
-function applyEffect(state, caster, ab, e, targets, point) {
+function applyEffect(state, caster, ab, e, targets, point, before = state) {
   const r = rulesOf(state);
-  if (e.fn != null) return callHook(r.hooks, e, state, { caster, targets, point, ability: ab, effect: e });
+  if (e.fn != null) {
+    // A hook may fell or raise units: the survivor counts follow what it did.
+    const s = callHook(r.hooks, e, state, { caster, targets, point, ability: ab, effect: e, before });
+    return withUnits(s, s.units);
+  }
   if (e.move?.kind === 'teleport') return caster?.alive && point ? replace(state, { ...caster, position: { x: point.x, y: point.y } }) : state;
   if (e.spawn) return spawn(state, caster, e.spawn, point ?? targets[0]?.position ?? caster.position);
   for (const t0 of targets) {

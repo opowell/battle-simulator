@@ -110,7 +110,7 @@ export function resolveSpec(spec = {}, base = BASE_SPEC) {
 }
 
 const KINDS = new Set(['number', 'pool', 'tag', 'status']);
-const TARGETS = new Set(['enemy', 'ally', 'self', 'any', 'ground']);
+const TARGETS = new Set(['enemy', 'ally', 'self', 'any', 'ground', 'fallen']);
 const EFFECTS = new Set(['damage', 'heal', 'modify', 'status', 'cleanse', 'move', 'spawn', 'transform', 'reveal', 'conceal', 'fn']);
 const VICTORY = new Set(['eliminate', 'royal', 'hold', 'reach', 'survive', 'points']);
 
@@ -127,6 +127,7 @@ export function checkSpec(spec, hooks = {}) {
   for (const [id, a] of Object.entries(attrs)) {
     if (!KINDS.has(a.kind)) errs.push(`attributes.${id}: kind "${a.kind}" is not one of ${[...KINDS].join(', ')}`);
     for (const e of a.tick ?? []) checkEffect(`attributes.${id}.tick`, e);
+    for (const e of a.expire ?? []) checkEffect(`attributes.${id}.expire`, e);
   }
   const abilities = spec.abilities ?? {};
   for (const [id, ab] of Object.entries(abilities)) checkAbility(`abilities.${id}`, ab);
@@ -143,7 +144,15 @@ export function checkSpec(spec, hooks = {}) {
   if (spec.strike && typeof spec.strike === 'object') checkAbility('strike', spec.strike, true);
   const turn = spec.turn;
   if (turn != null) {
-    if (!(Number.isInteger(turn.actionPoints) && turn.actionPoints > 0)) errs.push('turn.actionPoints: a whole number > 0');
+    if (turn.order != null && turn.order !== 'charge') errs.push(`turn.order: "${turn.order}" is not charge`);
+    if (turn.order === 'charge') {
+      if (turn.charge != null && !(turn.charge > 0)) errs.push('turn.charge: a number > 0');
+      if (turn.initiative != null) {
+        if (typeof turn.initiative === 'object') fnOk('turn.initiative', turn.initiative);
+        else if (!STAT_KEYS.includes(turn.initiative) && attrs[turn.initiative]?.kind !== 'number') errs.push(`turn.initiative: "${turn.initiative}" is not a stat or a declared number`);
+      }
+      if (turn.actionPoints != null) errs.push('turn: action points and the charge order don\'t mix');
+    } else if (!(Number.isInteger(turn.actionPoints) && turn.actionPoints > 0)) errs.push('turn.actionPoints: a whole number > 0');
     if (turn.move != null && !(Number.isInteger(turn.move) && turn.move > 0)) errs.push('turn.move: a whole number > 0');
   }
   const dmg = spec.formulas?.damage;
@@ -151,7 +160,7 @@ export function checkSpec(spec, hooks = {}) {
   const b = spec.board ?? {};
   if (!TOPOLOGIES.includes(b.topology ?? 'square')) errs.push(`board.topology: "${b.topology}" is not one of ${TOPOLOGIES.join(', ')}`);
   if ((b.topology ?? 'square') !== 'regions' && !(b.width > 0 && b.height > 0)) errs.push('board: needs a width and height');
-  if (b.sightLine != null && b.sightLine !== 'bresenham') errs.push(`board.sightLine: "${b.sightLine}" is not bresenham`);
+  if (b.sightLine != null && !['bresenham', 'none'].includes(b.sightLine)) errs.push(`board.sightLine: "${b.sightLine}" is not one of bresenham, none`);
   if (b.visionMetric != null && !['chebyshev', 'manhattan'].includes(b.visionMetric)) errs.push(`board.visionMetric: "${b.visionMetric}" is not one of chebyshev, manhattan`);
   for (const id of new Set([...Object.values(b.terrain ?? {}), ...(b.shapes ?? []).map(s => s.terrain), ...Object.values(b.regions ?? {}).map(r => r.terrain)].filter(Boolean))) {
     if (!spec.terrain?.[id]) errs.push(`board: no terrain "${id}"`);
@@ -176,6 +185,8 @@ export function checkSpec(spec, hooks = {}) {
     if (ab.crit != null && ab.hit == null) errs.push(`${where}.crit: needs a hit chance`);
     if (ab.critPower != null && !(typeof ab.critPower === 'number' && ab.critPower >= 0)) errs.push(`${where}.critPower: not a number ≥ 0`);
     if (ab.ap != null && ab.ap !== 'all' && !(Number.isInteger(ab.ap) && ab.ap >= 0)) errs.push(`${where}.ap: a whole number ≥ 0, or "all"`);
+    if (ab.area?.shape != null && !['radius', 'line'].includes(ab.area.shape)) errs.push(`${where}.area.shape: "${ab.area.shape}" is not one of radius, line`);
+    if (ab.aim != null && !['units', 'cells'].includes(ab.aim)) errs.push(`${where}.aim: "${ab.aim}" is not one of units, cells`);
     for (const e of ab.effects ?? []) checkEffect(`${where}.effects`, e);
   }
   function checkEffect(where, e) {
