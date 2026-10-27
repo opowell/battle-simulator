@@ -8,7 +8,7 @@
 // Rendered in DataShell's #cards-before slot, so it reads the query off the
 // shell rather than being handed it.
 import { computed } from 'vue'
-import { ShellCard, useShellContext } from 'header-content-layout'
+import { ShellCard, useShellContext } from 'appfr'
 import { namedIn } from '../source.js'
 import Art from './Art.vue'
 

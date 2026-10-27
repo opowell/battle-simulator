@@ -48,7 +48,6 @@ const decimalStat = (value) => {
 const unitStat = (key, label, cardLabel, hint, hideBelow, format = stat) => metric(key, label, { format, width: '84px', cardLabel, hint, hideBelow })
 
 const kb = (value) => (value == null ? '' : `${Math.max(1, Math.round(Number(value) / 1024))} KB`)
-const count = (n) => n.toLocaleString('en')
 const distinct = (values) => [...new Set(values.filter((v) => v != null && v !== ''))].sort()
 
 /**
@@ -66,7 +65,7 @@ export function buildSchema(catalog, { Art }) {
     {
       key: 'games',
       label: 'Games',
-      count: count(catalog.games.length),
+      count: catalog.games.length,
       scope: 'game',
       create: 'New game…',
       // A game's card is its picture and its name; the key, the counts and the
@@ -102,7 +101,7 @@ export function buildSchema(catalog, { Art }) {
     {
       key: 'sessions',
       label: 'Sessions',
-      count: count(catalog.sessions.length),
+      count: catalog.sessions.length,
       create: 'New session…',
       columns: [
         ordinal,
@@ -131,7 +130,7 @@ export function buildSchema(catalog, { Art }) {
     {
       key: 'recordings',
       label: 'Recordings',
-      count: count(catalog.recordings.length),
+      count: catalog.recordings.length,
       columns: [
         ordinal,
         art,
@@ -159,7 +158,7 @@ export function buildSchema(catalog, { Art }) {
     {
       key: 'scenarios',
       label: 'Scenarios',
-      count: count(catalog.scenarios.length),
+      count: catalog.scenarios.length,
       // Pressing a scenario narrows to it, as pressing a game does: its sessions
       // and recordings, under a card of its own (ScenarioSummaryCards).
       scope: 'scenario',
@@ -182,7 +181,7 @@ export function buildSchema(catalog, { Art }) {
       // edited here and played from the next session on.
       key: 'specs',
       label: 'Specs',
-      count: count(catalog.specs.length),
+      count: catalog.specs.length,
       create: 'New spec…',
       columns: [
         ordinal,
@@ -204,7 +203,7 @@ export function buildSchema(catalog, { Art }) {
     {
       key: 'units',
       label: 'Units',
-      count: count(catalog.units.length),
+      count: catalog.units.length,
       // A unit's card is its picture and its name, like a game's, with its
       // stats under the name (A 4 · D 1 · HP 1 · M 1 · R 1); the game is the
       // table's.
@@ -245,7 +244,7 @@ export function buildSchema(catalog, { Art }) {
     {
       key: 'sides',
       label: 'Sides',
-      count: count(catalog.sides.length),
+      count: catalog.sides.length,
       columns: [ordinal, art, identity('Side'), reference('Id', { mono: true }), gameColumn, metric('seat', 'Seat')],
       sorts: [{ key: 'game', label: 'game' }, { key: 'name', label: 'name' }],
       facets: [byGame],
@@ -253,7 +252,7 @@ export function buildSchema(catalog, { Art }) {
     {
       key: 'agents',
       label: 'Agents',
-      count: count(catalog.agents.length),
+      count: catalog.agents.length,
       columns: [
         ordinal,
         identity('Agent'),
@@ -272,7 +271,7 @@ export function buildSchema(catalog, { Art }) {
     {
       key: 'options',
       label: 'Options',
-      count: count(catalog.options.length),
+      count: catalog.options.length,
       columns: [
         ordinal,
         identity('Option'),
@@ -291,7 +290,7 @@ export function buildSchema(catalog, { Art }) {
     {
       key: 'files',
       label: 'Files',
-      count: count(catalog.files.length),
+      count: catalog.files.length,
       columns: [
         ordinal,
         identity('File', { mono: true }),
@@ -310,7 +309,7 @@ export function buildSchema(catalog, { Art }) {
       // The Browser's own preferences (settings.js), kept in this browser.
       key: 'settings',
       label: 'Settings',
-      count: count(SETTINGS.length),
+      count: SETTINGS.length,
       columns: [
         ordinal,
         identity('Setting'),

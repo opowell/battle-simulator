@@ -22,7 +22,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import {
   WindowFrame, column, float, frame, frameOf, headless, insertPanel, isFloat,
   minimizeFrame, panelIds, panelNode, raiseFrame, removePanel, setActivePanel,
-} from 'header-content-layout';
+} from 'appfr';
 
 const props = defineProps({
   // The open panels, in the order they were opened: [{ id, title, subtitle?, w?, h?, dock? }].
@@ -222,7 +222,7 @@ const tokens = {
   <div v-show="dockLayout" class="pd pd--dock" :style="{ width: dockWidth + 'px' }">
     <div class="pd-resize" @pointerdown.prevent="startResize"/>
     <WindowFrame v-if="dockLayout" class="pd-frame" theme="dark" :tokens="tokens"
-                 :panels="docked" :layout="dockShown" movable resizable closable
+                 :panels="docked" :layout="dockShown"
                  :min-panel-size="120"
                  @update:layout="onDockLayout" @panel-close="onClose">
       <template v-for="p in slots(docked)" :key="p.id" #[p.slot]>
@@ -232,7 +232,7 @@ const tokens = {
   </div>
   <div ref="floatEl" v-show="floatLayout" class="pd pd--float">
     <WindowFrame v-if="floatLayout" class="pd-frame" theme="dark" :tokens="tokens"
-                 :panels="floating" :layout="floatLayout" movable resizable closable
+                 :panels="floating" :layout="floatLayout"
                  :min-panel-size="140"
                  @update:layout="onFloatLayout" @frame-change="onFrameChange" @panel-close="onClose">
       <template v-for="p in slots(floating)" :key="p.id" #[p.slot]>

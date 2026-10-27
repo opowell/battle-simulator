@@ -4,7 +4,7 @@
 // and each session opened inside the browser as a tab beside the whole of that.
 // What is open, and where, is held in the URL with the query.
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef, watch } from 'vue'
-import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, openPopOut, panelIds, panelNode, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'header-content-layout'
+import { DataShell, ROUTE_ADAPTER_KEY, WindowFrame, createHistoryAdapter, group, hasPanel, headless, insertPanel, openPopOut, panelIds, panelNode, removePanel, row, setActivePanel, setSizesAt, useLayoutRoute } from 'appfr'
 import { api } from './api.js'
 import { buildSchema } from './schema.js'
 import { buildRows } from './rows.js'
@@ -128,7 +128,7 @@ function titleOf(item) {
 const panels = computed(() => [
   { id: 'browse', title: 'Browse', closable: false },
   // A session's board is kept mounted behind other tabs (see SessionPlay).
-  ...opened.value.map((item) => ({ id: item.id, ...titleOf(item), closable: true, keepAlive: item.kind === 'session' })),
+  ...opened.value.map((item) => ({ id: item.id, ...titleOf(item), keepAlive: item.kind === 'session' })),
 ])
 
 /** @param focus  false leaves whichever top-level tab is showing where it is */
@@ -347,7 +347,6 @@ const specRows = computed(() => rows.value?.specs ?? [])
       class="cx-window"
       :panels="panels"
       :theme="THEME"
-      movable
       :solo="solo"
       :pop-out="popOutHref"
       @panel-close="close"

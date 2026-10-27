@@ -28,7 +28,7 @@
 {
   "imports": {
     "vue": "./vendor/vue.runtime.esm-browser.prod.js",
-    "header-content-layout": "../../appfr/index.js"
+    "appfr": "../../appfr/index.js"
   }
 }
 </script>
@@ -65,7 +65,7 @@ body { background: #0f1216; color-scheme: dark; }
 
 <script type="module">
 import * as Vue from 'vue'
-import * as appfr from 'header-content-layout'
+import * as appfr from 'appfr'
 import { loadModule } from './vendor/vue3-sfc-loader.esm.js'
 import { installPlay } from './play/install.js'
 import * as play from './play/sessionScope.js'
@@ -74,7 +74,7 @@ const options = {
   // The shell must run on this very Vue, not a second copy fetched by the loader.
   // 'battle-play' is what a game's UI plugin may import from the game screen
   // (play/plugins.js): it lives in the game's folder, not beside these files.
-  moduleCache: { vue: Vue, 'header-content-layout': appfr, 'battle-play': play },
+  moduleCache: { vue: Vue, appfr, 'battle-play': play },
   async getFile(url) {
     const response = await fetch(url, { cache: 'no-cache' })
     if (!response.ok) throw new Error(`${response.status} ${url}`)

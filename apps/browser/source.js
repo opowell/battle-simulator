@@ -13,7 +13,7 @@
 // to keeps its sessions and recordings, not every unit there is (and a unit, its
 // game and the sides that start with it).
 
-import { columnsFor, cellValue, findSort, matchesExpression, matchesFacets, parseExpression } from 'header-content-layout'
+import { columnsFor, cellValue, findSort, matchesExpression, parseExpression } from 'appfr'
 
 const SCOPE_FIELDS = ['game', 'scenario', 'unit']
 
@@ -109,8 +109,6 @@ export function createCatalogSource(rowsByEntity) {
       for (const candidate of scope) {
         for (const row of rowsByEntity[candidate.key] ?? []) {
           population += 1
-          // Facets belong to one entity, so they apply only once it is chosen.
-          if (entity && !matchesFacets(row, query.facets)) continue
           if (matches(expression, row, candidate)) matched.push(row)
         }
       }

@@ -7,7 +7,7 @@
 // Rendered in DataShell's #cards-before slot, so it reads the query off the
 // shell rather than being handed it.
 import { computed, ref } from 'vue'
-import { ShellCard, useShellContext } from 'header-content-layout'
+import { ShellCard, useShellContext } from 'appfr'
 import { api } from '../api.js'
 import { namedIn } from '../source.js'
 import { defaultSeats, sessionRequest } from '../sessions.js'
